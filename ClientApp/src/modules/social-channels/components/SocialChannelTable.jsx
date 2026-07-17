@@ -3,7 +3,7 @@ import LoadingState from '@/shared/components/LoadingState'
 import ErrorState from '@/shared/components/ErrorState'
 import EmptyState from '@/shared/components/EmptyState'
 import { formatDateTime, getErrorMessage } from '@/shared/utils/apiHelpers'
-import { getSocialPlatformLabel } from '../constants/socialPlatform'
+import { getChannelTypeLabel, getSocialPlatformLabel } from '../constants/socialPlatform'
 
 export default function SocialChannelTable({
   items,
@@ -34,6 +34,7 @@ export default function SocialChannelTable({
         <tr>
           <th>Page</th>
           <th>External ID</th>
+          <th>Loại</th>
           <th>Nền tảng</th>
           <th>Token hết hạn</th>
           <th>Trạng thái</th>
@@ -46,6 +47,7 @@ export default function SocialChannelTable({
           <tr key={item.id}>
             <td>{item.pageName}</td>
             <td>{item.externalPageId}</td>
+            <td>{getChannelTypeLabel(item.channelType)}</td>
             <td>{getSocialPlatformLabel(item.platform)}</td>
             <td>{formatDateTime(item.tokenExpiresAt)}</td>
             <td>

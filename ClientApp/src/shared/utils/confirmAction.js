@@ -1,6 +1,8 @@
 export const CONFIRM_MESSAGES = {
   deleteChannel: (name) =>
     `Ngắt kết nối kênh "${name}"? Hành động này không thể hoàn tác.`,
+  disconnectAccount: (name) =>
+    `Ngắt kết nối tài khoản "${name}"? Các kênh thuộc tài khoản sẽ bị tắt.`,
   deletePost: (title) => `Xóa bài viết "${title}"? Hành động này không thể hoàn tác.`,
   deleteMedia: (name) => `Xóa media "${name}"? Hành động này không thể hoàn tác.`,
   detachMedia: () => 'Gỡ media khỏi bài viết?',

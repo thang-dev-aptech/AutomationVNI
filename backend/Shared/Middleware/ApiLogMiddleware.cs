@@ -66,7 +66,8 @@ public class ApiLogMiddleware(RequestDelegate next, ILogger<ApiLogMiddleware> lo
     {
         var value = path.Value ?? string.Empty;
         return value.StartsWith("/openapi", StringComparison.OrdinalIgnoreCase)
-            || value.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase);
+            || value.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("/api/meta/callback", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<string?> ReadRequestBodyAsync(HttpRequest request)

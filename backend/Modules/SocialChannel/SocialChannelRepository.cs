@@ -1,4 +1,5 @@
 using Backend.Data;
+using Backend.Modules.SocialChannel.Enums;
 using Backend.Shared;
 using Backend.Shared.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +25,12 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
         if (request.Platform.HasValue)
             query = query.Where(x => x.Platform == request.Platform.Value);
 
+        if (request.ChannelType.HasValue)
+            query = query.Where(x => x.ChannelType == request.ChannelType.Value);
+
+        if (request.SocialConnectionId.HasValue)
+            query = query.Where(x => x.SocialConnectionId == request.SocialConnectionId.Value);
+
         if (request.IsActive.HasValue)
             query = query.Where(x => x.IsActive == request.IsActive.Value);
 
@@ -40,14 +47,26 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
     public async Task<SocialChannelModel> CreateAsync(
         CreateSocialChannelRequest request, CancellationToken ct = default)
     {
+        var channelType = request.ChannelType;
+        if (channelType == default)
+        {
+            channelType = request.Platform switch
+            {
+                SocialPlatform.Instagram => SocialChannelType.Instagram,
+                _ => SocialChannelType.Page
+            };
+        }
+
         var entity = new SocialChannelModel
         {
             Platform = request.Platform,
+            ChannelType = channelType,
             PageName = request.PageName.Trim(),
             ExternalPageId = request.ExternalPageId.Trim(),
             AccessToken = request.AccessToken,
             RefreshToken = request.RefreshToken,
             TokenExpiresAt = request.TokenExpiresAt,
+            SocialConnectionId = request.SocialConnectionId,
             IsActive = true
         };
 
@@ -71,12 +90,81 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
         return entity;
     }
 
+    public async Task<SocialChannelModel> UpsertFromMetaAsync(
+        SocialPlatform platform,
+        SocialChannelType channelType,
+        string externalPageId,
+        string pageName,
+        string accessToken,
+        Guid socialConnectionId,
+        string? extraJson,
+        string? auditUser,
+        CancellationToken ct = default)
+    {
+        var normalizedId = externalPageId.Trim();
+        var actor = string.IsNullOrWhiteSpace(auditUser) ? "meta-oauth" : auditUser.Trim();
+
+        var existing = await Context.Set<SocialChannelModel>()
+            .FirstOrDefaultAsync(
+                x => !x.IsDeleted
+                    && x.Platform == platform
+                    && x.ExternalPageId == normalizedId,
+                ct);
+
+        if (existing is not null)
+        {
+            existing.PageName = pageName.Trim();
+            existing.AccessToken = accessToken;
+            existing.ChannelType = channelType;
+            existing.SocialConnectionId = socialConnectionId;
+            existing.IsActive = true;
+            if (extraJson is not null)
+                existing.ExtraJson = extraJson;
+            existing.UpdatedAt = DateTime.UtcNow;
+            existing.UpdatedBy = actor;
+            await Context.SaveChangesAsync(ct);
+            return existing;
+        }
+
+        var entity = new SocialChannelModel
+        {
+            Platform = platform,
+            ChannelType = channelType,
+            PageName = pageName.Trim(),
+            ExternalPageId = normalizedId,
+            AccessToken = accessToken,
+            SocialConnectionId = socialConnectionId,
+            IsActive = true,
+            ExtraJson = extraJson
+        };
+
+        ApplyCreateAudit(entity);
+        entity.CreatedBy = actor;
+        if (entity.Id == Guid.Empty)
+            entity.Id = Guid.NewGuid();
+
+        DbSet.Add(entity);
+        await Context.SaveChangesAsync(ct);
+        return entity;
+    }
+
+    public async Task<List<SocialChannelModel>> GetOrphansAsync(CancellationToken ct = default)
+    {
+        return await QueryActive()
+            .Where(x => x.SocialConnectionId == null)
+            .OrderByDescending(x => x.CreatedAt)
+            .ToListAsync(ct);
+    }
+
     public static SocialChannelResponse ToResponse(SocialChannelModel e) => new()
     {
         Id = e.Id,
         Platform = e.Platform,
+        ChannelType = e.ChannelType,
         PageName = e.PageName,
         ExternalPageId = e.ExternalPageId,
+        SocialConnectionId = e.SocialConnectionId,
+        ExtraJson = e.ExtraJson,
         TokenExpiresAt = e.TokenExpiresAt,
         IsActive = e.IsActive,
         CreatedAt = e.CreatedAt

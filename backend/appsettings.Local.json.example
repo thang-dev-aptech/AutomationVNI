@@ -3,6 +3,8 @@
 # dotnet user-secrets set "Jwt:SecretKey" "your-local-jwt-secret-min-32-chars"
 # dotnet user-secrets set "AiProviders:Providers:9router:ApiKey" "YOUR_KEY"
 # dotnet user-secrets set "SocialPublish:UseRealFacebook" "true"
+# dotnet user-secrets set "MetaOAuth:AppId" "YOUR_META_APP_ID"
+# dotnet user-secrets set "MetaOAuth:AppSecret" "YOUR_META_APP_SECRET"
 #
 # See backend/README.md for full list.
 

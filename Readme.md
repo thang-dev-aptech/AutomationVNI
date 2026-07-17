@@ -167,6 +167,31 @@ Chuẩn bị SocialChannel:
 
 Endpoint force real: `POST /api/publishlog/{id}/process-real` (Admin/ContentManager).
 
+### Meta OAuth — Connect Facebook / Instagram
+
+Cấu hình app Meta (Facebook Login) và set secrets qua user-secrets:
+
+```bash
+dotnet user-secrets set "MetaOAuth:AppId" "YOUR_META_APP_ID"
+dotnet user-secrets set "MetaOAuth:AppSecret" "YOUR_META_APP_SECRET"
+```
+
+Redirect URI trong Meta Developer Console:
+
+`http://localhost:5068/api/meta/callback`
+
+Luồng UI: **Platforms → + Connect → Meta** → đăng nhập Meta → callback sync Pages/Instagram/Groups vào `SocialChannel` gắn `SocialConnection`.
+
+| Endpoint | Mô tả |
+|----------|--------|
+| `GET /api/meta/connect-url` | Trả OAuth URL (Admin/ContentManager) |
+| `GET /api/meta/callback` | Callback Meta (anonymous) → redirect FE |
+| `GET /api/socialconnection` | Danh sách tài khoản + kênh con |
+
+Scopes mặc định gồm `groups_access_member_info` (Groups sync best-effort; thiếu quyền thì bỏ qua, vẫn sync Pages).
+
+Production: set `MetaOAuth:RedirectUri`, `FrontendSuccessUri`, `FrontendErrorUri` cho domain thật.
+
 Chi tiết: [`backend/README.md`](backend/README.md).
 
 ### Scheduler

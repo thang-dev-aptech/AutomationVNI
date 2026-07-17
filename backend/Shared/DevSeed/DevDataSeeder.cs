@@ -113,6 +113,7 @@ public class DevDataSeeder(
         {
             Id = settings.DefaultSocialChannelId,
             Platform = SocialPlatform.Facebook,
+            ChannelType = SocialChannelType.Page,
             PageName = "VNI Dev Facebook Page",
             ExternalPageId = "dev_fb_page_001",
             AccessToken = DevAccessToken,

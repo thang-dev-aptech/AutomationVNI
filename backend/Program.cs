@@ -10,8 +10,10 @@ using Backend.Modules.PageContext;
 using Backend.Modules.Post;
 using Backend.Modules.PublishLog;
 using Backend.Modules.SocialChannel;
+using Backend.Modules.SocialConnection;
 using Backend.Shared;
 using Backend.Shared.Ai;
+using Backend.Shared.Meta;
 using Backend.Shared.SocialPublish;
 using Backend.Shared.DevSeed;
 using Backend.Shared.Middleware;
@@ -32,6 +34,7 @@ builder.Services.Configure<SchedulerOptions>(builder.Configuration.GetSection("S
 builder.Services.Configure<DevSeedOptions>(builder.Configuration.GetSection("DevSeed"));
 builder.Services.Configure<AiProvidersOptions>(builder.Configuration.GetSection("AiProviders"));
 builder.Services.Configure<SocialPublishOptions>(builder.Configuration.GetSection("SocialPublish"));
+builder.Services.Configure<MetaOAuthOptions>(builder.Configuration.GetSection("MetaOAuth"));
 
 var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()
     ?? throw new InvalidOperationException("Jwt configuration is required.");
@@ -88,6 +91,7 @@ builder.Services.AddScoped<IImageOverlayService, ImageOverlayService>();
 // Module repositories
 builder.Services.AddScoped<CategoryRepository>();
 builder.Services.AddScoped<SocialChannelRepository>();
+builder.Services.AddScoped<SocialConnectionRepository>();
 builder.Services.AddScoped<PageContextRepository>();
 builder.Services.AddScoped<PostRepository>();
 builder.Services.AddScoped<PostWorkflowService>();
@@ -109,6 +113,10 @@ builder.Services.AddHttpClient<FacebookPagePublishService>((sp, client) =>
     client.Timeout = TimeSpan.FromSeconds(Math.Max(5, fb.TimeoutSeconds));
 });
 builder.Services.AddScoped<ISocialPublishService, SocialPublishService>();
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient(nameof(MetaOAuthService));
+builder.Services.AddScoped<MetaPageSyncService>();
+builder.Services.AddScoped<IMetaOAuthService, MetaOAuthService>();
 
 builder.Services.Configure<ApiBehaviorOptions>(options =>
     options.SuppressModelStateInvalidFilter = false);
@@ -129,6 +137,12 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+using (var migrateScope = app.Services.CreateScope())
+{
+    var db = migrateScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await db.Database.MigrateAsync();
+}
 
 var devSeedOptions = app.Configuration.GetSection("DevSeed").Get<DevSeedOptions>();
 if (devSeedOptions?.Enabled == true && !app.Environment.IsDevelopment())

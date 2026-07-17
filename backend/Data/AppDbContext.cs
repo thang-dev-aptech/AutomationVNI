@@ -7,6 +7,7 @@ using Backend.Modules.PageContext;
 using Backend.Modules.Post;
 using Backend.Modules.PublishLog;
 using Backend.Modules.SocialChannel;
+using Backend.Modules.SocialConnection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -19,6 +20,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
 
     public DbSet<CategoryModel> Categories => Set<CategoryModel>();
     public DbSet<SocialChannelModel> SocialChannels => Set<SocialChannelModel>();
+    public DbSet<SocialConnectionModel> SocialConnections => Set<SocialConnectionModel>();
     public DbSet<PageContextModel> PageContexts => Set<PageContextModel>();
     public DbSet<PostModel> Posts => Set<PostModel>();
     public DbSet<MediaAssetModel> MediaAssets => Set<MediaAssetModel>();
@@ -48,12 +50,28 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.ToTable("SocialChannels");
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Platform);
+            e.HasIndex(x => x.ChannelType);
+            e.HasIndex(x => x.SocialConnectionId);
             e.HasIndex(x => x.IsActive);
             e.HasIndex(x => x.IsDeleted);
             e.Property(x => x.PageName).HasMaxLength(300);
             e.Property(x => x.ExternalPageId).HasMaxLength(200);
             e.Property(x => x.AccessToken).HasColumnType("TEXT");
             e.Property(x => x.RefreshToken).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<SocialConnectionModel>(e =>
+        {
+            e.ToTable("SocialConnections");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Provider);
+            e.HasIndex(x => new { x.Provider, x.ExternalUserId });
+            e.HasIndex(x => x.IsActive);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.ExternalUserId).HasMaxLength(200);
+            e.Property(x => x.DisplayName).HasMaxLength(300);
+            e.Property(x => x.AvatarUrl).HasMaxLength(1000);
+            e.Property(x => x.Scopes).HasColumnType("TEXT");
         });
 
         modelBuilder.Entity<PageContextModel>(e =>

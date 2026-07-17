@@ -171,6 +171,50 @@ Facebook `/photos` cần **HTTPS public URL**. Preview local (`localhost`) khôn
 
 Lỗi token/permission → `Post.Status = NeedFix`. Transient → `Failed` + retry.
 
+## Meta OAuth — Connect Facebook / Instagram / Groups
+
+Đồng bộ theo **tài khoản Meta** (`SocialConnection`): Pages, Instagram Business, Groups (best-effort) vào `SocialChannel`.
+
+### Cấu hình Meta Developer
+
+1. Tạo app Meta, bật **Facebook Login**
+2. Valid OAuth Redirect URI: `http://localhost:5068/api/meta/callback`
+3. Scopes mặc định: `public_profile`, `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `instagram_basic`, `groups_access_member_info`
+4. User test phải là Admin/Developer của app (Development mode)
+5. Groups API có thể fail nếu thiếu permission — sync Pages/IG vẫn thành công
+
+### Secrets (user-secrets — không commit)
+
+```bash
+dotnet user-secrets set "MetaOAuth:AppId" "YOUR_META_APP_ID"
+dotnet user-secrets set "MetaOAuth:AppSecret" "YOUR_META_APP_SECRET"
+```
+
+Production env:
+
+```bash
+export MetaOAuth__AppId="..."
+export MetaOAuth__AppSecret="..."
+export MetaOAuth__RedirectUri="https://api.yourdomain.com/api/meta/callback"
+export MetaOAuth__FrontendSuccessUri="https://app.yourdomain.com/platforms?metaConnected=success"
+export MetaOAuth__FrontendErrorUri="https://app.yourdomain.com/platforms?metaConnected=error"
+```
+
+### Endpoints
+
+| Endpoint | Auth | Mô tả |
+|----------|------|--------|
+| `GET /api/meta/connect-url` | Admin, ContentManager | Trả `{ url }` redirect Meta OAuth |
+| `GET /api/meta/callback` | Anonymous | `/me` + Pages + Groups → upsert connection/channels → redirect FE |
+| `GET /api/socialconnection` | Admin, ContentManager, Viewer | Tài khoản + kênh con (Page/IG/Group) |
+| `DELETE /api/socialconnection/{id}` | Admin, ContentManager | Soft disconnect account + tắt channels |
+
+Frontend: **+ Connect → Meta** trên `/platforms`. Re-sync = OAuth lại (làm mới token).
+
+Callback **không** ghi ApiLog. Upsert theo `Platform + ExternalPageId`, gắn `SocialConnectionId`.
+
+Publish Group: chưa hỗ trợ (sync/hiển thị trước).
+
 ## Smoke test
 
 ```bash
