@@ -12,7 +12,9 @@ namespace Backend.Modules.Ai;
 [Authorize(Roles = "Admin,ContentManager")]
 public class AiController(
     IAiTextGenerationService aiTextService,
-    IOptions<AiProvidersOptions> aiOptions) : ControllerBase
+    IOptions<AiProvidersOptions> aiOptions,
+    IAiImageGenerationService aiImageService,
+    IOptions<AiImageProvidersOptions> imageOptions) : ControllerBase
 {
     [HttpPost("test-text-generation")]
     public async Task<IActionResult> TestTextGeneration(
@@ -66,6 +68,58 @@ public class AiController(
         catch (AiTextGenerationException ex)
         {
             return BadRequest(ApiResponse.Fail("AI_GENERATION_ERROR", ex.Message));
+        }
+    }
+
+    [HttpPost("test-image-generation")]
+    public async Task<IActionResult> TestImageGeneration(
+        [FromBody] AiImageGenerationRequest request,
+        CancellationToken ct)
+    {
+        var provider = request.Provider ?? imageOptions.Value.DefaultProvider;
+
+        if (!aiImageService.IsAvailable(provider))
+        {
+            return Ok(ApiResponse.Ok(new
+            {
+                providerAvailable = false,
+                source = "mock",
+                provider,
+                message = $"Image provider '{provider}' has no ApiKey. " +
+                          $"Set via user-secrets: AiImageProviders:Providers:{provider}:ApiKey."
+            }, "Image provider unavailable — set ApiKey to test real generation"));
+        }
+
+        try
+        {
+            var result = await aiImageService.GenerateAsync(request, ct);
+            return Ok(ApiResponse.Ok(new
+            {
+                providerAvailable = true,
+                source = "ai",
+                provider = result.Provider,
+                model = result.Model,
+                mimeType = result.MimeType,
+                sizeBytes = result.ImageBytes.Length
+            }, "AI image generation succeeded"));
+        }
+        catch (AiProviderUnavailableException ex)
+        {
+            return Ok(ApiResponse.Ok(new
+            {
+                providerAvailable = false,
+                source = "mock",
+                provider,
+                message = ex.Message
+            }, "Image provider unavailable — mock fallback in pipeline"));
+        }
+        catch (AiProviderConfigException ex)
+        {
+            return BadRequest(ApiResponse.Fail("AI_CONFIG_ERROR", ex.Message));
+        }
+        catch (AiImageGenerationException ex)
+        {
+            return BadRequest(ApiResponse.Fail("AI_IMAGE_ERROR", ex.Message));
         }
     }
 }

@@ -14,15 +14,18 @@ public class PostController
     private readonly PostRepository _repo;
     private readonly PostWorkflowService _workflow;
     private readonly GenerationJob.GenerationJobPipelineService _generationPipeline;
+    private readonly PublishLog.IPublishPipelineService _publishPipeline;
 
     public PostController(
         PostRepository repository,
         PostWorkflowService workflow,
-        GenerationJob.GenerationJobPipelineService generationPipeline) : base(repository)
+        GenerationJob.GenerationJobPipelineService generationPipeline,
+        PublishLog.IPublishPipelineService publishPipeline) : base(repository)
     {
         _repo = repository;
         _workflow = workflow;
         _generationPipeline = generationPipeline;
+        _publishPipeline = publishPipeline;
     }
 
     protected override string EntityLabel => "bài viết";
@@ -79,6 +82,80 @@ public class PostController
 
         var result = await _generationPipeline.QueueImageRenderAsync(id, ct);
         return Ok(ApiResponse.Ok(result, "Đã queue job render overlay"));
+    }
+
+    // --- One-click: tạo bài + sinh text + sinh ảnh + set Approved (bỏ bước duyệt) ---
+
+    [HttpPost("create-and-generate")]
+    public async Task<IActionResult> CreateAndGenerate([FromBody] CreatePostRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Title))
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Ý tưởng không được để trống"));
+        if (request.SocialChannelId == Guid.Empty)
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Phải chọn kênh đăng"));
+
+        var post = await _repo.CreateAsync(request, ct);
+
+        try
+        {
+            await GenerateTextThenImageAsync(post.Id, ct);
+            await _workflow.ApproveAsync(post.Id, ct); // bỏ duyệt: xong là Approved, sẵn sàng đăng/lên lịch
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or KeyNotFoundException)
+        {
+            var partial = await _workflow.GetPostAsync(post.Id, ct);
+            return Ok(ApiResponse.Ok(ToResponse(partial!),
+                $"Đã tạo bài nhưng sinh nội dung chưa trọn vẹn: {ex.Message}. Có thể tạo lại ở màn preview."));
+        }
+
+        var final = await _workflow.GetPostAsync(post.Id, ct);
+        return Ok(ApiResponse.Ok(ToResponse(final!), "Đã tạo bài và sinh nội dung xong"));
+    }
+
+    [HttpPost("{id:guid}/regenerate-text")]
+    public async Task<IActionResult> RegenerateText(Guid id, CancellationToken ct)
+    {
+        var guard = await EnsureGenerationPermissionAsync(id, ct);
+        if (guard is not null) return guard;
+
+        var qt = await _generationPipeline.QueueTextGenerationAsync(id, ct);
+        await _generationPipeline.ProcessAsync(qt.JobId, ct);
+        await _workflow.ApproveAsync(id, ct);
+
+        var post = await _workflow.GetPostAsync(id, ct);
+        return Ok(ApiResponse.Ok(ToResponse(post!), "Đã tạo lại nội dung"));
+    }
+
+    [HttpPost("{id:guid}/regenerate-image")]
+    public async Task<IActionResult> RegenerateImage(Guid id, CancellationToken ct)
+    {
+        var guard = await EnsureGenerationPermissionAsync(id, ct);
+        if (guard is not null) return guard;
+
+        var qi = await _generationPipeline.QueueImageGenerationAsync(id, ct);
+        await _generationPipeline.ProcessAsync(qi.JobId, ct);
+        await _workflow.ApproveAsync(id, ct);
+
+        var post = await _workflow.GetPostAsync(id, ct);
+        return Ok(ApiResponse.Ok(ToResponse(post!), "Đã tạo lại ảnh"));
+    }
+
+    private async Task GenerateTextThenImageAsync(Guid postId, CancellationToken ct)
+    {
+        var textJob = await _generationPipeline.QueueTextGenerationAsync(postId, ct);
+        await _generationPipeline.ProcessAsync(textJob.JobId, ct);
+
+        var imageJob = await _generationPipeline.QueueImageGenerationAsync(postId, ct);
+        await _generationPipeline.ProcessAsync(imageJob.JobId, ct);
+    }
+
+    private async Task<IActionResult?> EnsureGenerationPermissionAsync(Guid id, CancellationToken ct)
+    {
+        var post = await _workflow.GetPostAsync(id, ct);
+        if (post is null) return NotFound(ApiResponse.Fail("NOT_FOUND", "Không tìm thấy bài viết"));
+        if (!_workflow.IsOwner(post) && !_workflow.IsInAnyRole("Admin", "ContentManager"))
+            return StatusCode(403, ApiResponse.Fail("FORBIDDEN", "Bạn không có quyền thực hiện thao tác này"));
+        return null;
     }
 
     [HttpGet("{id:guid}/generation-status")]
@@ -156,8 +233,22 @@ public class PostController
     [Authorize(Roles = "Admin,Reviewer,ContentManager")]
     public async Task<IActionResult> PublishNow(Guid id, CancellationToken ct)
     {
-        var result = await _workflow.PublishNowAsync(id, ct);
-        return Ok(ApiResponse.Ok(ToResponse(result), "Đã tạo job đăng bài"));
+        // publish-now = đăng NGAY: chuyển Publishing + tạo log Pending, rồi xử lý luôn (mock/real).
+        await _workflow.PublishNowAsync(id, ct);
+
+        try
+        {
+            var result = await _publishPipeline.ProcessPendingForPostAsync(id, ct);
+            var post = await _workflow.GetPostAsync(id, ct);
+            return Ok(ApiResponse.Ok(ToResponse(post!),
+                result is not null ? "Đã đăng bài thành công" : "Đã tạo job đăng bài"));
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            // Lỗi precondition/attempt → gỡ post khỏi Publishing để không bị kẹt.
+            await _publishPipeline.RevertStuckPublishingAsync(id, ct);
+            return BadRequest(ApiResponse.Fail("PUBLISH_FAILED", ex.Message));
+        }
     }
 
     [HttpGet("{id:guid}/timeline")]

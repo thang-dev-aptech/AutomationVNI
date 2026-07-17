@@ -5,6 +5,7 @@ public class AiTextGenerationRequest
     public string? Provider { get; set; }
     public string? Model { get; set; }
     public string? Title { get; set; }
+    public string? Objective { get; set; }
     public string? Category { get; set; }
     public string? Audience { get; set; }
     public string? Tone { get; set; }

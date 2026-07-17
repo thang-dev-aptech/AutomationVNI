@@ -19,11 +19,11 @@ public class MetaController(
     [Authorize(Roles = "Admin,ContentManager")]
     public IActionResult GetConnectUrl()
     {
-        if (!metaOAuth.IsConfigured())
+        var configIssue = metaOAuth.DescribeConfigIssue();
+        if (configIssue is not null)
         {
-            return BadRequest(ApiResponse.Fail(
-                "META_NOT_CONFIGURED",
-                "Meta OAuth chưa cấu hình đúng. Set MetaOAuth:AppId và MetaOAuth:AppSecret thật qua user-secrets (không dùng placeholder). RedirectUri phải khớp Meta App: http://localhost:5068/api/meta/callback"));
+            logger.LogWarning("Meta connect-url rejected: {Issue}", configIssue);
+            return BadRequest(ApiResponse.Fail("META_NOT_CONFIGURED", configIssue));
         }
 
         var userId = userContext.GetCurrentUserId()

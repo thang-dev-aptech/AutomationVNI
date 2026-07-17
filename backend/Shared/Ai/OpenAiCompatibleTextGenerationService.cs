@@ -139,6 +139,7 @@ public class OpenAiCompatibleTextGenerationService(
         var sb = new StringBuilder();
         sb.AppendLine("Generate social post content with the following context:");
         AppendLine(sb, "Title", request.Title);
+        AppendLine(sb, "Objective/Goal", request.Objective);
         AppendLine(sb, "Category", request.Category);
         AppendLine(sb, "Audience", request.Audience);
         AppendLine(sb, "Tone", request.Tone);

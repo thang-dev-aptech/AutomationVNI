@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { GENERATION_FLOW_OPTIONS } from '../constants/postStatus'
 
 const emptyForm = {
-  title: '',
+  idea: '',
+  objective: '',
   socialChannelId: '',
   categoryId: '',
   generationFlow: '1',
@@ -24,7 +25,8 @@ export default function PostCreateForm({
   const handleSubmit = (event) => {
     event.preventDefault()
     onSubmit({
-      title: form.title.trim(),
+      title: form.idea.trim(), // ý tưởng → tiêu đề + prompt AI
+      objective: form.objective.trim() || null,
       socialChannelId: form.socialChannelId,
       generationFlow: Number(form.generationFlow),
       categoryId: form.categoryId || null,
@@ -36,13 +38,24 @@ export default function PostCreateForm({
       {errorMessage && <div className="alert alert-error">{errorMessage}</div>}
 
       <div className="form-group">
-        <label htmlFor="post-title">Tiêu đề *</label>
-        <input
-          id="post-title"
-          value={form.title}
-          onChange={handleChange('title')}
+        <label htmlFor="post-idea">Ý tưởng bài viết *</label>
+        <textarea
+          id="post-idea"
+          value={form.idea}
+          onChange={handleChange('idea')}
           required
-          placeholder="Ví dụ: Khuyến mãi mùa hè 2026"
+          rows={3}
+          placeholder="Ví dụ: Khuyến mãi mùa hè, giảm 30% toàn bộ áo thun trong tuần này"
+        />
+      </div>
+
+      <div className="form-group">
+        <label htmlFor="post-objective">Mục tiêu (tuỳ chọn)</label>
+        <input
+          id="post-objective"
+          value={form.objective}
+          onChange={handleChange('objective')}
+          placeholder="Ví dụ: Tăng đơn hàng, thu hút khách mới đăng ký"
         />
       </div>
 
@@ -102,7 +115,7 @@ export default function PostCreateForm({
       </div>
 
       <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-        {isSubmitting ? 'Đang tạo...' : 'Tạo bài viết'}
+        {isSubmitting ? '⏳ AI đang sinh text + ảnh...' : 'Hoàn tất — để AI sinh bài'}
       </button>
     </form>
   )

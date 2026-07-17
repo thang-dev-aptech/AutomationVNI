@@ -16,6 +16,7 @@ public class MetaPageSyncService(
         IEnumerable<MetaPageAccountDto> pages,
         IEnumerable<MetaGroupDto> groups,
         string? scopes,
+        DateTime? userTokenExpiresAt,
         string? auditUser,
         CancellationToken ct = default)
     {
@@ -37,12 +38,14 @@ public class MetaPageSyncService(
             if (string.IsNullOrWhiteSpace(page.Id) || string.IsNullOrWhiteSpace(page.AccessToken))
                 continue;
 
+            // Page tokens derived from a long-lived user token do not expire → TokenExpiresAt = null.
             await socialChannelRepository.UpsertFromMetaAsync(
                 SocialPlatform.Facebook,
                 SocialChannelType.Page,
                 page.Id,
                 page.Name,
                 page.AccessToken,
+                tokenExpiresAt: null,
                 connection.Id,
                 extraJson: null,
                 auditUser,
@@ -65,12 +68,14 @@ public class MetaPageSyncService(
                 profileName = ig.Name
             }, JsonOptions);
 
+            // Instagram publishing uses the linked Page token → also non-expiring.
             await socialChannelRepository.UpsertFromMetaAsync(
                 SocialPlatform.Instagram,
                 SocialChannelType.Instagram,
                 ig.Id,
                 igName,
                 page.AccessToken,
+                tokenExpiresAt: null,
                 connection.Id,
                 extraJson,
                 auditUser,
@@ -89,13 +94,14 @@ public class MetaPageSyncService(
                 administrator = group.Administrator
             }, JsonOptions);
 
-            // Groups often use user token; store user token for later publish experiments.
+            // Groups use the user token → expires with the (long-lived) user token.
             await socialChannelRepository.UpsertFromMetaAsync(
                 SocialPlatform.Facebook,
                 SocialChannelType.Group,
                 group.Id,
                 group.Name,
                 group.AccessToken ?? string.Empty,
+                tokenExpiresAt: userTokenExpiresAt,
                 connection.Id,
                 extraJson,
                 auditUser,

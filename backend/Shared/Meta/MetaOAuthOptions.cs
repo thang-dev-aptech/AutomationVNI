@@ -9,12 +9,8 @@ public class MetaOAuthOptions
     public string RedirectUri { get; set; } = string.Empty;
     public string FrontendSuccessUri { get; set; } = "http://localhost:5173/platforms?metaConnected=success";
     public string FrontendErrorUri { get; set; } = "http://localhost:5173/platforms?metaConnected=error";
-    public List<string> Scopes { get; set; } =
-    [
-        // Minimal Pages sync first — add IG/Groups scopes after Connect works.
-        "public_profile",
-        "pages_show_list",
-        "pages_read_engagement",
-        "pages_manage_posts"
-    ];
+    // Empty default on purpose: scopes come SOLELY from config (appsettings MetaOAuth:Scopes).
+    // A non-empty default is MERGED (not replaced) by the .NET config binder, which would
+    // silently re-add any scope removed from appsettings.
+    public List<string> Scopes { get; set; } = [];
 }

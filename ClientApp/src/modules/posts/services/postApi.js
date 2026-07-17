@@ -15,6 +15,14 @@ export const postApi = {
   cancelSchedule: (id) => axiosInstance.post(`/api/Post/${id}/cancel-schedule`),
   publishNow: (id) => axiosInstance.post(`/api/Post/${id}/publish-now`),
 
+  queueTextGeneration: (id) => axiosInstance.post(`/api/Post/${id}/queue-text-generation`),
+  queueImageGeneration: (id) => axiosInstance.post(`/api/Post/${id}/queue-image-generation`),
+  queueImageRender: (id) => axiosInstance.post(`/api/Post/${id}/queue-image-render`),
+
+  createAndGenerate: (payload) => axiosInstance.post('/api/Post/create-and-generate', payload),
+  regenerateText: (id) => axiosInstance.post(`/api/Post/${id}/regenerate-text`),
+  regenerateImage: (id) => axiosInstance.post(`/api/Post/${id}/regenerate-image`),
+
   getGenerationStatus: (id) => axiosInstance.get(`/api/Post/${id}/generation-status`),
   getTimeline: (id) => axiosInstance.get(`/api/Post/${id}/timeline`),
 }

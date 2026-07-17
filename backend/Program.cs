@@ -106,6 +106,8 @@ builder.Services.AddScoped<MediaEmbeddingRepository>();
 builder.Services.AddScoped<ApiLogRepository>();
 builder.Services.AddScoped<IDevDataSeeder, DevDataSeeder>();
 builder.Services.AddHttpClient<IAiTextGenerationService, OpenAiCompatibleTextGenerationService>();
+builder.Services.Configure<AiImageProvidersOptions>(builder.Configuration.GetSection("AiImageProviders"));
+builder.Services.AddHttpClient<IAiImageGenerationService, GeminiImageGenerationService>();
 builder.Services.AddSingleton<MockSocialPublishService>();
 builder.Services.AddHttpClient<FacebookPagePublishService>((sp, client) =>
 {

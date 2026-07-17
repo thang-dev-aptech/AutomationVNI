@@ -10,6 +10,10 @@ export const POST_STATUS = {
   9: { label: 'Đã hủy', tone: 'neutral' },
   10: { label: 'Chờ duyệt', tone: 'warning' },
   11: { label: 'Đã duyệt', tone: 'success' },
+  12: { label: 'Đang sinh ảnh', tone: 'info' },
+  13: { label: 'Thiếu media', tone: 'warning' },
+  14: { label: 'Đang render', tone: 'info' },
+  15: { label: 'Cần sửa', tone: 'warning' },
 }
 
 export const GENERATION_FLOW = {
@@ -64,5 +68,21 @@ export function getAvailableWorkflowActions(status) {
     publishNow: status === 11 || status === 5,
     canDelete: status !== 6 && status !== 7,
     canEditContent: status !== 6 && status !== 7,
+  }
+}
+
+/** Nút sinh nội dung AI khả dụng theo PostStatus + đã có content chưa (khớp precondition backend). */
+export function getAvailableGenerationActions(status, hasContent) {
+  const s = Number(status)
+  return {
+    // Draft / Queued / Failed
+    genText: [1, 2, 8].includes(s),
+    // WaitingReview / NeedMedia / Failed — cần có content trước
+    genImage: [10, 13, 8].includes(s) && Boolean(hasContent),
+    // WaitingReview / NeedFix / Failed — cần có content + đã có media cover
+    renderOverlay: [10, 15, 8].includes(s) && Boolean(hasContent),
+    // Preview (Approved / Scheduled) — tạo lại nội dung/ảnh
+    regenText: [11, 5].includes(s) && Boolean(hasContent),
+    regenImage: [11, 5].includes(s) && Boolean(hasContent),
   }
 }

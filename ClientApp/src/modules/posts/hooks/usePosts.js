@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { unwrapApiData } from '@/shared/utils/apiHelpers'
+import { generationJobApi } from '@/modules/jobs/services/generationJobApi'
 import { postApi, postQueryKeys } from '../services/postApi'
 
 function invalidatePostQueries(queryClient, id) {
@@ -27,7 +28,7 @@ export function usePostDetail(id) {
 }
 
 export function usePostGenerationStatus(id, postStatus) {
-  const shouldPoll = postStatus === 2 || postStatus === 3
+  const shouldPoll = [2, 3, 12, 14].includes(Number(postStatus))
 
   return useQuery({
     queryKey: postQueryKeys.generationStatus(id),
@@ -108,5 +109,72 @@ export function useCancelSchedulePost() {
 }
 
 export function usePublishNowPost() {
-  return useWorkflowMutation(async (id) => unwrapApiData(await postApi.publishNow(id)))
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id) => unwrapApiData(await postApi.publishNow(id)),
+    // onSettled: refresh dù publish thành công hay lỗi (post đã đổi status ở server).
+    onSettled: (_data, _error, id) => invalidatePostQueries(queryClient, id),
+  })
+}
+
+/**
+ * Sinh nội dung 1-click: queue job rồi process ngay (backend không có worker tự động).
+ * Trả về kết quả queue; process chạy đồng bộ nên khi resolve là job đã xong.
+ */
+function useGenerationStep(queueFn) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (postId) => {
+      const queued = unwrapApiData(await queueFn(postId))
+      if (queued?.jobId) {
+        await generationJobApi.process(queued.jobId)
+      }
+      return queued
+    },
+    onSuccess: (_, postId) => {
+      invalidatePostQueries(queryClient, postId)
+      queryClient.invalidateQueries({ queryKey: ['generation-jobs'] })
+    },
+  })
+}
+
+export function useGenerateText() {
+  return useGenerationStep((id) => postApi.queueTextGeneration(id))
+}
+
+export function useGenerateImage() {
+  return useGenerationStep((id) => postApi.queueImageGeneration(id))
+}
+
+export function useRenderOverlay() {
+  return useGenerationStep((id) => postApi.queueImageRender(id))
+}
+
+/** One-click: tạo bài + sinh text + sinh ảnh + set Approved (bỏ duyệt). Trả post đã có content + media. */
+export function useCreateAndGeneratePost() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload) => unwrapApiData(await postApi.createAndGenerate(payload)),
+    onSuccess: () => invalidatePostQueries(queryClient),
+  })
+}
+
+/** Regenerate ở màn preview: gọi endpoint trả về post (đã process + set lại Approved). */
+function useRegenerate(apiFn) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id) => unwrapApiData(await apiFn(id)),
+    onSettled: (_data, _error, id) => {
+      invalidatePostQueries(queryClient, id)
+      queryClient.invalidateQueries({ queryKey: ['generation-jobs'] })
+    },
+  })
+}
+
+export function useRegenerateText() {
+  return useRegenerate((id) => postApi.regenerateText(id))
+}
+
+export function useRegenerateImage() {
+  return useRegenerate((id) => postApi.regenerateImage(id))
 }

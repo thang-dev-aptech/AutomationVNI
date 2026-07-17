@@ -96,6 +96,7 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
         string externalPageId,
         string pageName,
         string accessToken,
+        DateTime? tokenExpiresAt,
         Guid socialConnectionId,
         string? extraJson,
         string? auditUser,
@@ -115,6 +116,7 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
         {
             existing.PageName = pageName.Trim();
             existing.AccessToken = accessToken;
+            existing.TokenExpiresAt = tokenExpiresAt;
             existing.ChannelType = channelType;
             existing.SocialConnectionId = socialConnectionId;
             existing.IsActive = true;
@@ -133,6 +135,7 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
             PageName = pageName.Trim(),
             ExternalPageId = normalizedId,
             AccessToken = accessToken,
+            TokenExpiresAt = tokenExpiresAt,
             SocialConnectionId = socialConnectionId,
             IsActive = true,
             ExtraJson = extraJson

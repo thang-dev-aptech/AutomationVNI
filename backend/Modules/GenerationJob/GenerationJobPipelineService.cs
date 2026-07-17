@@ -24,6 +24,7 @@ public class GenerationJobPipelineService(
     IFileStorageService fileStorageService,
     IImageOverlayService imageOverlayService,
     IAiTextGenerationService aiTextGenerationService,
+    IAiImageGenerationService aiImageGenerationService,
     IUserContext userContext,
     ILogger<GenerationJobPipelineService> logger)
 {
@@ -33,10 +34,10 @@ public class GenerationJobPipelineService(
         WriteIndented = false
     };
     private static readonly PostStatus[] QueueTextAllowedStatuses =
-        [PostStatus.Draft, PostStatus.Queued, PostStatus.Failed];
+        [PostStatus.Draft, PostStatus.Queued, PostStatus.Failed, PostStatus.WaitingReview, PostStatus.Approved];
 
     private static readonly PostStatus[] QueueImageAllowedStatuses =
-        [PostStatus.WaitingReview, PostStatus.NeedMedia, PostStatus.Failed];
+        [PostStatus.WaitingReview, PostStatus.NeedMedia, PostStatus.Failed, PostStatus.Approved];
 
     private static readonly PostStatus[] QueueRenderAllowedStatuses =
         [PostStatus.WaitingReview, PostStatus.NeedFix, PostStatus.Failed];
@@ -401,12 +402,30 @@ public class GenerationJobPipelineService(
         return new AiTextGenerationRequest
         {
             Title = post.Title,
+            Objective = ExtractObjective(post.ExtraJson),
             Category = categoryName,
             BrandContext = pageContext?.BrandName,
             Tone = pageContext?.ToneOfVoice,
             CtaText = pageContext?.CtaText,
             Hashtags = pageContext?.DefaultHashtags
         };
+    }
+
+    private static string? ExtractObjective(string? extraJson)
+    {
+        if (string.IsNullOrWhiteSpace(extraJson)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(extraJson);
+            if (doc.RootElement.TryGetProperty("input", out var input)
+                && input.TryGetProperty("objective", out var obj))
+                return obj.GetString();
+        }
+        catch (JsonException)
+        {
+            // ExtraJson không phải JSON hợp lệ — bỏ qua.
+        }
+        return null;
     }
 
     private static TextGenerationJobOutput MapAiResult(
@@ -477,44 +496,48 @@ public class GenerationJobPipelineService(
         ApplyPostUpdate(post);
         await context.SaveChangesAsync(ct);
 
-        await Task.Delay(150, ct);
-
         var imagePrompt = await ResolveImagePromptAsync(post.Id, ct);
-        var mockResult = MockImageGenerator.Generate(post, imagePrompt);
+        var image = await GenerateImageAssetAsync(post, imagePrompt, ct);
 
         var saveResult = await fileStorageService.SaveBytesAsync(
-            MockImageGenerator.GetPlaceholderPngBytes(),
+            image.Bytes,
             "ai-generated",
-            ".png",
-            mockResult.MimeType,
+            image.Extension,
+            image.MimeType,
             ct);
 
         var mediaAsset = await mediaAssetRepository.CreateAsync(new CreateMediaAssetRequest
         {
             FileName = saveResult.StorageKey.Split('/').Last(),
-            OriginalFileName = mockResult.OriginalFileName,
+            OriginalFileName = image.OriginalFileName,
             StoragePath = saveResult.StorageKey,
             MimeType = saveResult.ContentType,
             FileSize = saveResult.SizeBytes,
-            Source = mockResult.Source,
-            AltText = mockResult.AltText,
-            Description = mockResult.Description,
-            Width = mockResult.Width,
-            Height = mockResult.Height
+            Source = image.Source,
+            AltText = image.AltText,
+            Description = image.Description,
+            Width = image.Width,
+            Height = image.Height,
+            Tags = image.Tags
         }, ct);
 
         await mediaAssetRepository.SetPreviewUrlAsync(mediaAsset, ct);
         var previewUrl = MediaAssetUrls.Preview(mediaAsset.Id);
 
-        var postMedia = await postMediaRepository.CreateAsync(new CreatePostMediaRequest
-        {
-            PostId = post.Id,
-            MediaId = mediaAsset.Id,
-            MediaRole = MediaRole.Cover,
-            SortOrder = 0
-        }, ct);
+        // Replace (không cộng dồn) — "tạo lại ảnh" thay cover cũ thay vì thêm cover mới.
+        var postMedia = await postMediaRepository.ReplaceCoverAsync(post.Id, mediaAsset.Id, ct);
 
-        var outputJson = MockImageGenerator.ToJson(mockResult, mediaAsset.Id, postMedia.Id, previewUrl);
+        var outputJson = JsonSerializer.Serialize(new
+        {
+            mediaAssetId = mediaAsset.Id,
+            postMediaId = postMedia.Id,
+            previewUrl,
+            prompt = image.Prompt,
+            source = image.GenSource,
+            provider = image.Provider,
+            model = image.Model,
+            mimeType = mediaAsset.MimeType
+        }, JsonOptions);
 
         job.Status = JobStatus.Completed;
         job.CompletedAt = DateTime.UtcNow;
@@ -799,6 +822,101 @@ public class GenerationJobPipelineService(
     {
         job.UpdatedAt = DateTime.UtcNow;
         job.UpdatedBy = userContext.GetCurrentUserName();
+    }
+
+    // --- image generation (real AI with mock fallback) ---
+
+    private async Task<GeneratedImageAsset> GenerateImageAssetAsync(
+        PostModel post, string? imagePrompt, CancellationToken ct)
+    {
+        var prompt = string.IsNullOrWhiteSpace(imagePrompt)
+            ? $"Professional social media visual for '{post.Title.Trim()}', modern clean style, no text"
+            : imagePrompt.Trim();
+
+        if (aiImageGenerationService.IsAvailable())
+        {
+            try
+            {
+                var ai = await aiImageGenerationService.GenerateAsync(
+                    new AiImageGenerationRequest { Prompt = prompt }, ct);
+
+                logger.LogInformation(
+                    "AI image generation succeeded for post {PostId} via {Provider}/{Model} ({Bytes} bytes)",
+                    post.Id, ai.Provider, ai.Model, ai.ImageBytes.Length);
+
+                var ext = ExtensionForMime(ai.MimeType);
+                return new GeneratedImageAsset
+                {
+                    Bytes = ai.ImageBytes,
+                    MimeType = ai.MimeType,
+                    Extension = ext,
+                    Source = MediaSource.AIGenerated,
+                    AltText = $"AI image for {post.Title.Trim()}",
+                    Description = prompt,
+                    OriginalFileName = $"ai-{SanitizeFileName(post.Title)}{ext}",
+                    Prompt = prompt,
+                    GenSource = "ai",
+                    Provider = ai.Provider,
+                    Model = ai.Model,
+                    Tags = $"{{\"imageGen\":\"{EscapeJson(ai.Provider)}\",\"model\":\"{EscapeJson(ai.Model)}\"}}"
+                };
+            }
+            catch (AiProviderUnavailableException ex)
+            {
+                logger.LogInformation(
+                    "AI image unavailable for post {PostId}: {Message}. Using mock placeholder.", post.Id, ex.Message);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex,
+                    "AI image generation failed for post {PostId}. Using mock placeholder.", post.Id);
+            }
+        }
+
+        var mock = MockImageGenerator.Generate(post, prompt);
+        return new GeneratedImageAsset
+        {
+            Bytes = MockImageGenerator.GetPlaceholderPngBytes(),
+            MimeType = mock.MimeType,
+            Extension = ".png",
+            Source = mock.Source,
+            AltText = mock.AltText,
+            Description = mock.Description,
+            OriginalFileName = mock.OriginalFileName,
+            Width = mock.Width,
+            Height = mock.Height,
+            Prompt = mock.Prompt,
+            GenSource = "mock",
+            Provider = "mock",
+            Model = "mock",
+            Tags = "{\"imageGen\":\"mock\"}"
+        };
+    }
+
+    private static string ExtensionForMime(string? mimeType) => mimeType?.ToLowerInvariant() switch
+    {
+        "image/jpeg" or "image/jpg" => ".jpg",
+        "image/webp" => ".webp",
+        "image/gif" => ".gif",
+        _ => ".png"
+    };
+
+    private sealed class GeneratedImageAsset
+    {
+        public byte[] Bytes { get; init; } = [];
+        public string MimeType { get; init; } = "image/png";
+        public string Extension { get; init; } = ".png";
+        public MediaSource Source { get; init; }
+        public string AltText { get; init; } = string.Empty;
+        public string Description { get; init; } = string.Empty;
+        public string OriginalFileName { get; init; } = string.Empty;
+        public int? Width { get; init; }
+        public int? Height { get; init; }
+        public string Prompt { get; init; } = string.Empty;
+        public string GenSource { get; init; } = "mock";
+        public string Provider { get; init; } = string.Empty;
+        public string Model { get; init; } = string.Empty;
+        public string Tags { get; init; } = string.Empty;
     }
 
     private sealed class MediaJobOutputInfo

@@ -7,6 +7,7 @@ import ErrorState from '@/shared/components/ErrorState'
 import { formatDateTime, getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
+import PostGenerationActions from '../components/PostGenerationActions'
 import PostGenerationStatus from '../components/PostGenerationStatus'
 import PostMediaPanel from '@/modules/media/components/PostMediaPanel'
 import PostStatusBadge from '../components/PostStatusBadge'
@@ -94,6 +95,8 @@ export default function PostDetailPage() {
       </div>
 
       <PostWorkflowActions post={post} onDeleted={() => navigate('/posts')} />
+
+      <PostGenerationActions post={post} />
 
       <PostGenerationStatus postId={post.id} postStatus={post.status} />
 

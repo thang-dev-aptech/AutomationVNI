@@ -63,6 +63,10 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
             Status = PostStatus.Draft
         };
 
+        if (!string.IsNullOrWhiteSpace(request.Objective))
+            entity.ExtraJson = System.Text.Json.JsonSerializer.Serialize(
+                new { input = new { objective = request.Objective.Trim() } });
+
         return await base.CreateAsync(entity, cancellationToken);
     }
 

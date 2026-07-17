@@ -10,6 +10,8 @@ public class CreatePostRequest
     public Guid SocialChannelId { get; set; }
     public Guid? CategoryId { get; set; }
     public GenerationFlow GenerationFlow { get; set; } = GenerationFlow.FullAI;
+    /// <summary>Mục tiêu bài viết (idea/goal) — lưu ExtraJson, đưa vào prompt AI khi sinh text.</summary>
+    public string? Objective { get; set; }
 }
 
 public class UpdatePostRequest

@@ -36,6 +36,42 @@ public class PublishPipelineService(
     public Task<ProcessPublishLogResponse> ProcessRealAsync(Guid publishLogId, CancellationToken ct = default)
         => ExecutePublishAsync(publishLogId, forceReal: true, ct);
 
+    /// <summary>
+    /// Đăng ngay: tìm publish log Pending của post rồi xử lý (mock/real theo config) → Published.
+    /// Trả null nếu không có log Pending. Ném nếu publish thất bại (post/log đã được đánh dấu bên trong).
+    /// </summary>
+    public async Task<ProcessPublishLogResponse?> ProcessPendingForPostAsync(
+        Guid postId, CancellationToken ct = default)
+    {
+        var log = await publishLogRepository.GetActiveAsync(postId, ct);
+        if (log is null || log.Status != PublishStatus.Pending)
+            return null;
+        return await ProcessAsync(log.Id, ct);
+    }
+
+    /// <summary>
+    /// Gỡ kẹt: nếu publish-now lỗi precondition (thiếu media…) khiến post kẹt ở Publishing,
+    /// hủy log Pending/Processing và đưa post về Approved/Scheduled.
+    /// </summary>
+    public async Task RevertStuckPublishingAsync(Guid postId, CancellationToken ct = default)
+    {
+        var post = await postRepository.GetByIdAsync(postId, ct);
+        if (post is null || post.Status != PostStatus.Publishing)
+            return;
+
+        var log = await publishLogRepository.GetActiveAsync(postId, ct);
+        if (log is not null && log.Status is PublishStatus.Pending or PublishStatus.Processing)
+        {
+            log.Status = PublishStatus.Cancelled;
+            ApplyLogUpdate(log);
+        }
+
+        post.Status = post.ScheduledPublishAt.HasValue ? PostStatus.Scheduled : PostStatus.Approved;
+        ApplyPostUpdate(post);
+        await CancelPublishJobAsync(postId, ct);
+        await context.SaveChangesAsync(ct);
+    }
+
     private async Task<ProcessPublishLogResponse> ExecutePublishAsync(
         Guid publishLogId, bool forceReal, CancellationToken ct)
     {

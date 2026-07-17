@@ -5,14 +5,15 @@ import LoadingState from '@/shared/components/LoadingState'
 import ErrorState from '@/shared/components/ErrorState'
 import EmptyState from '@/shared/components/EmptyState'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
+import { toast } from '@/shared/stores/toastStore'
 import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import PostCreateForm from '../components/PostCreateForm'
-import { useCreatePost } from '../hooks/usePosts'
+import { useCreateAndGeneratePost } from '../hooks/usePosts'
 
 export default function PostCreatePage() {
   const navigate = useNavigate()
-  const createMutation = useCreatePost()
+  const createMutation = useCreateAndGeneratePost()
   const { data: categoryData, isLoading: categoriesLoading } = useCategoryList({
     index: 1,
     size: 100,
@@ -33,6 +34,7 @@ export default function PostCreatePage() {
     setErrorMessage('')
     try {
       const created = await createMutation.mutateAsync(payload)
+      toast.success('AI đã sinh xong nội dung — kiểm tra bản preview')
       navigate(created?.id ? `/posts/${created.id}` : '/posts')
     } catch (error) {
       setErrorMessage(getErrorMessage(error))
@@ -43,7 +45,7 @@ export default function PostCreatePage() {
     <section>
       <PageHeader
         title="Tạo bài viết"
-        description="Nhập input để hệ thống sinh nội dung và media tự động"
+        description="Nhập ý tưởng + mục tiêu → AI tự sinh text & ảnh, rồi mở bản preview để bạn xem / tạo lại / đăng"
         actions={(
           <Link to="/posts" className="btn btn-secondary">
             Quay lại
