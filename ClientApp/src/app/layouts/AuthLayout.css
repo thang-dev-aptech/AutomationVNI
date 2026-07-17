@@ -1,0 +1,26 @@
+.auth-layout {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 50%, #eef2ff 100%);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+}
+
+.auth-card-body {
+  padding: 32px;
+}
+
+.auth-title {
+  margin: 0 0 8px;
+  font-size: 1.5rem;
+}
+
+.auth-subtitle {
+  margin: 0 0 24px;
+  color: var(--color-text-muted);
+}

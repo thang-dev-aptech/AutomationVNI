@@ -1,0 +1,29 @@
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.page-header-title {
+  margin: 0;
+  font-size: 1.75rem;
+}
+
+.page-header-description {
+  margin: 6px 0 0;
+  color: var(--color-text-muted);
+}
+
+.page-header-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 700px) {
+  .page-header {
+    flex-direction: column;
+  }
+}

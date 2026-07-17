@@ -1,0 +1,52 @@
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# Env & secrets (never commit)
+.env
+.env.*
+!.env.example
+**/appsettings.Local.json
+**/appsettings.*.local.json
+**/secrets.json
+
+# Logs
+*.log
+logs/
+
+# Dependencies & build
+**/node_modules/
+**/bin/
+**/obj/
+**/dist/
+**/dist-ssr/
+*.user
+*.suo
+
+# .NET
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Backend runtime data
+backend/Data/*.db
+backend/Data/*.db-shm
+backend/Data/*.db-wal
+backend/Storage/Files/
+
+# FE build output served by backend (rebuild via: cd ClientApp && npm run build)
+backend/wwwroot/dist/
+
+# Test / tooling
+coverage/
+*.coverage
+.nyc_output/
+
+# Cursor / local agent (optional — uncomment if you don't want agent transcripts in repo)
+# .cursor/

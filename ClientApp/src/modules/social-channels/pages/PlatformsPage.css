@@ -1,0 +1,26 @@
+.platforms-page .platform-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.platforms-filter {
+  margin-bottom: 16px;
+}
+
+.platforms-filter-hint {
+  margin: 12px 0 0;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.platforms-table {
+  overflow-x: auto;
+}
+
+.table-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

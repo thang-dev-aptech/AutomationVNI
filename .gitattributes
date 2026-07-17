@@ -1,0 +1,19 @@
+# Git attributes — VNI Automation
+
+* text=auto eol=lf
+
+# Shell scripts executable on checkout (optional)
+*.sh text eol=lf
+
+# Binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.db binary
+
+# C# / JSON / Markdown
+*.cs diff=csharp
+*.json linguist-generated=false

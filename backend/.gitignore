@@ -1,0 +1,16 @@
+Data/*.db
+Data/*.db-shm
+Data/*.db-wal
+Storage/Files/
+wwwroot/dist/
+bin/
+obj/
+
+# Local secret overrides (use dotnet user-secrets or env vars)
+appsettings.Local.json
+appsettings.*.local.json
+secrets.json
+
+# IDE
+.vs/
+*.user

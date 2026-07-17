@@ -1,0 +1,23 @@
+# Local overrides — copy to appsettings.Local.json (gitignored) or use dotnet user-secrets
+#
+# dotnet user-secrets set "Jwt:SecretKey" "your-local-jwt-secret-min-32-chars"
+# dotnet user-secrets set "AiProviders:Providers:9router:ApiKey" "YOUR_KEY"
+# dotnet user-secrets set "SocialPublish:UseRealFacebook" "true"
+#
+# See backend/README.md for full list.
+
+{
+  "Jwt": {
+    "SecretKey": "DEV_ONLY_CHANGE_ME_MIN_32_CHARS"
+  },
+  "AiProviders": {
+    "Providers": {
+      "9router": {
+        "ApiKey": ""
+      },
+      "openai": {
+        "ApiKey": ""
+      }
+    }
+  }
+}

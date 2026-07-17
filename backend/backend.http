@@ -1,0 +1,165 @@
+@backend_HostAddress = http://localhost:5068
+@defaultSocialChannelId = 00000000-0000-0000-0000-000000000001
+@defaultPageContextId = 00000000-0000-0000-0000-000000000002
+@defaultCategoryId = 00000000-0000-0000-0000-000000000003
+@accessToken = {{login.response.body.data.accessToken}}
+@postId = {{createPost.response.body.data.id}}
+@textJobId = {{queueText.response.body.data.jobId}}
+@imageJobId = {{queueImage.response.body.data.jobId}}
+@renderJobId = {{queueRender.response.body.data.jobId}}
+@mediaId = {{listPostMedia.response.body.data[0].mediaId}}
+@publishLogId = {{publishLogs.response.body.data[0].id}}
+
+### Login (dev seed admin)
+# @name login
+POST {{backend_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@vni.local",
+  "password": "Admin@123"
+}
+
+### Verify dev seed — SocialChannel
+GET {{backend_HostAddress}}/api/socialchannel/{{defaultSocialChannelId}}
+Authorization: Bearer {{accessToken}}
+
+### Verify dev seed — PageContext
+GET {{backend_HostAddress}}/api/pagecontext/{{defaultPageContextId}}
+Authorization: Bearer {{accessToken}}
+
+### Verify dev seed — Category
+GET {{backend_HostAddress}}/api/category/{{defaultCategoryId}}
+Authorization: Bearer {{accessToken}}
+
+### 1. Create post (default seed channel)
+# @name createPost
+POST {{backend_HostAddress}}/api/post
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "title": "Bài viết mock E2E dev seed",
+  "socialChannelId": "{{defaultSocialChannelId}}",
+  "categoryId": "{{defaultCategoryId}}",
+  "generationFlow": 1
+}
+
+### 2. Queue text generation
+# @name queueText
+POST {{backend_HostAddress}}/api/post/{{postId}}/queue-text-generation
+Authorization: Bearer {{accessToken}}
+
+### 3. Process text job (mock)
+POST {{backend_HostAddress}}/api/generationjob/{{textJobId}}/process
+Authorization: Bearer {{accessToken}}
+
+### 4. Queue image generation
+# @name queueImage
+POST {{backend_HostAddress}}/api/post/{{postId}}/queue-image-generation
+Authorization: Bearer {{accessToken}}
+
+### 5. Process image job (mock)
+POST {{backend_HostAddress}}/api/generationjob/{{imageJobId}}/process
+Authorization: Bearer {{accessToken}}
+
+### 6. Queue image render (overlay)
+# @name queueRender
+POST {{backend_HostAddress}}/api/post/{{postId}}/queue-image-render
+Authorization: Bearer {{accessToken}}
+
+### 7. Process image render job
+POST {{backend_HostAddress}}/api/generationjob/{{renderJobId}}/process
+Authorization: Bearer {{accessToken}}
+
+### Generation status
+GET {{backend_HostAddress}}/api/post/{{postId}}/generation-status
+Authorization: Bearer {{accessToken}}
+
+### List post media (for preview mediaId)
+# @name listPostMedia
+GET {{backend_HostAddress}}/api/postmedia/by-post/{{postId}}
+Authorization: Bearer {{accessToken}}
+
+### 8. Submit review (chỉ khi post status Draft/Ready — bỏ qua nếu đã WaitingReview sau generation)
+POST {{backend_HostAddress}}/api/post/{{postId}}/submit-review
+Authorization: Bearer {{accessToken}}
+
+### 9. Approve
+POST {{backend_HostAddress}}/api/post/{{postId}}/approve
+Authorization: Bearer {{accessToken}}
+
+### 10a. Schedule (scheduledAt phải > UtcNow — cập nhật ISO UTC trước khi chạy)
+# Ví dụ: 2026-07-17T10:00:00Z
+POST {{backend_HostAddress}}/api/post/{{postId}}/schedule
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "scheduledAt": "2026-07-17T10:00:00Z",
+  "timezone": "UTC"
+}
+
+### 10b. Hoặc publish now
+# @name publishNow
+POST {{backend_HostAddress}}/api/post/{{postId}}/publish-now
+Authorization: Bearer {{accessToken}}
+
+### 11. Process due scheduled posts (manual trigger — sau khi scheduledAt đã qua)
+POST {{backend_HostAddress}}/api/publishlog/process-due
+Authorization: Bearer {{accessToken}}
+
+### Get publish logs by post
+# @name publishLogs
+GET {{backend_HostAddress}}/api/publishlog/by-post/{{postId}}
+Authorization: Bearer {{accessToken}}
+
+### Process publish log (mock) — nếu dùng publish-now thay vì process-due
+POST {{backend_HostAddress}}/api/publishlog/{{publishLogId}}/process
+Authorization: Bearer {{accessToken}}
+
+### 12. Verify post Published (status=7)
+GET {{backend_HostAddress}}/api/post/{{postId}}
+Authorization: Bearer {{accessToken}}
+
+### 13. Verify media preview HTTP 200 (anonymous)
+GET {{backend_HostAddress}}/api/mediaasset/{{mediaId}}/preview
+
+### Timeline
+GET {{backend_HostAddress}}/api/post/{{postId}}/timeline
+Authorization: Bearer {{accessToken}}
+
+### --- Optional: error paths ---
+
+### Fail image job (test error path)
+POST {{backend_HostAddress}}/api/generationjob/{{imageJobId}}/fail
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "errorCode": "MOCK_IMAGE_TIMEOUT",
+  "errorMessage": "Mock image generation timeout"
+}
+
+### Retry image job
+POST {{backend_HostAddress}}/api/generationjob/{{imageJobId}}/retry
+Authorization: Bearer {{accessToken}}
+
+### Cancel image job
+POST {{backend_HostAddress}}/api/generationjob/{{imageJobId}}/cancel
+Authorization: Bearer {{accessToken}}
+
+### Upload media file (dùng Postman: form-data key=file, type=File)
+POST {{backend_HostAddress}}/api/mediaasset/upload
+Authorization: Bearer {{accessToken}}
+Content-Type: multipart/form-data; boundary=----VNIUpload
+
+------VNIUpload
+Content-Disposition: form-data; name="altText"
+
+Test upload image
+------VNIUpload--
+
+### Download media
+GET {{backend_HostAddress}}/api/mediaasset/{{mediaId}}/download
+Authorization: Bearer {{accessToken}}

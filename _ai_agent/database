@@ -1,0 +1,388 @@
+# Database Schema — VNI Automation
+
+> SQLite + EF Core Code-first. Không dùng FK constraint cho bảng nghiệp vụ.
+> Identity tables do ASP.NET Core Identity quản lý (có FK nội bộ Identity).
+> Mọi bảng nghiệp vụ kế thừa BaseEntity.
+
+---
+
+## BaseEntity (mọi bảng nghiệp vụ)
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| Id | Guid (PK) | |
+| ExtraJson | TEXT | Metadata mở rộng JSON |
+| CreatedAt | DateTime | UTC |
+| CreatedBy | TEXT | Username/userId người tạo |
+| UpdatedAt | DateTime? | UTC |
+| UpdatedBy | TEXT? | |
+| IsDeleted | bool | Soft delete flag |
+| DeletedAt | DateTime? | UTC |
+| DeletedBy | TEXT? | |
+
+---
+
+## Categories — Phân loại bài viết & media
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| Id | Guid (PK) | + BaseEntity |
+| Name | string(200) | |
+| Slug | string(200) | Unique index |
+| Description | TEXT? | |
+| ParentCategoryId | Guid? | Index, no FK — cây phân loại |
+
+---
+
+## SocialChannels — Kênh/page đã kết nối
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| Id | Guid (PK) | + BaseEntity |
+| Platform | int | SocialPlatform enum |
+| PageName | string(300) | Tên hiển thị |
+| ExternalPageId | string(200) | ID từ platform |
+| AccessToken | TEXT | Encrypted, không trả API |
+| RefreshToken | TEXT? | Encrypted |
+| TokenExpiresAt | DateTime? | |
+| IsActive | bool | |
+
+### SocialPlatform enum
+
+```text
+Facebook  = 1
+LinkedIn  = 2
+Instagram = 3
+TikTok    = 4
+```
+
+---
+
+## PageContexts — Branding & prompt context cho từng page
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| Id | Guid (PK) | + BaseEntity |
+| SocialChannelId | Guid | Index, no FK |
+| BrandName | string(300) | |
+| ToneOfVoice | TEXT? | Mô tả giọng văn thương hiệu |
+| LogoMediaId | Guid? | Index, no FK → MediaAssets |
+| CtaText | string(500)? | |
+| CtaUrl | string(1000)? | |
+| DefaultHashtags | TEXT? | JSON array |
+| PromptTemplateText | TEXT? | Template prompt sinh text |
+| PromptTemplateImage | TEXT? | Template prompt sinh ảnh |
+
+---
+
+## Posts — Bài viết (trung tâm pipeline)
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| Id | Guid (PK) | + BaseEntity |
+| Title | string(500) | Input từ user |
+| Content | TEXT? | Null cho đến khi LLM sinh xong |
+| CategoryId | Guid? | Index, no FK |
+| SocialChannelId | Guid | Index, no FK — page đích |
+| GenerationFlow | int | GenerationFlow enum |
+| Status | int | PostStatus enum |
+| ScheduledPublishAt | DateTime? | Lịch đăng |
+| ScheduleTimezone | string(100)? | Timezone lên lịch |
+| PublishedAt | DateTime? | Thời điểm đăng thành công |
+| ExternalPostId | string(500)? | ID bài trên Facebook/LinkedIn |
+| GenerationError | TEXT? | Lỗi nếu fail |
+| RejectionReason | TEXT? | Lý do từ chối duyệt |
+| ApprovedBy | string(200)? | Người duyệt |
+| ApprovedAt | DateTime? | Thời điểm duyệt |
+| UserId | Guid | Index, no FK |
+
+### PostStatus enum
+
+```text
+Draft          = 1
+Queued         = 2
+Generating     = 3
+Ready          = 4
+Scheduled      = 5
+Publishing     = 6
+Published      = 7
+Failed         = 8
+Cancelled      = 9
+WaitingReview  = 10   // Chờ duyệt
+Approved       = 11   // Đã duyệt, sẵn sàng lên lịch/đăng
+GeneratingMedia = 12  // Đang sinh ảnh AI
+NeedMedia       = 13  // Thiếu media sau khi image gen hết retry
+RenderingTemplate = 14 // Đang render overlay template
+NeedFix           = 15 // Render overlay hết retry
+```
+
+### Workflow transitions
+
+```text
+Draft/Ready → submit-review → WaitingReview
+WaitingReview → approve → Approved
+WaitingReview → reject → Draft
+Approved → schedule → Scheduled (+ PublishJob Pending)
+Scheduled → cancel-schedule → Approved
+Approved/Scheduled → publish-now → Publishing (+ PublishJob Pending)
+```
+
+### GenerationFlow enum
+
+```text
+FullAI = 1   // Luồng 1: sinh text + image song song
+RAG    = 2   // Luồng 2: sinh text → vector search media
+```
+
+---
+
+## MediaAssets — Kho media nội bộ + ảnh AI sinh ra
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| Id | Guid (PK) | + BaseEntity |
+| FileName | string(500) | Tên lưu trữ random/unique |
+| OriginalFileName | string(500)? | Tên gốc upload |
+| StoragePath | string(1000) | Đường dẫn vật lý |
+| PublicUrl | string(1000)? | URL qua API |
+| MimeType | string(100) | |
+| FileSize | long | bytes |
+| Source | int | MediaSource enum |
+| CategoryId | Guid? | Index, no FK |
+| AltText | string(500)? | |
+| Description | TEXT? | Dùng cho embedding |
+| Tags | TEXT? | JSON array keywords |
+| Width | int? | px |
+| Height | int? | px |
+
+### MediaSource enum
+
+```text
+Upload       = 1   // Upload thủ công
+AIGenerated  = 2   // DALL-E / Midjourney
+Overlay      = 3   // AI nền + overlay logo/CTA
+```
+
+---
+
+## PostMedia — Bảng trung gian Post ↔ Media (3NF)
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| Id | Guid (PK) | + BaseEntity |
+| PostId | Guid | Index, no FK |
+| MediaId | Guid | Index, no FK |
+| MediaRole | int | MediaRole enum |
+| SortOrder | int | Thứ tự hiển thị |
+
+Index composite: (PostId, MediaId).
+
+### MediaRole enum
+
+```text
+Primary    = 1
+Thumbnail  = 2
+Attachment = 3
+Cover      = 4   // Ảnh bìa AI sinh ra
+```
+
+---
+
+## GenerationJobs — Queue xử lý song song + retry
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| Id | Guid (PK) | + BaseEntity |
+| PostId | Guid | Index, no FK |
+| JobType | int | JobType enum |
+| Status | int | JobStatus enum |
+| FlowType | int | GenerationFlow enum (FullAI/RAG/Fallback) |
+| Priority | int | Default 0 |
+| RetryCount | int | |
+| MaxRetries | int | Default 3 |
+| IdempotencyKey | string(200)? | Index — tránh duplicate queue |
+| ErrorCode | string(100)? | |
+| ScheduledAt | DateTime? | Retry delay |
+| StartedAt | DateTime? | |
+| CompletedAt | DateTime? | |
+| ErrorMessage | TEXT? | |
+| InputPayload | TEXT? | JSON — prompt, params |
+| OutputPayload | TEXT? | JSON — kết quả |
+
+### JobType enum
+
+```text
+TextGeneration  = 1
+ImageGeneration = 2
+ImageOverlay    = 3   // Logo + CTA
+MediaMatch      = 4   // RAG vector search
+Publish         = 5
+```
+
+### JobStatus enum
+
+```text
+Pending    = 1
+Processing = 2   // Running
+Completed  = 3   // Succeeded
+Failed     = 4
+Retry      = 5   // Retrying
+Cancelled  = 6
+DeadLetter = 7   // Hết retry
+```
+
+### Text generation mock pipeline
+
+```text
+Draft/Queued/Failed → queue-text-generation → Queued (+ job Pending)
+Queued → process → Generating → WaitingReview (+ job Completed)
+Pending/Retry → fail → Failed/DeadLetter (+ Post Failed/Queued)
+Failed/DeadLetter → retry → Retry (+ Post Queued)
+Pending/Retry/Processing → cancel → Cancelled (+ Post Draft)
+```
+
+### Image generation mock pipeline
+
+```text
+WaitingReview/NeedMedia/Failed (+ có Content) → queue-image-generation → GeneratingMedia (+ job Pending)
+GeneratingMedia → process → GeneratingMedia → WaitingReview (+ MediaAsset + PostMedia Cover)
+Pending/Retry → fail (còn retry) → Failed (+ Post WaitingReview)
+Pending/Retry/Processing → fail (hết retry) → DeadLetter (+ Post NeedMedia)
+Failed/DeadLetter → retry → Retry (+ Post GeneratingMedia)
+Pending/Retry/Processing → cancel → Cancelled (+ Post WaitingReview)
+```
+
+### Image overlay/render pipeline (ImageOverlay job type)
+
+```text
+WaitingReview/NeedFix/Failed (+ Content + PostMedia) → queue-image-render → RenderingTemplate
+RenderingTemplate → process → WaitingReview (+ MediaAsset Overlay + PostMedia Cover replaced)
+Pending/Retry → fail (còn retry) → Failed (+ Post WaitingReview)
+Pending/Retry/Processing → fail (hết retry) → DeadLetter (+ Post NeedFix)
+Failed/DeadLetter → retry → Retry (+ Post RenderingTemplate)
+Pending/Retry/Processing → cancel → Cancelled (+ Post WaitingReview)
+```
+
+Render: ImageSharp overlay (headline + CTA bar) → `rendered/yyyy/MM/dd/{guid}.png`, fallback copy nếu lỗi.
+
+---
+
+## PublishLogs — Lịch sử publish + retry tracking
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| Id | Guid (PK) | + BaseEntity |
+| PostId | Guid | Index, no FK |
+| SocialChannelId | Guid | Index, no FK |
+| AttemptNumber | int | 1, 2, 3... |
+| Status | int | PublishStatus enum |
+| ExternalPostId | string(500)? | ID trên platform |
+| PublishedUrl | string(1000)? | URL mock/thật trên platform |
+| RequestPayload | TEXT? | Sanitized |
+| ResponsePayload | TEXT? | Sanitized |
+| ErrorCode | string(100)? | |
+| ErrorMessage | TEXT? | |
+| PublishedAt | DateTime? | |
+| IdempotencyKey | string(200)? | Index — publish:{postId}:{channelId}:{scheduledAt} |
+
+### Scheduler config (appsettings)
+
+```json
+"Scheduler": {
+  "Enabled": true,
+  "IntervalSeconds": 30,
+  "BatchSize": 10
+}
+```
+
+`ScheduledPostPublisherService` quét post `Scheduled` với `ScheduledPublishAt <= UtcNow`, gọi `IPublishPipelineService.ProcessDueScheduledAsync`.
+
+Manual trigger: `POST /api/publishlog/process-due` (Admin/ContentManager).
+
+### Publish mock pipeline
+
+```text
+Pending     = 0
+Success     = 1
+Failed      = 2
+RateLimited = 3
+Cancelled   = 4
+Processing  = 5
+DeadLetter  = 6
+```
+
+### Publish mock pipeline
+
+```text
+Approved/Scheduled → publish-now/schedule → Publishing (+ PublishLog Pending + GenerationJob Publish Pending)
+Pending → process → Processing → Success (+ Post Published)
+Pending/Processing → fail → Failed/DeadLetter (+ Post Approved/Failed)
+Failed/DeadLetter/RateLimited → retry → Pending (+ Post Publishing)
+Pending/Processing → cancel → Cancelled (+ Post Approved/Scheduled)
+Idempotency: không publish lại nếu Post.ExternalPostId hoặc PublishLog Success đã tồn tại
+```
+
+---
+
+## MediaEmbeddings — Vector cho RAG (Luồng 2)
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| Id | Guid (PK) | + BaseEntity |
+| MediaAssetId | Guid | Unique index, no FK |
+| ModelName | string(200) | text-embedding-3-small |
+| Dimensions | int | 1536 |
+| Embedding | BLOB | Vector bytes |
+| SourceText | TEXT? | Text dùng để embed |
+
+> MVP: tính cosine similarity trong C# (đủ cho < vài nghìn ảnh).
+> Scale: chuyển PostgreSQL + pgvector hoặc Qdrant.
+
+---
+
+## ApiLogs — Log request/response endpoint
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| Id | Guid (PK) | + BaseEntity |
+| Endpoint | string(500) | Index |
+| Controller | string(200) | |
+| Action | string(200) | |
+| HttpMethod | string(20) | |
+| RequestPayload | TEXT | Sanitized, truncated |
+| ResponsePayload | TEXT | Sanitized, truncated |
+| ResponseStatus | int | HTTP status code |
+| TimelineMs | long | |
+| CallByUserId | Guid? | |
+| CallByUserName | TEXT? | |
+| IpAddress | TEXT? | |
+| UserAgent | TEXT? | |
+| ErrorMessage | TEXT? | |
+
+---
+
+## Identity (ASP.NET Core)
+
+Quản lý bởi Identity, không tự viết CRUD:
+
+```text
+AspNetUsers         ApplicationUser : IdentityUser<Guid>
+AspNetRoles         ApplicationRole : IdentityRole<Guid>
+AspNetUserRoles
+AspNetUserClaims
+AspNetRoleClaims
+AspNetUserLogins
+AspNetUserTokens
+```
+
+---
+
+## Thứ tự implement
+
+| Phase | Bảng | Ghi chú |
+|---|---|---|
+| 1 | Categories, SocialChannels, PageContexts | Input cơ bản |
+| 2 | Posts (mở rộng), MediaAssets, PostMedia | Core content |
+| 3 | GenerationJobs | Background worker / queue |
+| 4 | PublishLogs | Scheduler + retry |
+| 5 | MediaEmbeddings | RAG Luồng 2 |
