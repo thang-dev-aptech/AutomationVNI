@@ -8,6 +8,8 @@ import { getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
 import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
+import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
+import { TEMPLATE_TYPE } from '@/modules/prompt-templates/constants/promptTemplateType'
 import PostCreateForm from '../components/PostCreateForm'
 import { useCreateAndGeneratePost } from '../hooks/usePosts'
 
@@ -25,9 +27,23 @@ export default function PostCreatePage() {
     error: channelsErrorObj,
     refetch: refetchChannels,
   } = useSocialChannelAll()
+  const { data: textTplData } = usePromptTemplateList({
+    templateType: TEMPLATE_TYPE.TEXT,
+    isActive: true,
+    index: 1,
+    size: 100,
+  })
+  const { data: imageTplData } = usePromptTemplateList({
+    templateType: TEMPLATE_TYPE.IMAGE,
+    isActive: true,
+    index: 1,
+    size: 100,
+  })
   const [errorMessage, setErrorMessage] = useState('')
 
   const categories = categoryData?.items ?? []
+  const textTemplates = textTplData?.items ?? []
+  const imageTemplates = imageTplData?.items ?? []
   const isLoading = channelsLoading || categoriesLoading
 
   const handleSubmit = async (payload) => {
@@ -75,6 +91,8 @@ export default function PostCreatePage() {
           <PostCreateForm
             channels={channels}
             categories={categories}
+            textTemplates={textTemplates}
+            imageTemplates={imageTemplates}
             isSubmitting={createMutation.isPending}
             errorMessage={errorMessage}
             onSubmit={handleSubmit}

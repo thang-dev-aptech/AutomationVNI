@@ -13,6 +13,8 @@ public class CreatePageContextRequest
     public string? DefaultHashtags { get; set; }
     public string? PromptTemplateText { get; set; }
     public string? PromptTemplateImage { get; set; }
+    public Guid? DefaultTextTemplateId { get; set; }
+    public Guid? DefaultImageTemplateId { get; set; }
 }
 
 public class UpdatePageContextRequest
@@ -25,6 +27,8 @@ public class UpdatePageContextRequest
     public string? DefaultHashtags { get; set; }
     public string? PromptTemplateText { get; set; }
     public string? PromptTemplateImage { get; set; }
+    public Guid? DefaultTextTemplateId { get; set; }
+    public Guid? DefaultImageTemplateId { get; set; }
 }
 
 public class PageContextFilterRequest : PagedFilterRequest
@@ -44,6 +48,8 @@ public class PageContextResponse
     public string? DefaultHashtags { get; set; }
     public string? PromptTemplateText { get; set; }
     public string? PromptTemplateImage { get; set; }
+    public Guid? DefaultTextTemplateId { get; set; }
+    public Guid? DefaultImageTemplateId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }

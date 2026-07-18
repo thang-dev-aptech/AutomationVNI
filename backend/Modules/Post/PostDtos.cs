@@ -12,6 +12,63 @@ public class CreatePostRequest
     public GenerationFlow GenerationFlow { get; set; } = GenerationFlow.FullAI;
     /// <summary>Mục tiêu bài viết (idea/goal) — lưu ExtraJson, đưa vào prompt AI khi sinh text.</summary>
     public string? Objective { get; set; }
+    /// <summary>Override template prompt cho bài này. Bỏ trống → dùng default của page → default hệ thống.</summary>
+    public Guid? TextTemplateId { get; set; }
+    public Guid? ImageTemplateId { get; set; }
+}
+
+// --- Bulk (tạo hàng loạt) ---
+
+public class BulkPostItem
+{
+    /// <summary>Ý tưởng → Title + prompt.</summary>
+    public string Idea { get; set; } = string.Empty;
+    public string? Objective { get; set; }
+    public Guid? CategoryId { get; set; }
+    public Guid? TextTemplateId { get; set; }
+    public Guid? ImageTemplateId { get; set; }
+}
+
+public class BulkCreatePostRequest
+{
+    public List<BulkPostItem> Items { get; set; } = [];
+    /// <summary>Fan-out: mỗi item được tạo cho MỖI channel trong danh sách.</summary>
+    public List<Guid> ChannelIds { get; set; } = [];
+    public GenerationFlow GenerationFlow { get; set; } = GenerationFlow.FullAI;
+    /// <summary>Default áp cho item không tự set (category/template).</summary>
+    public Guid? CategoryId { get; set; }
+    public Guid? TextTemplateId { get; set; }
+    public Guid? ImageTemplateId { get; set; }
+}
+
+public class BulkCreateResult
+{
+    public Guid BatchId { get; set; }
+    public int Created { get; set; }
+    public List<Guid> PostIds { get; set; } = [];
+}
+
+public class BulkTargetRequest
+{
+    public Guid? BatchId { get; set; }
+    public List<Guid>? PostIds { get; set; }
+}
+
+public class BulkScheduleRequest : BulkTargetRequest
+{
+    /// <summary>Mốc bắt đầu (UTC). Bỏ trống = từ bây giờ.</summary>
+    public DateTime? StartAtUtc { get; set; }
+    /// <summary>Khung giờ vàng trong ngày (local), ví dụ ["08:00","12:00","20:00"].</summary>
+    public List<string> TimeSlots { get; set; } = ["08:00", "12:00", "20:00"];
+    public string Timezone { get; set; } = "Asia/Ho_Chi_Minh";
+}
+
+public class BulkOperationResult
+{
+    public int Affected { get; set; }
+    public int Skipped { get; set; }
+    public List<Guid> PostIds { get; set; } = [];
+    public string? Message { get; set; }
 }
 
 public class UpdatePostRequest
@@ -39,6 +96,8 @@ public class PostResponse
     public Guid? CategoryId { get; set; }
     public Guid SocialChannelId { get; set; }
     public GenerationFlow GenerationFlow { get; set; }
+    public Guid? TextTemplateId { get; set; }
+    public Guid? ImageTemplateId { get; set; }
     public PostStatus Status { get; set; }
     public Guid UserId { get; set; }
     public DateTime? ScheduledPublishAt { get; set; }

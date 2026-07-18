@@ -5,6 +5,7 @@ using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaEmbedding;
 using Backend.Modules.PageContext;
 using Backend.Modules.Post;
+using Backend.Modules.PromptTemplate;
 using Backend.Modules.PublishLog;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialConnection;
@@ -29,6 +30,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<PublishLogModel> PublishLogs => Set<PublishLogModel>();
     public DbSet<MediaEmbeddingModel> MediaEmbeddings => Set<MediaEmbeddingModel>();
     public DbSet<ApiLogModel> ApiLogs => Set<ApiLogModel>();
+    public DbSet<PromptTemplateModel> PromptTemplates => Set<PromptTemplateModel>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -43,6 +45,19 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasIndex(x => x.IsDeleted);
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.Slug).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<PromptTemplateModel>(e =>
+        {
+            e.ToTable("PromptTemplates");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.TemplateType);
+            e.HasIndex(x => x.IsDefault);
+            e.HasIndex(x => x.IsActive);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Description).HasMaxLength(500);
+            e.Property(x => x.Body).HasColumnType("TEXT");
         });
 
         modelBuilder.Entity<SocialChannelModel>(e =>
@@ -98,6 +113,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasIndex(x => x.CategoryId);
             e.HasIndex(x => x.Status);
             e.HasIndex(x => x.ScheduledPublishAt);
+            e.HasIndex(x => x.BatchId);
             e.HasIndex(x => x.IsDeleted);
             e.Property(x => x.Title).HasMaxLength(500);
             e.Property(x => x.Content).HasColumnType("TEXT");

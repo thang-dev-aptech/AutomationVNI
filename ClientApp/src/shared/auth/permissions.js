@@ -67,6 +67,10 @@ export function canManageMedia(userRoles) {
   return hasRole(userRoles, [ROLES.ADMIN, ROLES.CONTENT_MANAGER])
 }
 
+export function canManageTemplates(userRoles) {
+  return hasRole(userRoles, [ROLES.ADMIN, ROLES.CONTENT_MANAGER])
+}
+
 export function canManageJobs(userRoles) {
   return hasRole(userRoles, [ROLES.ADMIN])
 }

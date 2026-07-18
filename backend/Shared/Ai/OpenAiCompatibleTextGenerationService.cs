@@ -136,6 +136,10 @@ public class OpenAiCompatibleTextGenerationService(
 
     private static string BuildUserPrompt(AiTextGenerationRequest request)
     {
+        // Prompt từ template (đã thay biến) → dùng thẳng, chỉ nhắc lại ràng buộc ngôn ngữ.
+        if (!string.IsNullOrWhiteSpace(request.PromptOverride))
+            return request.PromptOverride.Trim();
+
         var sb = new StringBuilder();
         sb.AppendLine("Generate social post content with the following context:");
         AppendLine(sb, "Title", request.Title);

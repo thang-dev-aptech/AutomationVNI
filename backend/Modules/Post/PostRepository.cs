@@ -59,6 +59,8 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
             SocialChannelId = request.SocialChannelId,
             CategoryId = request.CategoryId,
             GenerationFlow = request.GenerationFlow,
+            TextTemplateId = request.TextTemplateId,
+            ImageTemplateId = request.ImageTemplateId,
             UserId = GetCurrentUserId(),
             Status = PostStatus.Draft
         };
@@ -97,6 +99,63 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         return entity;
     }
 
+    /// <summary>Tạo hàng loạt post (fan-out items × channels) ở Status=Queued cho worker sinh nền.</summary>
+    public async Task<BulkCreateResult> BulkCreateAsync(
+        BulkCreatePostRequest request, CancellationToken ct = default)
+    {
+        var items = (request.Items ?? []).Where(i => !string.IsNullOrWhiteSpace(i.Idea)).ToList();
+        var channels = (request.ChannelIds ?? []).Where(c => c != Guid.Empty).Distinct().ToList();
+        if (items.Count == 0) throw new ArgumentException("Danh sách ý tưởng trống");
+        if (channels.Count == 0) throw new ArgumentException("Phải chọn ít nhất một kênh đăng");
+
+        var batchId = Guid.NewGuid();
+        var userId = GetCurrentUserId();
+        var posts = new List<PostModel>();
+        foreach (var ch in channels)
+            foreach (var it in items)
+            {
+                var post = new PostModel
+                {
+                    Title = it.Idea.Trim(),
+                    SocialChannelId = ch,
+                    CategoryId = it.CategoryId ?? request.CategoryId,
+                    GenerationFlow = request.GenerationFlow,
+                    TextTemplateId = it.TextTemplateId ?? request.TextTemplateId,
+                    ImageTemplateId = it.ImageTemplateId ?? request.ImageTemplateId,
+                    BatchId = batchId,
+                    UserId = userId,
+                    Status = PostStatus.Queued
+                };
+                if (!string.IsNullOrWhiteSpace(it.Objective))
+                    post.ExtraJson = System.Text.Json.JsonSerializer.Serialize(
+                        new { input = new { objective = it.Objective!.Trim() } });
+                posts.Add(post);
+            }
+
+        await MultiCreateAsync(posts, ct);
+        return new BulkCreateResult
+        {
+            BatchId = batchId,
+            Created = posts.Count,
+            PostIds = posts.Select(p => p.Id).ToList()
+        };
+    }
+
+    /// <summary>Lấy các post theo batchId hoặc danh sách id, lọc theo status cho phép.</summary>
+    public async Task<List<PostModel>> ResolveTargetsAsync(
+        Guid? batchId, List<Guid>? postIds, PostStatus[]? allowedStatuses, CancellationToken ct = default)
+    {
+        var q = QueryActive();
+        if (batchId.HasValue) q = q.Where(p => p.BatchId == batchId.Value);
+        else if (postIds is { Count: > 0 }) q = q.Where(p => postIds.Contains(p.Id));
+        else return [];
+
+        if (allowedStatuses is { Length: > 0 })
+            q = q.Where(p => allowedStatuses.Contains(p.Status));
+
+        return await q.OrderBy(p => p.CreatedAt).ToListAsync(ct);
+    }
+
     public static PostResponse ToResponse(PostModel entity) => new()
     {
         Id = entity.Id,
@@ -105,6 +164,8 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         CategoryId = entity.CategoryId,
         SocialChannelId = entity.SocialChannelId,
         GenerationFlow = entity.GenerationFlow,
+        TextTemplateId = entity.TextTemplateId,
+        ImageTemplateId = entity.ImageTemplateId,
         Status = entity.Status,
         UserId = entity.UserId,
         ScheduledPublishAt = entity.ScheduledPublishAt,

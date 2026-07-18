@@ -19,6 +19,7 @@ export function usePermissions() {
       canSchedulePost: permissions.canSchedulePost(roles),
       canPublishPost: permissions.canPublishPost(roles),
       canManageMedia: permissions.canManageMedia(roles),
+      canManageTemplates: permissions.canManageTemplates(roles),
       canManageJobs: permissions.canManageJobs(roles),
       canViewJobs: permissions.canViewJobs(roles),
       canViewPosts: permissions.canViewPosts(roles),

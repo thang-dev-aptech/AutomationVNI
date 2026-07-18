@@ -11,6 +11,8 @@ import PostCreatePage from '@/modules/posts/pages/PostCreatePage'
 import PostDetailPage from '@/modules/posts/pages/PostDetailPage'
 import MediaPage from '@/modules/media/pages/MediaPage'
 import JobsPage from '@/modules/jobs/pages/JobsPage'
+import PromptTemplateListPage from '@/modules/prompt-templates/pages/PromptTemplateListPage'
+import PageContextListPage from '@/modules/page-contexts/pages/PageContextListPage'
 import LoginPage from '@/modules/auth/pages/LoginPage'
 import ForbiddenPage from '@/shared/pages/ForbiddenPage'
 import NotFoundPage from '@/shared/pages/NotFoundPage'
@@ -38,6 +40,10 @@ export default function AppRouter() {
           </Route>
           <Route path="/posts/:id" element={<PostDetailPage />} />
           <Route path="/media" element={<MediaPage />} />
+          <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.templates} />}>
+            <Route path="/prompt-templates" element={<PromptTemplateListPage />} />
+            <Route path="/page-contexts" element={<PageContextListPage />} />
+          </Route>
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.jobs} />}>
             <Route path="/jobs" element={<JobsPage />} />
           </Route>

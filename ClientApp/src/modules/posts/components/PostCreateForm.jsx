@@ -7,11 +7,15 @@ const emptyForm = {
   socialChannelId: '',
   categoryId: '',
   generationFlow: '1',
+  textTemplateId: '',
+  imageTemplateId: '',
 }
 
 export default function PostCreateForm({
   channels = [],
   categories = [],
+  textTemplates = [],
+  imageTemplates = [],
   isSubmitting,
   errorMessage,
   onSubmit,
@@ -30,6 +34,8 @@ export default function PostCreateForm({
       socialChannelId: form.socialChannelId,
       generationFlow: Number(form.generationFlow),
       categoryId: form.categoryId || null,
+      textTemplateId: form.textTemplateId || null,
+      imageTemplateId: form.imageTemplateId || null,
     })
   }
 
@@ -93,6 +99,42 @@ export default function PostCreateForm({
             {categories.map((category) => (
               <option key={category.id} value={category.id}>
                 {category.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {textTemplates.length > 0 && (
+        <div className="form-group">
+          <label htmlFor="post-text-template">Template nội dung (tuỳ chọn)</label>
+          <select
+            id="post-text-template"
+            value={form.textTemplateId}
+            onChange={handleChange('textTemplateId')}
+          >
+            <option value="">Mặc định (theo page / hệ thống)</option>
+            {textTemplates.map((tpl) => (
+              <option key={tpl.id} value={tpl.id}>
+                {tpl.name}{tpl.isDefault ? ' ⭐' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {imageTemplates.length > 0 && (
+        <div className="form-group">
+          <label htmlFor="post-image-template">Template ảnh (tuỳ chọn)</label>
+          <select
+            id="post-image-template"
+            value={form.imageTemplateId}
+            onChange={handleChange('imageTemplateId')}
+          >
+            <option value="">Mặc định (theo page / hệ thống)</option>
+            {imageTemplates.map((tpl) => (
+              <option key={tpl.id} value={tpl.id}>
+                {tpl.name}{tpl.isDefault ? ' ⭐' : ''}
               </option>
             ))}
           </select>

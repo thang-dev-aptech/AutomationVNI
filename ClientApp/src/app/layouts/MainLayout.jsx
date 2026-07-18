@@ -7,6 +7,8 @@ const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', visible: (p) => p.canViewDashboard },
   { to: '/platforms', label: 'Platforms / Kênh', visible: (p) => p.canViewPlatforms },
   { to: '/posts', label: 'Posts', visible: (p) => p.canViewPosts },
+  { to: '/prompt-templates', label: 'Prompt Templates', visible: (p) => p.canManageTemplates },
+  { to: '/page-contexts', label: 'Page Context', visible: (p) => p.canManageTemplates },
   { to: '/media', label: 'Media', visible: (p) => p.canViewMedia },
   { to: '/jobs', label: 'Jobs', visible: (p) => p.canViewJobs },
 ]

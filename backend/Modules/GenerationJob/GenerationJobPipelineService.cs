@@ -7,6 +7,8 @@ using Backend.Modules.MediaAsset.Enums;
 using Backend.Modules.PageContext;
 using Backend.Modules.Post;
 using Backend.Modules.Post.Enums;
+using Backend.Modules.PromptTemplate;
+using Backend.Modules.PromptTemplate.Enums;
 using Backend.Shared.Ai;
 using Backend.Shared.Repositories;
 using Backend.Shared.Storage;
@@ -21,6 +23,7 @@ public class GenerationJobPipelineService(
     MediaAssetRepository mediaAssetRepository,
     PostMediaRepository postMediaRepository,
     PageContextRepository pageContextRepository,
+    PromptTemplateRepository promptTemplateRepository,
     IFileStorageService fileStorageService,
     IImageOverlayService imageOverlayService,
     IAiTextGenerationService aiTextGenerationService,
@@ -41,6 +44,19 @@ public class GenerationJobPipelineService(
 
     private static readonly PostStatus[] QueueRenderAllowedStatuses =
         [PostStatus.WaitingReview, PostStatus.NeedFix, PostStatus.Failed];
+
+    /// <summary>
+    /// Sinh trọn nội dung cho 1 post: text → image. Dùng chung cho create-and-generate (đồng bộ)
+    /// và PostGenerationWorker (bulk, chạy nền). KHÔNG tự approve — để lại WaitingReview cho cổng duyệt.
+    /// </summary>
+    public async Task GenerateForPostAsync(Guid postId, CancellationToken ct = default)
+    {
+        var textJob = await QueueTextGenerationAsync(postId, ct);
+        await ProcessAsync(textJob.JobId, ct);
+
+        var imageJob = await QueueImageGenerationAsync(postId, ct);
+        await ProcessAsync(imageJob.JobId, ct);
+    }
 
     public async Task<QueueTextGenerationResponse> QueueTextGenerationAsync(
         Guid postId, CancellationToken ct = default)
@@ -322,7 +338,10 @@ public class GenerationJobPipelineService(
         ApplyPostUpdate(post);
         await context.SaveChangesAsync(ct);
 
-        var output = await GenerateTextOutputAsync(post, ct);
+        // Build request (resolve template + thay biến) trước, ghi vào InputPayload để audit/verify.
+        var request = await BuildAiTextRequestAsync(post, ct);
+        job.InputPayload = BuildTextJobInputPayload(request);
+        var output = await GenerateTextOutputAsync(post, request, ct);
         var outputJson = MockTextGenerator.ToJson(output);
 
         job.Status = JobStatus.Completed;
@@ -348,13 +367,12 @@ public class GenerationJobPipelineService(
     }
 
     private async Task<TextGenerationJobOutput> GenerateTextOutputAsync(
-        PostModel post, CancellationToken ct)
+        PostModel post, AiTextGenerationRequest request, CancellationToken ct)
     {
         if (aiTextGenerationService.IsAvailable())
         {
             try
             {
-                var request = await BuildAiTextRequestAsync(post, ct);
                 var aiResult = await aiTextGenerationService.GenerateAsync(request, ct);
                 logger.LogInformation(
                     "AI text generation succeeded for post {PostId} via provider {Provider}",
@@ -390,26 +408,118 @@ public class GenerationJobPipelineService(
         PostModel post, CancellationToken ct)
     {
         var pageContext = await pageContextRepository.GetByChannelAsync(post.SocialChannelId, ct);
-        string? categoryName = null;
-        if (post.CategoryId.HasValue)
-        {
-            categoryName = await context.Set<CategoryModel>()
-                .Where(x => !x.IsDeleted && x.Id == post.CategoryId.Value)
-                .Select(x => x.Name)
-                .FirstOrDefaultAsync(ct);
-        }
+        var categoryName = await ResolveCategoryNameAsync(post, ct);
+        var objective = ExtractObjective(post.ExtraJson);
 
-        return new AiTextGenerationRequest
+        var request = new AiTextGenerationRequest
         {
             Title = post.Title,
-            Objective = ExtractObjective(post.ExtraJson),
+            Objective = objective,
             Category = categoryName,
             BrandContext = pageContext?.BrandName,
             Tone = pageContext?.ToneOfVoice,
             CtaText = pageContext?.CtaText,
             Hashtags = pageContext?.DefaultHashtags
         };
+
+        // Resolve prompt template (Post override → Page default → Page inline → System default) + thay biến.
+        var templateBody = await ResolveTextTemplateBodyAsync(post, pageContext, ct);
+        if (!string.IsNullOrWhiteSpace(templateBody))
+        {
+            var vars = BuildTemplateVariables(
+                post, pageContext, categoryName, objective, caption: null, aiImagePrompt: null);
+            request.PromptOverride = PromptTemplateRenderer.Render(templateBody, vars);
+            logger.LogInformation(
+                "Post {PostId} text generation uses prompt template ({Len} chars rendered)",
+                post.Id, request.PromptOverride.Length);
+        }
+
+        return request;
     }
+
+    private async Task<string?> ResolveCategoryNameAsync(PostModel post, CancellationToken ct)
+    {
+        if (!post.CategoryId.HasValue) return null;
+        return await context.Set<CategoryModel>()
+            .Where(x => !x.IsDeleted && x.Id == post.CategoryId.Value)
+            .Select(x => x.Name)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>Ưu tiên: Post.TextTemplateId → PageContext.DefaultTextTemplateId → inline PromptTemplateText → default hệ thống.</summary>
+    private async Task<string?> ResolveTextTemplateBodyAsync(
+        PostModel post, PageContextModel? pageContext, CancellationToken ct)
+    {
+        if (post.TextTemplateId is Guid postTid)
+        {
+            var t = await promptTemplateRepository.GetActiveByIdAsync(postTid, ct);
+            if (t is not null && t.TemplateType == PromptTemplateType.TextContent) return t.Body;
+        }
+        if (pageContext?.DefaultTextTemplateId is Guid pageTid)
+        {
+            var t = await promptTemplateRepository.GetActiveByIdAsync(pageTid, ct);
+            if (t is not null && t.TemplateType == PromptTemplateType.TextContent) return t.Body;
+        }
+        if (!string.IsNullOrWhiteSpace(pageContext?.PromptTemplateText))
+            return pageContext!.PromptTemplateText;
+
+        var def = await promptTemplateRepository.GetDefaultAsync(PromptTemplateType.TextContent, ct);
+        return def?.Body;
+    }
+
+    /// <summary>Ưu tiên: Post.ImageTemplateId → PageContext.DefaultImageTemplateId → inline PromptTemplateImage → default hệ thống.</summary>
+    private async Task<string?> ResolveImageTemplateBodyAsync(
+        PostModel post, PageContextModel? pageContext, CancellationToken ct)
+    {
+        if (post.ImageTemplateId is Guid postIid)
+        {
+            var t = await promptTemplateRepository.GetActiveByIdAsync(postIid, ct);
+            if (t is not null && t.TemplateType == PromptTemplateType.Image) return t.Body;
+        }
+        if (pageContext?.DefaultImageTemplateId is Guid pageIid)
+        {
+            var t = await promptTemplateRepository.GetActiveByIdAsync(pageIid, ct);
+            if (t is not null && t.TemplateType == PromptTemplateType.Image) return t.Body;
+        }
+        if (!string.IsNullOrWhiteSpace(pageContext?.PromptTemplateImage))
+            return pageContext!.PromptTemplateImage;
+
+        var def = await promptTemplateRepository.GetDefaultAsync(PromptTemplateType.Image, ct);
+        return def?.Body;
+    }
+
+    private static Dictionary<string, string?> BuildTemplateVariables(
+        PostModel post, PageContextModel? pageContext, string? categoryName,
+        string? objective, string? caption, string? aiImagePrompt)
+        => new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["title"] = post.Title,
+            ["category"] = categoryName,
+            ["brand"] = pageContext?.BrandName,
+            ["tone"] = pageContext?.ToneOfVoice,
+            ["audience"] = null,
+            ["objective"] = objective,
+            ["cta"] = pageContext?.CtaText,
+            ["hashtags"] = pageContext?.DefaultHashtags,
+            ["caption"] = caption,
+            ["imagePrompt"] = aiImagePrompt
+        };
+
+    private static string BuildTextJobInputPayload(AiTextGenerationRequest request)
+        => JsonSerializer.Serialize(new
+        {
+            provider = request.Provider,
+            model = request.Model,
+            title = request.Title,
+            objective = request.Objective,
+            category = request.Category,
+            tone = request.Tone,
+            brand = request.BrandContext,
+            cta = request.CtaText,
+            hashtags = request.Hashtags,
+            usedTemplate = !string.IsNullOrWhiteSpace(request.PromptOverride),
+            promptOverride = request.PromptOverride
+        }, JsonOptions);
 
     private static string? ExtractObjective(string? extraJson)
     {
@@ -826,12 +936,39 @@ public class GenerationJobPipelineService(
 
     // --- image generation (real AI with mock fallback) ---
 
+    /// <summary>
+    /// Dựng prompt ảnh: nếu có template ảnh (Post/Page/default) thì render template (biến gồm cả
+    /// {{imagePrompt}} do AI text gợi ý và {{caption}} nội dung bài); ngược lại dùng imagePrompt AI, cuối cùng generic.
+    /// </summary>
+    private async Task<string> BuildImagePromptAsync(
+        PostModel post, string? aiImagePrompt, CancellationToken ct)
+    {
+        var pageContext = await pageContextRepository.GetByChannelAsync(post.SocialChannelId, ct);
+        var templateBody = await ResolveImageTemplateBodyAsync(post, pageContext, ct);
+
+        if (!string.IsNullOrWhiteSpace(templateBody))
+        {
+            var categoryName = await ResolveCategoryNameAsync(post, ct);
+            var vars = BuildTemplateVariables(
+                post, pageContext, categoryName, ExtractObjective(post.ExtraJson),
+                caption: post.Content, aiImagePrompt: aiImagePrompt);
+            var rendered = PromptTemplateRenderer.Render(templateBody, vars);
+            if (!string.IsNullOrWhiteSpace(rendered))
+            {
+                logger.LogInformation("Post {PostId} image generation uses prompt template", post.Id);
+                return rendered;
+            }
+        }
+
+        return string.IsNullOrWhiteSpace(aiImagePrompt)
+            ? $"Professional social media visual for '{post.Title.Trim()}', modern clean style, no text"
+            : aiImagePrompt.Trim();
+    }
+
     private async Task<GeneratedImageAsset> GenerateImageAssetAsync(
         PostModel post, string? imagePrompt, CancellationToken ct)
     {
-        var prompt = string.IsNullOrWhiteSpace(imagePrompt)
-            ? $"Professional social media visual for '{post.Title.Trim()}', modern clean style, no text"
-            : imagePrompt.Trim();
+        var prompt = await BuildImagePromptAsync(post, imagePrompt, ct);
 
         if (aiImageGenerationService.IsAvailable())
         {

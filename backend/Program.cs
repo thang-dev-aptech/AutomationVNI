@@ -24,6 +24,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +33,7 @@ builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"))
 builder.Services.Configure<SeedSettings>(builder.Configuration.GetSection("Seed"));
 builder.Services.Configure<FileStorageOptions>(builder.Configuration.GetSection("FileStorage"));
 builder.Services.Configure<SchedulerOptions>(builder.Configuration.GetSection("Scheduler"));
+builder.Services.Configure<GenerationWorkerOptions>(builder.Configuration.GetSection("GenerationWorker"));
 builder.Services.Configure<DevSeedOptions>(builder.Configuration.GetSection("DevSeed"));
 builder.Services.Configure<AiProvidersOptions>(builder.Configuration.GetSection("AiProviders"));
 builder.Services.Configure<SocialPublishOptions>(builder.Configuration.GetSection("SocialPublish"));
@@ -93,6 +96,7 @@ builder.Services.AddScoped<CategoryRepository>();
 builder.Services.AddScoped<SocialChannelRepository>();
 builder.Services.AddScoped<SocialConnectionRepository>();
 builder.Services.AddScoped<PageContextRepository>();
+builder.Services.AddScoped<Backend.Modules.PromptTemplate.PromptTemplateRepository>();
 builder.Services.AddScoped<PostRepository>();
 builder.Services.AddScoped<PostWorkflowService>();
 builder.Services.AddScoped<MediaAssetRepository>();
@@ -102,6 +106,7 @@ builder.Services.AddScoped<GenerationJobPipelineService>();
 builder.Services.AddScoped<IPublishPipelineService, PublishPipelineService>();
 builder.Services.AddScoped<PublishLogRepository>();
 builder.Services.AddHostedService<Backend.Shared.Scheduler.ScheduledPostPublisherService>();
+builder.Services.AddHostedService<Backend.Shared.Generation.PostGenerationWorker>();
 builder.Services.AddScoped<MediaEmbeddingRepository>();
 builder.Services.AddScoped<ApiLogRepository>();
 builder.Services.AddScoped<IDevDataSeeder, DevDataSeeder>();
@@ -129,6 +134,16 @@ builder.Services.AddControllers(options =>
 });
 
 builder.Services.AddOpenApi();
+
+// Behind Railway/Render/Fly, TLS terminates at the edge and the container receives HTTP.
+// Honor X-Forwarded-Proto/For so the app sees the original https scheme (correct absolute URLs,
+// no http→https redirect loop).
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 builder.Services.AddCors(options =>
 {
@@ -164,13 +179,37 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+app.UseForwardedHeaders();
 app.UseHttpsRedirection();
-app.UseDefaultFiles();
-app.UseStaticFiles();
+
+// Serve the built React SPA (Vite output at wwwroot/dist) from the site root.
+// Assets are referenced as /assets/... so the file provider must point at the dist folder.
+var spaRoot = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "dist");
+var spaAvailable = Directory.Exists(spaRoot);
+if (spaAvailable)
+{
+    var spaFiles = new PhysicalFileProvider(spaRoot);
+    app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = spaFiles });
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = spaFiles });
+}
+else
+{
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
+}
+
 app.UseMiddleware<ApiLogMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-app.MapFallbackToFile("index.html");
+
+// SPA fallback for client-side routes (e.g. /platforms, /posts/:id) → serve dist/index.html.
+if (spaAvailable)
+    app.MapFallbackToFile("index.html", new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(spaRoot)
+    });
+else
+    app.MapFallbackToFile("index.html");
 
 app.Run();

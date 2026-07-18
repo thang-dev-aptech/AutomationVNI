@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
 import Modal from '@/shared/components/Modal'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
+import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
+import { TEMPLATE_TYPE } from '@/modules/prompt-templates/constants/promptTemplateType'
+
+const EMPTY_GUID = '00000000-0000-0000-0000-000000000000'
 
 const emptyForm = {
   socialChannelId: '',
@@ -11,6 +15,8 @@ const emptyForm = {
   defaultHashtags: '',
   promptTemplateText: '',
   promptTemplateImage: '',
+  defaultTextTemplateId: '',
+  defaultImageTemplateId: '',
 }
 
 export default function PageContextFormModal({
@@ -24,6 +30,14 @@ export default function PageContextFormModal({
   const [form, setForm] = useState(emptyForm)
   const isEdit = Boolean(initialData?.id)
   const { data: channels = [] } = useSocialChannelAll()
+  const { data: textTplData } = usePromptTemplateList({
+    templateType: TEMPLATE_TYPE.TEXT, isActive: true, index: 1, size: 100,
+  })
+  const { data: imageTplData } = usePromptTemplateList({
+    templateType: TEMPLATE_TYPE.IMAGE, isActive: true, index: 1, size: 100,
+  })
+  const textTemplates = textTplData?.items ?? []
+  const imageTemplates = imageTplData?.items ?? []
 
   useEffect(() => {
     if (!open) return
@@ -38,6 +52,8 @@ export default function PageContextFormModal({
             defaultHashtags: initialData.defaultHashtags || '',
             promptTemplateText: initialData.promptTemplateText || '',
             promptTemplateImage: initialData.promptTemplateImage || '',
+            defaultTextTemplateId: initialData.defaultTextTemplateId || '',
+            defaultImageTemplateId: initialData.defaultImageTemplateId || '',
           }
         : emptyForm,
     )
@@ -58,6 +74,9 @@ export default function PageContextFormModal({
       defaultHashtags: form.defaultHashtags.trim() || null,
       promptTemplateText: form.promptTemplateText.trim() || null,
       promptTemplateImage: form.promptTemplateImage.trim() || null,
+      // Chọn template → gửi id; bỏ trống → khi sửa gửi EMPTY_GUID để xoá, khi tạo mới gửi null.
+      defaultTextTemplateId: form.defaultTextTemplateId || (isEdit ? EMPTY_GUID : null),
+      defaultImageTemplateId: form.defaultImageTemplateId || (isEdit ? EMPTY_GUID : null),
     })
   }
 
@@ -143,21 +162,56 @@ export default function PageContextFormModal({
           />
         </div>
         <div className="form-group">
-          <label htmlFor="context-prompt-text">Prompt template — Text</label>
-          <textarea
-            id="context-prompt-text"
-            value={form.promptTemplateText}
-            onChange={handleChange('promptTemplateText')}
-          />
+          <label htmlFor="context-default-text-tpl">Template mặc định — Nội dung</label>
+          <select
+            id="context-default-text-tpl"
+            value={form.defaultTextTemplateId}
+            onChange={handleChange('defaultTextTemplateId')}
+          >
+            <option value="">Không dùng (theo default hệ thống)</option>
+            {textTemplates.map((tpl) => (
+              <option key={tpl.id} value={tpl.id}>
+                {tpl.name}{tpl.isDefault ? ' ⭐' : ''}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="form-group">
-          <label htmlFor="context-prompt-image">Prompt template — Image</label>
-          <textarea
-            id="context-prompt-image"
-            value={form.promptTemplateImage}
-            onChange={handleChange('promptTemplateImage')}
-          />
+          <label htmlFor="context-default-image-tpl">Template mặc định — Ảnh</label>
+          <select
+            id="context-default-image-tpl"
+            value={form.defaultImageTemplateId}
+            onChange={handleChange('defaultImageTemplateId')}
+          >
+            <option value="">Không dùng (theo default hệ thống)</option>
+            {imageTemplates.map((tpl) => (
+              <option key={tpl.id} value={tpl.id}>
+                {tpl.name}{tpl.isDefault ? ' ⭐' : ''}
+              </option>
+            ))}
+          </select>
         </div>
+        <details>
+          <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--text-muted, #888)', marginBottom: 8 }}>
+            Prompt inline (nâng cao — ưu tiên thấp hơn template ở trên)
+          </summary>
+          <div className="form-group">
+            <label htmlFor="context-prompt-text">Prompt inline — Text</label>
+            <textarea
+              id="context-prompt-text"
+              value={form.promptTemplateText}
+              onChange={handleChange('promptTemplateText')}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="context-prompt-image">Prompt inline — Image</label>
+            <textarea
+              id="context-prompt-image"
+              value={form.promptTemplateImage}
+              onChange={handleChange('promptTemplateImage')}
+            />
+          </div>
+        </details>
       </form>
     </Modal>
   )

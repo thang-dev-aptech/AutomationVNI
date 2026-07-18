@@ -10,6 +10,14 @@ public class PostModel : BaseEntity
     public Guid? CategoryId { get; set; }
     public Guid SocialChannelId { get; set; }
     public GenerationFlow GenerationFlow { get; set; } = GenerationFlow.FullAI;
+
+    /// <summary>Override template prompt cho riêng bài này (thư viện PromptTemplate). No FK.</summary>
+    public Guid? TextTemplateId { get; set; }
+    public Guid? ImageTemplateId { get; set; }
+
+    /// <summary>Nhóm các bài tạo cùng một lần bulk (fan-out/CSV/AI ideas). No FK.</summary>
+    public Guid? BatchId { get; set; }
+
     public PostStatus Status { get; set; } = PostStatus.Draft;
     public DateTime? ScheduledPublishAt { get; set; }
     public string? ScheduleTimezone { get; set; }

@@ -50,7 +50,9 @@ public class PageContextRepository : GenericRepository<PageContextModel>
             CtaUrl = request.CtaUrl?.Trim(),
             DefaultHashtags = request.DefaultHashtags,
             PromptTemplateText = request.PromptTemplateText,
-            PromptTemplateImage = request.PromptTemplateImage
+            PromptTemplateImage = request.PromptTemplateImage,
+            DefaultTextTemplateId = request.DefaultTextTemplateId,
+            DefaultImageTemplateId = request.DefaultImageTemplateId
         };
 
         return await base.CreateAsync(entity, ct);
@@ -70,6 +72,11 @@ public class PageContextRepository : GenericRepository<PageContextModel>
         if (request.DefaultHashtags is not null) entity.DefaultHashtags = request.DefaultHashtags;
         if (request.PromptTemplateText is not null) entity.PromptTemplateText = request.PromptTemplateText;
         if (request.PromptTemplateImage is not null) entity.PromptTemplateImage = request.PromptTemplateImage;
+        // Guid.Empty = xoá default; giá trị khác = đặt; null = giữ nguyên.
+        if (request.DefaultTextTemplateId.HasValue)
+            entity.DefaultTextTemplateId = request.DefaultTextTemplateId.Value == Guid.Empty ? null : request.DefaultTextTemplateId;
+        if (request.DefaultImageTemplateId.HasValue)
+            entity.DefaultImageTemplateId = request.DefaultImageTemplateId.Value == Guid.Empty ? null : request.DefaultImageTemplateId;
 
         ApplyUpdateAudit(entity);
         await Context.SaveChangesAsync(ct);
@@ -88,6 +95,8 @@ public class PageContextRepository : GenericRepository<PageContextModel>
         DefaultHashtags = e.DefaultHashtags,
         PromptTemplateText = e.PromptTemplateText,
         PromptTemplateImage = e.PromptTemplateImage,
+        DefaultTextTemplateId = e.DefaultTextTemplateId,
+        DefaultImageTemplateId = e.DefaultImageTemplateId,
         CreatedAt = e.CreatedAt,
         UpdatedAt = e.UpdatedAt
     };

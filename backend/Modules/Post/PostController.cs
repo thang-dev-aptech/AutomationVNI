@@ -1,3 +1,4 @@
+using Backend.Modules.Post.Enums;
 using Backend.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -140,13 +141,121 @@ public class PostController
         return Ok(ApiResponse.Ok(ToResponse(post!), "Đã tạo lại ảnh"));
     }
 
-    private async Task GenerateTextThenImageAsync(Guid postId, CancellationToken ct)
-    {
-        var textJob = await _generationPipeline.QueueTextGenerationAsync(postId, ct);
-        await _generationPipeline.ProcessAsync(textJob.JobId, ct);
+    private Task GenerateTextThenImageAsync(Guid postId, CancellationToken ct)
+        => _generationPipeline.GenerateForPostAsync(postId, ct);
 
-        var imageJob = await _generationPipeline.QueueImageGenerationAsync(postId, ct);
-        await _generationPipeline.ProcessAsync(imageJob.JobId, ct);
+    // --- Bulk (tạo hàng loạt) ---
+
+    /// <summary>Tạo hàng loạt bài (items × channels). Trả về ngay; worker sinh nội dung nền.</summary>
+    [HttpPost("bulk-create")]
+    public async Task<IActionResult> BulkCreate([FromBody] BulkCreatePostRequest request, CancellationToken ct)
+    {
+        var result = await _repo.BulkCreateAsync(request, ct);
+        return Ok(ApiResponse.Ok(result,
+            $"Đã tạo {result.Created} bài — đang sinh nội dung nền, xem tiến độ ở batch."));
+    }
+
+    /// <summary>Duyệt hàng loạt các bài WaitingReview trong batch (hoặc theo postIds).</summary>
+    [HttpPost("bulk-approve")]
+    public async Task<IActionResult> BulkApprove([FromBody] BulkTargetRequest request, CancellationToken ct)
+    {
+        var posts = await _repo.ResolveTargetsAsync(request.BatchId, request.PostIds, [PostStatus.WaitingReview], ct);
+        var ok = new List<Guid>();
+        foreach (var p in posts)
+        {
+            try { await _workflow.ApproveAsync(p.Id, ct); ok.Add(p.Id); }
+            catch { /* bỏ qua bài lỗi trạng thái */ }
+        }
+        return Ok(ApiResponse.Ok(new BulkOperationResult
+        {
+            Affected = ok.Count,
+            Skipped = posts.Count - ok.Count,
+            PostIds = ok,
+            Message = $"Đã duyệt {ok.Count}/{posts.Count} bài"
+        }));
+    }
+
+    /// <summary>Lên lịch hàng loạt các bài Approved, rải theo khung giờ vàng (spread).</summary>
+    [HttpPost("bulk-schedule")]
+    public async Task<IActionResult> BulkSchedule([FromBody] BulkScheduleRequest request, CancellationToken ct)
+    {
+        var posts = await _repo.ResolveTargetsAsync(request.BatchId, request.PostIds, [PostStatus.Approved], ct);
+        var times = ComputeSlotTimesUtc(request.StartAtUtc ?? DateTime.UtcNow, request.TimeSlots, request.Timezone, posts.Count);
+
+        var ok = new List<Guid>();
+        for (var i = 0; i < posts.Count && i < times.Count; i++)
+        {
+            try { await _workflow.ScheduleAsync(posts[i].Id, times[i], request.Timezone, ct); ok.Add(posts[i].Id); }
+            catch { /* bỏ qua bài lỗi */ }
+        }
+        return Ok(ApiResponse.Ok(new BulkOperationResult
+        {
+            Affected = ok.Count,
+            Skipped = posts.Count - ok.Count,
+            PostIds = ok,
+            Message = $"Đã lên lịch {ok.Count}/{posts.Count} bài, rải theo khung giờ"
+        }));
+    }
+
+    /// <summary>Tiến độ 1 batch: tổng + đếm theo trạng thái + danh sách bài.</summary>
+    [HttpGet("batch/{batchId:guid}")]
+    public async Task<IActionResult> BatchStatus(Guid batchId, CancellationToken ct)
+    {
+        var posts = await _repo.ResolveTargetsAsync(batchId, null, null, ct);
+        var byStatus = posts.GroupBy(p => p.Status)
+            .ToDictionary(g => g.Key.ToString(), g => g.Count());
+        return Ok(ApiResponse.Ok(new
+        {
+            batchId,
+            total = posts.Count,
+            byStatus,
+            posts = posts.Select(PostRepository.ToResponse).ToList()
+        }));
+    }
+
+    /// <summary>Sinh danh sách mốc UTC theo khung giờ (local) rải qua các ngày, chỉ lấy mốc tương lai.</summary>
+    private static List<DateTime> ComputeSlotTimesUtc(DateTime startUtc, List<string> slots, string timezone, int count)
+    {
+        if (count <= 0) return [];
+        var tz = ResolveTimeZone(timezone);
+        var slotSpans = (slots ?? [])
+            .Select(s => TimeSpan.TryParse(s?.Trim(), out var ts) ? ts : (TimeSpan?)null)
+            .Where(ts => ts.HasValue).Select(ts => ts!.Value)
+            .OrderBy(ts => ts).ToList();
+        if (slotSpans.Count == 0)
+            slotSpans = [new TimeSpan(8, 0, 0), new TimeSpan(12, 0, 0), new TimeSpan(20, 0, 0)];
+
+        var nowUtc = DateTime.UtcNow.AddMinutes(1);
+        var effectiveStartUtc = startUtc > nowUtc ? startUtc : nowUtc;
+        var day = TimeZoneInfo.ConvertTimeFromUtc(effectiveStartUtc, tz).Date;
+
+        var result = new List<DateTime>();
+        var guard = 0;
+        while (result.Count < count && guard++ < 500)
+        {
+            foreach (var slot in slotSpans)
+            {
+                var local = DateTime.SpecifyKind(day + slot, DateTimeKind.Unspecified);
+                var utc = TimeZoneInfo.ConvertTimeToUtc(local, tz);
+                if (utc > nowUtc)
+                {
+                    result.Add(utc);
+                    if (result.Count >= count) break;
+                }
+            }
+            day = day.AddDays(1);
+        }
+        return result;
+    }
+
+    private static TimeZoneInfo ResolveTimeZone(string timezone)
+    {
+        foreach (var id in new[] { timezone, "SE Asia Standard Time" })
+        {
+            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
+            catch { /* thử id kế tiếp */ }
+        }
+        return TimeZoneInfo.CreateCustomTimeZone("vn-fallback", TimeSpan.FromHours(7), "UTC+7", "UTC+7");
     }
 
     private async Task<IActionResult?> EnsureGenerationPermissionAsync(Guid id, CancellationToken ct)
