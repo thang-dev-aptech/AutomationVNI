@@ -1,0 +1,28 @@
+# Build outputs (rebuilt inside the image)
+**/node_modules
+**/bin
+**/obj
+**/dist
+backend/wwwroot/dist
+
+# Runtime data — must NOT bake into the image (lives on the Railway volume)
+**/*.db
+**/*.db-shm
+**/*.db-wal
+backend/Storage/Files
+
+# Secrets & local config
+**/appsettings.Local.json
+**/.env
+**/.env.*
+!**/.env.example
+
+# Repo noise not needed at build/runtime
+.git
+.github
+.idea
+.vs
+.vscode
+_ai_agent
+docs
+**/*.md
