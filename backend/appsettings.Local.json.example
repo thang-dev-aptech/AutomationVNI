@@ -5,6 +5,7 @@
 # dotnet user-secrets set "SocialPublish:UseRealFacebook" "true"
 # dotnet user-secrets set "MetaOAuth:AppId" "YOUR_META_APP_ID"
 # dotnet user-secrets set "MetaOAuth:AppSecret" "YOUR_META_APP_SECRET"
+# dotnet user-secrets set "MetaOAuth:ConfigId" "YOUR_LOGIN_FOR_BUSINESS_CONFIG_ID"
 #
 # See backend/README.md for full list.
 

@@ -17,9 +17,11 @@ public class MetaController(
 {
     [HttpGet("connect-url")]
     [Authorize(Roles = "Admin,ContentManager")]
-    public IActionResult GetConnectUrl()
+    public async Task<IActionResult> GetConnectUrl(CancellationToken ct)
     {
-        var configIssue = metaOAuth.DescribeConfigIssue();
+        // Live preflight: verify Meta recognizes the App ID/Secret before sending the user to a
+        // dialog that would otherwise fail with the opaque "Nội dung này hiện không hiển thị".
+        var configIssue = await metaOAuth.DescribeLiveConfigIssueAsync(ct);
         if (configIssue is not null)
         {
             logger.LogWarning("Meta connect-url rejected: {Issue}", configIssue);
@@ -31,8 +33,17 @@ public class MetaController(
 
         var userName = userContext.GetCurrentUserName() ?? userId.ToString();
         var url = metaOAuth.BuildConnectUrl(userId, userName);
+        var o = options.Value;
+        var hasConfigId = !string.IsNullOrWhiteSpace(o.ConfigId);
 
-        return Ok(ApiResponse.Ok(new MetaConnectUrlResponse { Url = url }));
+        return Ok(ApiResponse.Ok(new MetaConnectUrlResponse
+        {
+            Url = url,
+            Mode = hasConfigId ? "business" : "classic",
+            Hint = hasConfigId
+                ? null
+                : "Nếu Facebook báo \"Nội dung này hiện không hiển thị\": app Business cần Config ID. Meta App → Facebook Login for Business → Configurations → Create → copy Config ID → dotnet user-secrets set \"MetaOAuth:ConfigId\" \"...\" rồi restart backend."
+        }));
     }
 
     [HttpGet("callback")]

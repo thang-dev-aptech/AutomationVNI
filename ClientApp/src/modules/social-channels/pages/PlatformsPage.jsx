@@ -156,8 +156,12 @@ export default function PlatformsPage() {
   const handleConnectMeta = async () => {
     setConnectMenuOpen(false)
     try {
-      const { url } = await metaConnectMutation.mutateAsync()
-      if (url) window.location.href = url
+      const result = await metaConnectMutation.mutateAsync()
+      if (result?.hint) {
+        // Non-blocking: user still continues to Facebook; hint helps if dialog fails.
+        console.info('[Meta OAuth]', result.mode, result.hint)
+      }
+      if (result?.url) window.location.href = result.url
     } catch (connectError) {
       toast.error(getErrorMessage(connectError))
     }

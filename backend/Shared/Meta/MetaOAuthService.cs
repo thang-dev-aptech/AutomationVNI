@@ -45,6 +45,82 @@ public class MetaOAuthService(
 
     public bool IsConfigured() => DescribeConfigIssue() is null;
 
+    private const string CredsCheckCacheKey = "meta_oauth_creds_ok";
+
+    /// <summary>
+    /// Live check that Meta recognizes the configured App ID + Secret via a client_credentials app token.
+    /// Catches the #1 Connect failure — an invalid/deleted App ID (Graph code 101 "Invalid Client ID",
+    /// or code 190 "cannot get application info") that otherwise only surfaces as Facebook's opaque
+    /// "Nội dung này hiện không hiển thị" dialog. Positive result cached 5 min; transient/network errors
+    /// return null so a Graph hiccup never blocks a healthy setup.
+    /// </summary>
+    public async Task<string?> DescribeLiveConfigIssueAsync(CancellationToken ct = default)
+    {
+        var staticIssue = DescribeConfigIssue();
+        if (staticIssue is not null)
+            return staticIssue;
+
+        if (cache.TryGetValue<bool>(CredsCheckCacheKey, out var ok) && ok)
+            return null;
+
+        var o = options.Value;
+        var client = httpClientFactory.CreateClient(nameof(MetaOAuthService));
+        var url = $"{o.GraphBaseUrl.TrimEnd('/')}/{o.GraphVersion}/oauth/access_token" +
+                  $"?client_id={Uri.EscapeDataString(o.AppId)}" +
+                  $"&client_secret={Uri.EscapeDataString(o.AppSecret)}" +
+                  $"&grant_type=client_credentials";
+
+        try
+        {
+            using var response = await client.GetAsync(url, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+
+            if (response.IsSuccessStatusCode)
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("access_token", out var t)
+                    && !string.IsNullOrWhiteSpace(t.GetString()))
+                {
+                    cache.Set(CredsCheckCacheKey, true, TimeSpan.FromMinutes(5));
+                    return null;
+                }
+            }
+
+            var (code, message) = ParseMetaError(body);
+            logger.LogWarning(
+                "Meta credential preflight failed for AppId {AppId} (code {Code}): {Message}",
+                o.AppId, code, message);
+
+            // 101 Invalid Client ID / 190 cannot-get-application-info → the App ID is not a valid, live app.
+            var msgHasInvalidId = message is not null
+                && (message.Contains("Invalid Client ID", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("application info", StringComparison.OrdinalIgnoreCase));
+            if (code is 101 or 190 || msgHasInvalidId)
+            {
+                return $"Meta không nhận diện được App ID '{o.AppId}' (Invalid Client ID, code {code?.ToString() ?? "?"}). " +
+                       "App có thể đã bị xóa/khóa, hoặc bạn đang dùng nhầm Business Portfolio ID / Page ID thay vì App ID. " +
+                       "Mở developers.facebook.com/apps → chọn app → Settings → Basic, copy đúng App ID rồi chạy: " +
+                       "dotnet user-secrets set \"MetaOAuth:AppId\" \"<app-id>\" và restart backend.";
+            }
+
+            // Graph code 1 / message mentioning secret → App ID exists but the Secret is wrong.
+            if (message is not null && message.Contains("secret", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Sai App Secret cho App ID này. Lấy lại tại Meta App → Settings → Basic → App Secret rồi chạy: " +
+                       "dotnet user-secrets set \"MetaOAuth:AppSecret\" \"<app-secret>\" và restart backend.";
+            }
+
+            return $"Meta từ chối App ID/Secret khi kiểm tra (code {code?.ToString() ?? "?"}): {message ?? "unknown error"}. " +
+                   "Kiểm tra lại MetaOAuth:AppId và MetaOAuth:AppSecret.";
+        }
+        catch (Exception ex)
+        {
+            // Network/transient error — best-effort, do not block Connect on a Graph hiccup.
+            logger.LogWarning(ex, "Meta credential preflight skipped (transient error)");
+            return null;
+        }
+    }
+
     /// <summary>Configured scopes as a clean CSV — trims blanks and dedupes to avoid malformed scope strings.</summary>
     private string NormalizeScopeCsv()
         => string.Join(",", options.Value.Scopes
@@ -66,17 +142,53 @@ public class MetaOAuthService(
             StateTtl);
 
         var scope = NormalizeScopeCsv();
-        logger.LogInformation("Meta connect-url built with scopes: [{Scopes}]", scope);
-        var query = string.Join("&", new[]
+        var oAuthParams = new List<string>
         {
             $"client_id={Uri.EscapeDataString(o.AppId)}",
             $"redirect_uri={Uri.EscapeDataString(o.RedirectUri)}",
             $"state={Uri.EscapeDataString(state)}",
-            $"scope={Uri.EscapeDataString(scope)}",
-            "response_type=code"
-        });
+            "response_type=code",
+            // Buộc Facebook hiển thị lại màn duyệt quyền — để khi thêm scope mới (vd pages_manage_posts)
+            // người dùng cấp được quyền mới, thay vì bị bỏ qua vì đã grant lần trước.
+            "auth_type=rerequest"
+        };
 
-        return $"https://www.facebook.com/dialog/oauth?{query}";
+        // Facebook Login for Business requires config_id. Without it Meta often shows
+        // "Nội dung này hiện không hiển thị" / "This content isn't available" after login.
+        if (!string.IsNullOrWhiteSpace(o.ConfigId))
+        {
+            oAuthParams.Add($"config_id={Uri.EscapeDataString(o.ConfigId.Trim())}");
+            logger.LogInformation(
+                "Meta connect-url built with config_id (Login for Business). scopes_optional=[{Scopes}]",
+                scope);
+        }
+        else if (!string.IsNullOrWhiteSpace(scope))
+        {
+            oAuthParams.Add($"scope={Uri.EscapeDataString(scope)}");
+            logger.LogInformation(
+                "Meta connect-url built with classic scopes (no ConfigId): [{Scopes}]",
+                scope);
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "Meta OAuth thiếu quyền. Set MetaOAuth:ConfigId (Facebook Login for Business) " +
+                "hoặc MetaOAuth:Scopes (Facebook Login cổ điển).");
+        }
+
+        var query = string.Join("&", oAuthParams);
+        // Keep dialog URL unversioned — /vXX.X/dialog/oauth can trigger INVALID_APP_ID on some apps.
+        var dialogUrl = $"https://www.facebook.com/dialog/oauth?{query}";
+
+        // If a non-role FB session is already logged in, Meta shows a blank "content unavailable"
+        // page instead of an Allow dialog. Force re-login so the user can pick the Admin/Tester account.
+        if (o.ForceReLogin)
+        {
+            logger.LogInformation("Meta connect-url wrapping dialog with logout redirect (ForceReLogin=true)");
+            return "https://www.facebook.com/logout.php?next=" + Uri.EscapeDataString(dialogUrl);
+        }
+
+        return dialogUrl;
     }
 
     public async Task<MetaOAuthCallbackResult> HandleCallbackAsync(
@@ -395,6 +507,31 @@ public class MetaOAuthService(
             logger.LogWarning("Meta /{Edge} pagination hit safety cap ({Max} requests); some items may be omitted", edge, maxRequests);
 
         return results;
+    }
+
+    /// <summary>Parse a Graph API error body into (code, message) for classification. Nulls when absent.</summary>
+    private static (long? Code, string? Message) ParseMetaError(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return (null, null);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("error", out var err))
+            {
+                var message = err.TryGetProperty("message", out var m) ? m.GetString() : null;
+                long? code = err.TryGetProperty("code", out var c) && c.ValueKind == JsonValueKind.Number
+                    && c.TryGetInt64(out var cv) ? cv : null;
+                return (code, message);
+            }
+        }
+        catch (JsonException)
+        {
+            // Non-JSON body — nothing to classify.
+        }
+
+        return (null, null);
     }
 
     /// <summary>Extract a readable, sanitized message from a Graph API error body.</summary>

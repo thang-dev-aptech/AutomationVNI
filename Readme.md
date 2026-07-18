@@ -174,6 +174,7 @@ Cấu hình app Meta (Facebook Login) và set secrets qua user-secrets:
 ```bash
 dotnet user-secrets set "MetaOAuth:AppId" "YOUR_META_APP_ID"
 dotnet user-secrets set "MetaOAuth:AppSecret" "YOUR_META_APP_SECRET"
+dotnet user-secrets set "MetaOAuth:ConfigId" "YOUR_LOGIN_CONFIG_ID"
 ```
 
 Redirect URI trong Meta Developer Console:

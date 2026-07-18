@@ -3,6 +3,12 @@ namespace Backend.Shared.Meta;
 public class MetaConnectUrlResponse
 {
     public string Url { get; set; } = string.Empty;
+
+    /// <summary>classic = scope-based Facebook Login; business = config_id Login for Business.</summary>
+    public string Mode { get; set; } = "classic";
+
+    /// <summary>Optional setup hint when ConfigId is missing on a Business-style Pages connect.</summary>
+    public string? Hint { get; set; }
 }
 
 public class MetaOAuthCallbackResult
