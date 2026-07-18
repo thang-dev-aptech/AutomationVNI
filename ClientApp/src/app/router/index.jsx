@@ -13,6 +13,8 @@ import MediaPage from '@/modules/media/pages/MediaPage'
 import JobsPage from '@/modules/jobs/pages/JobsPage'
 import PromptTemplateListPage from '@/modules/prompt-templates/pages/PromptTemplateListPage'
 import PageContextListPage from '@/modules/page-contexts/pages/PageContextListPage'
+import BulkCreatePage from '@/modules/bulk/pages/BulkCreatePage'
+import BatchProgressPage from '@/modules/bulk/pages/BatchProgressPage'
 import LoginPage from '@/modules/auth/pages/LoginPage'
 import ForbiddenPage from '@/shared/pages/ForbiddenPage'
 import NotFoundPage from '@/shared/pages/NotFoundPage'
@@ -37,6 +39,8 @@ export default function AppRouter() {
           <Route path="/posts" element={<PostListPage />} />
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.postsCreate} />}>
             <Route path="/posts/create" element={<PostCreatePage />} />
+            <Route path="/bulk" element={<BulkCreatePage />} />
+            <Route path="/bulk/:batchId" element={<BatchProgressPage />} />
           </Route>
           <Route path="/posts/:id" element={<PostDetailPage />} />
           <Route path="/media" element={<MediaPage />} />

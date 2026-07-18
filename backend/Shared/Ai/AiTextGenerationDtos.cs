@@ -33,6 +33,13 @@ public class AiTextGenerationResult
     public string? RawResponse { get; set; }
 }
 
+public class SuggestIdeasRequest
+{
+    public string Topic { get; set; } = string.Empty;
+    public int Count { get; set; } = 5;
+    public string? Category { get; set; }
+}
+
 public class AiTestTextGenerationResponse
 {
     public bool ProviderAvailable { get; set; }

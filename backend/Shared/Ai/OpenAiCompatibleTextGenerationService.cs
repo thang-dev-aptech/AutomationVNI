@@ -106,6 +106,91 @@ public class OpenAiCompatibleTextGenerationService(
         return ParseModelJson(stripped, content);
     }
 
+    public async Task<List<string>> SuggestIdeasAsync(
+        string topic, int count, string? category, CancellationToken ct = default)
+    {
+        count = Math.Clamp(count <= 0 ? 5 : count, 1, 30);
+        var config = ResolveProviderConfig(null, null);
+        if (string.IsNullOrWhiteSpace(config.ApiKey))
+            throw new AiProviderUnavailableException("AI provider chưa cấu hình ApiKey.");
+
+        const string sys =
+            "Bạn tạo ý tưởng bài đăng mạng xã hội cho đội marketing Việt Nam. " +
+            "CHỈ trả về một JSON array các chuỗi ý tưởng ngắn (tiếng Việt), không thêm chữ nào khác.";
+        var user = new StringBuilder();
+        user.AppendLine($"Chủ đề: {topic.Trim()}");
+        if (!string.IsNullOrWhiteSpace(category)) user.AppendLine($"Danh mục: {category.Trim()}");
+        user.AppendLine($"Đề xuất {count} ý tưởng bài đăng, mỗi ý tưởng là một tiêu đề ngắn gọn, hấp dẫn.");
+        user.Append($"Trả về JSON array gồm đúng {count} chuỗi.");
+
+        var payload = new
+        {
+            model = config.DefaultTextModel,
+            messages = new object[]
+            {
+                new { role = "system", content = sys },
+                new { role = "user", content = user.ToString() }
+            },
+            max_tokens = config.MaxTokens,
+            temperature = 0.9
+        };
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, BuildCompletionsUrl(config));
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey);
+        httpRequest.Content = new StringContent(
+            JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await httpClient.SendAsync(httpRequest, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "AI suggest-ideas HTTP call failed");
+            throw new AiTextGenerationException("AI provider request failed. Check BaseUrl and network connectivity.");
+        }
+
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            logger.LogWarning("AI suggest-ideas provider returned HTTP {StatusCode}", (int)response.StatusCode);
+            throw new AiTextGenerationException(
+                $"AI provider returned HTTP {(int)response.StatusCode}. Verify model and provider configuration.");
+        }
+
+        var content = StripMarkdownJson(ExtractMessageContent(body));
+        return ParseIdeas(content, count);
+    }
+
+    private static List<string> ParseIdeas(string json, int count)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            JsonElement arr;
+            if (root.ValueKind == JsonValueKind.Array) arr = root;
+            else if (root.TryGetProperty("ideas", out var i) && i.ValueKind == JsonValueKind.Array) arr = i;
+            else return [];
+
+            var list = new List<string>();
+            foreach (var el in arr.EnumerateArray())
+            {
+                string? s = el.ValueKind == JsonValueKind.String
+                    ? el.GetString()
+                    : el.TryGetProperty("idea", out var ie) ? ie.GetString()
+                    : el.TryGetProperty("title", out var te) ? te.GetString() : null;
+                if (!string.IsNullOrWhiteSpace(s)) list.Add(s!.Trim());
+            }
+            return list.Take(count).ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
     private AiProviderConfig ResolveProviderConfig(string? providerKey, string? modelOverride)
     {
         var key = string.IsNullOrWhiteSpace(providerKey)

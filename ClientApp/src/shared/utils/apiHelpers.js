@@ -19,9 +19,22 @@ export function getErrorMessage(error, fallback = 'Đã xảy ra lỗi') {
   )
 }
 
+/**
+ * Backend trả DateTime UTC nhưng thiếu hậu tố 'Z' (SQLite → Kind=Unspecified).
+ * Nếu là chuỗi ISO không kèm timezone, coi như UTC để hiển thị đúng giờ local.
+ */
+function toUtcDate(value) {
+  if (typeof value === 'string'
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)
+    && !/[zZ]$|[+-]\d{2}:?\d{2}$/.test(value)) {
+    return new Date(`${value}Z`)
+  }
+  return new Date(value)
+}
+
 export function formatDateTime(value) {
   if (!value) return '—'
-  return new Date(value).toLocaleString('vi-VN', {
+  return toUtcDate(value).toLocaleString('vi-VN', {
     timeZone: 'Asia/Ho_Chi_Minh',
     year: 'numeric',
     month: '2-digit',

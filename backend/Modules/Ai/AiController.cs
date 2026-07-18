@@ -16,6 +16,36 @@ public class AiController(
     IAiImageGenerationService aiImageService,
     IOptions<AiImageProvidersOptions> imageOptions) : ControllerBase
 {
+    /// <summary>AI đề xuất N ý tưởng bài đăng từ 1 chủ đề (cho bulk ideation). Fallback mock nếu AI chưa sẵn sàng.</summary>
+    [HttpPost("suggest-ideas")]
+    public async Task<IActionResult> SuggestIdeas([FromBody] SuggestIdeasRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Topic))
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Chủ đề không được để trống"));
+
+        var count = Math.Clamp(request.Count <= 0 ? 5 : request.Count, 1, 30);
+
+        if (aiTextService.IsAvailable())
+        {
+            try
+            {
+                var ideas = await aiTextService.SuggestIdeasAsync(request.Topic, count, request.Category, ct);
+                if (ideas.Count > 0)
+                    return Ok(ApiResponse.Ok(new { source = "ai", ideas }, "Đã đề xuất ý tưởng"));
+            }
+            catch (AiProviderUnavailableException) { /* rơi xuống mock */ }
+            catch (AiTextGenerationException ex)
+            {
+                return BadRequest(ApiResponse.Fail("AI_GENERATION_ERROR", ex.Message));
+            }
+        }
+
+        var mock = Enumerable.Range(1, count)
+            .Select(i => $"{request.Topic.Trim()} — góc nhìn {i}")
+            .ToList();
+        return Ok(ApiResponse.Ok(new { source = "mock", ideas = mock }, "AI chưa sẵn sàng — trả ý tưởng mẫu"));
+    }
+
     [HttpPost("test-text-generation")]
     public async Task<IActionResult> TestTextGeneration(
         [FromBody] AiTextGenerationRequest request,
