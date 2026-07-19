@@ -48,5 +48,5 @@ coverage/
 *.coverage
 .nyc_output/
 
-# Cursor / local agent (optional — uncomment if you don't want agent transcripts in repo)
-# .cursor/
+# Cursor / local agent
+.cursor/
