@@ -9,12 +9,16 @@ function groupChannels(channels = []) {
   const pages = []
   const instagram = []
   const groups = []
+  const threads = []
   for (const ch of channels) {
     if (ch.channelType === 2) instagram.push(ch)
     else if (ch.channelType === 3) groups.push(ch)
+    else if (ch.channelType === 4) threads.push(ch)
+    // Nhánh mặc định là Page — kênh loại mới phải khai tường minh ở trên,
+    // nếu không sẽ bị gán nhầm nhãn "Facebook Pages".
     else pages.push(ch)
   }
-  return { pages, instagram, groups }
+  return { pages, instagram, groups, threads }
 }
 
 function ChannelSection({ title, items, canManage, onEdit, onDelete }) {
@@ -65,7 +69,7 @@ export default function ConnectionCard({
   onDeleteChannel,
   resyncPending = false,
 }) {
-  const { pages, instagram, groups } = groupChannels(connection.channels)
+  const { pages, instagram, groups, threads } = groupChannels(connection.channels)
   const providerLabel = getProviderLabel(connection.provider)
 
   return (
@@ -143,7 +147,15 @@ export default function ConnectionCard({
             onEdit={onEditChannel}
             onDelete={onDeleteChannel}
           />
-          {pages.length === 0 && instagram.length === 0 && groups.length === 0 && (
+          <ChannelSection
+            title="Threads"
+            items={threads}
+            canManage={canManage}
+            onEdit={onEditChannel}
+            onDelete={onDeleteChannel}
+          />
+          {pages.length === 0 && instagram.length === 0 && groups.length === 0
+            && threads.length === 0 && (
             <p className="connection-empty">Chưa có kênh nào trong tài khoản này. Bấm Re-sync.</p>
           )}
         </div>
