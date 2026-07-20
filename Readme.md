@@ -27,6 +27,7 @@ AutomationVNI/
 ├── ClientApp/               # React SPA (Vite)
 │   └── src/modules/         # auth, posts, jobs, media, dashboard, ...
 ├── docs/
+│   ├── DEPLOY_VPS.md        # Deploy VPS: Docker Compose, Caddy, Jenkins
 │   └── DEPLOYMENT.md        # Hướng dẫn deploy production
 └── _ai_agent/               # Prompts, database spec, testing checklists
     └── testing/
@@ -222,7 +223,8 @@ Manual trigger: `POST /api/publishlog/process-due`.
 | Tài liệu | Mô tả |
 |----------|--------|
 | [`backend/README.md`](backend/README.md) | API, migration, providers, endpoints |
-| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Deploy production |
+| [`docs/DEPLOY_VPS.md`](docs/DEPLOY_VPS.md) | Deploy lên VPS bằng Docker Compose + Jenkins, xử lý lỗi OAuth Threads |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Deploy production (tổng quan) |
 | [`docs/GIT_PUSH.md`](docs/GIT_PUSH.md) | Checklist trước khi push Git |
 | [`_ai_agent/testing/e2e_checklist.md`](_ai_agent/testing/e2e_checklist.md) | Checklist E2E đầy đủ |
 | [`_ai_agent/testing/production_readiness.md`](_ai_agent/testing/production_readiness.md) | TODO trước production |
