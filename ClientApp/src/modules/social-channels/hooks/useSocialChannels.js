@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { unwrapApiData } from '@/shared/utils/apiHelpers'
 import { metaApi } from '../services/metaApi'
+import { threadsApi } from '../services/threadsApi'
 import { socialChannelApi, socialChannelQueryKeys } from '../services/socialChannelApi'
 import {
   socialConnectionApi,
@@ -69,5 +70,11 @@ export function useDisconnectSocialConnection() {
 export function useMetaConnectUrl() {
   return useMutation({
     mutationFn: async () => unwrapApiData(await metaApi.getConnectUrl()),
+  })
+}
+
+export function useThreadsConnectUrl() {
+  return useMutation({
+    mutationFn: async () => unwrapApiData(await threadsApi.getConnectUrl()),
   })
 }

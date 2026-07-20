@@ -5,15 +5,17 @@ public enum SocialPlatform
     Facebook  = 1,
     LinkedIn  = 2,
     Instagram = 3,
-    TikTok    = 4
+    TikTok    = 4,
+    Threads   = 5
 }
 
-/// <summary>Subtype of a social channel under a connection (Page / IG / Group).</summary>
+/// <summary>Subtype of a social channel under a connection (Page / IG / Group / Threads).</summary>
 public enum SocialChannelType
 {
     Page = 1,
     Instagram = 2,
-    Group = 3
+    Group = 3,
+    Threads = 4
 }
 
 /// <summary>OAuth provider for SocialConnection (Meta, LinkedIn, …).</summary>

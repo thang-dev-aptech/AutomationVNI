@@ -14,6 +14,7 @@ using Backend.Modules.SocialConnection;
 using Backend.Shared;
 using Backend.Shared.Ai;
 using Backend.Shared.Meta;
+using Backend.Shared.Threads;
 using Backend.Shared.SocialPublish;
 using Backend.Shared.DevSeed;
 using Backend.Shared.Middleware;
@@ -38,6 +39,7 @@ builder.Services.Configure<DevSeedOptions>(builder.Configuration.GetSection("Dev
 builder.Services.Configure<AiProvidersOptions>(builder.Configuration.GetSection("AiProviders"));
 builder.Services.Configure<SocialPublishOptions>(builder.Configuration.GetSection("SocialPublish"));
 builder.Services.Configure<MetaOAuthOptions>(builder.Configuration.GetSection("MetaOAuth"));
+builder.Services.Configure<ThreadsOAuthOptions>(builder.Configuration.GetSection("ThreadsOAuth"));
 
 var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()
     ?? throw new InvalidOperationException("Jwt configuration is required.");
@@ -124,6 +126,11 @@ builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient(nameof(MetaOAuthService));
 builder.Services.AddScoped<MetaPageSyncService>();
 builder.Services.AddScoped<IMetaOAuthService, MetaOAuthService>();
+
+builder.Services.AddHttpClient(nameof(ThreadsOAuthService));
+builder.Services.AddScoped<ThreadsProfileSyncService>();
+builder.Services.AddScoped<IThreadsOAuthService, ThreadsOAuthService>();
+builder.Services.AddHostedService<ThreadsTokenRefreshService>();
 
 builder.Services.Configure<ApiBehaviorOptions>(options =>
     options.SuppressModelStateInvalidFilter = false);

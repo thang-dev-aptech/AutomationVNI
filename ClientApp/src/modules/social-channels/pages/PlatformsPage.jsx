@@ -19,6 +19,7 @@ import {
   useMetaConnectUrl,
   useSocialChannelAll,
   useSocialConnections,
+  useThreadsConnectUrl,
   useUpdateSocialChannel,
 } from '../hooks/useSocialChannels'
 import './PlatformsPage.css'
@@ -55,6 +56,7 @@ export default function PlatformsPage() {
   const deleteMutation = useDeleteSocialChannel()
   const disconnectMutation = useDisconnectSocialConnection()
   const metaConnectMutation = useMetaConnectUrl()
+  const threadsConnectMutation = useThreadsConnectUrl()
 
   const orphanChannels = useMemo(() => {
     const kw = keyword.trim().toLowerCase()
@@ -86,15 +88,52 @@ export default function PlatformsPage() {
     if (!status) return
 
     if (status === 'success') {
-      const fb = searchParams.get('fb') ?? '0'
-      const ig = searchParams.get('ig') ?? '0'
-      const gr = searchParams.get('gr') ?? '0'
-      toast.success(`Đã sync Meta: ${fb} Page, ${ig} Instagram, ${gr} Group`)
+      const fb = Number(searchParams.get('fb') ?? '0') || 0
+      const ig = Number(searchParams.get('ig') ?? '0') || 0
+      const gr = Number(searchParams.get('gr') ?? '0') || 0
+      const removedN = Number(searchParams.get('removed') ?? '0') || 0
+      const returned = Number(searchParams.get('returned') ?? '0') || 0
+      const missingToken = Number(searchParams.get('missingToken') ?? '0') || 0
+
+      if (fb === 0) {
+        toast.warning(
+          returned === 0
+            ? 'Đã kết nối Meta nhưng không có Page nào. Trong màn Facebook: Edit previous settings → tick chọn Page → Continue, rồi Connect lại. App Development: tài khoản FB phải có role trên app.'
+            : `Meta trả ${returned} Page nhưng thiếu access token (${missingToken}). Connect lại và chọn đủ Page + quyền pages_manage_posts.`,
+        )
+      } else {
+        toast.success(
+          removedN > 0
+            ? `Đã sync Meta: ${fb} Page, ${ig} Instagram, ${gr} Group (gỡ ${removedN} kênh cũ)`
+            : `Đã sync Meta: ${fb} Page, ${ig} Instagram, ${gr} Group`,
+        )
+      }
       refetchConnections()
       refetchChannels()
     } else if (status === 'error') {
       const message = searchParams.get('message')
       toast.error(message ? decodeURIComponent(message) : 'Kết nối Meta thất bại')
+    }
+
+    navigate('/platforms', { replace: true })
+  }, [searchParams, navigate, refetchConnections, refetchChannels])
+
+  useEffect(() => {
+    const status = searchParams.get('threadsConnected')
+    if (!status) return
+
+    if (status === 'success') {
+      const username = searchParams.get('username')
+      toast.success(
+        username
+          ? `Đã kết nối Threads: ${decodeURIComponent(username)}`
+          : 'Đã kết nối Threads',
+      )
+      refetchConnections()
+      refetchChannels()
+    } else if (status === 'error') {
+      const message = searchParams.get('message')
+      toast.error(message ? decodeURIComponent(message) : 'Kết nối Threads thất bại')
     }
 
     navigate('/platforms', { replace: true })
@@ -167,9 +206,28 @@ export default function PlatformsPage() {
     }
   }
 
+  const handleConnectThreads = async () => {
+    setConnectMenuOpen(false)
+    try {
+      const result = await threadsConnectMutation.mutateAsync()
+      if (result?.hint) console.info('[Threads OAuth]', result.hint)
+      if (result?.url) window.location.href = result.url
+    } catch (connectError) {
+      toast.error(getErrorMessage(connectError))
+    }
+  }
+
+  /** Re-sync must go back through the same provider that created the connection. */
+  const handleResync = (connection) =>
+    connection.provider === 3 ? handleConnectThreads() : handleConnectMeta()
+
   const handleProviderAction = (provider) => {
     if (provider.connectAction === 'meta') {
       handleConnectMeta()
+      return
+    }
+    if (provider.connectAction === 'threads') {
+      handleConnectThreads()
       return
     }
     if (provider.connectAction === 'manual') {
@@ -276,7 +334,7 @@ export default function PlatformsPage() {
           <div className="connections-list">
             <h2 className="platforms-section-title">Tài khoản đã kết nối</h2>
             {filteredConnections.length === 0 ? (
-              <EmptyState message="Chưa có tài khoản Meta nào. Bấm + Connect → Meta." />
+              <EmptyState message="Chưa có tài khoản nào. Bấm + Connect → Meta hoặc Threads." />
             ) : (
               filteredConnections.map((connection) => (
                 <ConnectionCard
@@ -285,11 +343,13 @@ export default function PlatformsPage() {
                   expanded={expandedIds.has(connection.id)}
                   onToggle={() => toggleExpanded(connection.id)}
                   canManage={canManageChannels}
-                  onResync={handleConnectMeta}
+                  onResync={() => handleResync(connection)}
                   onDisconnect={() => handleDisconnect(connection)}
                   onEditChannel={openEdit}
                   onDeleteChannel={handleDelete}
-                  resyncPending={metaConnectMutation.isPending}
+                  resyncPending={
+                    metaConnectMutation.isPending || threadsConnectMutation.isPending
+                  }
                 />
               ))
             )}

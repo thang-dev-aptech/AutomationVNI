@@ -17,6 +17,7 @@ public class SocialConnectionResponse
     public int PageCount { get; set; }
     public int InstagramCount { get; set; }
     public int GroupCount { get; set; }
+    public int ThreadsCount { get; set; }
     public List<SocialChannelResponse> Channels { get; set; } = [];
 }
 

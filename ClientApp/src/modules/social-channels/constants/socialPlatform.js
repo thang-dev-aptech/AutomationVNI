@@ -4,6 +4,7 @@ export const SOCIAL_PLATFORMS = {
   2: { value: 2, label: 'LinkedIn' },
   3: { value: 3, label: 'Instagram' },
   4: { value: 4, label: 'TikTok' },
+  5: { value: 5, label: 'Threads' },
 }
 
 export const SOCIAL_PLATFORM_OPTIONS = Object.values(SOCIAL_PLATFORMS)
@@ -17,6 +18,7 @@ export const CHANNEL_TYPES = {
   1: { value: 1, label: 'Page', key: 'page' },
   2: { value: 2, label: 'Instagram', key: 'instagram' },
   3: { value: 3, label: 'Group', key: 'group' },
+  4: { value: 4, label: 'Threads', key: 'threads' },
 }
 
 export function getChannelTypeLabel(value) {
@@ -58,10 +60,10 @@ export const PROVIDER_CATALOG = [
   {
     id: 'threads',
     label: 'Threads',
-    description: 'Sắp hỗ trợ',
+    description: 'Login tài khoản Threads → đồng bộ profile để đăng bài',
     provider: 3,
-    connectAction: null,
-    supported: false,
+    connectAction: 'threads',
+    supported: true,
   },
   {
     id: 'zalo',

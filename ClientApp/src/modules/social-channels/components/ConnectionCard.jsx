@@ -85,15 +85,14 @@ export default function ConnectionCard({
             </span>
           )}
           <div className="connection-card-titles">
-            <strong>{connection.displayName || 'Tài khoản Meta'}</strong>
+            <strong>{connection.displayName || 'Tài khoản đã kết nối'}</strong>
             <span>
               {providerLabel}
               {' · '}
-              {connection.pageCount} Page
-              {' · '}
-              {connection.instagramCount} IG
-              {' · '}
-              {connection.groupCount} Group
+              {/* Threads grants one profile per authorization — Page/IG/Group counts don't apply. */}
+              {connection.provider === 3
+                ? `${connection.threadsCount ?? 0} Profile`
+                : `${connection.pageCount} Page · ${connection.instagramCount} IG · ${connection.groupCount} Group`}
               {connection.lastSyncedAt
                 ? ` · sync ${formatDateTime(connection.lastSyncedAt)}`
                 : ''}

@@ -1,5 +1,6 @@
 using Backend.Data;
 using Backend.Modules.SocialChannel.Enums;
+using Backend.Modules.SocialConnection;
 using Backend.Shared;
 using Backend.Shared.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -11,10 +12,41 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
     public SocialChannelRepository(AppDbContext context, IUserContext userContext)
         : base(context, userContext) { }
 
+    /// <summary>
+    /// Kênh dùng được để chọn đăng bài: đang active, chưa xóa, và thuộc connection Meta còn sống
+    /// (hoặc kênh thủ công không gắn connection). Page của tài khoản đã disconnect không còn hiện.
+    /// </summary>
+    public override async Task<List<SocialChannelModel>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        await CleanupStaleChannelsAsync(cancellationToken);
+
+        var liveConnectionIds = await Context.Set<SocialConnectionModel>()
+            .Where(c => !c.IsDeleted && c.IsActive)
+            .Select(c => c.Id)
+            .ToListAsync(cancellationToken);
+
+        return await QueryActive()
+            .Where(x => x.IsActive)
+            .Where(x => x.SocialConnectionId == null
+                        || liveConnectionIds.Contains(x.SocialConnectionId.Value))
+            .OrderByDescending(x => x.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<PagedResult<SocialChannelResponse>> FilterAsync(
         SocialChannelFilterRequest request, CancellationToken ct = default)
     {
-        var query = QueryActive();
+        await CleanupStaleChannelsAsync(ct);
+
+        var query = QueryActive().Where(x => x.IsActive);
+
+        var liveConnectionIds = await Context.Set<SocialConnectionModel>()
+            .Where(c => !c.IsDeleted && c.IsActive)
+            .Select(c => c.Id)
+            .ToListAsync(ct);
+
+        query = query.Where(x => x.SocialConnectionId == null
+                                 || liveConnectionIds.Contains(x.SocialConnectionId.Value));
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
@@ -30,9 +62,6 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
 
         if (request.SocialConnectionId.HasValue)
             query = query.Where(x => x.SocialConnectionId == request.SocialConnectionId.Value);
-
-        if (request.IsActive.HasValue)
-            query = query.Where(x => x.IsActive == request.IsActive.Value);
 
         var paged = await PaginateAsync(query, request.Index, request.Size, ct);
         return new PagedResult<SocialChannelResponse>
@@ -53,6 +82,7 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
             channelType = request.Platform switch
             {
                 SocialPlatform.Instagram => SocialChannelType.Instagram,
+                SocialPlatform.Threads => SocialChannelType.Threads,
                 _ => SocialChannelType.Page
             };
         }
@@ -105,10 +135,11 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
         var normalizedId = externalPageId.Trim();
         var actor = string.IsNullOrWhiteSpace(auditUser) ? "meta-oauth" : auditUser.Trim();
 
+        // Include soft-deleted rows so a previously pruned page can be revived on re-sync
+        // instead of creating a duplicate.
         var existing = await Context.Set<SocialChannelModel>()
             .FirstOrDefaultAsync(
-                x => !x.IsDeleted
-                    && x.Platform == platform
+                x => x.Platform == platform
                     && x.ExternalPageId == normalizedId,
                 ct);
 
@@ -120,6 +151,9 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
             existing.ChannelType = channelType;
             existing.SocialConnectionId = socialConnectionId;
             existing.IsActive = true;
+            existing.IsDeleted = false;
+            existing.DeletedAt = null;
+            existing.DeletedBy = null;
             if (extraJson is not null)
                 existing.ExtraJson = extraJson;
             existing.UpdatedAt = DateTime.UtcNow;
@@ -151,10 +185,110 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
         return entity;
     }
 
+    /// <summary>
+    /// Soft-delete Meta channels under a connection that are no longer returned by Graph
+    /// (page deleted, permission revoked, IG unlinked, etc.). Clears tokens for safety.
+    /// </summary>
+    public async Task<int> SoftDeleteMissingFromMetaAsync(
+        Guid socialConnectionId,
+        IReadOnlyCollection<(SocialPlatform Platform, string ExternalPageId)> keepKeys,
+        string? auditUser,
+        CancellationToken ct = default)
+    {
+        var actor = string.IsNullOrWhiteSpace(auditUser) ? "meta-oauth" : auditUser.Trim();
+        var keep = keepKeys
+            .Select(k => (k.Platform, ExternalPageId: k.ExternalPageId.Trim()))
+            .ToHashSet();
+
+        var existing = await Context.Set<SocialChannelModel>()
+            .Where(x => !x.IsDeleted && x.SocialConnectionId == socialConnectionId)
+            .ToListAsync(ct);
+
+        var removed = 0;
+        var now = DateTime.UtcNow;
+        foreach (var ch in existing)
+        {
+            if (keep.Contains((ch.Platform, ch.ExternalPageId)))
+                continue;
+
+            MarkChannelRemoved(ch, actor, now);
+            removed++;
+        }
+
+        if (removed > 0)
+            await Context.SaveChangesAsync(ct);
+
+        return removed;
+    }
+
+    public async Task SoftDeleteByConnectionAsync(
+        Guid socialConnectionId,
+        string? auditUser,
+        CancellationToken ct = default)
+    {
+        var actor = string.IsNullOrWhiteSpace(auditUser)
+            ? GetCurrentUserName() ?? "disconnect"
+            : auditUser.Trim();
+
+        // Include inactive-but-not-deleted rows left by older disconnect logic.
+        var channels = await Context.Set<SocialChannelModel>()
+            .Where(x => !x.IsDeleted && x.SocialConnectionId == socialConnectionId)
+            .ToListAsync(ct);
+
+        if (channels.Count == 0) return;
+
+        var now = DateTime.UtcNow;
+        foreach (var ch in channels)
+            MarkChannelRemoved(ch, actor, now);
+
+        await Context.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Soft-delete channels that should no longer appear in pickers:
+    /// inactive, or linked to a disconnected/deleted Meta account.
+    /// </summary>
+    public async Task<int> CleanupStaleChannelsAsync(CancellationToken ct = default)
+    {
+        var deadConnectionIds = await Context.Set<SocialConnectionModel>()
+            .Where(c => c.IsDeleted || !c.IsActive)
+            .Select(c => c.Id)
+            .ToListAsync(ct);
+
+        var stale = await Context.Set<SocialChannelModel>()
+            .Where(x => !x.IsDeleted && (
+                !x.IsActive
+                || (x.SocialConnectionId != null && deadConnectionIds.Contains(x.SocialConnectionId.Value))))
+            .ToListAsync(ct);
+
+        if (stale.Count == 0) return 0;
+
+        var now = DateTime.UtcNow;
+        const string actor = "stale-channel-cleanup";
+        foreach (var ch in stale)
+            MarkChannelRemoved(ch, actor, now);
+
+        await Context.SaveChangesAsync(ct);
+        return stale.Count;
+    }
+
+    private static void MarkChannelRemoved(SocialChannelModel ch, string actor, DateTime now)
+    {
+        ch.IsActive = false;
+        ch.AccessToken = string.Empty;
+        ch.RefreshToken = null;
+        ch.TokenExpiresAt = null;
+        ch.IsDeleted = true;
+        ch.DeletedAt = now;
+        ch.DeletedBy = actor;
+        ch.UpdatedAt = now;
+        ch.UpdatedBy = actor;
+    }
+
     public async Task<List<SocialChannelModel>> GetOrphansAsync(CancellationToken ct = default)
     {
         return await QueryActive()
-            .Where(x => x.SocialConnectionId == null)
+            .Where(x => x.IsActive && x.SocialConnectionId == null)
             .OrderByDescending(x => x.CreatedAt)
             .ToListAsync(ct);
     }
