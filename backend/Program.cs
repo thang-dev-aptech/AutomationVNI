@@ -142,7 +142,8 @@ builder.Services.AddControllers(options =>
 
 builder.Services.AddOpenApi();
 
-// Behind Railway/Render/Fly, TLS terminates at the edge and the container receives HTTP.
+// Behind a reverse proxy (nginx/Caddy on the VPS), TLS terminates at the edge and the
+// container receives plain HTTP.
 // Honor X-Forwarded-Proto/For so the app sees the original https scheme (correct absolute URLs,
 // no http→https redirect loop).
 builder.Services.Configure<ForwardedHeadersOptions>(options =>

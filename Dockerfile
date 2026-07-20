@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Single-image deploy: builds the React SPA + the .NET API that serves it.
-# Build context = repo root.  Target host: Railway (or any container host with a volume).
+# Build context = repo root.  Target host: any Docker host with a volume (see docker-compose.yml).
 
 # ---------------------------------------------------------------------------
 # 1) Build the React SPA (Vite) → outputs to backend/wwwroot/dist
@@ -37,7 +37,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/publish ./
 ENV ASPNETCORE_ENVIRONMENT=Production
-# Railway injects PORT at runtime; bind Kestrel to it (fallback 8080 for local `docker run`).
+# Kestrel binds to $PORT so the port can be overridden from .env without rebuilding.
 ENV PORT=8080
 EXPOSE 8080
 ENTRYPOINT ["sh", "-c", "dotnet backend.dll --urls http://0.0.0.0:${PORT:-8080}"]

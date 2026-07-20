@@ -1,0 +1,41 @@
+# Deploy lên VPS: docker compose --env-file .env.production up -d --build
+#
+# Compose không tự đọc .env.production (nó chỉ tự đọc file tên ".env"), nên cờ
+# --env-file là bắt buộc. Thiếu cờ này container sẽ chạy với config rỗng và
+# fail ngay ở bước kiểm tra Jwt:SecretKey.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vni-automation:latest
+    container_name: vni-automation
+    restart: unless-stopped
+
+    # Nạp toàn bộ biến trong file env vào container.
+    env_file:
+      - .env.production
+
+    ports:
+      # Chỉ mở trên loopback — TLS do reverse proxy (nginx/Caddy) của VPS đảm
+      # nhiệm. Muốn expose thẳng ra ngoài thì đổi thành "8080:8080", nhưng khi
+      # đó không có HTTPS và Threads OAuth sẽ không hoạt động.
+      - "127.0.0.1:8080:8080"
+
+    volumes:
+      # SQLite và file upload phải nằm ngoài container, nếu không mỗi lần
+      # `up --build` là mất sạch dữ liệu, kể cả token của các kênh đã kết nối.
+      - vni-data:/app/Data
+      - vni-storage:/app/Storage/Files
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${PORT:-8080}/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  vni-data:
+  vni-storage:

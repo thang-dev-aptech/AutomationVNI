@@ -5,7 +5,7 @@
 **/dist
 backend/wwwroot/dist
 
-# Runtime data — must NOT bake into the image (lives on the Railway volume)
+# Runtime data — must NOT bake into the image (lives on a Docker volume)
 **/*.db
 **/*.db-shm
 **/*.db-wal
