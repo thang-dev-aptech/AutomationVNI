@@ -32,8 +32,10 @@ RUN dotnet publish backend/backend.csproj -c Release -o /app/publish /p:UseAppHo
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 # DejaVu fonts → ImageSharp text overlay works headless (see ImageOverlayService FontCandidates).
+# curl → the compose healthcheck; the aspnet base image ships with neither curl nor wget,
+# so without this the healthcheck can only ever fail.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && apt-get install -y --no-install-recommends fonts-dejavu-core curl \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/publish ./
 ENV ASPNETCORE_ENVIRONMENT=Production

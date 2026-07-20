@@ -41,7 +41,7 @@ docker compose --env-file .env.production up -d --build
 
 Cờ `--env-file` là **bắt buộc**. Compose chỉ tự đọc file tên đúng `.env`; thiếu cờ này container khởi động với config rỗng và chết ngay ở bước kiểm tra `Jwt:SecretKey`.
 
-Container lắng nghe ở `127.0.0.1:8080` — chỉ loopback, không expose thẳng ra internet.
+Container mặc định lắng nghe ở `127.0.0.1:8080` — chỉ loopback. Chưa dựng reverse proxy và cần vào bằng IP để test thì đặt `APP_BIND=0.0.0.0` trong `.env.production` (lúc đó là HTTP trần, Threads OAuth sẽ không chạy).
 
 ## 4. Reverse proxy + TLS
 
@@ -81,9 +81,51 @@ docker compose ps                   # healthcheck = healthy
 - Mở `https://your-domain.com/` → thấy giao diện
 - Đăng nhập bằng `Seed__AdminEmail` / `Seed__AdminPassword`
 - **Platforms → + Connect → Meta** → chọn Page → quay về thấy connection
-- **Platforms → + Connect → Threads** → xem mục 8 nếu lỗi
+- **Platforms → + Connect → Threads** → xem mục 9 nếu lỗi
 
-## 7. Dữ liệu và backup
+## 7. Tự động deploy bằng Jenkins + GitHub webhook
+
+### Webhook
+
+GitHub repo → Settings → Webhooks → Add webhook:
+
+- **Payload URL**: `http://<ip-jenkins>:8081/github-webhook/` — **bắt buộc có dấu `/` cuối**. Thiếu nó Jenkins trả 302, mà GitHub không đi theo redirect và 302 còn biến `POST` thành `GET`, nên payload không bao giờ tới nơi.
+- **Content type**: `application/json`
+- **Events**: Just the push event
+
+Sự kiện `ping` trả **405 là bình thường** — plugin GitHub của Jenkins chỉ xử lý `push`. Miễn là 405 chứ không phải 403 hay redirect về `/login` thì endpoint đang hoạt động đúng. Chỉ cần quan tâm delivery của `push` trả 200.
+
+### File env cho Jenkins
+
+`.env.production` bị `.gitignore` chặn nên **không có trong bản clone của Jenkins**. Giữ một bản gốc trên VPS, ngoài workspace:
+
+```bash
+sudo mkdir -p /opt/vni-automation
+sudo cp .env.production /opt/vni-automation/.env.production
+sudo chmod 600 /opt/vni-automation/.env.production
+sudo chown jenkins:jenkins /opt/vni-automation/.env.production
+```
+
+Build step trong Jenkins job:
+
+```bash
+cp /opt/vni-automation/.env.production .
+docker compose --env-file .env.production up -d --build
+docker image prune -f
+```
+
+Đừng gỡ `.env.production` khỏi `.gitignore` cho tiện — làm vậy là đẩy toàn bộ App Secret và JWT key lên GitHub.
+
+### Quyền Docker cho Jenkins
+
+```bash
+sudo usermod -aG docker jenkins
+sudo systemctl restart jenkins
+```
+
+Thiếu bước này job sẽ fail với `permission denied` khi gọi Docker socket.
+
+## 8. Dữ liệu và backup
 
 SQLite và file upload nằm trên 2 Docker volume, sống qua các lần redeploy:
 
@@ -95,7 +137,7 @@ docker run --rm -v vni-data:/data -v $(pwd):/backup alpine \
 
 Volume vẫn nằm trên cùng một VPS — hỏng ổ là mất. Đặt lịch copy file backup ra ngoài.
 
-## 8. Lỗi Threads thường gặp
+## 9. Lỗi Threads thường gặp
 
 | Mã | Nguyên nhân | Xử lý |
 |---|---|---|
@@ -103,7 +145,7 @@ Volume vẫn nằm trên cùng một VPS — hỏng ổ là mất. Đặt lịch
 | `1349168` | Redirect URI chưa whitelist, hoặc khai nhầm sang Facebook Login | Thêm vào **Threads → URL gọi lại chuyển hướng** |
 | `1349245` | Tài khoản chưa accept lời mời tester | App Dashboard → App roles → Threads Testers → mời; rồi app Threads → Settings → Account → Website permissions → Invites → Accept. Admin app cũng phải mời riêng |
 
-## 9. Còn thiếu để user thường dùng được
+## 10. Còn thiếu để user thường dùng được
 
 Deploy xong app vẫn ở **Development mode** — chỉ tester connect được. Để mở cho mọi người:
 

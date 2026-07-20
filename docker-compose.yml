@@ -3,6 +3,11 @@
 # Compose không tự đọc .env.production (nó chỉ tự đọc file tên ".env"), nên cờ
 # --env-file là bắt buộc. Thiếu cờ này container sẽ chạy với config rỗng và
 # fail ngay ở bước kiểm tra Jwt:SecretKey.
+#
+# CI/CD: .env.production bị .gitignore chặn nên KHÔNG có trong bản clone của
+# Jenkins. Giữ một bản gốc trên VPS ngoài workspace (vd
+# /opt/vni-automation/.env.production) rồi copy vào trước khi build — xem
+# docs/DEPLOY_VPS.md mục Jenkins. Đừng gỡ nó khỏi .gitignore để tiện.
 
 services:
   app:
@@ -18,10 +23,12 @@ services:
       - .env.production
 
     ports:
-      # Chỉ mở trên loopback — TLS do reverse proxy (nginx/Caddy) của VPS đảm
-      # nhiệm. Muốn expose thẳng ra ngoài thì đổi thành "8080:8080", nhưng khi
-      # đó không có HTTPS và Threads OAuth sẽ không hoạt động.
-      - "127.0.0.1:8080:8080"
+      # Mặc định chỉ mở trên loopback — TLS do reverse proxy (nginx/Caddy) của
+      # VPS đảm nhiệm.
+      # Chưa dựng proxy và cần vào bằng IP để test thì đặt APP_BIND=0.0.0.0
+      # trong .env.production. Lưu ý lúc đó là HTTP trần: Threads OAuth sẽ
+      # không chạy vì Threads bắt buộc HTTPS.
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8080}:8080"
 
     volumes:
       # SQLite và file upload phải nằm ngoài container, nếu không mỗi lần
@@ -30,7 +37,9 @@ services:
       - vni-storage:/app/Storage/Files
 
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:${PORT:-8080}/ >/dev/null || exit 1"]
+      # curl được cài thêm trong Dockerfile — image asphet gốc không có sẵn
+      # curl lẫn wget, dùng thẳng sẽ khiến healthcheck luôn fail.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/ >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
