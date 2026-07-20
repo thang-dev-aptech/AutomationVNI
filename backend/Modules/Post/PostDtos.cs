@@ -7,12 +7,19 @@ namespace Backend.Modules.Post;
 public class CreatePostRequest
 {
     public string Title { get; set; } = string.Empty;
+    /// <summary>1 kênh (tương thích cũ). Ưu tiên SocialChannelIds nếu có.</summary>
     public Guid SocialChannelId { get; set; }
+    /// <summary>Nhiều kênh — fan-out cùng 1 ý tưởng (mỗi kênh 1 bài).</summary>
+    public List<Guid>? SocialChannelIds { get; set; }
+    /// <summary>
+    /// Template danh mục (text + ảnh). Bắt buộc nếu có kênh chưa cấu hình PageContext
+    /// (default template / prompt inline). Có PageContext sẵn thì có thể bỏ trống.
+    /// </summary>
+    public Guid? PromptTemplateId { get; set; }
     public Guid? CategoryId { get; set; }
     public GenerationFlow GenerationFlow { get; set; } = GenerationFlow.FullAI;
-    /// <summary>Mục tiêu bài viết (idea/goal) — lưu ExtraJson, đưa vào prompt AI khi sinh text.</summary>
+    /// <summary>Legacy — giữ cho bulk cũ. Tạo bài đơn dùng PromptTemplateId.</summary>
     public string? Objective { get; set; }
-    /// <summary>Override template prompt cho bài này. Bỏ trống → dùng default của page → default hệ thống.</summary>
     public Guid? TextTemplateId { get; set; }
     public Guid? ImageTemplateId { get; set; }
 }
@@ -25,6 +32,8 @@ public class BulkPostItem
     public string Idea { get; set; } = string.Empty;
     public string? Objective { get; set; }
     public Guid? CategoryId { get; set; }
+    /// <summary>Override danh mục theo dòng (hiếm dùng). Null = dùng PromptTemplateId của batch.</summary>
+    public Guid? PromptTemplateId { get; set; }
     public Guid? TextTemplateId { get; set; }
     public Guid? ImageTemplateId { get; set; }
 }
@@ -35,7 +44,9 @@ public class BulkCreatePostRequest
     /// <summary>Fan-out: mỗi item được tạo cho MỖI channel trong danh sách.</summary>
     public List<Guid> ChannelIds { get; set; } = [];
     public GenerationFlow GenerationFlow { get; set; } = GenerationFlow.FullAI;
-    /// <summary>Default áp cho item không tự set (category/template).</summary>
+    /// <summary>Danh mục template (text+ảnh) chung cho cả batch — bắt buộc.</summary>
+    public Guid? PromptTemplateId { get; set; }
+    /// <summary>Legacy — không dùng trên UI mới.</summary>
     public Guid? CategoryId { get; set; }
     public Guid? TextTemplateId { get; set; }
     public Guid? ImageTemplateId { get; set; }
@@ -98,6 +109,10 @@ public class PostResponse
     public GenerationFlow GenerationFlow { get; set; }
     public Guid? TextTemplateId { get; set; }
     public Guid? ImageTemplateId { get; set; }
+    /// <summary>Id gói danh mục template (thường = TextTemplateId).</summary>
+    public Guid? PromptTemplateId { get; set; }
+    /// <summary>Tên danh mục template dùng khi sinh bài.</summary>
+    public string? PromptTemplateName { get; set; }
     public PostStatus Status { get; set; }
     public Guid UserId { get; set; }
     public DateTime? ScheduledPublishAt { get; set; }

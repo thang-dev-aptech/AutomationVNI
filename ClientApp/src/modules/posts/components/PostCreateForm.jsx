@@ -1,26 +1,54 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import { GENERATION_FLOW_OPTIONS } from '../constants/postStatus'
 
 const emptyForm = {
   idea: '',
-  objective: '',
-  socialChannelId: '',
-  categoryId: '',
+  promptTemplateId: '',
   generationFlow: '1',
-  textTemplateId: '',
-  imageTemplateId: '',
+}
+
+/** PageContext đủ để bỏ chọn danh mục: có default template hoặc prompt text. */
+export function isPageContextTemplateReady(ctx) {
+  if (!ctx) return false
+  return Boolean(
+    ctx.defaultTextTemplateId
+    || ctx.defaultImageTemplateId
+    || (ctx.promptTemplateText && String(ctx.promptTemplateText).trim()),
+  )
 }
 
 export default function PostCreateForm({
   channels = [],
-  categories = [],
-  textTemplates = [],
-  imageTemplates = [],
+  categoryTemplates = [],
+  pageContexts = [],
   isSubmitting,
   errorMessage,
   onSubmit,
 }) {
   const [form, setForm] = useState(emptyForm)
+  const [channelIds, setChannelIds] = useState([])
+  const [showCategoryOverride, setShowCategoryOverride] = useState(false)
+
+  const contextByChannel = useMemo(() => {
+    const map = new Map()
+    for (const ctx of pageContexts) {
+      if (ctx?.socialChannelId) map.set(ctx.socialChannelId, ctx)
+    }
+    return map
+  }, [pageContexts])
+
+  const selectedMeta = useMemo(() => {
+    let ready = 0
+    let needCategory = 0
+    for (const id of channelIds) {
+      if (isPageContextTemplateReady(contextByChannel.get(id))) ready += 1
+      else needCategory += 1
+    }
+    return { ready, needCategory }
+  }, [channelIds, contextByChannel])
+
+  const categoryRequired = selectedMeta.needCategory > 0
 
   const handleChange = (field) => (event) => {
     setForm((prev) => ({ ...prev, [field]: event.target.value }))
@@ -28,15 +56,23 @@ export default function PostCreateForm({
 
   const handleSubmit = (event) => {
     event.preventDefault()
+    if (channelIds.length === 0) return
+    if (categoryRequired && !form.promptTemplateId) return
+
     onSubmit({
-      title: form.idea.trim(), // ý tưởng → tiêu đề + prompt AI
-      objective: form.objective.trim() || null,
-      socialChannelId: form.socialChannelId,
+      title: form.idea.trim(),
+      socialChannelIds: channelIds,
+      socialChannelId: channelIds.length === 1 ? channelIds[0] : undefined,
+      promptTemplateId: form.promptTemplateId || null,
       generationFlow: Number(form.generationFlow),
-      categoryId: form.categoryId || null,
-      textTemplateId: form.textTemplateId || null,
-      imageTemplateId: form.imageTemplateId || null,
     })
+  }
+
+  const getBadge = (channel) => {
+    const ready = isPageContextTemplateReady(contextByChannel.get(channel.id))
+    return ready
+      ? { label: 'PC ✓', title: 'Đã có PageContext / danh mục mặc định', tone: 'ok' }
+      : { label: 'Thiếu PC', title: 'Chưa setup PageContext — cần chọn danh mục', tone: 'warn' }
   }
 
   return (
@@ -56,89 +92,66 @@ export default function PostCreateForm({
       </div>
 
       <div className="form-group">
-        <label htmlFor="post-objective">Mục tiêu (tuỳ chọn)</label>
-        <input
-          id="post-objective"
-          value={form.objective}
-          onChange={handleChange('objective')}
-          placeholder="Ví dụ: Tăng đơn hàng, thu hút khách mới đăng ký"
+        <ChannelMultiSelect
+          label="Kênh đăng *"
+          placeholder="Chọn page"
+          channels={channels}
+          value={channelIds}
+          onChange={setChannelIds}
+          getBadge={getBadge}
+          maxHeight={280}
         />
-      </div>
-
-      <div className="form-group">
-        <label htmlFor="post-channel">Kênh đăng *</label>
-        <select
-          id="post-channel"
-          value={form.socialChannelId}
-          onChange={handleChange('socialChannelId')}
-          required
-        >
-          <option value="">Chọn kênh</option>
-          {channels.map((channel) => (
-            <option key={channel.id} value={channel.id}>
-              {channel.pageName}
-            </option>
-          ))}
-        </select>
         {channels.length === 0 && (
           <p style={{ margin: '6px 0 0', fontSize: '0.85rem', color: 'var(--color-warning)' }}>
             Chưa có kênh nào — hãy kết nối kênh tại Platforms trước.
           </p>
         )}
+        {channelIds.length > 0 && (
+          <p style={{ margin: '8px 0 0', fontSize: '0.85rem', color: 'var(--text-muted, #888)' }}>
+            {selectedMeta.ready} page đã setup · {selectedMeta.needCategory} page cần chọn danh mục
+            {channelIds.length > 1 && ' — nhiều page sẽ sinh nền (batch)'}
+          </p>
+        )}
       </div>
 
-      {categories.length > 0 && (
+      {(categoryRequired || showCategoryOverride || form.promptTemplateId) && (
         <div className="form-group">
-          <label htmlFor="post-category">Danh mục (tuỳ chọn)</label>
+          <label htmlFor="post-category">
+            Danh mục {categoryRequired ? '*' : '(tuỳ chọn — ghi đè PageContext)'}
+          </label>
           <select
             id="post-category"
-            value={form.categoryId}
-            onChange={handleChange('categoryId')}
+            value={form.promptTemplateId}
+            onChange={handleChange('promptTemplateId')}
+            required={categoryRequired}
           >
-            <option value="">Không chọn</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {textTemplates.length > 0 && (
-        <div className="form-group">
-          <label htmlFor="post-text-template">Template nội dung (tuỳ chọn)</label>
-          <select
-            id="post-text-template"
-            value={form.textTemplateId}
-            onChange={handleChange('textTemplateId')}
-          >
-            <option value="">Mặc định (theo page / hệ thống)</option>
-            {textTemplates.map((tpl) => (
+            <option value="">{categoryRequired ? 'Chọn danh mục' : 'Dùng mặc định PageContext'}</option>
+            {categoryTemplates.map((tpl) => (
               <option key={tpl.id} value={tpl.id}>
                 {tpl.name}{tpl.isDefault ? ' ⭐' : ''}
               </option>
             ))}
           </select>
+          {categoryRequired && (
+            <p style={{ margin: '6px 0 0', fontSize: '0.85rem', color: 'var(--color-warning)' }}>
+              Có page chưa setup PageContext — bắt buộc chọn danh mục.
+            </p>
+          )}
         </div>
       )}
 
-      {imageTemplates.length > 0 && (
-        <div className="form-group">
-          <label htmlFor="post-image-template">Template ảnh (tuỳ chọn)</label>
-          <select
-            id="post-image-template"
-            value={form.imageTemplateId}
-            onChange={handleChange('imageTemplateId')}
+      {!categoryRequired && channelIds.length > 0 && !showCategoryOverride && !form.promptTemplateId && (
+        <p style={{ marginBottom: 12, fontSize: '0.9rem', color: 'var(--text-muted, #888)' }}>
+          Tất cả page đã có PageContext — chỉ cần ý tưởng + kênh.{' '}
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ padding: '0 4px', fontSize: 'inherit' }}
+            onClick={() => setShowCategoryOverride(true)}
           >
-            <option value="">Mặc định (theo page / hệ thống)</option>
-            {imageTemplates.map((tpl) => (
-              <option key={tpl.id} value={tpl.id}>
-                {tpl.name}{tpl.isDefault ? ' ⭐' : ''}
-              </option>
-            ))}
-          </select>
-        </div>
+            Chọn danh mục để ghi đè
+          </button>
+        </p>
       )}
 
       <div className="form-group">
@@ -156,8 +169,21 @@ export default function PostCreateForm({
         </select>
       </div>
 
-      <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-        {isSubmitting ? '⏳ AI đang sinh text + ảnh...' : 'Hoàn tất — để AI sinh bài'}
+      <button
+        type="submit"
+        className="btn btn-primary"
+        disabled={
+          isSubmitting
+          || channelIds.length === 0
+          || (categoryRequired && !form.promptTemplateId)
+          || (categoryRequired && categoryTemplates.length === 0)
+        }
+      >
+        {isSubmitting
+          ? '⏳ Đang xử lý...'
+          : channelIds.length > 1
+            ? `Tạo ${channelIds.length} bài → AI sinh nền`
+            : 'Hoàn tất — để AI sinh bài'}
       </button>
     </form>
   )

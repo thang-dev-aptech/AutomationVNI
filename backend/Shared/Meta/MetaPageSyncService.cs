@@ -28,14 +28,23 @@ public class MetaPageSyncService(
             auditUser,
             ct);
 
+        var pageList = pages.ToList();
         var result = new MetaOAuthCallbackResult
         {
-            SocialConnectionId = connection.Id
+            SocialConnectionId = connection.Id,
+            PagesReturnedByMeta = pageList.Count,
+            PagesMissingToken = pageList.Count(p =>
+                !string.IsNullOrWhiteSpace(p.Id) && string.IsNullOrWhiteSpace(p.AccessToken))
         };
 
-        foreach (var page in pages)
+        var keepKeys = new List<(SocialPlatform Platform, string ExternalPageId)>();
+
+        foreach (var page in pageList)
         {
-            if (string.IsNullOrWhiteSpace(page.Id) || string.IsNullOrWhiteSpace(page.AccessToken))
+            if (string.IsNullOrWhiteSpace(page.Id))
+                continue;
+
+            if (string.IsNullOrWhiteSpace(page.AccessToken))
                 continue;
 
             // Page tokens derived from a long-lived user token do not expire → TokenExpiresAt = null.
@@ -50,6 +59,7 @@ public class MetaPageSyncService(
                 extraJson: null,
                 auditUser,
                 ct);
+            keepKeys.Add((SocialPlatform.Facebook, page.Id));
             result.FacebookPagesSynced++;
 
             var ig = page.InstagramBusinessAccount;
@@ -80,6 +90,7 @@ public class MetaPageSyncService(
                 extraJson,
                 auditUser,
                 ct);
+            keepKeys.Add((SocialPlatform.Instagram, ig.Id));
             result.InstagramAccountsSynced++;
         }
 
@@ -106,8 +117,16 @@ public class MetaPageSyncService(
                 extraJson,
                 auditUser,
                 ct);
+            keepKeys.Add((SocialPlatform.Facebook, group.Id));
             result.FacebookGroupsSynced++;
         }
+
+        // Drop DB channels that Meta no longer returns (deleted page, revoked access, unlinked IG).
+        result.ChannelsRemoved = await socialChannelRepository.SoftDeleteMissingFromMetaAsync(
+            connection.Id,
+            keepKeys,
+            auditUser,
+            ct);
 
         return result;
     }

@@ -2,42 +2,24 @@ import { usePermissions } from '@/shared/hooks/usePermissions'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
 import { getAvailableGenerationActions } from '../constants/postStatus'
-import {
-  useGenerateImage,
-  useGenerateText,
-  useRegenerateImage,
-  useRegenerateText,
-  useRenderOverlay,
-} from '../hooks/usePosts'
+import { useRegenerateImage, useRegenerateText } from '../hooks/usePosts'
 
 /**
- * Kích hoạt / chỉnh sửa nội dung AI:
- * - Draft: Sinh Text → Sinh Ảnh (queue + process 1 click).
- * - Preview (Approved/Scheduled): Tạo lại nội dung / Tạo lại ảnh.
+ * Preview sau create-and-generate / bulk: chỉ giữ «Tạo lại nội dung / ảnh».
+ * Bước Sinh Text / Sinh Ảnh thủ công (cũ) đã bỏ — AI chạy lúc tạo bài.
  */
 export default function PostGenerationActions({ post }) {
-  const { canManageJobs } = usePermissions()
-  const genText = useGenerateText()
-  const genImage = useGenerateImage()
-  const renderOverlay = useRenderOverlay()
+  const { canEditPost } = usePermissions()
   const regenText = useRegenerateText()
   const regenImage = useRegenerateImage()
 
-  if (!canManageJobs) return null
+  if (!canEditPost(post.userId)) return null
 
   const hasContent = Boolean(post.content && post.content.trim())
   const a = getAvailableGenerationActions(post.status, hasContent)
-  const isBusy =
-    genText.isPending ||
-    genImage.isPending ||
-    renderOverlay.isPending ||
-    regenText.isPending ||
-    regenImage.isPending
+  const isBusy = regenText.isPending || regenImage.isPending
 
-  const hasAny = a.genText || a.genImage || a.renderOverlay || a.regenText || a.regenImage
-  if (!hasAny) return null
-
-  const isPreview = a.regenText || a.regenImage
+  if (!a.regenText && !a.regenImage) return null
 
   const run = async (mutation, okMessage) => {
     try {
@@ -51,44 +33,12 @@ export default function PostGenerationActions({ post }) {
   return (
     <div className="card card-body" style={{ marginBottom: 16 }}>
       <h2 style={{ margin: '0 0 4px', fontSize: '1.05rem' }}>
-        {isPreview ? 'Chỉnh sửa bằng AI' : 'Sinh nội dung (AI)'}
+        Chỉnh sửa bằng AI
       </h2>
       <p style={{ margin: '0 0 12px', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-        {isPreview
-          ? 'Chưa ưng? Bấm để AI tạo lại nội dung hoặc ảnh. Chưa cấu hình AI key thì dùng bản mock.'
-          : 'Mỗi nút queue job và xử lý ngay. Chưa cấu hình AI key thì dùng bản mock.'}
+        Chưa ưng? Bấm để AI tạo lại nội dung hoặc ảnh (giống lúc tạo bài).
       </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {a.genText && (
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={isBusy}
-            onClick={() => run(genText, 'Đã sinh text')}
-          >
-            {genText.isPending ? 'Đang sinh text...' : '1 · Sinh Text (AI)'}
-          </button>
-        )}
-        {a.genImage && (
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={isBusy}
-            onClick={() => run(genImage, 'Đã sinh ảnh')}
-          >
-            {genImage.isPending ? 'Đang sinh ảnh...' : '2 · Sinh Ảnh (AI)'}
-          </button>
-        )}
-        {a.renderOverlay && (
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={isBusy}
-            onClick={() => run(renderOverlay, 'Đã render overlay')}
-          >
-            {renderOverlay.isPending ? 'Đang render...' : '3 · Render Overlay (logo/CTA)'}
-          </button>
-        )}
         {a.regenText && (
           <button
             type="button"

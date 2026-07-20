@@ -211,15 +211,30 @@ public class MetaOAuthService(
         var (userToken, userTokenExpiresAt) = await ExchangeForLongLivedTokenAsync(shortLivedToken, ct);
 
         var profile = await FetchUserProfileAsync(userToken, ct);
+        var grantedPerms = await FetchGrantedPermissionsAsync(userToken, ct);
         var pages = await FetchManagedPagesAsync(userToken, ct);
         var groups = await FetchManagedGroupsAsync(userToken, ct);
 
+        var missingToken = pages.Count(p => string.IsNullOrWhiteSpace(p.AccessToken));
         logger.LogInformation(
-            "Meta OAuth callback for user {UserId}: profile={ProfileId}, pages={PageCount}, groups={GroupCount}, userTokenExpiresAt={ExpiresAt:o}",
-            stateEntry.UserId, profile.Id, pages.Count, groups.Count, userTokenExpiresAt);
+            "Meta OAuth callback for user {UserId}: profile={ProfileId}, pages={PageCount} (missingToken={MissingToken}), groups={GroupCount}, granted=[{Granted}], userTokenExpiresAt={ExpiresAt:o}",
+            stateEntry.UserId, profile.Id, pages.Count, missingToken, groups.Count,
+            string.Join(",", grantedPerms), userTokenExpiresAt);
+
+        if (pages.Count == 0)
+        {
+            var hasPagesShowList = grantedPerms.Any(p =>
+                p.Equals("pages_show_list", StringComparison.OrdinalIgnoreCase)
+                || p.Equals("pages_manage_metadata", StringComparison.OrdinalIgnoreCase));
+            logger.LogWarning(
+                "Meta /me/accounts returned 0 pages. hasPagesListPerm={HasPerm}, granted=[{Granted}]. " +
+                "Classic Login: user must select Pages in the Facebook permission dialog; " +
+                "Development mode requires the FB account to be Admin/Developer/Tester on the app.",
+                hasPagesShowList, string.Join(",", grantedPerms));
+        }
 
         var scopes = NormalizeScopeCsv();
-        return await pageSyncService.SyncAsync(
+        var result = await pageSyncService.SyncAsync(
             profile,
             pages,
             groups,
@@ -227,6 +242,8 @@ public class MetaOAuthService(
             userTokenExpiresAt,
             stateEntry.UserName,
             ct);
+        result.GrantedPermissions = string.Join(",", grantedPerms);
+        return result;
     }
 
     private async Task<string> ExchangeCodeForTokenAsync(string code, CancellationToken ct)
@@ -357,6 +374,47 @@ public class MetaOAuthService(
         };
     }
 
+    private async Task<List<string>> FetchGrantedPermissionsAsync(
+        string userAccessToken, CancellationToken ct)
+    {
+        var o = options.Value;
+        var client = httpClientFactory.CreateClient(nameof(MetaOAuthService));
+        var url = $"{o.GraphBaseUrl.TrimEnd('/')}/{o.GraphVersion}/me/permissions" +
+                  $"?access_token={Uri.EscapeDataString(userAccessToken)}";
+
+        try
+        {
+            using var response = await client.GetAsync(url, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("Meta /me/permissions failed: {Error}", ExtractMetaError(body));
+                return [];
+            }
+
+            using var doc = JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+                return [];
+
+            var granted = new List<string>();
+            foreach (var item in data.EnumerateArray())
+            {
+                var status = item.TryGetProperty("status", out var st) ? st.GetString() : null;
+                var permission = item.TryGetProperty("permission", out var p) ? p.GetString() : null;
+                if (string.Equals(status, "granted", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(permission))
+                    granted.Add(permission!);
+            }
+
+            return granted;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Meta /me/permissions error");
+            return [];
+        }
+    }
+
     private async Task<List<MetaPageAccountDto>> FetchManagedPagesAsync(
         string userAccessToken, CancellationToken ct)
     {
@@ -401,7 +459,53 @@ public class MetaOAuthService(
             pages.Add(page);
         }
 
+        // Granular page permissions sometimes list a Page without embedding access_token —
+        // try a direct Page lookup with the user token before giving up.
+        foreach (var page in pages.Where(p =>
+                     !string.IsNullOrWhiteSpace(p.Id) && string.IsNullOrWhiteSpace(p.AccessToken)))
+        {
+            page.AccessToken = await TryFetchPageAccessTokenAsync(page.Id, userAccessToken, client, ct);
+            if (string.IsNullOrWhiteSpace(page.AccessToken))
+            {
+                logger.LogWarning(
+                    "Meta page {PageId} ({PageName}) listed in /me/accounts but no access_token — cannot publish until user re-grants Page access",
+                    page.Id, page.Name);
+            }
+        }
+
         return pages;
+    }
+
+    private async Task<string?> TryFetchPageAccessTokenAsync(
+        string pageId, string userAccessToken, HttpClient client, CancellationToken ct)
+    {
+        var o = options.Value;
+        var url = $"{o.GraphBaseUrl.TrimEnd('/')}/{o.GraphVersion}/{Uri.EscapeDataString(pageId)}" +
+                  $"?fields=access_token" +
+                  $"&access_token={Uri.EscapeDataString(userAccessToken)}";
+
+        try
+        {
+            using var response = await client.GetAsync(url, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning(
+                    "Meta page {PageId} token lookup failed: {Error}",
+                    pageId, ExtractMetaError(body));
+                return null;
+            }
+
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.TryGetProperty("access_token", out var at)
+                ? at.GetString()
+                : null;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Meta page {PageId} token lookup error", pageId);
+            return null;
+        }
     }
 
     /// <summary>

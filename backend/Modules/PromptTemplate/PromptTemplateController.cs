@@ -38,4 +38,20 @@ public class PromptTemplateController
     [AllowAnonymous]
     public IActionResult GetVariables()
         => Ok(ApiResponse.Ok(PromptTemplateRenderer.AvailableVariables));
+
+    /// <summary>Import hàng loạt danh mục template (JSON body).</summary>
+    [HttpPost("bulk-import")]
+    public async Task<IActionResult> BulkImport(
+        [FromBody] BulkImportPromptTemplatesRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _repo.BulkImportAsync(request, ct);
+            return Ok(ApiResponse.Ok(result, result.Message ?? "Import xong"));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", ex.Message));
+        }
+    }
 }

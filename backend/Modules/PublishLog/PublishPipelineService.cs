@@ -93,7 +93,7 @@ public class PublishPipelineService(
         await MarkPublishJobProcessingAsync(post.Id, ct);
         await context.SaveChangesAsync(ct);
 
-        var mediaUrl = await ResolvePublicMediaUrlAsync(post.Id, ct);
+        var media = await ResolvePublishMediaAsync(post.Id, ct);
         var publishRequest = new SocialPublishRequest
         {
             PostId = post.Id,
@@ -103,7 +103,10 @@ public class PublishPipelineService(
             PageExternalId = channel.ExternalPageId,
             AccessToken = channel.AccessToken,
             Caption = post.Content ?? string.Empty,
-            MediaPreviewUrl = mediaUrl,
+            MediaPreviewUrl = media.PublicUrl,
+            MediaStorageKey = media.StorageKey,
+            MediaFileName = media.FileName,
+            MediaMimeType = media.MimeType,
             ForceReal = forceReal
         };
 
@@ -440,6 +443,9 @@ public class PublishPipelineService(
         var channel = await socialChannelRepository.GetByIdAsync(post.SocialChannelId, ct);
         if (channel is null)
             throw new ArgumentException("Không tìm thấy kênh đăng bài");
+        if (!channel.IsActive)
+            throw new InvalidOperationException(
+                "Kênh đăng bài đã bị ngắt kết nối hoặc không còn trên Meta. Hãy Connect Meta / chọn kênh khác.");
 
         if (string.IsNullOrWhiteSpace(post.Content))
             throw new ArgumentException("Bài viết chưa có nội dung để đăng");
@@ -450,35 +456,43 @@ public class PublishPipelineService(
         return channel;
     }
 
-    private async Task<string?> ResolvePublicMediaUrlAsync(Guid postId, CancellationToken ct)
+    private async Task<PublishMediaInfo> ResolvePublishMediaAsync(Guid postId, CancellationToken ct)
     {
         var postMedias = await postMediaRepository.GetByPostAsync(postId, ct);
-        if (postMedias.Count == 0) return null;
+        if (postMedias.Count == 0) return PublishMediaInfo.Empty;
 
         var cover = postMedias.FirstOrDefault(x => x.MediaRole == MediaRole.Cover)
             ?? postMedias.FirstOrDefault(x => x.MediaRole == MediaRole.Primary)
             ?? postMedias.First();
 
         var media = await mediaAssetRepository.GetByIdAsync(cover.MediaId, ct);
-        if (media is null) return null;
+        if (media is null || string.IsNullOrWhiteSpace(media.StoragePath))
+            return PublishMediaInfo.Empty;
 
-        if (SocialPublishUrlHelper.IsPubliclyAccessibleUrl(media.PublicUrl))
-            return media.PublicUrl;
+        var publicUrl = SocialPublishUrlHelper.IsPubliclyAccessibleUrl(media.PublicUrl)
+            ? media.PublicUrl
+            : null;
 
-        return null;
+        return new PublishMediaInfo(
+            publicUrl,
+            media.StoragePath.Trim(),
+            media.OriginalFileName ?? media.FileName,
+            string.IsNullOrWhiteSpace(media.MimeType) ? null : media.MimeType.Trim());
+    }
+
+    private sealed record PublishMediaInfo(
+        string? PublicUrl,
+        string? StorageKey,
+        string? FileName,
+        string? MimeType)
+    {
+        public static PublishMediaInfo Empty { get; } = new(null, null, null, null);
     }
 
     private async Task<bool> HasPublishableMediaAsync(Guid postId, CancellationToken ct)
     {
-        var postMedias = await postMediaRepository.GetByPostAsync(postId, ct);
-        if (postMedias.Count == 0) return false;
-
-        var cover = postMedias.FirstOrDefault(x => x.MediaRole == MediaRole.Cover)
-            ?? postMedias.FirstOrDefault(x => x.MediaRole == MediaRole.Primary)
-            ?? postMedias.First();
-
-        var media = await mediaAssetRepository.GetByIdAsync(cover.MediaId, ct);
-        return media is not null && !string.IsNullOrWhiteSpace(media.StoragePath);
+        var media = await ResolvePublishMediaAsync(postId, ct);
+        return !string.IsNullOrWhiteSpace(media.StorageKey);
     }
 
     private async Task<PostModel> RequirePostAsync(Guid id, CancellationToken ct)

@@ -6,11 +6,11 @@ import EmptyState from '@/shared/components/EmptyState'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
-import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
-import { TEMPLATE_TYPE } from '@/modules/prompt-templates/constants/promptTemplateType'
 import { GENERATION_FLOW_OPTIONS } from '@/modules/posts/constants/postStatus'
+import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import { useBulkCreate, useSuggestIdeas } from '../hooks/useBulk'
+import { downloadBulkIdeasSampleCsv, parseBulkIdeasFile } from '../utils/bulkIdeasImport'
 
 const emptyRow = () => ({ idea: '' })
 
@@ -21,33 +21,24 @@ export default function BulkCreatePage() {
   const [rows, setRows] = useState([emptyRow(), emptyRow(), emptyRow()])
   const [channelIds, setChannelIds] = useState([])
   const [generationFlow, setGenerationFlow] = useState('1')
-  const [categoryId, setCategoryId] = useState('')
-  const [textTemplateId, setTextTemplateId] = useState('')
-  const [imageTemplateId, setImageTemplateId] = useState('')
+  const [promptTemplateId, setPromptTemplateId] = useState('')
   const [topic, setTopic] = useState('')
   const [ideaCount, setIdeaCount] = useState(5)
 
   const { data: channels = [], isLoading: channelsLoading } = useSocialChannelAll()
-  const { data: categoryData } = useCategoryList({ index: 1, size: 100 })
-  const { data: textTplData } = usePromptTemplateList({ templateType: TEMPLATE_TYPE.TEXT, isActive: true, index: 1, size: 100 })
-  const { data: imageTplData } = usePromptTemplateList({ templateType: TEMPLATE_TYPE.IMAGE, isActive: true, index: 1, size: 100 })
-
-  const categories = categoryData?.items ?? []
-  const textTemplates = textTplData?.items ?? []
-  const imageTemplates = imageTplData?.items ?? []
+  const { data: tplData } = usePromptTemplateList({ isActive: true, index: 1, size: 100 })
+  const categoryTemplates = tplData?.items ?? []
 
   const createMutation = useBulkCreate()
   const suggestMutation = useSuggestIdeas()
 
   const validRows = useMemo(() => rows.filter((r) => r.idea.trim()), [rows])
   const totalPosts = validRows.length * channelIds.length
+  const selectedCategoryName = categoryTemplates.find((t) => t.id === promptTemplateId)?.name
 
   const setRow = (i, value) => setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, idea: value } : r)))
   const addRow = () => setRows((prev) => [...prev, emptyRow()])
   const removeRow = (i) => setRows((prev) => (prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i)))
-
-  const toggleChannel = (id) =>
-    setChannelIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]))
 
   const appendIdeas = (ideas) => {
     const cleaned = ideas.map((s) => String(s).trim()).filter(Boolean)
@@ -67,7 +58,7 @@ export default function BulkCreatePage() {
       const res = await suggestMutation.mutateAsync({
         topic: topic.trim(),
         count: Number(ideaCount) || 5,
-        category: categories.find((c) => c.id === categoryId)?.name || null,
+        category: selectedCategoryName || null,
       })
       appendIdeas(res?.ideas ?? [])
       toast.success(`AI đề xuất ${res?.ideas?.length ?? 0} ý tưởng (${res?.source})`)
@@ -81,16 +72,25 @@ export default function BulkCreatePage() {
     if (!file) return
     const reader = new FileReader()
     reader.onload = () => {
-      const text = String(reader.result || '')
-      const ideas = text
-        .split(/\r?\n/)
-        .map((line) => line.split(',')[0].trim()) // cột đầu = ý tưởng
-        .filter((s) => s && s.toLowerCase() !== 'idea' && s.toLowerCase() !== 'title')
-      appendIdeas(ideas)
-      toast.success(`Import ${ideas.length} ý tưởng từ CSV`)
+      try {
+        const ideas = parseBulkIdeasFile(String(reader.result || ''))
+        if (ideas.length === 0) {
+          toast.error('File không có ý tưởng hợp lệ. Tải file mẫu để xem định dạng.')
+          return
+        }
+        appendIdeas(ideas)
+        toast.success(`Import ${ideas.length} ý tưởng từ file`)
+      } catch (err) {
+        toast.error(err?.message || 'Không đọc được file')
+      }
     }
     reader.readAsText(file)
     event.target.value = ''
+  }
+
+  const handleDownloadSample = () => {
+    downloadBulkIdeasSampleCsv()
+    toast.success('Đã tải bulk-ideas-sample.csv')
   }
 
   const handleSubmit = async () => {
@@ -102,14 +102,16 @@ export default function BulkCreatePage() {
       toast.error('Chọn ít nhất 1 kênh')
       return
     }
+    if (!promptTemplateId) {
+      toast.error('Chọn danh mục (template)')
+      return
+    }
     try {
       const result = await createMutation.mutateAsync({
         items: validRows.map((r) => ({ idea: r.idea.trim() })),
         channelIds,
         generationFlow: Number(generationFlow),
-        categoryId: categoryId || null,
-        textTemplateId: textTemplateId || null,
-        imageTemplateId: imageTemplateId || null,
+        promptTemplateId,
       })
       toast.success(result?.message || `Đã tạo ${result?.created} bài`)
       if (result?.batchId) navigate(`/bulk/${result.batchId}`)
@@ -124,7 +126,7 @@ export default function BulkCreatePage() {
     <section>
       <PageHeader
         title="Tạo bài hàng loạt"
-        description="Nhập nhiều ý tưởng, chọn nhiều kênh (fan-out) → AI sinh nội dung nền → duyệt & rải lịch"
+        description="Nhiều ý tưởng × nhiều kênh → 1 danh mục template → AI sinh text & ảnh nền, xong là Đã duyệt"
         actions={<Link to="/posts" className="btn btn-secondary">Danh sách bài</Link>}
       />
 
@@ -137,9 +139,8 @@ export default function BulkCreatePage() {
 
       {channels.length > 0 && (
         <>
-          {/* AI đề xuất ý tưởng */}
           <div className="card card-body" style={{ marginBottom: 16 }}>
-            <h3 style={{ marginTop: 0 }}>🤖 AI đề xuất ý tưởng (tuỳ chọn)</h3>
+            <h3 style={{ marginTop: 0 }}>AI đề xuất ý tưởng (tuỳ chọn)</h3>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
               <div className="form-group" style={{ marginBottom: 0, flex: 1, minWidth: 240 }}>
                 <label htmlFor="bulk-topic">Chủ đề</label>
@@ -157,11 +158,13 @@ export default function BulkCreatePage() {
             </div>
           </div>
 
-          {/* Danh sách ý tưởng */}
           <div className="card card-body" style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
               <h3 style={{ margin: 0 }}>Ý tưởng ({validRows.length})</h3>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-ghost" onClick={handleDownloadSample}>
+                  Tải file mẫu
+                </button>
                 <button type="button" className="btn btn-ghost" onClick={() => csvInputRef.current?.click()}>
                   Import CSV
                 </button>
@@ -169,6 +172,9 @@ export default function BulkCreatePage() {
                 <button type="button" className="btn btn-ghost" onClick={addRow}>+ Thêm dòng</button>
               </div>
             </div>
+            <p style={{ margin: '8px 0 0', fontSize: '0.85rem', color: 'var(--text-muted, #888)' }}>
+              File mẫu CSV: cột <code>idea</code> (mỗi dòng một ý tưởng). Tải mẫu → điền → Import CSV.
+            </p>
             <div style={{ marginTop: 12 }}>
               {rows.map((row, i) => (
                 <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -185,59 +191,47 @@ export default function BulkCreatePage() {
             </div>
           </div>
 
-          {/* Kênh (fan-out) + cấu hình */}
           <div className="card card-body" style={{ marginBottom: 16 }}>
-            <h3 style={{ marginTop: 0 }}>Kênh đăng (fan-out) — chọn nhiều</h3>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-              {channels.map((ch) => (
-                <label key={ch.id} className="btn btn-ghost" style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  borderColor: channelIds.includes(ch.id) ? 'var(--color-primary,#4f46e5)' : undefined,
-                }}>
-                  <input type="checkbox" checked={channelIds.includes(ch.id)} onChange={() => toggleChannel(ch.id)} />
-                  {ch.pageName}
-                </label>
-              ))}
-            </div>
+            <ChannelMultiSelect
+              label="Kênh đăng (fan-out)"
+              placeholder="Chọn page"
+              channels={channels}
+              value={channelIds}
+              onChange={setChannelIds}
+              maxHeight={280}
+            />
 
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 16 }}>
+              <div className="form-group" style={{ marginBottom: 0, minWidth: 220 }}>
+                <label htmlFor="bulk-category">Danh mục *</label>
+                <select
+                  id="bulk-category"
+                  value={promptTemplateId}
+                  onChange={(e) => setPromptTemplateId(e.target.value)}
+                  required
+                >
+                  <option value="">Chọn danh mục</option>
+                  {categoryTemplates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}{t.isDefault ? ' ⭐' : ''}
+                    </option>
+                  ))}
+                </select>
+                {categoryTemplates.length === 0 && (
+                  <p style={{ margin: '6px 0 0', fontSize: '0.85rem', color: 'var(--color-warning)' }}>
+                    Chưa có danh mục — tạo tại Prompt Templates.
+                  </p>
+                )}
+              </div>
               <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
                 <label htmlFor="bulk-flow">Luồng sinh</label>
                 <select id="bulk-flow" value={generationFlow} onChange={(e) => setGenerationFlow(e.target.value)}>
                   {GENERATION_FLOW_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
-              {categories.length > 0 && (
-                <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
-                  <label htmlFor="bulk-cat">Danh mục (chung)</label>
-                  <select id="bulk-cat" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-                    <option value="">Không chọn</option>
-                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-              )}
-              {textTemplates.length > 0 && (
-                <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
-                  <label htmlFor="bulk-ttpl">Template nội dung</label>
-                  <select id="bulk-ttpl" value={textTemplateId} onChange={(e) => setTextTemplateId(e.target.value)}>
-                    <option value="">Mặc định</option>
-                    {textTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                </div>
-              )}
-              {imageTemplates.length > 0 && (
-                <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
-                  <label htmlFor="bulk-itpl">Template ảnh</label>
-                  <select id="bulk-itpl" value={imageTemplateId} onChange={(e) => setImageTemplateId(e.target.value)}>
-                    <option value="">Mặc định</option>
-                    {imageTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                </div>
-              )}
             </div>
           </div>
 
-          {/* Submit */}
           <div className="card card-body" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               Sẽ tạo <strong>{totalPosts}</strong> bài
@@ -245,8 +239,8 @@ export default function BulkCreatePage() {
               {totalPosts > 50 && <span style={{ color: 'var(--color-warning,#d97706)' }}> — lô lớn, sẽ sinh dần ở nền</span>}
             </div>
             <button type="button" className="btn btn-primary" onClick={handleSubmit}
-              disabled={createMutation.isPending || totalPosts === 0}>
-              {createMutation.isPending ? 'Đang tạo...' : `Tạo ${totalPosts} bài → sinh nền`}
+              disabled={createMutation.isPending || totalPosts === 0 || !promptTemplateId}>
+              {createMutation.isPending ? 'Đang tạo...' : `Tạo ${totalPosts} bài → AI sinh nền`}
             </button>
           </div>
         </>

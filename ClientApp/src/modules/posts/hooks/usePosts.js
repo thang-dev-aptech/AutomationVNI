@@ -73,6 +73,14 @@ export function useDeletePost() {
   })
 }
 
+export function useDeleteAllPosts() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => unwrapApiData(await postApi.softDeleteAll()),
+    onSuccess: () => invalidatePostQueries(queryClient),
+  })
+}
+
 function useWorkflowMutation(mutationFn, getId = (v) => v) {
   const queryClient = useQueryClient()
   return useMutation({

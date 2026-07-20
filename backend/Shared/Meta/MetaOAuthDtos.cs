@@ -17,6 +17,14 @@ public class MetaOAuthCallbackResult
     public int FacebookPagesSynced { get; set; }
     public int InstagramAccountsSynced { get; set; }
     public int FacebookGroupsSynced { get; set; }
+    /// <summary>Channels soft-deleted because they disappeared from Meta on this sync.</summary>
+    public int ChannelsRemoved { get; set; }
+    /// <summary>Raw page count from Graph /me/accounts before token filtering.</summary>
+    public int PagesReturnedByMeta { get; set; }
+    /// <summary>Pages Meta listed but without usable page access_token.</summary>
+    public int PagesMissingToken { get; set; }
+    /// <summary>Comma-separated permissions granted on the user token (from /me/permissions).</summary>
+    public string? GrantedPermissions { get; set; }
 }
 
 public class MetaUserProfileDto

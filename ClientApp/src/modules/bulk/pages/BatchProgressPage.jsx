@@ -49,7 +49,7 @@ export default function BatchProgressPage() {
     <section>
       <PageHeader
         title="Tiến độ batch"
-        description={`${data?.total ?? 0} bài${pending > 0 ? ' — đang sinh nội dung nền...' : ''}`}
+        description={`${data?.total ?? 0} bài${pending > 0 ? ' — đang sinh nội dung nền (xong → Đã duyệt)...' : ''}`}
         actions={<Link to="/bulk" className="btn btn-secondary">+ Tạo lô mới</Link>}
       />
 
@@ -65,12 +65,14 @@ export default function BatchProgressPage() {
         </div>
       </div>
 
-      {/* Hành động loạt */}
+      {/* Hành động loạt — Duyệt chỉ còn cho bài Chờ duyệt cũ (lô trước khi auto-approve) */}
       <div className="card card-body" style={{ marginBottom: 16, display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <button type="button" className="btn btn-primary" onClick={handleApprove}
-          disabled={approveMutation.isPending || waitingReview === 0}>
-          Duyệt {waitingReview > 0 ? `${waitingReview} bài` : 'loạt'}
-        </button>
+        {waitingReview > 0 && (
+          <button type="button" className="btn btn-secondary" onClick={handleApprove}
+            disabled={approveMutation.isPending}>
+            Duyệt {waitingReview} bài còn chờ
+          </button>
+        )}
 
         <div className="form-group" style={{ marginBottom: 0, minWidth: 220 }}>
           <label htmlFor="batch-slots">Khung giờ rải (local, cách nhau dấu phẩy)</label>

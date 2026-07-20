@@ -58,6 +58,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.Description).HasMaxLength(500);
             e.Property(x => x.Body).HasColumnType("TEXT");
+            e.Property(x => x.TextBody).HasColumnType("TEXT");
+            e.Property(x => x.ImageBody).HasColumnType("TEXT");
         });
 
         modelBuilder.Entity<SocialChannelModel>(e =>

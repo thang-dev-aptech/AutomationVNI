@@ -43,6 +43,11 @@ export function canDeletePost(userRoles, postUserId, currentUserId) {
   return canEditPost(userRoles, postUserId, currentUserId)
 }
 
+/** Xóa tất cả bài: Admin (toàn bộ) hoặc ContentManager (bài của mình). */
+export function canDeleteAllPosts(userRoles) {
+  return hasRole(userRoles, [ROLES.ADMIN, ROLES.CONTENT_MANAGER])
+}
+
 export function canSubmitReview(userRoles) {
   return hasRole(userRoles, [ROLES.ADMIN, ROLES.CONTENT_MANAGER])
 }

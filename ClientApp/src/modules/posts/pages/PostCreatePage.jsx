@@ -6,20 +6,15 @@ import ErrorState from '@/shared/components/ErrorState'
 import EmptyState from '@/shared/components/EmptyState'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
-import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
-import { TEMPLATE_TYPE } from '@/modules/prompt-templates/constants/promptTemplateType'
+import { usePageContextList } from '@/modules/page-contexts/hooks/usePageContexts'
 import PostCreateForm from '../components/PostCreateForm'
 import { useCreateAndGeneratePost } from '../hooks/usePosts'
 
 export default function PostCreatePage() {
   const navigate = useNavigate()
   const createMutation = useCreateAndGeneratePost()
-  const { data: categoryData, isLoading: categoriesLoading } = useCategoryList({
-    index: 1,
-    size: 100,
-  })
   const {
     data: channels = [],
     isLoading: channelsLoading,
@@ -27,29 +22,33 @@ export default function PostCreatePage() {
     error: channelsErrorObj,
     refetch: refetchChannels,
   } = useSocialChannelAll()
-  const { data: textTplData } = usePromptTemplateList({
-    templateType: TEMPLATE_TYPE.TEXT,
+  const {
+    data: tplData,
+    isLoading: templatesLoading,
+  } = usePromptTemplateList({
     isActive: true,
     index: 1,
     size: 100,
   })
-  const { data: imageTplData } = usePromptTemplateList({
-    templateType: TEMPLATE_TYPE.IMAGE,
-    isActive: true,
-    index: 1,
-    size: 100,
-  })
+  const {
+    data: pageContextData,
+    isLoading: pageContextsLoading,
+  } = usePageContextList({ index: 1, size: 200 })
   const [errorMessage, setErrorMessage] = useState('')
 
-  const categories = categoryData?.items ?? []
-  const textTemplates = textTplData?.items ?? []
-  const imageTemplates = imageTplData?.items ?? []
-  const isLoading = channelsLoading || categoriesLoading
+  const categoryTemplates = tplData?.items ?? []
+  const pageContexts = pageContextData?.items ?? []
+  const isLoading = channelsLoading || templatesLoading || pageContextsLoading
 
   const handleSubmit = async (payload) => {
     setErrorMessage('')
     try {
       const created = await createMutation.mutateAsync(payload)
+      if (created?.batchId) {
+        toast.success(`Đã tạo ${created.created ?? ''} bài — đang sinh nội dung nền`)
+        navigate(`/bulk/${created.batchId}`)
+        return
+      }
       toast.success('AI đã sinh xong nội dung — kiểm tra bản preview')
       navigate(created?.id ? `/posts/${created.id}` : '/posts')
     } catch (error) {
@@ -61,7 +60,7 @@ export default function PostCreatePage() {
     <section>
       <PageHeader
         title="Tạo bài viết"
-        description="Nhập ý tưởng + mục tiêu → AI tự sinh text & ảnh, rồi mở bản preview để bạn xem / tạo lại / đăng"
+        description="Chọn page (nhiều được) → ý tưởng. Page đã setup PageContext thì không cần chọn danh mục."
         actions={(
           <Link to="/posts" className="btn btn-secondary">
             Quay lại
@@ -90,9 +89,8 @@ export default function PostCreatePage() {
         {!isLoading && !channelsError && channels.length > 0 && (
           <PostCreateForm
             channels={channels}
-            categories={categories}
-            textTemplates={textTemplates}
-            imageTemplates={imageTemplates}
+            categoryTemplates={categoryTemplates}
+            pageContexts={pageContexts}
             isSubmitting={createMutation.isPending}
             errorMessage={errorMessage}
             onSubmit={handleSubmit}

@@ -56,7 +56,7 @@ export default function PostDetailPage() {
     <section>
       <PageHeader
         title={post.title}
-        description={`Kênh: ${channelName || '—'} · ${getGenerationFlowLabel(post.generationFlow)}`}
+        description={`Kênh: ${channelName || '—'} · Danh mục: ${post.promptTemplateName || '—'} · ${getGenerationFlowLabel(post.generationFlow)}`}
         actions={(
           <Link to="/posts" className="btn btn-secondary">
             Danh sách
@@ -98,7 +98,10 @@ export default function PostDetailPage() {
 
       <PostGenerationActions post={post} />
 
-      <PostGenerationStatus postId={post.id} postStatus={post.status} />
+      {/* Chỉ hiện khi đang sinh / lỗi gen — preview Approved không còn panel generation cũ */}
+      {[2, 3, 8, 12, 14].includes(Number(post.status)) && (
+        <PostGenerationStatus postId={post.id} postStatus={post.status} />
+      )}
 
       <PostMediaPanel postId={post.id} />
 

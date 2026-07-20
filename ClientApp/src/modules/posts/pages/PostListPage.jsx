@@ -8,14 +8,13 @@ import EmptyState from '@/shared/components/EmptyState'
 import { formatDateTime, getErrorMessage } from '@/shared/utils/apiHelpers'
 import { confirmAction, CONFIRM_MESSAGES } from '@/shared/utils/confirmAction'
 import { toast } from '@/shared/stores/toastStore'
-import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import PostFilterBar from '../components/PostFilterBar'
 import PostStatusBadge from '../components/PostStatusBadge'
-import { useDeletePost, usePosts } from '../hooks/usePosts'
+import { useDeleteAllPosts, useDeletePost, usePosts } from '../hooks/usePosts'
 
 export default function PostListPage() {
-  const { canCreatePost, canDeletePost } = usePermissions()
+  const { canCreatePost, canDeletePost, canDeleteAllPosts } = usePermissions()
   const [keyword, setKeyword] = useState('')
   const [status, setStatus] = useState('')
   const [generationFlow, setGenerationFlow] = useState('')
@@ -34,17 +33,12 @@ export default function PostListPage() {
 
   const { data, isLoading, isError, error, refetch } = usePosts(params)
   const { data: channels = [] } = useSocialChannelAll()
-  const { data: categoryData } = useCategoryList({ index: 1, size: 200 })
   const deleteMutation = useDeletePost()
+  const deleteAllMutation = useDeleteAllPosts()
 
   const channelMap = useMemo(
     () => Object.fromEntries(channels.map((c) => [c.id, c.pageName])),
     [channels],
-  )
-
-  const categoryMap = useMemo(
-    () => Object.fromEntries((categoryData?.items ?? []).map((c) => [c.id, c.name])),
-    [categoryData],
   )
 
   const items = data?.items ?? []
@@ -61,17 +55,41 @@ export default function PostListPage() {
     }
   }
 
+  const handleDeleteAll = async () => {
+    if (!confirmAction(CONFIRM_MESSAGES.deleteAllPosts())) return
+    try {
+      const result = await deleteAllMutation.mutateAsync()
+      const deleted = result?.deleted ?? 0
+      toast.success(deleted === 0 ? 'Không có bài viết nào để xóa' : `Đã xóa ${deleted} bài viết`)
+      setPage(1)
+    } catch (deleteError) {
+      toast.error(getErrorMessage(deleteError))
+    }
+  }
+
   return (
     <section>
       <PageHeader
         title="Bài viết"
         description="Quản lý pipeline sinh nội dung và đăng bài tự động"
         actions={
-          canCreatePost ? (
-            <Link to="/posts/create" className="btn btn-primary">
-              Tạo bài viết
-            </Link>
-          ) : null
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {canDeleteAllPosts && (
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={deleteAllMutation.isPending || isLoading}
+                onClick={handleDeleteAll}
+              >
+                {deleteAllMutation.isPending ? 'Đang xóa...' : 'Xóa tất cả'}
+              </button>
+            )}
+            {canCreatePost ? (
+              <Link to="/posts/create" className="btn btn-primary">
+                Tạo bài viết
+              </Link>
+            ) : null}
+          </div>
         }
       />
 
@@ -107,7 +125,7 @@ export default function PostListPage() {
               <tr>
                 <th>Tiêu đề</th>
                 <th>Kênh</th>
-                <th>Danh mục</th>
+                <th>Danh mục template</th>
                 <th>Trạng thái</th>
                 <th>Lịch đăng</th>
                 <th>Ngày tạo</th>
@@ -121,7 +139,7 @@ export default function PostListPage() {
                     <Link to={`/posts/${item.id}`}>{item.title}</Link>
                   </td>
                   <td>{channelMap[item.socialChannelId] || '—'}</td>
-                  <td>{item.categoryId ? (categoryMap[item.categoryId] || '—') : '—'}</td>
+                  <td>{item.promptTemplateName || '—'}</td>
                   <td><PostStatusBadge status={item.status} /></td>
                   <td>{formatDateTime(item.scheduledPublishAt)}</td>
                   <td>{formatDateTime(item.createdAt)}</td>

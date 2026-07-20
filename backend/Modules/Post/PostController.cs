@@ -1,3 +1,4 @@
+using Backend.Modules.PageContext;
 using Backend.Modules.Post.Enums;
 using Backend.Shared;
 using Microsoft.AspNetCore.Authorization;
@@ -16,21 +17,32 @@ public class PostController
     private readonly PostWorkflowService _workflow;
     private readonly GenerationJob.GenerationJobPipelineService _generationPipeline;
     private readonly PublishLog.IPublishPipelineService _publishPipeline;
+    private readonly PageContextRepository _pageContextRepository;
 
     public PostController(
         PostRepository repository,
         PostWorkflowService workflow,
         GenerationJob.GenerationJobPipelineService generationPipeline,
-        PublishLog.IPublishPipelineService publishPipeline) : base(repository)
+        PublishLog.IPublishPipelineService publishPipeline,
+        PageContextRepository pageContextRepository) : base(repository)
     {
         _repo = repository;
         _workflow = workflow;
         _generationPipeline = generationPipeline;
         _publishPipeline = publishPipeline;
+        _pageContextRepository = pageContextRepository;
     }
 
     protected override string EntityLabel => "bài viết";
     protected override PostResponse ToResponse(PostModel e) => PostRepository.ToResponse(e);
+
+    public override async Task<IActionResult> GetById(Guid id, CancellationToken ct)
+    {
+        var response = await _repo.GetResponseByIdAsync(id, ct);
+        if (response is null)
+            return NotFound(ApiResponse.Fail("NOT_FOUND", $"Không tìm thấy {EntityLabel}"));
+        return Ok(ApiResponse.Ok(response));
+    }
 
     protected override async Task<PostModel> CreateEntityAsync(CreatePostRequest request, CancellationToken ct)
     {
@@ -43,6 +55,19 @@ public class PostController
 
     protected override Task<PagedResult<PostResponse>> FilterEntitiesAsync(PostFilterRequest request, CancellationToken ct)
         => _repo.FilterAsync(request, ct);
+
+    /// <summary>Soft-delete tất cả bài viết (Admin: toàn bộ; ContentManager: bài của mình).</summary>
+    [HttpDelete("all")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> SoftDeleteAll(CancellationToken ct)
+    {
+        var deleteAllUsers = _workflow.IsInAnyRole("Admin");
+        var deleted = await _repo.SoftDeleteAllAsync(deleteAllUsers, ct);
+        return Ok(ApiResponse.Ok(new { deleted },
+            deleted == 0
+                ? "Không có bài viết nào để xóa"
+                : $"Đã xóa {deleted} bài viết"));
+    }
 
     // --- Generation pipeline ---
 
@@ -92,15 +117,65 @@ public class PostController
     {
         if (string.IsNullOrWhiteSpace(request.Title))
             return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Ý tưởng không được để trống"));
-        if (request.SocialChannelId == Guid.Empty)
-            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Phải chọn kênh đăng"));
 
-        var post = await _repo.CreateAsync(request, ct);
+        var channelIds = ResolveChannelIds(request);
+        if (channelIds.Count == 0)
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Phải chọn ít nhất một kênh đăng"));
+
+        var packId = request.PromptTemplateId is Guid p && p != Guid.Empty ? p : (Guid?)null;
+        var pageMap = await _pageContextRepository.GetMapByChannelsAsync(channelIds, ct);
+        var missing = channelIds
+            .Where(id =>
+            {
+                if (packId.HasValue) return false;
+                pageMap.TryGetValue(id, out var pc);
+                return !PageContextRepository.HasTemplateReady(pc);
+            })
+            .ToList();
+
+        if (missing.Count > 0)
+            return BadRequest(ApiResponse.Fail(
+                "VALIDATION_ERROR",
+                "Có kênh chưa cấu hình PageContext (danh mục mặc định). Hãy chọn danh mục hoặc setup Page Context trước."));
+
+        // Nhiều kênh → queue nền (tránh timeout), trả batchId.
+        if (channelIds.Count > 1)
+        {
+            var bulk = await _repo.CreateFanOutQueuedAsync(
+                title: request.Title.Trim(),
+                channelIds: channelIds,
+                generationFlow: request.GenerationFlow,
+                promptTemplateId: packId,
+                pageContextByChannel: pageMap,
+                objective: request.Objective,
+                ct: ct);
+
+            return Ok(ApiResponse.Ok(bulk,
+                $"Đã tạo {bulk.Created} bài — đang sinh nội dung nền, xem tiến độ ở batch."));
+        }
+
+        // 1 kênh: tạo + sinh đồng bộ.
+        var channelId = channelIds[0];
+        pageMap.TryGetValue(channelId, out var singlePc);
+        var (pcText, pcImage) = PageContextRepository.ResolveDefaultTemplateIds(singlePc);
+        var createReq = new CreatePostRequest
+        {
+            Title = request.Title,
+            SocialChannelId = channelId,
+            PromptTemplateId = packId,
+            TextTemplateId = packId is null ? pcText : null,
+            ImageTemplateId = packId is null ? pcImage : null,
+            CategoryId = request.CategoryId,
+            GenerationFlow = request.GenerationFlow,
+            Objective = request.Objective
+        };
+
+        var post = await _repo.CreateAsync(createReq, ct);
 
         try
         {
             await GenerateTextThenImageAsync(post.Id, ct);
-            await _workflow.ApproveAsync(post.Id, ct); // bỏ duyệt: xong là Approved, sẵn sàng đăng/lên lịch
+            await _workflow.ApproveAsync(post.Id, ct);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or KeyNotFoundException)
         {
@@ -110,7 +185,40 @@ public class PostController
         }
 
         var final = await _workflow.GetPostAsync(post.Id, ct);
-        return Ok(ApiResponse.Ok(ToResponse(final!), "Đã tạo bài và sinh nội dung xong"));
+        var response = await _repo.GetResponseByIdAsync(final!.Id, ct);
+        return Ok(ApiResponse.Ok(response!, "Đã tạo bài và sinh nội dung xong"));
+    }
+
+    /// <summary>Tạo hàng loạt bài (items × channels). Trả về ngay; worker sinh nội dung nền.</summary>
+    [HttpPost("bulk-create")]
+    public async Task<IActionResult> BulkCreate([FromBody] BulkCreatePostRequest request, CancellationToken ct)
+    {
+        var hasPack = request.PromptTemplateId is Guid p && p != Guid.Empty;
+        var hasLegacy = request.TextTemplateId.HasValue || request.ImageTemplateId.HasValue;
+        if (!hasPack && !hasLegacy)
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Phải chọn danh mục (template)"));
+
+        try
+        {
+            var result = await _repo.BulkCreateAsync(request, ct);
+            return Ok(ApiResponse.Ok(result,
+                $"Đã tạo {result.Created} bài — đang sinh nội dung nền, xem tiến độ ở batch."));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", ex.Message));
+        }
+    }
+
+    private static List<Guid> ResolveChannelIds(CreatePostRequest request)
+    {
+        var fromList = (request.SocialChannelIds ?? [])
+            .Where(x => x != Guid.Empty)
+            .Distinct()
+            .ToList();
+        if (fromList.Count > 0) return fromList;
+        if (request.SocialChannelId != Guid.Empty) return [request.SocialChannelId];
+        return [];
     }
 
     [HttpPost("{id:guid}/regenerate-text")]
@@ -146,17 +254,9 @@ public class PostController
 
     // --- Bulk (tạo hàng loạt) ---
 
-    /// <summary>Tạo hàng loạt bài (items × channels). Trả về ngay; worker sinh nội dung nền.</summary>
-    [HttpPost("bulk-create")]
-    public async Task<IActionResult> BulkCreate([FromBody] BulkCreatePostRequest request, CancellationToken ct)
-    {
-        var result = await _repo.BulkCreateAsync(request, ct);
-        return Ok(ApiResponse.Ok(result,
-            $"Đã tạo {result.Created} bài — đang sinh nội dung nền, xem tiến độ ở batch."));
-    }
-
     /// <summary>Duyệt hàng loạt các bài WaitingReview trong batch (hoặc theo postIds).</summary>
     [HttpPost("bulk-approve")]
+    [Authorize(Roles = "Admin,Reviewer")]
     public async Task<IActionResult> BulkApprove([FromBody] BulkTargetRequest request, CancellationToken ct)
     {
         var posts = await _repo.ResolveTargetsAsync(request.BatchId, request.PostIds, [PostStatus.WaitingReview], ct);
@@ -209,7 +309,7 @@ public class PostController
             batchId,
             total = posts.Count,
             byStatus,
-            posts = posts.Select(PostRepository.ToResponse).ToList()
+            posts = posts.Select(p => PostRepository.ToResponse(p)).ToList()
         }));
     }
 

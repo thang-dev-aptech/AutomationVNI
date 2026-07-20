@@ -71,18 +71,15 @@ export function getAvailableWorkflowActions(status) {
   }
 }
 
-/** Nút sinh nội dung AI khả dụng theo PostStatus + đã có content chưa (khớp precondition backend). */
+/** Nút AI trên preview — chỉ tạo lại (sau create-and-generate / bulk auto-approve). */
 export function getAvailableGenerationActions(status, hasContent) {
   const s = Number(status)
+  const canRegen = [11, 5].includes(s) && Boolean(hasContent)
   return {
-    // Draft / Queued / Failed
-    genText: [1, 2, 8].includes(s),
-    // WaitingReview / NeedMedia / Failed — cần có content trước
-    genImage: [10, 13, 8].includes(s) && Boolean(hasContent),
-    // WaitingReview / NeedFix / Failed — cần có content + đã có media cover
-    renderOverlay: [10, 15, 8].includes(s) && Boolean(hasContent),
-    // Preview (Approved / Scheduled) — tạo lại nội dung/ảnh
-    regenText: [11, 5].includes(s) && Boolean(hasContent),
-    regenImage: [11, 5].includes(s) && Boolean(hasContent),
+    genText: false,
+    genImage: false,
+    renderOverlay: false,
+    regenText: canRegen,
+    regenImage: canRegen,
   }
 }

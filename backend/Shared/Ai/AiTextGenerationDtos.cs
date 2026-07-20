@@ -14,9 +14,8 @@ public class AiTextGenerationRequest
     public string? Hashtags { get; set; }
 
     /// <summary>
-    /// Prompt người dùng đã dựng sẵn từ template (đã thay biến). Khi có giá trị, service dùng
-    /// thẳng làm user prompt thay cho phần ghép mặc định. System prompt (JSON schema) vẫn giữ nguyên
-    /// để đảm bảo output parse được.
+    /// Prompt người dùng đã dựng sẵn từ template (đã thay biến). Khi có giá trị, service gắn
+    /// vào user prompt cùng context + ràng buộc chất lượng. System prompt (JSON schema) vẫn giữ.
     /// </summary>
     public string? PromptOverride { get; set; }
 }
@@ -30,6 +29,8 @@ public class AiTextGenerationResult
     public string BannerSubheadline { get; set; } = string.Empty;
     public string BannerCta { get; set; } = string.Empty;
     public string ImagePrompt { get; set; } = string.Empty;
+    public string? Provider { get; set; }
+    public string? Model { get; set; }
     public string? RawResponse { get; set; }
 }
 

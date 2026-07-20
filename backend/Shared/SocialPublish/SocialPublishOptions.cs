@@ -11,5 +11,5 @@ public class FacebookPublishOptions
 {
     public string GraphBaseUrl { get; set; } = "https://graph.facebook.com";
     public string GraphVersion { get; set; } = "v20.0";
-    public int TimeoutSeconds { get; set; } = 30;
+    public int TimeoutSeconds { get; set; } = 90;
 }

@@ -1,5 +1,7 @@
 using Backend.Data;
+using Backend.Modules.PageContext;
 using Backend.Modules.Post.Enums;
+using Backend.Modules.PromptTemplate;
 using Backend.Shared;
 using Backend.Shared.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -40,27 +42,50 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
             query = query.Where(x => x.CreatedAt <= request.ToDate.Value);
 
         var paged = await PaginateAsync(query, request.Index, request.Size, cancellationToken);
+        var names = await LoadTemplateNamesAsync(paged.Items, cancellationToken);
         return new PagedResult<PostResponse>
         {
-            Items = paged.Items.Select(ToResponse).ToList(),
+            Items = paged.Items.Select(e => ToResponse(e, ResolveTemplateName(e, names))).ToList(),
             Total = paged.Total,
             Index = paged.Index,
             Size = paged.Size
         };
     }
 
+    public async Task<PostResponse?> GetResponseByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        var entity = await GetByIdAsync(id, ct);
+        if (entity is null) return null;
+        var names = await LoadTemplateNamesAsync([entity], ct);
+        return ToResponse(entity, ResolveTemplateName(entity, names));
+    }
+
     public async Task<PostModel> CreateAsync(
         CreatePostRequest request,
         CancellationToken cancellationToken = default)
     {
+        var textTpl = request.TextTemplateId;
+        var imageTpl = request.ImageTemplateId;
+
+        // Một template danh mục → gắn cả text + ảnh.
+        if (request.PromptTemplateId is Guid packId && packId != Guid.Empty)
+        {
+            textTpl = packId;
+            imageTpl = packId;
+        }
+
+        var channelId = request.SocialChannelId;
+        if (channelId == Guid.Empty)
+            throw new ArgumentException("Phải chọn kênh đăng");
+
         var entity = new PostModel
         {
             Title = request.Title.Trim(),
-            SocialChannelId = request.SocialChannelId,
+            SocialChannelId = channelId,
             CategoryId = request.CategoryId,
             GenerationFlow = request.GenerationFlow,
-            TextTemplateId = request.TextTemplateId,
-            ImageTemplateId = request.ImageTemplateId,
+            TextTemplateId = textTpl,
+            ImageTemplateId = imageTpl,
             UserId = GetCurrentUserId(),
             Status = PostStatus.Draft
         };
@@ -70,6 +95,184 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
                 new { input = new { objective = request.Objective.Trim() } });
 
         return await base.CreateAsync(entity, cancellationToken);
+    }
+
+    /// <summary>Tạo hàng loạt post (fan-out items × channels) ở Status=Queued cho worker sinh nền.</summary>
+    public async Task<BulkCreateResult> BulkCreateAsync(
+        BulkCreatePostRequest request, CancellationToken ct = default)
+    {
+        var items = (request.Items ?? []).Where(i => !string.IsNullOrWhiteSpace(i.Idea)).ToList();
+        var channels = (request.ChannelIds ?? []).Where(c => c != Guid.Empty).Distinct().ToList();
+        if (items.Count == 0) throw new ArgumentException("Danh sách ý tưởng trống");
+        if (channels.Count == 0) throw new ArgumentException("Phải chọn ít nhất một kênh đăng");
+
+        var batchTemplate = request.PromptTemplateId is Guid p && p != Guid.Empty
+            ? p
+            : (Guid?)null;
+        var legacyText = request.TextTemplateId;
+        var legacyImage = request.ImageTemplateId;
+
+        if (batchTemplate is null
+            && legacyText is null
+            && legacyImage is null
+            && items.All(i =>
+                (i.PromptTemplateId is null || i.PromptTemplateId == Guid.Empty)
+                && i.TextTemplateId is null
+                && i.ImageTemplateId is null))
+        {
+            throw new ArgumentException("Phải chọn danh mục (template) cho batch");
+        }
+
+        var batchId = Guid.NewGuid();
+        var userId = GetCurrentUserId();
+        var posts = new List<PostModel>();
+        foreach (var ch in channels)
+            foreach (var it in items)
+            {
+                Guid? textTpl;
+                Guid? imageTpl;
+                var itemPack = it.PromptTemplateId is Guid ip && ip != Guid.Empty ? ip : batchTemplate;
+                if (itemPack is Guid pack)
+                {
+                    textTpl = pack;
+                    imageTpl = pack;
+                }
+                else
+                {
+                    textTpl = it.TextTemplateId ?? legacyText;
+                    imageTpl = it.ImageTemplateId ?? legacyImage ?? textTpl;
+                    textTpl ??= imageTpl;
+                }
+
+                var post = new PostModel
+                {
+                    Title = it.Idea.Trim(),
+                    SocialChannelId = ch,
+                    CategoryId = it.CategoryId ?? request.CategoryId,
+                    GenerationFlow = request.GenerationFlow,
+                    TextTemplateId = textTpl,
+                    ImageTemplateId = imageTpl,
+                    BatchId = batchId,
+                    UserId = userId,
+                    Status = PostStatus.Queued
+                };
+                if (!string.IsNullOrWhiteSpace(it.Objective))
+                    post.ExtraJson = System.Text.Json.JsonSerializer.Serialize(
+                        new { input = new { objective = it.Objective!.Trim() } });
+                posts.Add(post);
+            }
+
+        await MultiCreateAsync(posts, ct);
+        return new BulkCreateResult
+        {
+            BatchId = batchId,
+            Created = posts.Count,
+            PostIds = posts.Select(p => p.Id).ToList()
+        };
+    }
+
+    /// <summary>
+    /// Fan-out 1 ý tưởng × N kênh → Queued. Template: PromptTemplateId chung,
+    /// hoặc default từ PageContext theo từng kênh.
+    /// </summary>
+    public async Task<BulkCreateResult> CreateFanOutQueuedAsync(
+        string title,
+        IReadOnlyList<Guid> channelIds,
+        GenerationFlow generationFlow,
+        Guid? promptTemplateId,
+        IReadOnlyDictionary<Guid, PageContextModel> pageContextByChannel,
+        string? objective,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            throw new ArgumentException("Ý tưởng không được để trống");
+        if (channelIds.Count == 0)
+            throw new ArgumentException("Phải chọn ít nhất một kênh đăng");
+
+        var batchId = Guid.NewGuid();
+        var userId = GetCurrentUserId();
+        var posts = new List<PostModel>();
+
+        var pack = promptTemplateId is Guid p && p != Guid.Empty ? p : (Guid?)null;
+        var allReady = channelIds.All(id =>
+        {
+            pageContextByChannel.TryGetValue(id, out var pc);
+            return PageContextRepository.HasTemplateReady(pc);
+        });
+
+        foreach (var ch in channelIds.Distinct())
+        {
+            pageContextByChannel.TryGetValue(ch, out var pc);
+            var ready = PageContextRepository.HasTemplateReady(pc);
+
+            Guid? textTpl;
+            Guid? imageTpl;
+            // pack áp khi: page chưa ready, hoặc user ghi đè (mọi page đã ready + có chọn danh mục)
+            if (pack.HasValue && (!ready || allReady))
+            {
+                textTpl = pack;
+                imageTpl = pack;
+            }
+            else
+            {
+                (textTpl, imageTpl) = PageContextRepository.ResolveDefaultTemplateIds(pc);
+            }
+
+            var post = new PostModel
+            {
+                Title = title.Trim(),
+                SocialChannelId = ch,
+                GenerationFlow = generationFlow,
+                TextTemplateId = textTpl,
+                ImageTemplateId = imageTpl,
+                BatchId = batchId,
+                UserId = userId,
+                Status = PostStatus.Queued
+            };
+            if (!string.IsNullOrWhiteSpace(objective))
+                post.ExtraJson = System.Text.Json.JsonSerializer.Serialize(
+                    new { input = new { objective = objective.Trim() } });
+            posts.Add(post);
+        }
+
+        await MultiCreateAsync(posts, ct);
+        return new BulkCreateResult
+        {
+            BatchId = batchId,
+            Created = posts.Count,
+            PostIds = posts.Select(p => p.Id).ToList()
+        };
+    }
+
+    /// <summary>
+    /// Soft-delete all active posts. Admin: every post. Others: only posts owned by current user.
+    /// </summary>
+    public async Task<int> SoftDeleteAllAsync(bool deleteAllUsers, CancellationToken cancellationToken = default)
+    {
+        var query = QueryActive();
+        if (!deleteAllUsers)
+        {
+            var userId = GetCurrentUserId();
+            if (userId == Guid.Empty)
+                return 0;
+            query = query.Where(x => x.UserId == userId);
+        }
+
+        var posts = await query.ToListAsync(cancellationToken);
+        if (posts.Count == 0)
+            return 0;
+
+        var actor = GetCurrentUserName();
+        var now = DateTime.UtcNow;
+        foreach (var post in posts)
+        {
+            post.IsDeleted = true;
+            post.DeletedAt = now;
+            post.DeletedBy = actor;
+        }
+
+        await Context.SaveChangesAsync(cancellationToken);
+        return posts.Count;
     }
 
     public async Task<PostModel?> UpdateAsync(
@@ -99,48 +302,6 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         return entity;
     }
 
-    /// <summary>Tạo hàng loạt post (fan-out items × channels) ở Status=Queued cho worker sinh nền.</summary>
-    public async Task<BulkCreateResult> BulkCreateAsync(
-        BulkCreatePostRequest request, CancellationToken ct = default)
-    {
-        var items = (request.Items ?? []).Where(i => !string.IsNullOrWhiteSpace(i.Idea)).ToList();
-        var channels = (request.ChannelIds ?? []).Where(c => c != Guid.Empty).Distinct().ToList();
-        if (items.Count == 0) throw new ArgumentException("Danh sách ý tưởng trống");
-        if (channels.Count == 0) throw new ArgumentException("Phải chọn ít nhất một kênh đăng");
-
-        var batchId = Guid.NewGuid();
-        var userId = GetCurrentUserId();
-        var posts = new List<PostModel>();
-        foreach (var ch in channels)
-            foreach (var it in items)
-            {
-                var post = new PostModel
-                {
-                    Title = it.Idea.Trim(),
-                    SocialChannelId = ch,
-                    CategoryId = it.CategoryId ?? request.CategoryId,
-                    GenerationFlow = request.GenerationFlow,
-                    TextTemplateId = it.TextTemplateId ?? request.TextTemplateId,
-                    ImageTemplateId = it.ImageTemplateId ?? request.ImageTemplateId,
-                    BatchId = batchId,
-                    UserId = userId,
-                    Status = PostStatus.Queued
-                };
-                if (!string.IsNullOrWhiteSpace(it.Objective))
-                    post.ExtraJson = System.Text.Json.JsonSerializer.Serialize(
-                        new { input = new { objective = it.Objective!.Trim() } });
-                posts.Add(post);
-            }
-
-        await MultiCreateAsync(posts, ct);
-        return new BulkCreateResult
-        {
-            BatchId = batchId,
-            Created = posts.Count,
-            PostIds = posts.Select(p => p.Id).ToList()
-        };
-    }
-
     /// <summary>Lấy các post theo batchId hoặc danh sách id, lọc theo status cho phép.</summary>
     public async Task<List<PostModel>> ResolveTargetsAsync(
         Guid? batchId, List<Guid>? postIds, PostStatus[]? allowedStatuses, CancellationToken ct = default)
@@ -156,27 +317,58 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         return await q.OrderBy(p => p.CreatedAt).ToListAsync(ct);
     }
 
-    public static PostResponse ToResponse(PostModel entity) => new()
+    public static PostResponse ToResponse(PostModel entity, string? promptTemplateName = null)
     {
-        Id = entity.Id,
-        Title = entity.Title,
-        Content = entity.Content,
-        CategoryId = entity.CategoryId,
-        SocialChannelId = entity.SocialChannelId,
-        GenerationFlow = entity.GenerationFlow,
-        TextTemplateId = entity.TextTemplateId,
-        ImageTemplateId = entity.ImageTemplateId,
-        Status = entity.Status,
-        UserId = entity.UserId,
-        ScheduledPublishAt = entity.ScheduledPublishAt,
-        ScheduleTimezone = entity.ScheduleTimezone,
-        PublishedAt = entity.PublishedAt,
-        ExternalPostId = entity.ExternalPostId,
-        PublishedUrl = entity.PublishedUrl,
-        RejectionReason = entity.RejectionReason,
-        ApprovedBy = entity.ApprovedBy,
-        ApprovedAt = entity.ApprovedAt,
-        CreatedAt = entity.CreatedAt,
-        UpdatedAt = entity.UpdatedAt
-    };
+        var promptTemplateId = entity.TextTemplateId ?? entity.ImageTemplateId;
+        return new()
+        {
+            Id = entity.Id,
+            Title = entity.Title,
+            Content = entity.Content,
+            CategoryId = entity.CategoryId,
+            SocialChannelId = entity.SocialChannelId,
+            GenerationFlow = entity.GenerationFlow,
+            TextTemplateId = entity.TextTemplateId,
+            ImageTemplateId = entity.ImageTemplateId,
+            PromptTemplateId = promptTemplateId,
+            PromptTemplateName = promptTemplateName,
+            Status = entity.Status,
+            UserId = entity.UserId,
+            ScheduledPublishAt = entity.ScheduledPublishAt,
+            ScheduleTimezone = entity.ScheduleTimezone,
+            PublishedAt = entity.PublishedAt,
+            ExternalPostId = entity.ExternalPostId,
+            PublishedUrl = entity.PublishedUrl,
+            RejectionReason = entity.RejectionReason,
+            ApprovedBy = entity.ApprovedBy,
+            ApprovedAt = entity.ApprovedAt,
+            CreatedAt = entity.CreatedAt,
+            UpdatedAt = entity.UpdatedAt
+        };
+    }
+
+    private async Task<Dictionary<Guid, string>> LoadTemplateNamesAsync(
+        IEnumerable<PostModel> posts, CancellationToken ct)
+    {
+        var ids = posts
+            .Select(p => p.TextTemplateId ?? p.ImageTemplateId)
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+
+        if (ids.Count == 0) return [];
+
+        return await Context.Set<PromptTemplateModel>()
+            .Where(t => ids.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => t.Name, ct);
+    }
+
+    private static string? ResolveTemplateName(PostModel post, IReadOnlyDictionary<Guid, string> names)
+    {
+        var id = post.TextTemplateId ?? post.ImageTemplateId;
+        if (id is Guid tid && names.TryGetValue(tid, out var name))
+            return name;
+        return null;
+    }
 }

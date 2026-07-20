@@ -33,3 +33,11 @@ export function useDeletePromptTemplate() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: promptTemplateQueryKeys.all }),
   })
 }
+
+export function useBulkImportPromptTemplates() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload) => unwrapApiData(await promptTemplateApi.bulkImport(payload)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: promptTemplateQueryKeys.all }),
+  })
+}

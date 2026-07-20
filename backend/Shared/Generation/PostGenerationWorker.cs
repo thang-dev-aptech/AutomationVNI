@@ -9,7 +9,8 @@ namespace Backend.Shared.Generation;
 
 /// <summary>
 /// Worker nền rút các post Status=Queued (do bulk-create đẩy vào) và sinh nội dung text+image
-/// bất đồng bộ, giới hạn concurrency để tôn trọng rate-limit AI. Post xong → WaitingReview (cổng duyệt).
+/// bất đồng bộ, giới hạn concurrency để tôn trọng rate-limit AI.
+/// Xong → Approved (cùng flow create-and-generate, bỏ cổng WaitingReview).
 /// Bật/tắt qua config "GenerationWorker".
 /// </summary>
 public class PostGenerationWorker(
@@ -78,10 +79,24 @@ public class PostGenerationWorker(
         // Mỗi post một scope riêng — DbContext không thread-safe khi chạy song song.
         using var scope = scopeFactory.CreateScope();
         var pipeline = scope.ServiceProvider.GetRequiredService<GenerationJobPipelineService>();
+        var workflow = scope.ServiceProvider.GetRequiredService<PostWorkflowService>();
         try
         {
             await pipeline.GenerateForPostAsync(postId, ct);
-            logger.LogInformation("PostGenerationWorker generated post {PostId}", postId);
+
+            // Same as create-and-generate: skip review gate → Approved, ready to schedule/publish.
+            var post = await workflow.GetPostAsync(postId, ct);
+            if (post?.Status == PostStatus.WaitingReview)
+            {
+                await workflow.ApproveAsync(postId, ct);
+                logger.LogInformation("PostGenerationWorker generated+approved post {PostId}", postId);
+            }
+            else
+            {
+                logger.LogInformation(
+                    "PostGenerationWorker generated post {PostId} (status={Status}, skipped auto-approve)",
+                    postId, post?.Status);
+            }
         }
         catch (Exception ex)
         {

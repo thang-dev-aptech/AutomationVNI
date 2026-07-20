@@ -7,6 +7,7 @@ export const postApi = {
   create: (payload) => axiosInstance.post('/api/Post', payload),
   update: (id, payload) => axiosInstance.put(`/api/Post/${id}`, payload),
   softDelete: (id) => axiosInstance.delete(`/api/Post/${id}`),
+  softDeleteAll: () => axiosInstance.delete('/api/Post/all'),
 
   submitReview: (id) => axiosInstance.post(`/api/Post/${id}/submit-review`),
   approve: (id) => axiosInstance.post(`/api/Post/${id}/approve`),

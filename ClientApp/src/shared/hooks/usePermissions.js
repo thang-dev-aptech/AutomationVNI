@@ -29,6 +29,7 @@ export function usePermissions() {
         permissions.canEditPost(roles, postUserId, currentUser?.id),
       canDeletePost: (postUserId) =>
         permissions.canDeletePost(roles, postUserId, currentUser?.id),
+      canDeleteAllPosts: permissions.canDeleteAllPosts(roles),
       hasRole: (allowedRoles) => permissions.hasRole(roles, allowedRoles),
     }),
     [roles, currentUser],

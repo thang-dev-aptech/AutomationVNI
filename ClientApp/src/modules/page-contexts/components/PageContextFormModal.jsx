@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import Modal from '@/shared/components/Modal'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
-import { TEMPLATE_TYPE } from '@/modules/prompt-templates/constants/promptTemplateType'
 
 const EMPTY_GUID = '00000000-0000-0000-0000-000000000000'
 
@@ -30,14 +29,10 @@ export default function PageContextFormModal({
   const [form, setForm] = useState(emptyForm)
   const isEdit = Boolean(initialData?.id)
   const { data: channels = [] } = useSocialChannelAll()
-  const { data: textTplData } = usePromptTemplateList({
-    templateType: TEMPLATE_TYPE.TEXT, isActive: true, index: 1, size: 100,
+  const { data: tplData } = usePromptTemplateList({
+    isActive: true, index: 1, size: 100,
   })
-  const { data: imageTplData } = usePromptTemplateList({
-    templateType: TEMPLATE_TYPE.IMAGE, isActive: true, index: 1, size: 100,
-  })
-  const textTemplates = textTplData?.items ?? []
-  const imageTemplates = imageTplData?.items ?? []
+  const categoryTemplates = tplData?.items ?? []
 
   useEffect(() => {
     if (!open) return
@@ -162,14 +157,14 @@ export default function PageContextFormModal({
           />
         </div>
         <div className="form-group">
-          <label htmlFor="context-default-text-tpl">Template mặc định — Nội dung</label>
+          <label htmlFor="context-default-text-tpl">Template mặc định — Nội dung (danh mục)</label>
           <select
             id="context-default-text-tpl"
             value={form.defaultTextTemplateId}
             onChange={handleChange('defaultTextTemplateId')}
           >
             <option value="">Không dùng (theo default hệ thống)</option>
-            {textTemplates.map((tpl) => (
+            {categoryTemplates.map((tpl) => (
               <option key={tpl.id} value={tpl.id}>
                 {tpl.name}{tpl.isDefault ? ' ⭐' : ''}
               </option>
@@ -177,14 +172,14 @@ export default function PageContextFormModal({
           </select>
         </div>
         <div className="form-group">
-          <label htmlFor="context-default-image-tpl">Template mặc định — Ảnh</label>
+          <label htmlFor="context-default-image-tpl">Template mặc định — Ảnh (danh mục)</label>
           <select
             id="context-default-image-tpl"
             value={form.defaultImageTemplateId}
             onChange={handleChange('defaultImageTemplateId')}
           >
             <option value="">Không dùng (theo default hệ thống)</option>
-            {imageTemplates.map((tpl) => (
+            {categoryTemplates.map((tpl) => (
               <option key={tpl.id} value={tpl.id}>
                 {tpl.name}{tpl.isDefault ? ' ⭐' : ''}
               </option>

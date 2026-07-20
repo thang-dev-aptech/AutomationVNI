@@ -12,6 +12,10 @@ public class SocialPublishRequest
     public string? AccessToken { get; set; }
     public string Caption { get; set; } = string.Empty;
     public string? MediaPreviewUrl { get; set; }
+    /// <summary>Storage key nội bộ (local disk). Dùng multipart upload lên Facebook khi không có URL public.</summary>
+    public string? MediaStorageKey { get; set; }
+    public string? MediaFileName { get; set; }
+    public string? MediaMimeType { get; set; }
     public string? Link { get; set; }
     public bool ForceReal { get; set; }
 }

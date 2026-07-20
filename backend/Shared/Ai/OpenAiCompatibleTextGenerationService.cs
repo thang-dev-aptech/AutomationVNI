@@ -12,18 +12,33 @@ public class OpenAiCompatibleTextGenerationService(
     ILogger<OpenAiCompatibleTextGenerationService> logger) : IAiTextGenerationService
 {
     private const string SystemPrompt = """
-        You are a social media content writer for Vietnamese marketing teams.
-        Respond with valid JSON only (no markdown fences, no extra commentary).
-        Use this exact schema:
+        Bạn là copywriter Facebook chuyên nghiệp cho Page bán hàng / thương hiệu Việt Nam.
+
+        Nhiệm vụ: viết caption sẵn sàng đăng feed Facebook — tiếng Việt tự nhiên, thuyết phục, dễ đọc trên mobile.
+
+        CHỈ trả về JSON hợp lệ (không markdown, không giải thích), đúng schema:
         {
-          "caption": "main post caption in Vietnamese",
-          "hashtags": ["#tag1", "#tag2"],
-          "cta": "call to action text",
-          "bannerHeadline": "short banner headline",
-          "bannerSubheadline": "supporting banner line",
-          "bannerCta": "banner button text",
-          "imagePrompt": "English image generation prompt, no text in image"
+          "caption": "toàn bộ nội dung bài đăng (đã có emoji + xuống dòng; CHƯA gồm dòng hashtag cuối)",
+          "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4"],
+          "cta": "một câu CTA ngắn, có thể kèm emoji",
+          "bannerHeadline": "tiêu đề banner ngắn",
+          "bannerSubheadline": "dòng phụ banner",
+          "bannerCta": "chữ nút banner",
+          "imagePrompt": "English image prompt, photorealistic or clean design, NO text overlay"
         }
+
+        Cấu trúc caption (bắt buộc):
+        1) Hook 1 câu mở đầu + 1–2 emoji phù hợp ngành.
+        2) Thân bài 2–4 ý, mỗi ý xuống dòng; dùng bullet (• / ✅ / ✨ / 👗…) để dễ scan.
+        3) 4–8 emoji tổng bài — đủ sống động, không spam mỗi từ một icon.
+        4) Không nhồi hashtag vào giữa caption; hashtag chỉ trả trong mảng "hashtags".
+        5) Không kết caption bằng CTA — CTA trả riêng ở field "cta" (hệ thống sẽ ghép).
+
+        Chất lượng:
+        - Gắn đúng ý tưởng (title) + danh mục; cụ thể, không sáo rỗng.
+        - Tránh cụm generic: "nâng tầm phong cách", "tự tin theo cách riêng", "mặc đẹp mỗi ngày" nếu không có chi tiết mới.
+        - Luôn tự viết CTA + 4–6 hashtag chuyên ngành dù context CTA/hashtag chung chung hoặc thiếu.
+        - Độ dài thân bài khoảng 80–160 từ (chưa tính hashtag).
         """;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -103,7 +118,10 @@ public class OpenAiCompatibleTextGenerationService(
 
         var content = ExtractMessageContent(responseBody);
         var stripped = StripMarkdownJson(content);
-        return ParseModelJson(stripped, content);
+        var result = ParseModelJson(stripped, content);
+        result.Provider = providerKey;
+        result.Model = model;
+        return result;
     }
 
     public async Task<List<string>> SuggestIdeasAsync(
@@ -221,21 +239,38 @@ public class OpenAiCompatibleTextGenerationService(
 
     private static string BuildUserPrompt(AiTextGenerationRequest request)
     {
-        // Prompt từ template (đã thay biến) → dùng thẳng, chỉ nhắc lại ràng buộc ngôn ngữ.
-        if (!string.IsNullOrWhiteSpace(request.PromptOverride))
-            return request.PromptOverride.Trim();
-
         var sb = new StringBuilder();
-        sb.AppendLine("Generate social post content with the following context:");
-        AppendLine(sb, "Title", request.Title);
-        AppendLine(sb, "Objective/Goal", request.Objective);
-        AppendLine(sb, "Category", request.Category);
-        AppendLine(sb, "Audience", request.Audience);
-        AppendLine(sb, "Tone", request.Tone);
-        AppendLine(sb, "Brand", request.BrandContext);
-        AppendLine(sb, "CTA hint", request.CtaText);
-        AppendLine(sb, "Hashtag hints", request.Hashtags);
-        sb.AppendLine("Write in Vietnamese unless audience requires otherwise.");
+
+        if (!string.IsNullOrWhiteSpace(request.PromptOverride))
+        {
+            sb.AppendLine("## Brief từ template danh mục (đã điền biến)");
+            sb.AppendLine(request.PromptOverride.Trim());
+            sb.AppendLine();
+        }
+        else
+        {
+            sb.AppendLine("## Brief");
+            sb.AppendLine("Viết bài đăng mạng xã hội theo context bên dưới.");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("## Context bài viết");
+        AppendLine(sb, "Ý tưởng (title)", request.Title);
+        AppendLine(sb, "Danh mục", request.Category);
+        AppendLine(sb, "Mục tiêu", request.Objective);
+        AppendLine(sb, "Thương hiệu", request.BrandContext);
+        AppendLine(sb, "Giọng văn", request.Tone);
+        AppendLine(sb, "Đối tượng", request.Audience);
+        AppendLine(sb, "CTA gợi ý", request.CtaText);
+        AppendLine(sb, "Hashtag gợi ý", request.Hashtags);
+
+        sb.AppendLine();
+        sb.AppendLine("## Ràng buộc Facebook");
+        sb.AppendLine("- Caption có emoji/icon + xuống dòng rõ; sẵn sàng đăng feed.");
+        sb.AppendLine("- Tự viết CTA hấp dẫn + 4–6 hashtag đúng ngành (kể cả khi CTA/hashtag gợi ý ở trên còn chung chung).");
+        sb.AppendLine("- Không bịa giá/thông số nếu ý tưởng không nêu.");
+        sb.AppendLine("- Trả đúng JSON schema ở system prompt.");
+
         return sb.ToString().Trim();
     }
 

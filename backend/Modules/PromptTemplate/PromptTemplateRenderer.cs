@@ -11,16 +11,16 @@ public static partial class PromptTemplateRenderer
     /// <summary>Các biến hỗ trợ — hiển thị gợi ý trên UI (endpoint /api/prompttemplate/variables).</summary>
     public static readonly IReadOnlyList<PromptVariableInfo> AvailableVariables =
     [
-        new("title", "Tiêu đề bài viết"),
-        new("category", "Tên danh mục"),
-        new("brand", "Tên thương hiệu (PageContext)"),
-        new("tone", "Giọng văn thương hiệu"),
-        new("audience", "Đối tượng mục tiêu"),
-        new("objective", "Mục tiêu/goal của bài"),
-        new("cta", "Call to action mặc định"),
-        new("hashtags", "Hashtag mặc định"),
+        new("title", "Tiêu đề / ý tưởng bài viết"),
+        new("category", "Tên danh mục template (hoặc Category)"),
+        new("brand", "Thương hiệu — PageContext, không có thì lấy tên Page kênh"),
+        new("tone", "Giọng văn — PageContext, mặc định: thân thiện, rõ ràng, chuyên nghiệp"),
+        new("audience", "Đối tượng — mặc định: khách hàng mục tiêu"),
+        new("objective", "Mục tiêu bài — ExtraJson hoặc dùng lại title"),
+        new("cta", "Call to action — PageContext, mặc định: Tìm hiểu thêm"),
+        new("hashtags", "Hashtag — PageContext, không có thì sinh từ danh mục"),
         new("caption", "(ảnh) Nội dung bài đã sinh"),
-        new("imagePrompt", "(ảnh) Gợi ý prompt ảnh từ AI")
+        new("imagePrompt", "(ảnh) Gợi ý prompt ảnh từ AI text")
     ];
 
     public static string Render(string? body, IReadOnlyDictionary<string, string?> values)

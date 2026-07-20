@@ -41,8 +41,8 @@ public class MetaController(
             Url = url,
             Mode = hasConfigId ? "business" : "classic",
             Hint = hasConfigId
-                ? null
-                : "Nếu Facebook báo \"Nội dung này hiện không hiển thị\": app Business cần Config ID. Meta App → Facebook Login for Business → Configurations → Create → copy Config ID → dotnet user-secrets set \"MetaOAuth:ConfigId\" \"...\" rồi restart backend."
+                ? "Đang dùng Login for Business (Config ID)."
+                : "Facebook Login cổ điển: khi Connect hãy chọn Page cần cấp quyền. App Development mode thì tài khoản FB phải là Admin/Developer/Tester của app."
         }));
     }
 
@@ -68,12 +68,17 @@ public class MetaController(
         {
             var result = await metaOAuth.HandleCallbackAsync(code!, state!, ct);
             logger.LogInformation(
-                "Meta sync complete: {Fb} page(s), {Ig} Instagram, {Gr} group(s)",
-                result.FacebookPagesSynced, result.InstagramAccountsSynced, result.FacebookGroupsSynced);
+                "Meta sync complete: {Fb} page(s), {Ig} Instagram, {Gr} group(s), removed={Removed}, returned={Returned}, missingToken={Missing}, granted=[{Granted}]",
+                result.FacebookPagesSynced, result.InstagramAccountsSynced, result.FacebookGroupsSynced,
+                result.ChannelsRemoved, result.PagesReturnedByMeta, result.PagesMissingToken,
+                result.GrantedPermissions);
 
             var redirect = o.FrontendSuccessUri;
             redirect += redirect.Contains('?') ? '&' : '?';
-            redirect += $"fb={result.FacebookPagesSynced}&ig={result.InstagramAccountsSynced}&gr={result.FacebookGroupsSynced}";
+            redirect += $"fb={result.FacebookPagesSynced}&ig={result.InstagramAccountsSynced}&gr={result.FacebookGroupsSynced}&removed={result.ChannelsRemoved}" +
+                        $"&returned={result.PagesReturnedByMeta}&missingToken={result.PagesMissingToken}";
+            if (!string.IsNullOrWhiteSpace(result.GrantedPermissions))
+                redirect += $"&perms={Uri.EscapeDataString(result.GrantedPermissions)}";
             return Redirect(redirect);
         }
         catch (Exception ex)

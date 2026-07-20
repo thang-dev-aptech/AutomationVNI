@@ -8,6 +8,7 @@ export const promptTemplateApi = {
   update: (id, payload) => axiosInstance.put(`/api/PromptTemplate/${id}`, payload),
   softDelete: (id) => axiosInstance.delete(`/api/PromptTemplate/${id}`),
   getVariables: () => axiosInstance.get('/api/PromptTemplate/variables'),
+  bulkImport: (payload) => axiosInstance.post('/api/PromptTemplate/bulk-import', payload),
 }
 
 export const promptTemplateQueryKeys = {

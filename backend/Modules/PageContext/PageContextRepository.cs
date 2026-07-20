@@ -34,6 +34,38 @@ public class PageContextRepository : GenericRepository<PageContextModel>
         };
     }
 
+    public async Task<Dictionary<Guid, PageContextModel>> GetMapByChannelsAsync(
+        IEnumerable<Guid> channelIds, CancellationToken ct = default)
+    {
+        var ids = channelIds.Where(x => x != Guid.Empty).Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<Guid, PageContextModel>();
+
+        var list = await QueryActive()
+            .Where(x => ids.Contains(x.SocialChannelId))
+            .ToListAsync(ct);
+        return list
+            .GroupBy(x => x.SocialChannelId)
+            .ToDictionary(g => g.Key, g => g.First());
+    }
+
+    /// <summary>
+    /// Page đủ cấu hình để bỏ chọn danh mục khi tạo bài:
+    /// có default template id hoặc prompt text inline.
+    /// </summary>
+    public static bool HasTemplateReady(PageContextModel? pc)
+        => pc is not null && (
+            pc.DefaultTextTemplateId.HasValue
+            || pc.DefaultImageTemplateId.HasValue
+            || !string.IsNullOrWhiteSpace(pc.PromptTemplateText));
+
+    public static (Guid? TextId, Guid? ImageId) ResolveDefaultTemplateIds(PageContextModel? pc)
+    {
+        if (pc is null) return (null, null);
+        var text = pc.DefaultTextTemplateId ?? pc.DefaultImageTemplateId;
+        var image = pc.DefaultImageTemplateId ?? pc.DefaultTextTemplateId;
+        return (text, image);
+    }
+
     public async Task<PageContextModel?> GetByChannelAsync(Guid socialChannelId, CancellationToken ct = default)
         => await QueryActive().FirstOrDefaultAsync(x => x.SocialChannelId == socialChannelId, ct);
 

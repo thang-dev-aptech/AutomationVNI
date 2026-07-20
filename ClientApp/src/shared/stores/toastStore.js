@@ -23,6 +23,9 @@ export const toast = {
   success(message) {
     useToastStore.getState().add({ type: 'success', message })
   },
+  warning(message) {
+    useToastStore.getState().add({ type: 'warning', message })
+  },
   error(message) {
     useToastStore.getState().add({ type: 'error', message })
   },

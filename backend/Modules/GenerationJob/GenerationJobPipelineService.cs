@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Backend.Data;
 using Backend.Modules.Category;
@@ -9,6 +10,7 @@ using Backend.Modules.Post;
 using Backend.Modules.Post.Enums;
 using Backend.Modules.PromptTemplate;
 using Backend.Modules.PromptTemplate.Enums;
+using Backend.Modules.SocialChannel;
 using Backend.Shared.Ai;
 using Backend.Shared.Repositories;
 using Backend.Shared.Storage;
@@ -47,7 +49,8 @@ public class GenerationJobPipelineService(
 
     /// <summary>
     /// Sinh trọn nội dung cho 1 post: text → image. Dùng chung cho create-and-generate (đồng bộ)
-    /// và PostGenerationWorker (bulk, chạy nền). KHÔNG tự approve — để lại WaitingReview cho cổng duyệt.
+    /// và PostGenerationWorker (bulk, chạy nền). Caller tự Approve nếu muốn bỏ cổng duyệt
+    /// (create-and-generate + worker đều auto-approve sau bước này).
     /// </summary>
     public async Task GenerateForPostAsync(Guid postId, CancellationToken ct = default)
     {
@@ -376,7 +379,9 @@ public class GenerationJobPipelineService(
                 var aiResult = await aiTextGenerationService.GenerateAsync(request, ct);
                 logger.LogInformation(
                     "AI text generation succeeded for post {PostId} via provider {Provider}",
-                    post.Id, request.Provider ?? "default");
+                    post.Id, aiResult.Provider ?? request.Provider ?? "default");
+                request.Provider ??= aiResult.Provider;
+                request.Model ??= aiResult.Model;
                 return MapAiResult(aiResult, request);
             }
             catch (AiProviderUnavailableException)
@@ -407,103 +412,195 @@ public class GenerationJobPipelineService(
     private async Task<AiTextGenerationRequest> BuildAiTextRequestAsync(
         PostModel post, CancellationToken ct)
     {
-        var pageContext = await pageContextRepository.GetByChannelAsync(post.SocialChannelId, ct);
-        var categoryName = await ResolveCategoryNameAsync(post, ct);
-        var objective = ExtractObjective(post.ExtraJson);
+        var ctx = await ResolvePromptContextAsync(post, ct);
 
         var request = new AiTextGenerationRequest
         {
             Title = post.Title,
-            Objective = objective,
-            Category = categoryName,
-            BrandContext = pageContext?.BrandName,
-            Tone = pageContext?.ToneOfVoice,
-            CtaText = pageContext?.CtaText,
-            Hashtags = pageContext?.DefaultHashtags
+            Objective = ctx.Objective,
+            Category = ctx.Category,
+            BrandContext = ctx.Brand,
+            Tone = ctx.Tone,
+            CtaText = ctx.Cta,
+            Hashtags = ctx.Hashtags
         };
 
-        // Resolve prompt template (Post override → Page default → Page inline → System default) + thay biến.
-        var templateBody = await ResolveTextTemplateBodyAsync(post, pageContext, ct);
+        var templateBody = await ResolveTextTemplateBodyAsync(post, ctx.PageContext, ct);
         if (!string.IsNullOrWhiteSpace(templateBody))
         {
-            var vars = BuildTemplateVariables(
-                post, pageContext, categoryName, objective, caption: null, aiImagePrompt: null);
-            request.PromptOverride = PromptTemplateRenderer.Render(templateBody, vars);
+            request.PromptOverride = PromptTemplateRenderer.Render(
+                templateBody, ctx.ToVariables(title: post.Title));
             logger.LogInformation(
-                "Post {PostId} text generation uses prompt template ({Len} chars rendered)",
-                post.Id, request.PromptOverride.Length);
+                "Post {PostId} text generation uses prompt template ({Len} chars rendered, pageContext={HasPc})",
+                post.Id, request.PromptOverride.Length, ctx.PageContext is not null);
         }
 
         return request;
     }
 
-    private async Task<string?> ResolveCategoryNameAsync(PostModel post, CancellationToken ct)
+    /// <summary>
+    /// Gom biến template: PageContext nếu có; không có thì fallback từ tên Page kênh + default ổn định
+    /// để prompt vẫn mạch lạc (không để {{brand}}/{{cta}} rỗng).
+    /// </summary>
+    private async Task<ResolvedPromptContext> ResolvePromptContextAsync(PostModel post, CancellationToken ct)
     {
-        if (!post.CategoryId.HasValue) return null;
-        return await context.Set<CategoryModel>()
-            .Where(x => !x.IsDeleted && x.Id == post.CategoryId.Value)
-            .Select(x => x.Name)
+        var pageContext = await pageContextRepository.GetByChannelAsync(post.SocialChannelId, ct);
+        var categoryName = await ResolveCategoryNameAsync(post, ct);
+        var channelName = await context.Set<SocialChannelModel>()
+            .Where(x => !x.IsDeleted && x.Id == post.SocialChannelId)
+            .Select(x => x.PageName)
             .FirstOrDefaultAsync(ct);
+
+        var category = FirstNonEmpty(categoryName, "Chung")!;
+        var brand = FirstNonEmpty(pageContext?.BrandName, channelName, "Page của bạn")!;
+        var tone = FirstNonEmpty(pageContext?.ToneOfVoice, "thân thiện, rõ ràng, chuyên nghiệp, gần gũi như nói chuyện trên Facebook")!;
+        var cta = FirstNonEmpty(
+            pageContext?.CtaText,
+            "Inbox ngay để được tư vấn chi tiết nhé 💬")!;
+        var hashtags = FirstNonEmpty(pageContext?.DefaultHashtags, BuildFallbackHashtags(category))!;
+        var audience = "khách hàng mục tiêu trên Facebook";
+        var objective = FirstNonEmpty(ExtractObjective(post.ExtraJson), post.Title.Trim())!;
+
+        if (pageContext is null)
+        {
+            logger.LogInformation(
+                "Post {PostId}: không có PageContext cho channel {ChannelId} — dùng fallback brand={Brand}, tone, cta, hashtags",
+                post.Id, post.SocialChannelId, brand);
+        }
+
+        return new ResolvedPromptContext(
+            pageContext, category, brand, tone, audience, objective, cta, hashtags);
     }
 
-    /// <summary>Ưu tiên: Post.TextTemplateId → PageContext.DefaultTextTemplateId → inline PromptTemplateText → default hệ thống.</summary>
+    private static string BuildFallbackHashtags(string category)
+    {
+        var slug = new string(category
+            .Where(ch => char.IsLetterOrDigit(ch) || ch is ' ' or '/')
+            .ToArray())
+            .Trim()
+            .Replace('/', ' ')
+            .Replace(' ', '_');
+        while (slug.Contains("__", StringComparison.Ordinal))
+            slug = slug.Replace("__", "_", StringComparison.Ordinal);
+        slug = slug.Trim('_');
+        if (string.IsNullOrWhiteSpace(slug))
+            return "#Facebook #Marketing #BanHang";
+        return $"#{slug} #Facebook #Marketing #BanHang";
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var v in values)
+        {
+            if (!string.IsNullOrWhiteSpace(v))
+                return v.Trim();
+        }
+        return null;
+    }
+
+    private async Task<string?> ResolveCategoryNameAsync(PostModel post, CancellationToken ct)
+    {
+        if (post.CategoryId.HasValue)
+        {
+            var fromCategory = await context.Set<CategoryModel>()
+                .Where(x => !x.IsDeleted && x.Id == post.CategoryId.Value)
+                .Select(x => x.Name)
+                .FirstOrDefaultAsync(ct);
+            if (!string.IsNullOrWhiteSpace(fromCategory))
+                return fromCategory;
+        }
+
+        var templateId = post.TextTemplateId ?? post.ImageTemplateId;
+        if (templateId is Guid tid)
+        {
+            var tpl = await promptTemplateRepository.GetActiveByIdAsync(tid, ct);
+            if (!string.IsNullOrWhiteSpace(tpl?.Name))
+                return tpl.Name;
+        }
+
+        return null;
+    }
+
+    /// <summary>Ưu tiên: Post.TextTemplateId → PageContext → default Category pack → legacy Text default.</summary>
     private async Task<string?> ResolveTextTemplateBodyAsync(
         PostModel post, PageContextModel? pageContext, CancellationToken ct)
     {
         if (post.TextTemplateId is Guid postTid)
         {
             var t = await promptTemplateRepository.GetActiveByIdAsync(postTid, ct);
-            if (t is not null && t.TemplateType == PromptTemplateType.TextContent) return t.Body;
+            var body = t?.ResolveTextBody();
+            if (!string.IsNullOrWhiteSpace(body)) return body;
         }
         if (pageContext?.DefaultTextTemplateId is Guid pageTid)
         {
             var t = await promptTemplateRepository.GetActiveByIdAsync(pageTid, ct);
-            if (t is not null && t.TemplateType == PromptTemplateType.TextContent) return t.Body;
+            var body = t?.ResolveTextBody();
+            if (!string.IsNullOrWhiteSpace(body)) return body;
         }
         if (!string.IsNullOrWhiteSpace(pageContext?.PromptTemplateText))
             return pageContext!.PromptTemplateText;
 
-        var def = await promptTemplateRepository.GetDefaultAsync(PromptTemplateType.TextContent, ct);
-        return def?.Body;
+        var catDef = await promptTemplateRepository.GetDefaultCategoryAsync(ct);
+        var catBody = catDef?.ResolveTextBody();
+        if (!string.IsNullOrWhiteSpace(catBody)) return catBody;
+
+        var legacy = await promptTemplateRepository.GetDefaultAsync(PromptTemplateType.TextContent, ct);
+        return string.IsNullOrWhiteSpace(legacy?.ResolveTextBody()) ? null : legacy!.ResolveTextBody();
     }
 
-    /// <summary>Ưu tiên: Post.ImageTemplateId → PageContext.DefaultImageTemplateId → inline PromptTemplateImage → default hệ thống.</summary>
+    /// <summary>Ưu tiên: Post.ImageTemplateId → PageContext → default Category pack → legacy Image default.</summary>
     private async Task<string?> ResolveImageTemplateBodyAsync(
         PostModel post, PageContextModel? pageContext, CancellationToken ct)
     {
         if (post.ImageTemplateId is Guid postIid)
         {
             var t = await promptTemplateRepository.GetActiveByIdAsync(postIid, ct);
-            if (t is not null && t.TemplateType == PromptTemplateType.Image) return t.Body;
+            var body = t?.ResolveImageBody();
+            if (!string.IsNullOrWhiteSpace(body)) return body;
         }
         if (pageContext?.DefaultImageTemplateId is Guid pageIid)
         {
             var t = await promptTemplateRepository.GetActiveByIdAsync(pageIid, ct);
-            if (t is not null && t.TemplateType == PromptTemplateType.Image) return t.Body;
+            var body = t?.ResolveImageBody();
+            if (!string.IsNullOrWhiteSpace(body)) return body;
         }
         if (!string.IsNullOrWhiteSpace(pageContext?.PromptTemplateImage))
             return pageContext!.PromptTemplateImage;
 
-        var def = await promptTemplateRepository.GetDefaultAsync(PromptTemplateType.Image, ct);
-        return def?.Body;
+        var catDef = await promptTemplateRepository.GetDefaultCategoryAsync(ct);
+        var catBody = catDef?.ResolveImageBody();
+        if (!string.IsNullOrWhiteSpace(catBody)) return catBody;
+
+        var legacy = await promptTemplateRepository.GetDefaultAsync(PromptTemplateType.Image, ct);
+        return string.IsNullOrWhiteSpace(legacy?.ResolveImageBody()) ? null : legacy!.ResolveImageBody();
     }
 
-    private static Dictionary<string, string?> BuildTemplateVariables(
-        PostModel post, PageContextModel? pageContext, string? categoryName,
-        string? objective, string? caption, string? aiImagePrompt)
-        => new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["title"] = post.Title,
-            ["category"] = categoryName,
-            ["brand"] = pageContext?.BrandName,
-            ["tone"] = pageContext?.ToneOfVoice,
-            ["audience"] = null,
-            ["objective"] = objective,
-            ["cta"] = pageContext?.CtaText,
-            ["hashtags"] = pageContext?.DefaultHashtags,
-            ["caption"] = caption,
-            ["imagePrompt"] = aiImagePrompt
-        };
+    private sealed record ResolvedPromptContext(
+        PageContextModel? PageContext,
+        string Category,
+        string Brand,
+        string Tone,
+        string Audience,
+        string Objective,
+        string Cta,
+        string Hashtags)
+    {
+        public Dictionary<string, string?> ToVariables(
+            string? title = null, string? caption = null, string? aiImagePrompt = null)
+            => new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["title"] = title,
+                ["category"] = Category,
+                ["brand"] = Brand,
+                ["tone"] = Tone,
+                ["audience"] = Audience,
+                ["objective"] = Objective,
+                ["cta"] = Cta,
+                ["hashtags"] = Hashtags,
+                ["caption"] = caption,
+                ["imagePrompt"] = aiImagePrompt
+            };
+    }
 
     private static string BuildTextJobInputPayload(AiTextGenerationRequest request)
         => JsonSerializer.Serialize(new
@@ -541,20 +638,72 @@ public class GenerationJobPipelineService(
     private static TextGenerationJobOutput MapAiResult(
         AiTextGenerationResult ai, AiTextGenerationRequest request)
     {
+        var hashtags = NormalizeHashtags(ai.Hashtags);
+        var cta = string.IsNullOrWhiteSpace(ai.Cta)
+            ? (request.CtaText?.Trim() ?? "Inbox ngay để được tư vấn chi tiết nhé 💬")
+            : ai.Cta.Trim();
+
         return new TextGenerationJobOutput
         {
             Source = "ai",
             Provider = request.Provider,
             Model = request.Model,
-            Content = ai.Caption,
-            Hashtags = ai.Hashtags,
-            Cta = ai.Cta,
+            Content = ComposeFacebookPost(ai.Caption, cta, hashtags),
+            Hashtags = hashtags,
+            Cta = cta,
             ImagePrompt = ai.ImagePrompt,
             BannerHeadline = ai.BannerHeadline,
             BannerSubheadline = ai.BannerSubheadline,
             BannerCta = ai.BannerCta
         };
     }
+
+    /// <summary>
+    /// Ghép caption + CTA + hashtag thành 1 bài Facebook sẵn đăng
+    /// (tránh mất CTA/hashtag khi chỉ lưu field caption).
+    /// </summary>
+    private static string ComposeFacebookPost(string? caption, string cta, IReadOnlyList<string> hashtags)
+    {
+        var body = (caption ?? string.Empty).Trim();
+        var sb = new StringBuilder(body);
+
+        if (!string.IsNullOrWhiteSpace(cta) && !ContainsIgnoreCase(body, cta))
+        {
+            if (sb.Length > 0) sb.Append("\n\n");
+            sb.Append(cta.Trim());
+        }
+
+        if (hashtags.Count > 0)
+        {
+            var tagLine = string.Join(' ', hashtags);
+            if (!ContainsIgnoreCase(sb.ToString(), tagLine) && !hashtags.All(t => ContainsIgnoreCase(sb.ToString(), t)))
+            {
+                sb.Append("\n\n");
+                sb.Append(tagLine);
+            }
+        }
+
+        return sb.ToString().Trim();
+    }
+
+    private static List<string> NormalizeHashtags(IEnumerable<string>? tags)
+    {
+        var list = new List<string>();
+        if (tags is null) return list;
+        foreach (var raw in tags)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) continue;
+            var t = raw.Trim();
+            if (!t.StartsWith('#')) t = "#" + t;
+            t = t.Replace(' ', '_');
+            if (!list.Contains(t, StringComparer.OrdinalIgnoreCase))
+                list.Add(t);
+        }
+        return list.Take(8).ToList();
+    }
+
+    private static bool ContainsIgnoreCase(string haystack, string needle)
+        => haystack.Contains(needle, StringComparison.OrdinalIgnoreCase);
 
     private static string? MergeTextGenerationExtraJson(
         string? existingExtraJson, TextGenerationJobOutput output)
@@ -943,25 +1092,25 @@ public class GenerationJobPipelineService(
     private async Task<string> BuildImagePromptAsync(
         PostModel post, string? aiImagePrompt, CancellationToken ct)
     {
-        var pageContext = await pageContextRepository.GetByChannelAsync(post.SocialChannelId, ct);
-        var templateBody = await ResolveImageTemplateBodyAsync(post, pageContext, ct);
+        var ctx = await ResolvePromptContextAsync(post, ct);
+        var templateBody = await ResolveImageTemplateBodyAsync(post, ctx.PageContext, ct);
 
         if (!string.IsNullOrWhiteSpace(templateBody))
         {
-            var categoryName = await ResolveCategoryNameAsync(post, ct);
-            var vars = BuildTemplateVariables(
-                post, pageContext, categoryName, ExtractObjective(post.ExtraJson),
-                caption: post.Content, aiImagePrompt: aiImagePrompt);
+            var vars = ctx.ToVariables(
+                title: post.Title, caption: post.Content, aiImagePrompt: aiImagePrompt);
             var rendered = PromptTemplateRenderer.Render(templateBody, vars);
             if (!string.IsNullOrWhiteSpace(rendered))
             {
-                logger.LogInformation("Post {PostId} image generation uses prompt template", post.Id);
+                logger.LogInformation(
+                    "Post {PostId} image generation uses prompt template (pageContext={HasPc})",
+                    post.Id, ctx.PageContext is not null);
                 return rendered;
             }
         }
 
         return string.IsNullOrWhiteSpace(aiImagePrompt)
-            ? $"Professional social media visual for '{post.Title.Trim()}', modern clean style, no text"
+            ? $"Professional social media visual for '{post.Title.Trim()}', brand '{ctx.Brand}', modern clean style, no text"
             : aiImagePrompt.Trim();
     }
 
