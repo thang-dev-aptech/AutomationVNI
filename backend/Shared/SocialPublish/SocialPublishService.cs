@@ -7,6 +7,7 @@ public class SocialPublishService(
     IOptions<SocialPublishOptions> options,
     MockSocialPublishService mockService,
     FacebookPagePublishService facebookService,
+    ThreadsPublishService threadsService,
     ILogger<SocialPublishService> logger) : ISocialPublishService
 {
     public async Task<SocialPublishResult> PublishAsync(
@@ -18,25 +19,32 @@ public class SocialPublishService(
         {
             PublishMode.Mock => await mockService.PublishAsync(request, ct),
             PublishMode.RealFacebook => await facebookService.PublishAsync(request, ct),
+            PublishMode.RealThreads => await threadsService.PublishAsync(request, ct),
             PublishMode.FailMissingToken => SocialPublishResult.Failed(
-                "FB_TOKEN_MISSING",
-                "Social channel has no Facebook page access token configured."),
+                request.Platform == SocialPlatform.Threads ? "THREADS_TOKEN_MISSING" : "FB_TOKEN_MISSING",
+                "Social channel has no access token configured."),
             _ => await mockService.PublishAsync(request, ct)
         };
     }
 
     private PublishMode ResolvePublishMode(SocialPublishRequest request)
     {
-        var wantsReal = options.Value.UseRealFacebook || request.ForceReal;
+        // Mỗi nền tảng có cờ bật riêng — bật Facebook thật không kéo theo Threads và ngược lại.
+        var wantsReal = request.ForceReal || request.Platform switch
+        {
+            SocialPlatform.Facebook => options.Value.UseRealFacebook,
+            SocialPlatform.Threads => options.Value.UseRealThreads,
+            _ => false
+        };
 
         if (!wantsReal)
             return PublishMode.Mock;
 
-        if (request.Platform != SocialPlatform.Facebook)
+        if (request.Platform is not (SocialPlatform.Facebook or SocialPlatform.Threads))
         {
             logger.LogInformation(
-                "Real publish requested for non-Facebook platform on post {PostId}, using mock",
-                request.PostId);
+                "Real publish requested for unsupported platform {Platform} on post {PostId}, using mock",
+                request.Platform, request.PostId);
             return PublishMode.Mock;
         }
 
@@ -46,13 +54,15 @@ public class SocialPublishService(
         if (IsDevOrMockToken(request.AccessToken))
         {
             logger.LogInformation(
-                "Dev/mock access token on post {PostId}, skipping real Facebook publish",
+                "Dev/mock access token on post {PostId}, skipping real publish",
                 request.PostId);
             return PublishMode.Mock;
         }
 
         // TODO: decrypt AccessToken when encryption service is implemented.
-        return PublishMode.RealFacebook;
+        return request.Platform == SocialPlatform.Threads
+            ? PublishMode.RealThreads
+            : PublishMode.RealFacebook;
     }
 
     private static bool IsDevOrMockToken(string token)
@@ -66,6 +76,7 @@ public class SocialPublishService(
     {
         Mock,
         RealFacebook,
+        RealThreads,
         FailMissingToken
     }
 }

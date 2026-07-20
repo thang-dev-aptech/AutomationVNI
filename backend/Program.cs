@@ -121,6 +121,11 @@ builder.Services.AddHttpClient<FacebookPagePublishService>((sp, client) =>
     var fb = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SocialPublishOptions>>().Value.Facebook;
     client.Timeout = TimeSpan.FromSeconds(Math.Max(5, fb.TimeoutSeconds));
 });
+builder.Services.AddHttpClient<ThreadsPublishService>((sp, client) =>
+{
+    var th = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SocialPublishOptions>>().Value.Threads;
+    client.Timeout = TimeSpan.FromSeconds(Math.Max(10, th.TimeoutSeconds));
+});
 builder.Services.AddScoped<ISocialPublishService, SocialPublishService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient(nameof(MetaOAuthService));

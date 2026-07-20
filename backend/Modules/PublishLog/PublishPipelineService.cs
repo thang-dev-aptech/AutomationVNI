@@ -186,8 +186,14 @@ public class PublishPipelineService(
         await context.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Lỗi token/quyền thì retry vô nghĩa — đẩy bài sang NeedFix để người dùng kết nối lại kênh.
+    /// Threads dùng tiền tố riêng nên phải liệt kê tường minh, nếu không sẽ bị coi là lỗi tạm thời
+    /// và retry đủ 3 lần một cách vô ích.
+    /// </summary>
     private static bool IsTokenOrPermissionError(string errorCode)
-        => errorCode is "FB_TOKEN_MISSING" or "FB_TOKEN_INVALID" or "FB_PERMISSION_DENIED";
+        => errorCode is "FB_TOKEN_MISSING" or "FB_TOKEN_INVALID" or "FB_PERMISSION_DENIED"
+            or "THREADS_TOKEN_MISSING" or "THREADS_TOKEN_INVALID" or "THREADS_PERMISSION_DENIED";
 
     public async Task<PublishLogModel> FailAsync(
         Guid publishLogId, FailPublishLogRequest request, CancellationToken ct = default)
