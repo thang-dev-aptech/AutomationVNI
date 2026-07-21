@@ -10,6 +10,9 @@ public class CreatePageContextRequest
     public Guid? LogoMediaId { get; set; }
     public string? CtaText { get; set; }
     public string? CtaUrl { get; set; }
+    public string? Hotline { get; set; }
+    public string? Website { get; set; }
+    public string? BrandColors { get; set; }
     public string? DefaultHashtags { get; set; }
     public string? PromptTemplateText { get; set; }
     public string? PromptTemplateImage { get; set; }
@@ -24,6 +27,9 @@ public class UpdatePageContextRequest
     public Guid? LogoMediaId { get; set; }
     public string? CtaText { get; set; }
     public string? CtaUrl { get; set; }
+    public string? Hotline { get; set; }
+    public string? Website { get; set; }
+    public string? BrandColors { get; set; }
     public string? DefaultHashtags { get; set; }
     public string? PromptTemplateText { get; set; }
     public string? PromptTemplateImage { get; set; }
@@ -45,6 +51,9 @@ public class PageContextResponse
     public Guid? LogoMediaId { get; set; }
     public string? CtaText { get; set; }
     public string? CtaUrl { get; set; }
+    public string? Hotline { get; set; }
+    public string? Website { get; set; }
+    public string? BrandColors { get; set; }
     public string? DefaultHashtags { get; set; }
     public string? PromptTemplateText { get; set; }
     public string? PromptTemplateImage { get; set; }

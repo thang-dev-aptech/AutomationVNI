@@ -2,15 +2,21 @@ import { useEffect, useState } from 'react'
 import Modal from '@/shared/components/Modal'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
+import { useMediaAssetAll } from '@/modules/media/hooks/useMediaAssets'
+import { IMAGE_MIME_PREFIX } from '@/modules/media/constants/mediaConstants'
 
 const EMPTY_GUID = '00000000-0000-0000-0000-000000000000'
 
 const emptyForm = {
   socialChannelId: '',
   brandName: '',
+  logoMediaId: '',
   toneOfVoice: '',
   ctaText: '',
   ctaUrl: '',
+  hotline: '',
+  website: '',
+  brandColors: '',
   defaultHashtags: '',
   promptTemplateText: '',
   promptTemplateImage: '',
@@ -34,6 +40,10 @@ export default function PageContextFormModal({
     isActive: true, index: 1, size: 100,
   })
   const categoryTemplates = tplData?.items ?? []
+  const { data: mediaAssets = [] } = useMediaAssetAll()
+  const logoOptions = mediaAssets.filter((asset) =>
+    asset.mimeType?.startsWith(IMAGE_MIME_PREFIX))
+  const selectedLogo = logoOptions.find((asset) => asset.id === form.logoMediaId)
   const selectableChannels = channels.filter(
     (channel) =>
       isEdit
@@ -54,9 +64,13 @@ export default function PageContextFormModal({
         ? {
             socialChannelId: initialData.socialChannelId || '',
             brandName: initialData.brandName || '',
+            logoMediaId: initialData.logoMediaId || '',
             toneOfVoice: initialData.toneOfVoice || '',
             ctaText: initialData.ctaText || '',
             ctaUrl: initialData.ctaUrl || '',
+            hotline: initialData.hotline || '',
+            website: initialData.website || '',
+            brandColors: initialData.brandColors || '',
             defaultHashtags: initialData.defaultHashtags || '',
             promptTemplateText: initialData.promptTemplateText || '',
             promptTemplateImage: initialData.promptTemplateImage || '',
@@ -77,9 +91,14 @@ export default function PageContextFormModal({
     onSubmit({
       socialChannelId: form.socialChannelId,
       brandName: form.brandName.trim(),
+      // Bỏ trống → khi sửa gửi EMPTY_GUID để gỡ logo, khi tạo mới gửi null.
+      logoMediaId: form.logoMediaId || (isEdit ? EMPTY_GUID : null),
       toneOfVoice: form.toneOfVoice.trim() || null,
       ctaText: form.ctaText.trim() || null,
       ctaUrl: form.ctaUrl.trim() || null,
+      hotline: form.hotline.trim() || null,
+      website: form.website.trim() || null,
+      brandColors: form.brandColors.trim() || null,
       defaultHashtags: form.defaultHashtags.trim() || null,
       promptTemplateText: form.promptTemplateText.trim() || null,
       promptTemplateImage: form.promptTemplateImage.trim() || null,
@@ -145,6 +164,32 @@ export default function PageContextFormModal({
           />
         </div>
         <div className="form-group">
+          <label htmlFor="context-logo">Logo thương hiệu</label>
+          <select
+            id="context-logo"
+            value={form.logoMediaId}
+            onChange={handleChange('logoMediaId')}
+          >
+            <option value="">Chưa chọn — banner sẽ không có logo</option>
+            {logoOptions.map((asset) => (
+              <option key={asset.id} value={asset.id}>
+                {asset.originalFileName || asset.fileName}
+              </option>
+            ))}
+          </select>
+          {selectedLogo?.publicUrl && (
+            <img
+              src={selectedLogo.publicUrl}
+              alt={selectedLogo.altText || 'Logo đã chọn'}
+              style={{ marginTop: 8, maxHeight: 56, maxWidth: '100%', objectFit: 'contain' }}
+            />
+          )}
+          <small className="form-hint">
+            Ảnh này được gửi kèm làm tham chiếu khi sinh banner — model vẽ đúng logo thật
+            thay vì tự bịa. Upload logo tại mục Media trước nếu chưa có.
+          </small>
+        </div>
+        <div className="form-group">
           <label htmlFor="context-tone">Giọng văn (Tone of Voice)</label>
           <textarea
             id="context-tone"
@@ -167,6 +212,37 @@ export default function PageContextFormModal({
             value={form.ctaUrl}
             onChange={handleChange('ctaUrl')}
           />
+        </div>
+        <div className="form-group">
+          <label htmlFor="context-hotline">Hotline (in trên banner)</label>
+          <input
+            id="context-hotline"
+            value={form.hotline}
+            onChange={handleChange('hotline')}
+            placeholder="0823 86 5858"
+          />
+        </div>
+        <div className="form-group">
+          <label htmlFor="context-website">Website (in trên banner)</label>
+          <input
+            id="context-website"
+            value={form.website}
+            onChange={handleChange('website')}
+            placeholder="https://vni.edu.vn/"
+          />
+          <small className="form-hint">Bỏ trống sẽ dùng CTA URL ở trên.</small>
+        </div>
+        <div className="form-group">
+          <label htmlFor="context-brand-colors">Màu thương hiệu</label>
+          <input
+            id="context-brand-colors"
+            value={form.brandColors}
+            onChange={handleChange('brandColors')}
+            placeholder="#1565C0, #F59E0B, #22C55E"
+          />
+          <small className="form-hint">
+            Mã màu đưa thẳng vào prompt sinh ảnh để banner đúng nhận diện.
+          </small>
         </div>
         <div className="form-group">
           <label htmlFor="context-hashtags">Hashtags mặc định (JSON array)</label>

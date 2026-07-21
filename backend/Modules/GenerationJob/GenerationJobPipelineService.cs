@@ -474,6 +474,12 @@ public class GenerationJobPipelineService(
         var audience = "khách hàng mục tiêu trên Facebook";
         var objective = FirstNonEmpty(ExtractObjective(post.ExtraJson), post.Title.Trim())!;
 
+        // Hotline/website/màu thương hiệu chỉ lấy từ PageContext — không bịa, vì model phải in
+        // đúng nguyên văn lên banner. Thiếu thì để rỗng và template tự bỏ dòng liên hệ.
+        var hotline = pageContext?.Hotline?.Trim() ?? string.Empty;
+        var website = FirstNonEmpty(pageContext?.Website, pageContext?.CtaUrl) ?? string.Empty;
+        var brandColors = pageContext?.BrandColors?.Trim() ?? string.Empty;
+
         if (pageContext is null)
         {
             logger.LogInformation(
@@ -482,7 +488,33 @@ public class GenerationJobPipelineService(
         }
 
         return new ResolvedPromptContext(
-            pageContext, category, brand, tone, audience, objective, cta, hashtags);
+            pageContext, category, brand, tone, audience, objective, cta, hashtags,
+            hotline, website, brandColors);
+    }
+
+    /// <summary>Đọc bannerHeadline/Subheadline/Cta mà bước sinh text đã ghi vào Post.ExtraJson.</summary>
+    private static BannerCopy? ExtractBannerCopy(string? extraJson)
+    {
+        if (string.IsNullOrWhiteSpace(extraJson)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(extraJson);
+            if (!doc.RootElement.TryGetProperty("textGeneration", out var tg)
+                || tg.ValueKind != JsonValueKind.Object)
+                return null;
+
+            // ExtraJson được ghi bằng tên property PascalCase — dò không phân biệt hoa thường
+            // để không vỡ nếu sau này đổi naming policy.
+            string? Read(string name) => tg.EnumerateObject()
+                .FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
+                .Value is { ValueKind: JsonValueKind.String } v ? v.GetString() : null;
+
+            return new BannerCopy(Read("bannerHeadline"), Read("bannerSubheadline"), Read("bannerCta"));
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static string BuildFallbackHashtags(string category)
@@ -596,10 +628,28 @@ public class GenerationJobPipelineService(
         string Audience,
         string Objective,
         string Cta,
-        string Hashtags)
+        string Hashtags,
+        string Hotline,
+        string Website,
+        string BrandColors)
     {
+        /// <summary>Dòng liên hệ in dưới banner — bỏ phần trống để không ra "Hotline:  | ".</summary>
+        public string Contact
+        {
+            get
+            {
+                var parts = new List<string>();
+                if (!string.IsNullOrWhiteSpace(Hotline)) parts.Add($"Hotline: {Hotline}");
+                if (!string.IsNullOrWhiteSpace(Website)) parts.Add(Website);
+                return string.Join("  |  ", parts);
+            }
+        }
+
         public Dictionary<string, string?> ToVariables(
-            string? title = null, string? caption = null, string? aiImagePrompt = null)
+            string? title = null,
+            string? caption = null,
+            string? aiImagePrompt = null,
+            BannerCopy? banner = null)
             => new(StringComparer.OrdinalIgnoreCase)
             {
                 ["title"] = title,
@@ -611,9 +661,20 @@ public class GenerationJobPipelineService(
                 ["cta"] = Cta,
                 ["hashtags"] = Hashtags,
                 ["caption"] = caption,
-                ["imagePrompt"] = aiImagePrompt
+                ["imagePrompt"] = aiImagePrompt,
+                ["hotline"] = Hotline,
+                ["website"] = Website,
+                ["brandColors"] = BrandColors,
+                ["contact"] = Contact,
+                // Banner rỗng thì fallback về title/cta để template không in ra Headline: ""
+                ["bannerHeadline"] = FirstNonEmpty(banner?.Headline, title, Objective),
+                ["bannerSubheadline"] = FirstNonEmpty(banner?.Subheadline, Category),
+                ["bannerCta"] = FirstNonEmpty(banner?.Cta, Cta)
             };
     }
+
+    /// <summary>Text banner do AI text đề xuất, lưu trong Post.ExtraJson sau bước sinh text.</summary>
+    private sealed record BannerCopy(string? Headline, string? Subheadline, string? Cta);
 
     private static string BuildTextJobInputPayload(AiTextGenerationRequest request)
         => JsonSerializer.Serialize(new
@@ -1121,15 +1182,15 @@ public class GenerationJobPipelineService(
     /// {{imagePrompt}} do AI text gợi ý và {{caption}} nội dung bài); ngược lại dùng imagePrompt AI, cuối cùng generic.
     /// </summary>
     private async Task<string> BuildImagePromptAsync(
-        PostModel post, string? aiImagePrompt, CancellationToken ct)
+        PostModel post, ResolvedPromptContext ctx, string? aiImagePrompt, CancellationToken ct)
     {
-        var ctx = await ResolvePromptContextAsync(post, ct);
+        var banner = ExtractBannerCopy(post.ExtraJson);
         var templateBody = await ResolveImageTemplateBodyAsync(post, ctx.PageContext, ct);
 
         if (!string.IsNullOrWhiteSpace(templateBody))
         {
             var vars = ctx.ToVariables(
-                title: post.Title, caption: post.Content, aiImagePrompt: aiImagePrompt);
+                title: post.Title, caption: post.Content, aiImagePrompt: aiImagePrompt, banner: banner);
             var rendered = PromptTemplateRenderer.Render(templateBody, vars);
             if (!string.IsNullOrWhiteSpace(rendered))
             {
@@ -1140,26 +1201,106 @@ public class GenerationJobPipelineService(
             }
         }
 
-        return string.IsNullOrWhiteSpace(aiImagePrompt)
-            ? $"Professional social media visual for '{post.Title.Trim()}', brand '{ctx.Brand}', modern clean style, no text"
-            : aiImagePrompt.Trim();
+        if (!string.IsNullOrWhiteSpace(aiImagePrompt))
+            return aiImagePrompt.Trim();
+
+        var headline = FirstNonEmpty(banner?.Headline, post.Title) ?? post.Title;
+        return $"Design a professional 1:1 social media banner for brand '{ctx.Brand}' about \"{headline}\". "
+            + "Modern premium layout, generous white space, clear focal subject, natural lighting, "
+            + "soft shadows and rounded corners, readable on mobile.";
+    }
+
+    /// <summary>
+    /// Ghép "khoá thương hiệu" vào cuối prompt: dùng đúng logo tham chiếu, in đúng hotline/website.
+    /// Nhờ vậy cả template cũ (ngắn, chưa có biến mới) vẫn ra banner đúng nhận diện.
+    /// Bỏ qua dòng nào prompt đã tự nhắc để tránh model in trùng.
+    /// </summary>
+    private static string AppendBrandLock(string prompt, ResolvedPromptContext ctx, bool hasLogoReference)
+    {
+        var rules = new List<string>();
+
+        if (hasLogoReference && !prompt.Contains("reference logo", StringComparison.OrdinalIgnoreCase))
+            rules.Add("- Use the provided reference logo image exactly as-is — do not redraw, recolor, crop or distort it. Place it in the top-left corner at a readable size.");
+
+        if (!string.IsNullOrWhiteSpace(ctx.BrandColors)
+            && !prompt.Contains(ctx.BrandColors, StringComparison.OrdinalIgnoreCase))
+            rules.Add($"- Brand colors: {ctx.BrandColors}. Use them for accents, shapes and the CTA.");
+
+        if (!string.IsNullOrWhiteSpace(ctx.Hotline)
+            && !prompt.Contains(ctx.Hotline, StringComparison.Ordinal))
+            rules.Add($"- Print the hotline exactly as written: {ctx.Hotline}");
+
+        if (!string.IsNullOrWhiteSpace(ctx.Website)
+            && !prompt.Contains(ctx.Website, StringComparison.OrdinalIgnoreCase))
+            rules.Add($"- Print the website exactly as written: {ctx.Website}");
+
+        if (rules.Count == 0) return prompt;
+
+        return $"{prompt}\n\nBRAND LOCK (must follow):\n{string.Join('\n', rules)}\n"
+            + "- Vietnamese text must be spelled exactly as given, with correct diacritics. No watermark, no lorem ipsum.";
+    }
+
+    /// <summary>Nạp logo của PageContext làm ảnh tham chiếu; thiếu logo thì trả rỗng, không chặn sinh ảnh.</summary>
+    private async Task<List<AiImageReferenceImage>> LoadReferenceImagesAsync(
+        Guid? logoMediaId, CancellationToken ct)
+    {
+        var references = new List<AiImageReferenceImage>();
+        if (!logoMediaId.HasValue) return references;
+
+        var logo = await mediaAssetRepository.GetByIdAsync(logoMediaId.Value, ct);
+        if (logo is null || string.IsNullOrWhiteSpace(logo.StoragePath)) return references;
+
+        if (!await fileStorageService.ExistsAsync(logo.StoragePath, ct))
+        {
+            logger.LogWarning(
+                "Logo {MediaId} của PageContext không còn file trên storage — sinh ảnh không có logo tham chiếu",
+                logo.Id);
+            return references;
+        }
+
+        try
+        {
+            await using var stream = await fileStorageService.OpenReadAsync(logo.StoragePath, ct);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer, ct);
+
+            references.Add(new AiImageReferenceImage
+            {
+                Bytes = buffer.ToArray(),
+                MimeType = string.IsNullOrWhiteSpace(logo.MimeType) ? "image/png" : logo.MimeType,
+                Label = "brand-logo"
+            });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Không đọc được logo {MediaId} để làm ảnh tham chiếu", logo.Id);
+        }
+
+        return references;
     }
 
     private async Task<GeneratedImageAsset> GenerateImageAssetAsync(
         PostModel post, string? imagePrompt, CancellationToken ct)
     {
-        var prompt = await BuildImagePromptAsync(post, imagePrompt, ct);
+        var ctx = await ResolvePromptContextAsync(post, ct);
+        var references = await LoadReferenceImagesAsync(ctx.PageContext?.LogoMediaId, ct);
+        var prompt = AppendBrandLock(
+            await BuildImagePromptAsync(post, ctx, imagePrompt, ct), ctx, references.Count > 0);
 
         if (aiImageGenerationService.IsAvailable())
         {
             try
             {
                 var ai = await aiImageGenerationService.GenerateAsync(
-                    new AiImageGenerationRequest { Prompt = prompt }, ct);
+                    new AiImageGenerationRequest { Prompt = prompt, ReferenceImages = references }, ct);
 
                 logger.LogInformation(
-                    "AI image generation succeeded for post {PostId} via {Provider}/{Model} ({Bytes} bytes)",
-                    post.Id, ai.Provider, ai.Model, ai.ImageBytes.Length);
+                    "AI image generation succeeded for post {PostId} via {Provider}/{Model} ({Bytes} bytes, logoReference={HasLogo})",
+                    post.Id, ai.Provider, ai.Model, ai.ImageBytes.Length, references.Count > 0);
 
                 var ext = ExtensionForMime(ai.MimeType);
                 return new GeneratedImageAsset

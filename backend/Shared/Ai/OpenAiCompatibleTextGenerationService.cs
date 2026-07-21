@@ -24,7 +24,7 @@ public class OpenAiCompatibleTextGenerationService(
           "bannerHeadline": "tiêu đề banner ngắn",
           "bannerSubheadline": "dòng phụ banner",
           "bannerCta": "chữ nút banner",
-          "imagePrompt": "English image prompt, photorealistic or clean design, NO text overlay"
+          "imagePrompt": "English prompt tả banner: chủ thể chính, bối cảnh, bố cục, ánh sáng, phong cách. Banner có chữ — mô tả cả vị trí khối chữ, KHÔNG tự bịa hotline/website"
         }
 
         Cấu trúc caption (bắt buộc):

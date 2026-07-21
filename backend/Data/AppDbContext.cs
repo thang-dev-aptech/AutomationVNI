@@ -110,6 +110,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.BrandName).HasMaxLength(300);
             e.Property(x => x.CtaText).HasMaxLength(500);
             e.Property(x => x.CtaUrl).HasMaxLength(1000);
+            e.Property(x => x.Hotline).HasMaxLength(50);
+            e.Property(x => x.Website).HasMaxLength(500);
+            e.Property(x => x.BrandColors).HasMaxLength(200);
             e.Property(x => x.ToneOfVoice).HasColumnType("TEXT");
             e.Property(x => x.PromptTemplateText).HasColumnType("TEXT");
             e.Property(x => x.PromptTemplateImage).HasColumnType("TEXT");

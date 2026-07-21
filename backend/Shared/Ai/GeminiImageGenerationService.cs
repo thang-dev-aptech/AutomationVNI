@@ -19,6 +19,9 @@ public class GeminiImageGenerationService(
         PropertyNameCaseInsensitive = true
     };
 
+    /// <summary>Chặn ảnh tham chiếu quá lớn — inline base64 phình ~4/3 và Gemini giới hạn kích thước request.</summary>
+    private const int MaxReferenceImageBytes = 7 * 1024 * 1024;
+
     public bool IsAvailable(string? provider = null)
     {
         try
@@ -57,12 +60,38 @@ public class GeminiImageGenerationService(
             ? config.ResponseModalities
             : new List<string> { "IMAGE" };
 
+        var parts = new List<object>();
+
+        // Ảnh tham chiếu đặt TRƯỚC prompt — Gemini bám theo reference chắc hơn khi ảnh đi trước
+        // chỉ dẫn (đúng thứ tự trong ví dụ image-editing của Google).
+        foreach (var reference in request.ReferenceImages)
+        {
+            if (reference.Bytes.Length == 0) continue;
+
+            if (reference.Bytes.Length > MaxReferenceImageBytes)
+            {
+                logger.LogWarning(
+                    "Skipping reference image '{Label}' ({Bytes} bytes) — exceeds {Max} byte limit",
+                    reference.Label, reference.Bytes.Length, MaxReferenceImageBytes);
+                continue;
+            }
+
+            parts.Add(new
+            {
+                inline_data = new
+                {
+                    mime_type = string.IsNullOrWhiteSpace(reference.MimeType) ? "image/png" : reference.MimeType,
+                    data = Convert.ToBase64String(reference.Bytes)
+                }
+            });
+        }
+
+        var referenceCount = parts.Count;
+        parts.Add(new { text = request.Prompt });
+
         var payload = new
         {
-            contents = new[]
-            {
-                new { parts = new[] { new { text = request.Prompt } } }
-            },
+            contents = new[] { new { parts } },
             generationConfig = new { responseModalities = modalities }
         };
 
@@ -71,6 +100,10 @@ public class GeminiImageGenerationService(
         httpRequest.Headers.Add("x-goog-api-key", config.ApiKey);
         httpRequest.Content = new StringContent(
             JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
+
+        logger.LogInformation(
+            "Gemini image request → provider={Provider}, model={Model}, referenceImages={RefCount}, promptChars={PromptChars}",
+            providerKey, model, referenceCount, request.Prompt.Length);
 
         HttpResponseMessage response;
         try

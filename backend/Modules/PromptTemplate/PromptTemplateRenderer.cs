@@ -20,7 +20,14 @@ public static partial class PromptTemplateRenderer
         new("cta", "Call to action — PageContext, mặc định: Tìm hiểu thêm"),
         new("hashtags", "Hashtag — PageContext, không có thì sinh từ danh mục"),
         new("caption", "(ảnh) Nội dung bài đã sinh"),
-        new("imagePrompt", "(ảnh) Gợi ý prompt ảnh từ AI text")
+        new("imagePrompt", "(ảnh) Gợi ý prompt ảnh từ AI text"),
+        new("hotline", "(ảnh) Hotline in trên banner — PageContext"),
+        new("website", "(ảnh) Website in trên banner — PageContext, fallback CtaUrl"),
+        new("brandColors", "(ảnh) Bộ màu thương hiệu, vd \"#1565C0, #F59E0B\" — PageContext"),
+        new("contact", "(ảnh) Dòng liên hệ ghép sẵn: Hotline + Website"),
+        new("bannerHeadline", "(ảnh) Tiêu đề banner do AI text đề xuất, fallback title"),
+        new("bannerSubheadline", "(ảnh) Dòng phụ banner, fallback tên danh mục"),
+        new("bannerCta", "(ảnh) Chữ nút CTA trên banner, fallback cta")
     ];
 
     public static string Render(string? body, IReadOnlyDictionary<string, string?> values)

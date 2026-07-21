@@ -90,6 +90,9 @@ public class PageContextRepository : GenericRepository<PageContextModel>
             LogoMediaId = request.LogoMediaId,
             CtaText = request.CtaText?.Trim(),
             CtaUrl = request.CtaUrl?.Trim(),
+            Hotline = request.Hotline?.Trim(),
+            Website = request.Website?.Trim(),
+            BrandColors = request.BrandColors?.Trim(),
             DefaultHashtags = request.DefaultHashtags,
             PromptTemplateText = request.PromptTemplateText,
             PromptTemplateImage = request.PromptTemplateImage,
@@ -108,9 +111,14 @@ public class PageContextRepository : GenericRepository<PageContextModel>
 
         if (request.BrandName is not null) entity.BrandName = request.BrandName.Trim();
         if (request.ToneOfVoice is not null) entity.ToneOfVoice = request.ToneOfVoice.Trim();
-        if (request.LogoMediaId.HasValue) entity.LogoMediaId = request.LogoMediaId;
+        // Guid.Empty = gỡ logo; giá trị khác = đặt; null = giữ nguyên.
+        if (request.LogoMediaId.HasValue)
+            entity.LogoMediaId = request.LogoMediaId.Value == Guid.Empty ? null : request.LogoMediaId;
         if (request.CtaText is not null) entity.CtaText = request.CtaText.Trim();
         if (request.CtaUrl is not null) entity.CtaUrl = request.CtaUrl.Trim();
+        if (request.Hotline is not null) entity.Hotline = request.Hotline.Trim();
+        if (request.Website is not null) entity.Website = request.Website.Trim();
+        if (request.BrandColors is not null) entity.BrandColors = request.BrandColors.Trim();
         if (request.DefaultHashtags is not null) entity.DefaultHashtags = request.DefaultHashtags;
         if (request.PromptTemplateText is not null) entity.PromptTemplateText = request.PromptTemplateText;
         if (request.PromptTemplateImage is not null) entity.PromptTemplateImage = request.PromptTemplateImage;
@@ -134,6 +142,9 @@ public class PageContextRepository : GenericRepository<PageContextModel>
         LogoMediaId = e.LogoMediaId,
         CtaText = e.CtaText,
         CtaUrl = e.CtaUrl,
+        Hotline = e.Hotline,
+        Website = e.Website,
+        BrandColors = e.BrandColors,
         DefaultHashtags = e.DefaultHashtags,
         PromptTemplateText = e.PromptTemplateText,
         PromptTemplateImage = e.PromptTemplateImage,

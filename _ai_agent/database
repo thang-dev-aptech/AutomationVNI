@@ -66,12 +66,17 @@ TikTok    = 4
 | SocialChannelId | Guid | Index, no FK |
 | BrandName | string(300) | |
 | ToneOfVoice | TEXT? | Mô tả giọng văn thương hiệu |
-| LogoMediaId | Guid? | Index, no FK → MediaAssets |
+| LogoMediaId | Guid? | Index, no FK → MediaAssets. Gửi kèm làm ảnh tham chiếu khi sinh banner |
 | CtaText | string(500)? | |
 | CtaUrl | string(1000)? | |
+| Hotline | string(50)? | In nguyên văn lên banner |
+| Website | string(500)? | In nguyên văn lên banner; rỗng thì fallback CtaUrl |
+| BrandColors | string(200)? | Mã màu cho prompt ảnh, vd "#1565C0, #F59E0B, #22C55E" |
 | DefaultHashtags | TEXT? | JSON array |
 | PromptTemplateText | TEXT? | Template prompt sinh text |
 | PromptTemplateImage | TEXT? | Template prompt sinh ảnh |
+| DefaultTextTemplateId | Guid? | No FK → PromptTemplates |
+| DefaultImageTemplateId | Guid? | No FK → PromptTemplates |
 
 ---
 
