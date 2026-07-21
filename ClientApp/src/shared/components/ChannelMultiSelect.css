@@ -5,6 +5,12 @@
   gap: 6px;
 }
 
+/* .card cắt mọi thứ tràn ra ngoài (overflow: hidden) nên dropdown absolute bị
+   cụt ở mép card — card nào chứa select này thì phải cho phép tràn. */
+.card:has(.channel-multi-select) {
+  overflow: visible;
+}
+
 .channel-multi-select__field-label {
   font-weight: 600;
   font-size: 0.9rem;
