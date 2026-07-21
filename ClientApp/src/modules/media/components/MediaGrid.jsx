@@ -12,6 +12,8 @@ export default function MediaGrid({
   onRetry,
   onEdit,
   onDelete,
+  onAnalyze,
+  analyzingId = null,
   canManage = false,
   emptyMessage = 'Chưa có media nào',
 }) {
@@ -27,6 +29,8 @@ export default function MediaGrid({
           asset={asset}
           onEdit={onEdit}
           onDelete={onDelete}
+          onAnalyze={onAnalyze}
+          isAnalyzing={analyzingId === asset.id}
           canManage={canManage}
         />
       ))}

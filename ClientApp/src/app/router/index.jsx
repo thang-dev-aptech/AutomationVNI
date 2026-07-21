@@ -15,13 +15,22 @@ import PromptTemplateListPage from '@/modules/prompt-templates/pages/PromptTempl
 import PageContextListPage from '@/modules/page-contexts/pages/PageContextListPage'
 import BulkCreatePage from '@/modules/bulk/pages/BulkCreatePage'
 import BatchProgressPage from '@/modules/bulk/pages/BatchProgressPage'
+import CommentsInboxPage from '@/modules/comments/pages/CommentsInboxPage'
+import PageMessagesInboxPage from '@/modules/messages/pages/PageMessagesInboxPage'
 import LoginPage from '@/modules/auth/pages/LoginPage'
 import ForbiddenPage from '@/shared/pages/ForbiddenPage'
 import NotFoundPage from '@/shared/pages/NotFoundPage'
+import DataDeletionPage from '@/shared/pages/DataDeletionPage'
+import PrivacyPolicyPage from '@/shared/pages/PrivacyPolicyPage'
+import TermsPage from '@/shared/pages/TermsPage'
 
 export default function AppRouter() {
   return (
     <Routes>
+      <Route path="/data-deletion" element={<DataDeletionPage />} />
+      <Route path="/privacy" element={<PrivacyPolicyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
+
       <Route element={<GuestRoute />}>
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<LoginPage />} />
@@ -50,6 +59,12 @@ export default function AppRouter() {
           </Route>
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.jobs} />}>
             <Route path="/jobs" element={<JobsPage />} />
+          </Route>
+          <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.comments} />}>
+            <Route path="/comments" element={<CommentsInboxPage />} />
+          </Route>
+          <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.messages} />}>
+            <Route path="/messages" element={<PageMessagesInboxPage />} />
           </Route>
           <Route path="*" element={<NotFoundPage />} />
         </Route>

@@ -17,7 +17,6 @@ export default function PostListPage() {
   const { canCreatePost, canDeletePost, canDeleteAllPosts } = usePermissions()
   const [keyword, setKeyword] = useState('')
   const [status, setStatus] = useState('')
-  const [generationFlow, setGenerationFlow] = useState('')
   const [page, setPage] = useState(1)
 
   const params = useMemo(
@@ -26,9 +25,8 @@ export default function PostListPage() {
       index: page,
       size: 20,
       status: status ? Number(status) : undefined,
-      generationFlow: generationFlow ? Number(generationFlow) : undefined,
     }),
-    [keyword, page, status, generationFlow],
+    [keyword, page, status],
   )
 
   const { data, isLoading, isError, error, refetch } = usePosts(params)
@@ -99,8 +97,6 @@ export default function PostListPage() {
           onKeywordChange={(value) => { setKeyword(value); setPage(1) }}
           status={status}
           onStatusChange={(value) => { setStatus(value); setPage(1) }}
-          generationFlow={generationFlow}
-          onGenerationFlowChange={(value) => { setGenerationFlow(value); setPage(1) }}
         />
       </div>
 

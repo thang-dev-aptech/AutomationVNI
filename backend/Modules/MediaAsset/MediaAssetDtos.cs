@@ -51,6 +51,7 @@ public class MediaAssetResponse
     public string? AltText { get; set; }
     public string? Description { get; set; }
     public string? Tags { get; set; }
+    public List<string> Keywords { get; set; } = [];
     public int? Width { get; set; }
     public int? Height { get; set; }
     public DateTime CreatedAt { get; set; }

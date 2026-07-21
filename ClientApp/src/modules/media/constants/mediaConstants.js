@@ -10,15 +10,22 @@ export const MEDIA_SOURCE_OPTIONS = Object.entries(MEDIA_SOURCE).map(([value, me
 }))
 
 export const MEDIA_ROLE = {
-  1: { value: 1, label: 'Cover (Primary)', apiName: 'Primary' },
+  1: { value: 1, label: 'Primary', apiName: 'Primary' },
   2: { value: 2, label: 'Thumbnail', apiName: 'Thumbnail' },
   3: { value: 3, label: 'Attachment', apiName: 'Attachment' },
+  4: { value: 4, label: 'Cover', apiName: 'Cover' },
 }
 
-export const COVER_ROLE = 1
+/** Khớp backend MediaRole.Cover = 4 */
+export const COVER_ROLE = 4
+
+export function isCoverRole(role) {
+  return role === COVER_ROLE || role === 1
+}
 
 export const IMAGE_MIME_PREFIX = 'image/'
-export const MAX_UPLOAD_SIZE_MB = 10
+// Khớp backend FileStorage.MaxUploadBytes = 8388608 (8MB)
+export const MAX_UPLOAD_SIZE_MB = 8
 export const MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
 export function getMediaSourceMeta(source) {

@@ -130,6 +130,7 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         AltText = e.AltText,
         Description = e.Description,
         Tags = e.Tags,
+        Keywords = MediaIntelligenceService.ParseKeywords(e.Tags),
         Width = e.Width,
         Height = e.Height,
         CreatedAt = e.CreatedAt,

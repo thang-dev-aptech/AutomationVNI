@@ -116,3 +116,24 @@ export function canViewDashboard(userRoles) {
     ROLES.VIEWER,
   ])
 }
+
+export function canViewComments(userRoles) {
+  return hasRole(userRoles, [
+    ROLES.ADMIN,
+    ROLES.CONTENT_MANAGER,
+    ROLES.REVIEWER,
+    ROLES.VIEWER,
+  ])
+}
+
+export function canManageComments(userRoles) {
+  return hasRole(userRoles, [ROLES.ADMIN, ROLES.CONTENT_MANAGER, ROLES.REVIEWER])
+}
+
+export function canViewMessages(userRoles) {
+  return canViewComments(userRoles)
+}
+
+export function canManageMessages(userRoles) {
+  return canManageComments(userRoles)
+}

@@ -19,11 +19,18 @@ export function usePosts(params = { index: 1, size: 20 }) {
   })
 }
 
+/** Các status đang sinh nội dung nền (Queued/Generating/GeneratingMedia/Rendering). */
+export const GENERATING_STATUSES = [2, 3, 12, 14]
+
 export function usePostDetail(id) {
   return useQuery({
     queryKey: postQueryKeys.detail(id),
     queryFn: async () => unwrapApiData(await postApi.getById(id)),
     enabled: Boolean(id),
+    // Bài tạo từ batch sinh nền — poll để text/ảnh tự hiện khi worker xong,
+    // thay vì phải quay ra danh sách rồi vào lại.
+    refetchInterval: (query) =>
+      GENERATING_STATUSES.includes(Number(query.state.data?.status)) ? 4000 : false,
   })
 }
 

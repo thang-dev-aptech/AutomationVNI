@@ -30,14 +30,18 @@ public partial class FacebookPagePublishService(
         if (string.IsNullOrWhiteSpace(request.AccessToken))
             return SocialPublishResult.Failed("FB_TOKEN_MISSING", "Facebook page access token is required.");
 
-        var hasLocalMedia = !string.IsNullOrWhiteSpace(request.MediaStorageKey);
-        var hasPublicUrl = SocialPublishUrlHelper.IsPubliclyAccessibleUrl(request.MediaPreviewUrl);
+        var mediaItems = ResolveMediaItems(request);
 
-        if (hasLocalMedia)
-            return await PublishPhotoMultipartAsync(request, ct);
+        if (mediaItems.Count > 1)
+            return await PublishMultiPhotoFeedAsync(request, mediaItems, ct);
 
-        if (hasPublicUrl)
-            return await PublishPhotoByUrlAsync(request, ct);
+        if (mediaItems.Count == 1)
+        {
+            var item = mediaItems[0];
+            return !string.IsNullOrWhiteSpace(item.StorageKey)
+                ? await PublishPhotoMultipartAsync(request, item, ct)
+                : await PublishPhotoByUrlAsync(request, item, ct);
+        }
 
         // Không có ảnh reachable → đăng text-only (log cảnh báo).
         logger.LogWarning(
@@ -46,10 +50,174 @@ public partial class FacebookPagePublishService(
         return await PublishFeedTextAsync(request, ct);
     }
 
-    private async Task<SocialPublishResult> PublishPhotoMultipartAsync(
-        SocialPublishRequest request, CancellationToken ct)
+    /// <summary>
+    /// Danh sách ảnh đăng được (có storage key hoặc URL public). Ưu tiên MediaItems;
+    /// fallback các field Media* đơn lẻ để tương thích flow cũ.
+    /// </summary>
+    private static List<SocialPublishMediaItem> ResolveMediaItems(SocialPublishRequest request)
     {
-        var storageKey = request.MediaStorageKey!.Trim();
+        var items = request.MediaItems
+            .Where(x => !string.IsNullOrWhiteSpace(x.StorageKey)
+                || SocialPublishUrlHelper.IsPubliclyAccessibleUrl(x.PublicUrl))
+            .ToList();
+        if (items.Count > 0) return items;
+
+        if (!string.IsNullOrWhiteSpace(request.MediaStorageKey)
+            || SocialPublishUrlHelper.IsPubliclyAccessibleUrl(request.MediaPreviewUrl))
+        {
+            return
+            [
+                new SocialPublishMediaItem
+                {
+                    PublicUrl = request.MediaPreviewUrl,
+                    StorageKey = request.MediaStorageKey,
+                    FileName = request.MediaFileName,
+                    MimeType = request.MediaMimeType
+                }
+            ];
+        }
+
+        return [];
+    }
+
+    /// <summary>
+    /// Đăng nhiều ảnh trong 1 bài: upload từng ảnh dạng unpublished lấy media_fbid,
+    /// sau đó tạo bài /feed với attached_media.
+    /// </summary>
+    private async Task<SocialPublishResult> PublishMultiPhotoFeedAsync(
+        SocialPublishRequest request, List<SocialPublishMediaItem> items, CancellationToken ct)
+    {
+        var photoIds = new List<string>();
+        for (var index = 0; index < items.Count; index++)
+        {
+            var (photoId, error) = await UploadUnpublishedPhotoAsync(request, items[index], index, ct);
+            if (error is not null)
+            {
+                // Ảnh đầu là cover — lỗi thì fail cả bài. Ảnh phụ lỗi thì bỏ qua, vẫn đăng phần còn lại.
+                if (index == 0) return error;
+                logger.LogWarning(
+                    "Facebook multi-photo: skip photo {Index} for post {PostId} ({Code}: {Message})",
+                    index, request.PostId, error.ErrorCode, error.ErrorMessage);
+                continue;
+            }
+            photoIds.Add(photoId!);
+        }
+
+        if (photoIds.Count == 0)
+            return SocialPublishResult.Failed(
+                "FB_MEDIA_UPLOAD_FAILED", "No photo could be uploaded for the multi-photo post.");
+
+        var fb = options.Value.Facebook;
+        var url = BuildGraphUrl(fb, request.PageExternalId, "feed");
+        var form = new Dictionary<string, string>
+        {
+            ["access_token"] = request.AccessToken!,
+            ["message"] = request.Caption ?? string.Empty
+        };
+        for (var i = 0; i < photoIds.Count; i++)
+            form[$"attached_media[{i}]"] = $"{{\"media_fbid\":\"{photoIds[i]}\"}}";
+
+        logger.LogInformation(
+            "Facebook multi-photo feed post for {PostId} with {Count} photos",
+            request.PostId, photoIds.Count);
+
+        return await SendGraphAsync(url, new FormUrlEncodedContent(form), request.PostId, ct);
+    }
+
+    private async Task<(string? PhotoId, SocialPublishResult? Error)> UploadUnpublishedPhotoAsync(
+        SocialPublishRequest request, SocialPublishMediaItem item, int index, CancellationToken ct)
+    {
+        var fb = options.Value.Facebook;
+        var url = BuildGraphUrl(fb, request.PageExternalId, "photos");
+
+        HttpContent content;
+        Stream? fileStream = null;
+        if (!string.IsNullOrWhiteSpace(item.StorageKey))
+        {
+            var storageKey = item.StorageKey.Trim();
+            if (!await fileStorage.ExistsAsync(storageKey, ct))
+            {
+                return (null, SocialPublishResult.Failed(
+                    "FB_MEDIA_MISSING", $"Media file not found in storage: {storageKey}"));
+            }
+
+            var fileName = string.IsNullOrWhiteSpace(item.FileName)
+                ? Path.GetFileName(storageKey)
+                : item.FileName.Trim();
+            if (string.IsNullOrWhiteSpace(fileName))
+                fileName = $"photo-{index}.jpg";
+
+            var mime = string.IsNullOrWhiteSpace(item.MimeType)
+                ? GuessMimeType(fileName)
+                : item.MimeType.Trim();
+
+            fileStream = await fileStorage.OpenReadAsync(storageKey, ct);
+            var multipart = new MultipartFormDataContent
+            {
+                { new StringContent(request.AccessToken!), "access_token" },
+                { new StringContent("false"), "published" }
+            };
+            var streamContent = new StreamContent(fileStream);
+            streamContent.Headers.ContentType = new MediaTypeHeaderValue(mime);
+            multipart.Add(streamContent, "source", fileName);
+            content = multipart;
+        }
+        else
+        {
+            content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["access_token"] = request.AccessToken!,
+                ["url"] = item.PublicUrl!,
+                ["published"] = "false"
+            });
+        }
+
+        try
+        {
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
+
+            HttpResponseMessage response;
+            try
+            {
+                response = await httpClient.SendAsync(httpRequest, ct);
+            }
+            catch (TaskCanceledException)
+            {
+                return (null, SocialPublishResult.Failed("FB_TIMEOUT", "Facebook API request timed out."));
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex, "Facebook unpublished photo upload HTTP error for post {PostId}", request.PostId);
+                return (null, SocialPublishResult.Failed("FB_NETWORK_ERROR", "Facebook API request failed."));
+            }
+
+            var body = await response.Content.ReadAsStringAsync(ct);
+            var sanitized = SanitizeFacebookResponse(body);
+            if (!response.IsSuccessStatusCode)
+                return (null, MapFacebookError(response, sanitized));
+
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("id", out var id)
+                && id.ValueKind == JsonValueKind.String
+                && !string.IsNullOrWhiteSpace(id.GetString()))
+            {
+                return (id.GetString(), null);
+            }
+
+            return (null, SocialPublishResult.Failed(
+                "FB_INVALID_RESPONSE", "Facebook returned no photo id.", sanitized));
+        }
+        finally
+        {
+            if (fileStream is not null) await fileStream.DisposeAsync();
+        }
+    }
+
+    private async Task<SocialPublishResult> PublishPhotoMultipartAsync(
+        SocialPublishRequest request, SocialPublishMediaItem item, CancellationToken ct)
+    {
+        var storageKey = item.StorageKey!.Trim();
         if (!await fileStorage.ExistsAsync(storageKey, ct))
         {
             return SocialPublishResult.Failed(
@@ -59,15 +227,15 @@ public partial class FacebookPagePublishService(
 
         var fb = options.Value.Facebook;
         var url = BuildGraphUrl(fb, request.PageExternalId, "photos");
-        var fileName = string.IsNullOrWhiteSpace(request.MediaFileName)
+        var fileName = string.IsNullOrWhiteSpace(item.FileName)
             ? Path.GetFileName(storageKey)
-            : request.MediaFileName.Trim();
+            : item.FileName.Trim();
         if (string.IsNullOrWhiteSpace(fileName))
             fileName = "photo.jpg";
 
-        var mime = string.IsNullOrWhiteSpace(request.MediaMimeType)
+        var mime = string.IsNullOrWhiteSpace(item.MimeType)
             ? GuessMimeType(fileName)
-            : request.MediaMimeType.Trim();
+            : item.MimeType.Trim();
 
         await using var fileStream = await fileStorage.OpenReadAsync(storageKey, ct);
         using var content = new MultipartFormDataContent();
@@ -87,14 +255,14 @@ public partial class FacebookPagePublishService(
     }
 
     private async Task<SocialPublishResult> PublishPhotoByUrlAsync(
-        SocialPublishRequest request, CancellationToken ct)
+        SocialPublishRequest request, SocialPublishMediaItem item, CancellationToken ct)
     {
         var fb = options.Value.Facebook;
         var url = BuildGraphUrl(fb, request.PageExternalId, "photos");
         var form = new Dictionary<string, string>
         {
             ["access_token"] = request.AccessToken!,
-            ["url"] = request.MediaPreviewUrl!
+            ["url"] = item.PublicUrl!
         };
         if (!string.IsNullOrWhiteSpace(request.Caption))
             form["caption"] = request.Caption;

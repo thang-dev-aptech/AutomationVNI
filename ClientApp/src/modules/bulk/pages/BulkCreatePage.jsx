@@ -7,7 +7,6 @@ import { getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
-import { GENERATION_FLOW_OPTIONS } from '@/modules/posts/constants/postStatus'
 import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import { useBulkCreate, useSuggestIdeas } from '../hooks/useBulk'
 import { downloadBulkIdeasSampleCsv, parseBulkIdeasFile } from '../utils/bulkIdeasImport'
@@ -20,7 +19,6 @@ export default function BulkCreatePage() {
 
   const [rows, setRows] = useState([emptyRow(), emptyRow(), emptyRow()])
   const [channelIds, setChannelIds] = useState([])
-  const [generationFlow, setGenerationFlow] = useState('1')
   const [promptTemplateId, setPromptTemplateId] = useState('')
   const [topic, setTopic] = useState('')
   const [ideaCount, setIdeaCount] = useState(5)
@@ -110,7 +108,7 @@ export default function BulkCreatePage() {
       const result = await createMutation.mutateAsync({
         items: validRows.map((r) => ({ idea: r.idea.trim() })),
         channelIds,
-        generationFlow: Number(generationFlow),
+        generationFlow: 1,
         promptTemplateId,
       })
       toast.success(result?.message || `Đã tạo ${result?.created} bài`)
@@ -222,12 +220,6 @@ export default function BulkCreatePage() {
                     Chưa có danh mục — tạo tại Prompt Templates.
                   </p>
                 )}
-              </div>
-              <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
-                <label htmlFor="bulk-flow">Luồng sinh</label>
-                <select id="bulk-flow" value={generationFlow} onChange={(e) => setGenerationFlow(e.target.value)}>
-                  {GENERATION_FLOW_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
               </div>
             </div>
           </div>

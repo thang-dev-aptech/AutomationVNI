@@ -1,11 +1,9 @@
 import { useMemo, useState } from 'react'
 import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
-import { GENERATION_FLOW_OPTIONS } from '../constants/postStatus'
 
 const emptyForm = {
   idea: '',
   promptTemplateId: '',
-  generationFlow: '1',
 }
 
 /** PageContext đủ để bỏ chọn danh mục: có default template hoặc prompt text. */
@@ -64,7 +62,7 @@ export default function PostCreateForm({
       socialChannelIds: channelIds,
       socialChannelId: channelIds.length === 1 ? channelIds[0] : undefined,
       promptTemplateId: form.promptTemplateId || null,
-      generationFlow: Number(form.generationFlow),
+      generationFlow: 1,
     })
   }
 
@@ -153,21 +151,6 @@ export default function PostCreateForm({
           </button>
         </p>
       )}
-
-      <div className="form-group">
-        <label htmlFor="post-flow">Luồng sinh nội dung</label>
-        <select
-          id="post-flow"
-          value={form.generationFlow}
-          onChange={handleChange('generationFlow')}
-        >
-          {GENERATION_FLOW_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </div>
 
       <button
         type="submit"

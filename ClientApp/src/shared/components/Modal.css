@@ -12,7 +12,8 @@
   width: 100%;
   max-width: min(560px, 100%);
   max-height: 90vh;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 @media (max-width: 600px) {
@@ -42,6 +43,7 @@
   justify-content: space-between;
   padding: 18px 20px;
   border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
 .modal-header h2 {
@@ -51,6 +53,9 @@
 
 .modal-body {
   padding: 20px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .modal-footer {
@@ -59,4 +64,5 @@
   gap: 10px;
   padding: 16px 20px;
   border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
 }

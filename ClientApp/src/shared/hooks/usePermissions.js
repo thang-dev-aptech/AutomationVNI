@@ -25,6 +25,10 @@ export function usePermissions() {
       canViewPosts: permissions.canViewPosts(roles),
       canViewMedia: permissions.canViewMedia(roles),
       canViewDashboard: permissions.canViewDashboard(roles),
+      canViewComments: permissions.canViewComments(roles),
+      canManageComments: permissions.canManageComments(roles),
+      canViewMessages: permissions.canViewMessages(roles),
+      canManageMessages: permissions.canManageMessages(roles),
       canEditPost: (postUserId) =>
         permissions.canEditPost(roles, postUserId, currentUser?.id),
       canDeletePost: (postUserId) =>

@@ -153,6 +153,18 @@ export const DASHBOARD_QUICK_LINKS = [
     visible: (p) => p.canViewPosts,
   },
   {
+    to: '/comments',
+    label: 'Hộp thư comment',
+    desc: 'Trả lời và kiểm duyệt Facebook / Threads',
+    visible: (p) => p.canViewComments,
+  },
+  {
+    to: '/messages',
+    label: 'Tin nhắn Page',
+    desc: 'Đọc, trả lời và phân công hội thoại Messenger',
+    visible: (p) => p.canViewMessages,
+  },
+  {
     to: '/platforms',
     label: 'Platforms / Kênh',
     desc: 'Kết nối và quản lý page',

@@ -8,10 +8,13 @@ import { toast } from '@/shared/stores/toastStore'
 import MediaGrid from '../components/MediaGrid'
 import MediaUploadForm from '../components/MediaUploadForm'
 import {
+  useAnalyzeAllMediaAssets,
+  useAnalyzeMediaAsset,
   useCreateMediaAsset,
   useDeleteMediaAsset,
   useMediaAssets,
   useUpdateMediaAsset,
+  useUploadMediaAsset,
 } from '../hooks/useMediaAssets'
 import { MEDIA_SOURCE_OPTIONS } from '../constants/mediaConstants'
 import './MediaPage.css'
@@ -36,19 +39,57 @@ export default function MediaPage() {
 
   const { data, isLoading, isError, error, refetch } = useMediaAssets(params)
   const createMutation = useCreateMediaAsset()
+  const uploadMutation = useUploadMediaAsset()
   const updateMutation = useUpdateMediaAsset()
   const deleteMutation = useDeleteMediaAsset()
+  const analyzeMutation = useAnalyzeMediaAsset()
+  const analyzeAllMutation = useAnalyzeAllMediaAssets()
+  const [analyzingId, setAnalyzingId] = useState(null)
 
   const items = data?.items ?? []
 
   const handleCreate = async (payload) => {
     try {
       setFormError('')
-      await createMutation.mutateAsync(payload)
+      if (payload instanceof FormData) {
+        await uploadMutation.mutateAsync(payload)
+        toast.success('Đã upload — AI đang gắn keyword cho ảnh')
+      } else {
+        await createMutation.mutateAsync(payload)
+        toast.success('Đã thêm media')
+      }
       setUploadOpen(false)
-      toast.success('Đã thêm media')
     } catch (createError) {
       setFormError(getErrorMessage(createError))
+    }
+  }
+
+  const handleAnalyze = async (asset) => {
+    setAnalyzingId(asset.id)
+    try {
+      const result = await analyzeMutation.mutateAsync(asset.id)
+      const kws = result?.keywords?.join(', ')
+      toast.success(kws ? `AI gắn nhãn: ${kws}` : 'AI đã phân tích ảnh')
+    } catch (analyzeError) {
+      toast.error(getErrorMessage(analyzeError))
+    } finally {
+      setAnalyzingId(null)
+    }
+  }
+
+  const handleAnalyzeAll = async () => {
+    if (!confirmAction(
+      'GPT sẽ lần lượt phân tích tất cả ảnh chưa có keyword. Quá trình có thể mất vài phút. Tiếp tục?',
+    )) return
+
+    try {
+      const result = await analyzeAllMutation.mutateAsync({ force: false })
+      toast.success(
+        `Đã gắn nhãn ${result?.analyzed ?? 0} ảnh · bỏ qua ${result?.skipped ?? 0}`
+        + (result?.failed ? ` · lỗi ${result.failed}` : ''),
+      )
+    } catch (analyzeError) {
+      toast.error(getErrorMessage(analyzeError))
     }
   }
 
@@ -91,13 +132,23 @@ export default function MediaPage() {
         description="Kho ảnh nội bộ và media do AI sinh ra"
         actions={
           canManageMedia ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => { setFormError(''); setUploadOpen(true) }}
-            >
-              Thêm media
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={analyzeAllMutation.isPending}
+                onClick={handleAnalyzeAll}
+              >
+                {analyzeAllMutation.isPending ? '⏳ Đang gắn nhãn...' : '✨ Gắn nhãn tất cả'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => { setFormError(''); setUploadOpen(true) }}
+              >
+                Thêm media
+              </button>
+            </div>
           ) : null
         }
       />
@@ -138,6 +189,8 @@ export default function MediaPage() {
           onRetry={refetch}
           onEdit={(asset) => { setFormError(''); setEditingAsset(asset) }}
           onDelete={handleDelete}
+          onAnalyze={handleAnalyze}
+          analyzingId={analyzingId}
           canManage={canManageMedia}
         />
       </div>
@@ -146,7 +199,7 @@ export default function MediaPage() {
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
         onSubmit={handleCreate}
-        isSubmitting={createMutation.isPending}
+        isSubmitting={createMutation.isPending || uploadMutation.isPending}
         errorMessage={formError}
       />
 

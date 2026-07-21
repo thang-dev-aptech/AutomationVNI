@@ -14,11 +14,16 @@ public class MediaAssetController
 {
     private readonly MediaAssetRepository _repo;
     private readonly IFileStorageService _fileStorage;
+    private readonly MediaIntelligenceService _intelligence;
 
-    public MediaAssetController(MediaAssetRepository repository, IFileStorageService fileStorage) : base(repository)
+    public MediaAssetController(
+        MediaAssetRepository repository,
+        IFileStorageService fileStorage,
+        MediaIntelligenceService intelligence) : base(repository)
     {
         _repo = repository;
         _fileStorage = fileStorage;
+        _intelligence = intelligence;
     }
 
     protected override string EntityLabel => "media";
@@ -46,10 +51,79 @@ public class MediaAssetController
     {
         var saveResult = await _fileStorage.SaveAsync(file, "uploads", ct);
         var entity = await _repo.CreateFromUploadAsync(saveResult, categoryId, altText, ct);
+        if (entity.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                entity = await _intelligence.AnalyzeAndSaveAsync(entity.Id, ct);
+            }
+            catch
+            {
+                // Upload vẫn thành công khi AI tạm lỗi; người dùng có thể bấm Phân tích lại.
+            }
+        }
         return CreatedAtAction(
             nameof(GetById),
             new { id = entity.Id },
             ApiResponse.Ok(ToResponse(entity), "Upload media thành công"));
+    }
+
+    [HttpPost("{id:guid}/analyze")]
+    public async Task<IActionResult> Analyze(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            var entity = await _intelligence.AnalyzeAndSaveAsync(id, ct);
+            return Ok(ApiResponse.Ok(ToResponse(entity), "AI đã phân tích và gắn keyword"));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse.Fail("NOT_FOUND", ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(ApiResponse.Fail("MEDIA_ANALYSIS_FAILED", ex.Message));
+        }
+    }
+
+    [HttpPost("analyze-all")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> AnalyzeAll(
+        [FromQuery] bool force = false,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var result = await _intelligence.AnalyzeAllAsync(force, ct);
+            return Ok(ApiResponse.Ok(
+                result,
+                $"Đã gắn nhãn {result.Analyzed} ảnh; bỏ qua {result.Skipped}; lỗi {result.Failed}"));
+        }
+        catch (OperationCanceledException)
+        {
+            return StatusCode(
+                StatusCodes.Status408RequestTimeout,
+                ApiResponse.Fail("MEDIA_ANALYSIS_CANCELLED", "Tiến trình gắn nhãn bị hủy"));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(ApiResponse.Fail("MEDIA_ANALYSIS_ALL_FAILED", ex.Message));
+        }
+    }
+
+    [HttpPost("recommend")]
+    public async Task<IActionResult> Recommend(
+        [FromBody] MediaRecommendationRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            return Ok(ApiResponse.Ok(await _intelligence.RecommendAsync(request, ct)));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(ApiResponse.Fail("MEDIA_RECOMMEND_FAILED", ex.Message));
+        }
     }
 
     [HttpGet("{id:guid}/preview")]

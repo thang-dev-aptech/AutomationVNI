@@ -1,12 +1,10 @@
-import { POST_STATUS, GENERATION_FLOW_OPTIONS } from '../constants/postStatus'
+import { POST_STATUS } from '../constants/postStatus'
 
 export default function PostFilterBar({
   keyword,
   onKeywordChange,
   status,
   onStatusChange,
-  generationFlow,
-  onGenerationFlowChange,
 }) {
   return (
     <div
@@ -37,21 +35,6 @@ export default function PostFilterBar({
           {Object.entries(POST_STATUS).map(([value, meta]) => (
             <option key={value} value={value}>
               {meta.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="form-group" style={{ marginBottom: 0 }}>
-        <label htmlFor="post-flow">Luồng sinh</label>
-        <select
-          id="post-flow"
-          value={generationFlow}
-          onChange={(event) => onGenerationFlowChange(event.target.value)}
-        >
-          <option value="">Tất cả</option>
-          {GENERATION_FLOW_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
             </option>
           ))}
         </select>

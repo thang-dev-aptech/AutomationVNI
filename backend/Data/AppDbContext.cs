@@ -4,10 +4,12 @@ using Backend.Modules.GenerationJob;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaEmbedding;
 using Backend.Modules.PageContext;
+using Backend.Modules.PageMessage;
 using Backend.Modules.Post;
 using Backend.Modules.PromptTemplate;
 using Backend.Modules.PublishLog;
 using Backend.Modules.SocialChannel;
+using Backend.Modules.SocialComment;
 using Backend.Modules.SocialConnection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -31,6 +33,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<MediaEmbeddingModel> MediaEmbeddings => Set<MediaEmbeddingModel>();
     public DbSet<ApiLogModel> ApiLogs => Set<ApiLogModel>();
     public DbSet<PromptTemplateModel> PromptTemplates => Set<PromptTemplateModel>();
+    public DbSet<SocialPostModel> SocialPosts => Set<SocialPostModel>();
+    public DbSet<SocialCommentModel> SocialComments => Set<SocialCommentModel>();
+    public DbSet<CommentActionLogModel> CommentActionLogs => Set<CommentActionLogModel>();
+    public DbSet<WebhookEventModel> WebhookEvents => Set<WebhookEventModel>();
+    public DbSet<PageConversationModel> PageConversations => Set<PageConversationModel>();
+    public DbSet<PageMessageModel> PageMessages => Set<PageMessageModel>();
+    public DbSet<MessageActionLogModel> MessageActionLogs => Set<MessageActionLogModel>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -209,6 +218,120 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.HttpMethod).HasMaxLength(20);
             e.Property(x => x.RequestPayload).HasColumnType("TEXT");
             e.Property(x => x.ResponsePayload).HasColumnType("TEXT");
+            e.Property(x => x.ErrorMessage).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<SocialPostModel>(e =>
+        {
+            e.ToTable("SocialPosts");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.SocialChannelId);
+            e.HasIndex(x => x.Platform);
+            e.HasIndex(x => x.LocalPostId);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => new { x.SocialChannelId, x.ExternalPostId });
+            e.Property(x => x.ExternalPostId).HasMaxLength(200);
+            e.Property(x => x.PermalinkUrl).HasMaxLength(1000);
+            e.Property(x => x.Message).HasColumnType("TEXT");
+            e.Property(x => x.SyncCursor).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<SocialCommentModel>(e =>
+        {
+            e.ToTable("SocialComments");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.SocialChannelId);
+            e.HasIndex(x => x.SocialPostId);
+            e.HasIndex(x => x.Platform);
+            e.HasIndex(x => x.InboxStatus);
+            e.HasIndex(x => x.ParentCommentId);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => new { x.SocialChannelId, x.ExternalCommentId });
+            e.Property(x => x.ExternalCommentId).HasMaxLength(200);
+            e.Property(x => x.ParentExternalCommentId).HasMaxLength(200);
+            e.Property(x => x.AuthorExternalId).HasMaxLength(200);
+            e.Property(x => x.AuthorName).HasMaxLength(300);
+            e.Property(x => x.AuthorUsername).HasMaxLength(200);
+            e.Property(x => x.PermalinkUrl).HasMaxLength(1000);
+            e.Property(x => x.AssignedTo).HasMaxLength(200);
+            e.Property(x => x.Message).HasColumnType("TEXT");
+            e.Property(x => x.InternalNote).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<CommentActionLogModel>(e =>
+        {
+            e.ToTable("CommentActionLogs");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.SocialCommentId);
+            e.HasIndex(x => x.ActionType);
+            e.HasIndex(x => x.CreatedAt);
+            e.Property(x => x.ActorUserName).HasMaxLength(200);
+            e.Property(x => x.ExternalResultId).HasMaxLength(200);
+            e.Property(x => x.PayloadJson).HasColumnType("TEXT");
+            e.Property(x => x.ErrorMessage).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<WebhookEventModel>(e =>
+        {
+            e.ToTable("WebhookEvents");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.EventKey);
+            e.HasIndex(x => x.Status);
+            e.HasIndex(x => x.Platform);
+            e.HasIndex(x => x.CreatedAt);
+            e.Property(x => x.EventKey).HasMaxLength(500);
+            e.Property(x => x.ObjectId).HasMaxLength(200);
+            e.Property(x => x.Verb).HasMaxLength(50);
+            e.Property(x => x.Item).HasMaxLength(50);
+            e.Property(x => x.PayloadJson).HasColumnType("TEXT");
+            e.Property(x => x.ErrorMessage).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<PageConversationModel>(e =>
+        {
+            e.ToTable("PageConversations");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.SocialChannelId);
+            e.HasIndex(x => x.ExternalConversationId);
+            e.HasIndex(x => new { x.SocialChannelId, x.ParticipantExternalId });
+            e.HasIndex(x => x.InboxStatus);
+            e.HasIndex(x => x.LastMessageAt);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.ExternalConversationId).HasMaxLength(300);
+            e.Property(x => x.ParticipantExternalId).HasMaxLength(200);
+            e.Property(x => x.ParticipantName).HasMaxLength(300);
+            e.Property(x => x.ParticipantAvatarUrl).HasMaxLength(1000);
+            e.Property(x => x.Snippet).HasColumnType("TEXT");
+            e.Property(x => x.AssignedTo).HasMaxLength(200);
+            e.Property(x => x.InternalNote).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<PageMessageModel>(e =>
+        {
+            e.ToTable("PageMessages");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.PageConversationId);
+            e.HasIndex(x => x.SocialChannelId);
+            e.HasIndex(x => new { x.SocialChannelId, x.ExternalMessageId });
+            e.HasIndex(x => x.SentAt);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.ExternalMessageId).HasMaxLength(500);
+            e.Property(x => x.SenderExternalId).HasMaxLength(200);
+            e.Property(x => x.RecipientExternalId).HasMaxLength(200);
+            e.Property(x => x.Text).HasColumnType("TEXT");
+            e.Property(x => x.AttachmentsJson).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<MessageActionLogModel>(e =>
+        {
+            e.ToTable("MessageActionLogs");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.PageConversationId);
+            e.HasIndex(x => x.ActionType);
+            e.HasIndex(x => x.CreatedAt);
+            e.Property(x => x.ActorUserName).HasMaxLength(200);
+            e.Property(x => x.ExternalResultId).HasMaxLength(500);
+            e.Property(x => x.PayloadJson).HasColumnType("TEXT");
             e.Property(x => x.ErrorMessage).HasColumnType("TEXT");
         });
     }

@@ -7,10 +7,18 @@ export const mediaAssetApi = {
   create: (payload) => axiosInstance.post('/api/MediaAsset', payload),
   update: (id, payload) => axiosInstance.put(`/api/MediaAsset/${id}`, payload),
   softDelete: (id) => axiosInstance.delete(`/api/MediaAsset/${id}`),
+  upload: (formData) => axiosInstance.post('/api/MediaAsset/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  analyze: (id) => axiosInstance.post(`/api/MediaAsset/${id}/analyze`),
+  analyzeAll: (force = false) =>
+    axiosInstance.post(`/api/MediaAsset/analyze-all?force=${force}`),
+  recommend: (payload) => axiosInstance.post('/api/MediaAsset/recommend', payload),
 }
 
 export const mediaAssetQueryKeys = {
   all: ['media-assets'],
   list: (params) => ['media-assets', 'list', params],
   detail: (id) => ['media-assets', 'detail', id],
+  recommend: (payload) => ['media-assets', 'recommend', payload],
 }

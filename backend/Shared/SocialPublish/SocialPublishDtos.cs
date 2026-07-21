@@ -16,8 +16,23 @@ public class SocialPublishRequest
     public string? MediaStorageKey { get; set; }
     public string? MediaFileName { get; set; }
     public string? MediaMimeType { get; set; }
+
+    /// <summary>
+    /// Toàn bộ ảnh của bài (cover đứng đầu). Facebook đăng multi-photo qua attached_media;
+    /// Threads hiện chỉ dùng ảnh đầu (các field Media* legacy ở trên).
+    /// </summary>
+    public List<SocialPublishMediaItem> MediaItems { get; set; } = [];
+
     public string? Link { get; set; }
     public bool ForceReal { get; set; }
+}
+
+public class SocialPublishMediaItem
+{
+    public string? PublicUrl { get; set; }
+    public string? StorageKey { get; set; }
+    public string? FileName { get; set; }
+    public string? MimeType { get; set; }
 }
 
 public class SocialPublishResult

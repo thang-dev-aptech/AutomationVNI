@@ -115,6 +115,31 @@ public class SocialConnectionRepository(
         }).ToList();
     }
 
+    /// <summary>
+    /// Disconnect triggered by a provider webhook (uninstall / data-deletion callback) —
+    /// no authenticated user, so the audit actor is passed in explicitly.
+    /// </summary>
+    public async Task<bool> SoftDisconnectByExternalUserIdAsync(
+        SocialProvider provider,
+        string externalUserId,
+        string auditUser,
+        CancellationToken ct = default)
+    {
+        var normalizedId = externalUserId.Trim();
+        var entity = await QueryActive()
+            .FirstOrDefaultAsync(x => x.Provider == provider && x.ExternalUserId == normalizedId, ct);
+        if (entity is null) return false;
+
+        entity.IsActive = false;
+        ApplySoftDeleteAudit(entity);
+        entity.DeletedBy = auditUser;
+        await Context.SaveChangesAsync(ct);
+
+        await socialChannelRepository.SoftDeleteByConnectionAsync(entity.Id, auditUser, ct);
+        await socialChannelRepository.CleanupStaleChannelsAsync(ct);
+        return true;
+    }
+
     public async Task<bool> SoftDisconnectAsync(Guid id, CancellationToken ct = default)
     {
         var entity = await GetByIdAsync(id, ct);

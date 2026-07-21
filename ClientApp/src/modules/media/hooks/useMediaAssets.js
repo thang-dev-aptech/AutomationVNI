@@ -55,3 +55,44 @@ export function useDeleteMediaAsset() {
     },
   })
 }
+
+export function useUploadMediaAsset() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (formData) => unwrapApiData(await mediaAssetApi.upload(formData)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mediaAssetQueryKeys.all })
+    },
+  })
+}
+
+export function useAnalyzeMediaAsset() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id) => unwrapApiData(await mediaAssetApi.analyze(id)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mediaAssetQueryKeys.all })
+    },
+  })
+}
+
+export function useAnalyzeAllMediaAssets() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ force = false } = {}) =>
+      unwrapApiData(await mediaAssetApi.analyzeAll(force)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mediaAssetQueryKeys.all })
+    },
+  })
+}
+
+/** AI gợi ý media theo nội dung/ý tưởng — enabled khi có query text. */
+export function useMediaRecommendation(payload, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: mediaAssetQueryKeys.recommend(payload),
+    queryFn: async () => unwrapApiData(await mediaAssetApi.recommend(payload)),
+    enabled: enabled && Boolean(payload?.query?.trim()),
+    staleTime: 30_000,
+  })
+}

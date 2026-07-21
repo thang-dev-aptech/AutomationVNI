@@ -46,8 +46,8 @@ public partial class ThreadsPublishService(
                 request.PostId, th.MaxTextLength);
         }
 
-        var imageUrl = ResolvePublicImageUrl(request, th);
-        var isImagePost = !string.IsNullOrWhiteSpace(imageUrl);
+        var imageUrls = ResolvePublicImageUrls(request, th);
+        var isImagePost = imageUrls.Count > 0;
 
         if (!isImagePost && HasMediaButNoPublicUrl(request))
         {
@@ -57,8 +57,10 @@ public partial class ThreadsPublishService(
                 request.PostId);
         }
 
-        // Bước 1 — tạo container.
-        var containerResult = await CreateContainerAsync(request, th, text, imageUrl, ct);
+        // Bước 1 — tạo container. Từ 2 ảnh trở lên dùng carousel (children containers).
+        var containerResult = imageUrls.Count > 1
+            ? await CreateCarouselContainerAsync(request, th, text, imageUrls, ct)
+            : await CreateContainerAsync(request, th, text, imageUrls.FirstOrDefault(), ct);
         if (!containerResult.Success)
             return containerResult;
 
@@ -110,6 +112,75 @@ public partial class ThreadsPublishService(
 
         if (result.Success && string.IsNullOrWhiteSpace(result.PublishedExternalId))
             return SocialPublishResult.Failed("THREADS_INVALID_RESPONSE", "Threads returned no container id.", result.RawResponseSanitized);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Bài nhiều ảnh trên Threads = carousel: tạo container con cho từng ảnh
+    /// (is_carousel_item=true), rồi tạo container cha media_type=CAROUSEL với children.
+    /// Threads giới hạn tối đa 20 ảnh/carousel.
+    /// </summary>
+    private async Task<SocialPublishResult> CreateCarouselContainerAsync(
+        SocialPublishRequest request, ThreadsPublishOptions th,
+        string text, List<string> imageUrls, CancellationToken ct)
+    {
+        var url = BuildUrl(th, request.PageExternalId, "threads");
+        var childIds = new List<string>();
+
+        foreach (var imageUrl in imageUrls.Take(20))
+        {
+            var form = new Dictionary<string, string>
+            {
+                ["access_token"] = request.AccessToken!,
+                ["media_type"] = "IMAGE",
+                ["image_url"] = imageUrl,
+                ["is_carousel_item"] = "true"
+            };
+
+            var childResult = await SendAsync(
+                url, new FormUrlEncodedContent(form), request.PostId, "create-carousel-item", ct);
+
+            if (!childResult.Success || string.IsNullOrWhiteSpace(childResult.PublishedExternalId))
+            {
+                // Ảnh đầu (cover) lỗi → fail cả bài; ảnh phụ lỗi → bỏ qua, đăng phần còn lại.
+                if (childIds.Count == 0)
+                {
+                    return childResult.Success
+                        ? SocialPublishResult.Failed(
+                            "THREADS_INVALID_RESPONSE", "Threads returned no carousel item id.",
+                            childResult.RawResponseSanitized)
+                        : childResult;
+                }
+
+                logger.LogWarning(
+                    "Threads carousel: skip image for post {PostId} ({Code}: {Message})",
+                    request.PostId, childResult.ErrorCode, childResult.ErrorMessage);
+                continue;
+            }
+
+            childIds.Add(childResult.PublishedExternalId);
+        }
+
+        // Carousel cần tối thiểu 2 children — còn 1 ảnh thì rơi về bài IMAGE thường.
+        if (childIds.Count == 1)
+            return await CreateContainerAsync(request, th, text, imageUrls[0], ct);
+
+        var parentForm = new Dictionary<string, string>
+        {
+            ["access_token"] = request.AccessToken!,
+            ["media_type"] = "CAROUSEL",
+            ["children"] = string.Join(",", childIds),
+            ["text"] = text
+        };
+
+        var result = await SendAsync(
+            url, new FormUrlEncodedContent(parentForm), request.PostId, "create-carousel", ct);
+
+        if (result.Success && string.IsNullOrWhiteSpace(result.PublishedExternalId))
+            return SocialPublishResult.Failed(
+                "THREADS_INVALID_RESPONSE", "Threads returned no carousel container id.",
+                result.RawResponseSanitized);
 
         return result;
     }
@@ -204,19 +275,34 @@ public partial class ThreadsPublishService(
     }
 
     /// <summary>
-    /// Dựng URL ảnh tuyệt đối cho Threads. Ưu tiên URL public sẵn có; nếu không thì ghép
-    /// PublicBaseUrl với đường dẫn preview tương đối của MediaAsset.
+    /// Dựng danh sách URL ảnh tuyệt đối cho Threads (cover đứng đầu). Ưu tiên MediaItems;
+    /// fallback field MediaPreviewUrl đơn lẻ. URL tương đối (/api/mediaasset/...) được
+    /// ghép với PublicBaseUrl vì Threads phải tự tải ảnh về từ URL công khai.
     /// </summary>
-    private static string? ResolvePublicImageUrl(SocialPublishRequest request, ThreadsPublishOptions th)
+    private static List<string> ResolvePublicImageUrls(SocialPublishRequest request, ThreadsPublishOptions th)
     {
-        if (SocialPublishUrlHelper.IsPubliclyAccessibleUrl(request.MediaPreviewUrl))
-            return request.MediaPreviewUrl;
+        var candidates = request.MediaItems.Count > 0
+            ? request.MediaItems.Select(x => x.PublicUrl)
+            : [request.MediaPreviewUrl];
 
-        if (string.IsNullOrWhiteSpace(th.PublicBaseUrl) || string.IsNullOrWhiteSpace(request.MediaPreviewUrl))
+        return candidates
+            .Select(u => ResolvePublicImageUrl(u, th))
+            .Where(u => u is not null)
+            .Select(u => u!)
+            .Distinct()
+            .ToList();
+    }
+
+    private static string? ResolvePublicImageUrl(string? previewUrl, ThreadsPublishOptions th)
+    {
+        if (SocialPublishUrlHelper.IsPubliclyAccessibleUrl(previewUrl))
+            return previewUrl;
+
+        if (string.IsNullOrWhiteSpace(th.PublicBaseUrl) || string.IsNullOrWhiteSpace(previewUrl))
             return null;
 
         var baseUrl = th.PublicBaseUrl.TrimEnd('/');
-        var path = request.MediaPreviewUrl.Trim();
+        var path = previewUrl.Trim();
         if (!path.StartsWith('/')) path = "/" + path;
 
         var candidate = baseUrl + path;
@@ -224,7 +310,8 @@ public partial class ThreadsPublishService(
     }
 
     private static bool HasMediaButNoPublicUrl(SocialPublishRequest request)
-        => !string.IsNullOrWhiteSpace(request.MediaStorageKey)
+        => request.MediaItems.Count > 0
+            || !string.IsNullOrWhiteSpace(request.MediaStorageKey)
             || !string.IsNullOrWhiteSpace(request.MediaPreviewUrl);
 
     /// <summary>Cắt caption về giới hạn của Threads, ưu tiên cắt ở ranh giới từ.</summary>

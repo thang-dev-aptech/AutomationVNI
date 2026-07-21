@@ -7,15 +7,19 @@ using Backend.Modules.GenerationJob;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaEmbedding;
 using Backend.Modules.PageContext;
+using Backend.Modules.PageMessage;
 using Backend.Modules.Post;
 using Backend.Modules.PublishLog;
 using Backend.Modules.SocialChannel;
+using Backend.Modules.SocialComment;
 using Backend.Modules.SocialConnection;
 using Backend.Shared;
 using Backend.Shared.Ai;
 using Backend.Shared.Meta;
+using Backend.Shared.PageMessage;
 using Backend.Shared.Threads;
 using Backend.Shared.SocialPublish;
+using Backend.Shared.SocialComment;
 using Backend.Shared.DevSeed;
 using Backend.Shared.Middleware;
 using Backend.Shared.Repositories;
@@ -40,6 +44,8 @@ builder.Services.Configure<AiProvidersOptions>(builder.Configuration.GetSection(
 builder.Services.Configure<SocialPublishOptions>(builder.Configuration.GetSection("SocialPublish"));
 builder.Services.Configure<MetaOAuthOptions>(builder.Configuration.GetSection("MetaOAuth"));
 builder.Services.Configure<ThreadsOAuthOptions>(builder.Configuration.GetSection("ThreadsOAuth"));
+builder.Services.Configure<CommentWorkerOptions>(builder.Configuration.GetSection("CommentWorker"));
+builder.Services.Configure<MessageWorkerOptions>(builder.Configuration.GetSection("MessageWorker"));
 
 var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()
     ?? throw new InvalidOperationException("Jwt configuration is required.");
@@ -102,13 +108,25 @@ builder.Services.AddScoped<Backend.Modules.PromptTemplate.PromptTemplateReposito
 builder.Services.AddScoped<PostRepository>();
 builder.Services.AddScoped<PostWorkflowService>();
 builder.Services.AddScoped<MediaAssetRepository>();
+builder.Services.AddHttpClient<MediaIntelligenceService>(client =>
+    client.Timeout = TimeSpan.FromSeconds(60));
 builder.Services.AddScoped<PostMediaRepository>();
 builder.Services.AddScoped<GenerationJobRepository>();
 builder.Services.AddScoped<GenerationJobPipelineService>();
 builder.Services.AddScoped<IPublishPipelineService, PublishPipelineService>();
 builder.Services.AddScoped<PublishLogRepository>();
+builder.Services.AddScoped<SocialCommentService>();
+builder.Services.AddScoped<PageMessageService>();
+builder.Services.AddHttpClient<FacebookPageMessagingProvider>();
+builder.Services.AddScoped<ISocialCommentProvider, FacebookCommentProvider>();
+builder.Services.AddScoped<ISocialCommentProvider, ThreadsCommentProvider>();
+builder.Services.AddHttpClient(nameof(FacebookCommentProvider));
+builder.Services.AddHttpClient(nameof(ThreadsCommentProvider));
 builder.Services.AddHostedService<Backend.Shared.Scheduler.ScheduledPostPublisherService>();
 builder.Services.AddHostedService<Backend.Shared.Generation.PostGenerationWorker>();
+builder.Services.AddHostedService<CommentWebhookHydrationWorker>();
+builder.Services.AddHostedService<CommentReconcileWorker>();
+builder.Services.AddHostedService<PageMessageReconcileWorker>();
 builder.Services.AddScoped<MediaEmbeddingRepository>();
 builder.Services.AddScoped<ApiLogRepository>();
 builder.Services.AddScoped<IDevDataSeeder, DevDataSeeder>();

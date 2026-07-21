@@ -93,7 +93,8 @@ public class PublishPipelineService(
         await MarkPublishJobProcessingAsync(post.Id, ct);
         await context.SaveChangesAsync(ct);
 
-        var media = await ResolvePublishMediaAsync(post.Id, ct);
+        var mediaItems = await ResolvePublishMediaListAsync(post.Id, ct);
+        var firstMedia = mediaItems.FirstOrDefault();
         var publishRequest = new SocialPublishRequest
         {
             PostId = post.Id,
@@ -103,10 +104,11 @@ public class PublishPipelineService(
             PageExternalId = channel.ExternalPageId,
             AccessToken = channel.AccessToken,
             Caption = post.Content ?? string.Empty,
-            MediaPreviewUrl = media.PublicUrl,
-            MediaStorageKey = media.StorageKey,
-            MediaFileName = media.FileName,
-            MediaMimeType = media.MimeType,
+            MediaPreviewUrl = firstMedia?.PublicUrl,
+            MediaStorageKey = firstMedia?.StorageKey,
+            MediaFileName = firstMedia?.FileName,
+            MediaMimeType = firstMedia?.MimeType,
+            MediaItems = mediaItems,
             ForceReal = forceReal
         };
 
@@ -462,43 +464,51 @@ public class PublishPipelineService(
         return channel;
     }
 
-    private async Task<PublishMediaInfo> ResolvePublishMediaAsync(Guid postId, CancellationToken ct)
+    /// <summary>
+    /// Lấy toàn bộ ảnh của bài theo thứ tự đăng: cover (Cover/Primary) đứng đầu,
+    /// các ảnh attachment còn lại theo SortOrder.
+    /// </summary>
+    private async Task<List<SocialPublishMediaItem>> ResolvePublishMediaListAsync(
+        Guid postId, CancellationToken ct)
     {
         var postMedias = await postMediaRepository.GetByPostAsync(postId, ct);
-        if (postMedias.Count == 0) return PublishMediaInfo.Empty;
+        if (postMedias.Count == 0) return [];
 
         var cover = postMedias.FirstOrDefault(x => x.MediaRole == MediaRole.Cover)
             ?? postMedias.FirstOrDefault(x => x.MediaRole == MediaRole.Primary)
             ?? postMedias.First();
 
-        var media = await mediaAssetRepository.GetByIdAsync(cover.MediaId, ct);
-        if (media is null || string.IsNullOrWhiteSpace(media.StoragePath))
-            return PublishMediaInfo.Empty;
+        var ordered = new List<Guid> { cover.MediaId };
+        ordered.AddRange(postMedias
+            .Where(x => x.Id != cover.Id)
+            .OrderBy(x => x.SortOrder)
+            .Select(x => x.MediaId));
 
-        var publicUrl = SocialPublishUrlHelper.IsPubliclyAccessibleUrl(media.PublicUrl)
-            ? media.PublicUrl
-            : null;
+        var items = new List<SocialPublishMediaItem>();
+        foreach (var mediaId in ordered.Distinct())
+        {
+            var media = await mediaAssetRepository.GetByIdAsync(mediaId, ct);
+            if (media is null || string.IsNullOrWhiteSpace(media.StoragePath)) continue;
 
-        return new PublishMediaInfo(
-            publicUrl,
-            media.StoragePath.Trim(),
-            media.OriginalFileName ?? media.FileName,
-            string.IsNullOrWhiteSpace(media.MimeType) ? null : media.MimeType.Trim());
-    }
+            // Giữ nguyên URL kể cả khi là đường dẫn tương đối (/api/mediaasset/...):
+            // Threads cần nó để ghép với PublicBaseUrl thành URL công khai; Facebook
+            // tự kiểm tra publicness và ưu tiên multipart qua StorageKey.
+            items.Add(new SocialPublishMediaItem
+            {
+                PublicUrl = media.PublicUrl,
+                StorageKey = media.StoragePath.Trim(),
+                FileName = media.OriginalFileName ?? media.FileName,
+                MimeType = string.IsNullOrWhiteSpace(media.MimeType) ? null : media.MimeType.Trim()
+            });
+        }
 
-    private sealed record PublishMediaInfo(
-        string? PublicUrl,
-        string? StorageKey,
-        string? FileName,
-        string? MimeType)
-    {
-        public static PublishMediaInfo Empty { get; } = new(null, null, null, null);
+        return items;
     }
 
     private async Task<bool> HasPublishableMediaAsync(Guid postId, CancellationToken ct)
     {
-        var media = await ResolvePublishMediaAsync(postId, ct);
-        return !string.IsNullOrWhiteSpace(media.StorageKey);
+        var items = await ResolvePublishMediaListAsync(postId, ct);
+        return items.Any(x => !string.IsNullOrWhiteSpace(x.StorageKey));
     }
 
     private async Task<PostModel> RequirePostAsync(Guid id, CancellationToken ct)

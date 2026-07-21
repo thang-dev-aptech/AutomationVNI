@@ -1,25 +1,32 @@
 import { useMemo, useState } from 'react'
 import LoadingState from '@/shared/components/LoadingState'
 import ErrorState from '@/shared/components/ErrorState'
-import StatusBadge from '@/shared/components/StatusBadge'
 import { usePermissions } from '@/shared/hooks/usePermissions'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
 import { confirmAction, CONFIRM_MESSAGES } from '@/shared/utils/confirmAction'
 import { toast } from '@/shared/stores/toastStore'
-import { COVER_ROLE, getMediaRoleLabel, isImageMime } from '../constants/mediaConstants'
+import { isCoverRole, isImageMime } from '../constants/mediaConstants'
 import { useMediaAssetAll } from '../hooks/useMediaAssets'
 import {
+  useAttachPostMedia,
   useDeletePostMedia,
   usePostMediaByPost,
-  useSetPostCover,
+  useSwapPostCover,
 } from '../hooks/usePostMedia'
-import MediaPickerModal from './MediaPickerModal'
+import AiMediaPickerModal from './AiMediaPickerModal'
 import './MediaAssetCard.css'
 
-export default function PostMediaPanel({ postId }) {
+/**
+ * Gallery ảnh của bài viết trong preview: ảnh AI gen (cover) + ảnh chọn từ kho.
+ * Cho phép thêm nhiều ảnh (AI gợi ý theo nội dung), gỡ ảnh không ưng, đổi cover.
+ */
+export default function PostMediaPanel({ postId, post }) {
   const { canManageMedia } = usePermissions()
   const [pickerOpen, setPickerOpen] = useState(false)
   const [actionError, setActionError] = useState('')
+
+  // Đang sinh nội dung nền (bài từ batch) → poll để ảnh AI gen tự hiện khi xong.
+  const isGenerating = [2, 3, 12, 14].includes(Number(post?.status))
 
   const {
     data: postMediaList = [],
@@ -27,10 +34,11 @@ export default function PostMediaPanel({ postId }) {
     isError,
     error,
     refetch,
-  } = usePostMediaByPost(postId)
+  } = usePostMediaByPost(postId, { refetchInterval: isGenerating ? 4000 : false })
 
   const { data: allAssets = [] } = useMediaAssetAll()
-  const setCover = useSetPostCover()
+  const attachMedia = useAttachPostMedia()
+  const swapCover = useSwapPostCover()
   const deletePostMedia = useDeletePostMedia()
 
   const assetMap = useMemo(
@@ -38,23 +46,59 @@ export default function PostMediaPanel({ postId }) {
     [allAssets],
   )
 
-  const coverLink = postMediaList.find((item) => item.mediaRole === COVER_ROLE)
-  const coverAsset = coverLink ? assetMap[coverLink.mediaId] : null
+  const coverLink = postMediaList.find((item) => isCoverRole(item.mediaRole))
+  const attachments = postMediaList
+    .filter((item) => !isCoverRole(item.mediaRole))
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
 
-  const otherMedia = postMediaList.filter((item) => item.mediaRole !== COVER_ROLE)
+  const orderedLinks = coverLink ? [coverLink, ...attachments] : attachments
+  const attachedMediaIds = new Set(postMediaList.map((item) => item.mediaId))
+  const maxSortOrder = postMediaList.reduce(
+    (max, item) => Math.max(max, item.sortOrder ?? 0),
+    0,
+  )
 
-  const handleSelectCover = async (asset) => {
+  // Ảnh đã gắn hiện sẵn dạng "đã chọn" trong picker
+  const attachedAssets = postMediaList
+    .map((item) => assetMap[item.mediaId])
+    .filter(Boolean)
+
+  const aiQuery = (post?.content || post?.title || '').slice(0, 500)
+
+  const handlePickerConfirm = async (selectedAssets) => {
+    const newIds = selectedAssets
+      .map((asset) => asset.id)
+      .filter((id) => !attachedMediaIds.has(id))
+    if (newIds.length === 0) return
+
     setActionError('')
     try {
-      await setCover.mutateAsync({
+      await attachMedia.mutateAsync({
         postId,
-        mediaId: asset.id,
-        existingCoverId: coverLink?.id,
+        mediaIds: newIds,
+        hasCover: Boolean(coverLink),
+        nextSortOrder: maxSortOrder + 1,
       })
-      setPickerOpen(false)
-      toast.success('Đã gắn media cover')
-    } catch (selectError) {
-      setActionError(getErrorMessage(selectError))
+      toast.success(`Đã thêm ${newIds.length} ảnh vào bài viết`)
+    } catch (attachError) {
+      setActionError(getErrorMessage(attachError))
+      toast.error(getErrorMessage(attachError))
+    }
+  }
+
+  const handleMakeCover = async (link) => {
+    setActionError('')
+    try {
+      await swapCover.mutateAsync({
+        postId,
+        linkId: link.id,
+        currentCoverLinkId: coverLink?.id,
+        nextSortOrder: maxSortOrder + 1,
+      })
+      toast.success('Đã đổi ảnh cover')
+    } catch (swapError) {
+      setActionError(getErrorMessage(swapError))
+      toast.error(getErrorMessage(swapError))
     }
   }
 
@@ -63,19 +107,19 @@ export default function PostMediaPanel({ postId }) {
     setActionError('')
     try {
       await deletePostMedia.mutateAsync({ id: link.id, postId })
-      toast.success('Đã gỡ media khỏi bài viết')
+      toast.success('Đã gỡ ảnh khỏi bài viết')
     } catch (removeError) {
       setActionError(getErrorMessage(removeError))
       toast.error(getErrorMessage(removeError))
     }
   }
 
-  const isBusy = setCover.isPending || deletePostMedia.isPending
+  const isBusy = attachMedia.isPending || swapCover.isPending || deletePostMedia.isPending
 
   return (
     <div className="card card-body" style={{ marginBottom: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Media bài viết</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Ảnh bài viết</h2>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
             type="button"
@@ -92,114 +136,83 @@ export default function PostMediaPanel({ postId }) {
               onClick={() => { setActionError(''); setPickerOpen(true) }}
               disabled={isBusy}
             >
-              Chọn media
+              ✨ Chọn media phù hợp
             </button>
           )}
         </div>
       </div>
+      <p style={{ margin: '0 0 12px', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+        Ảnh AI sinh sẽ là cover. Có thể thêm nhiều ảnh từ kho (AI lọc theo nội dung bài),
+        gỡ ảnh không ưng hoặc đổi cover trước khi đăng.
+      </p>
 
       {actionError && <div className="alert alert-error">{actionError}</div>}
 
-      {isLoading && <LoadingState message="Đang tải media bài viết..." />}
+      {isLoading && <LoadingState message="Đang tải ảnh bài viết..." />}
       {isError && <ErrorState message={getErrorMessage(error)} onRetry={refetch} />}
 
       {!isLoading && !isError && (
-        <>
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: 8 }}>
-              Ảnh cover (Primary)
-            </div>
-            {coverAsset?.publicUrl && isImageMime(coverAsset.mimeType) ? (
-              <div style={{ maxWidth: 320 }}>
-                <img
-                  src={coverAsset.publicUrl}
-                  alt={coverAsset.altText || coverAsset.fileName}
-                  style={{ width: '100%', borderRadius: 8, border: '1px solid var(--color-border)' }}
-                />
-                <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.85rem' }}>
-                    {coverAsset.originalFileName || coverAsset.fileName}
-                  </span>
-                  {coverLink && canManageMedia && (
-                    <button
-                      type="button"
-                      className="btn btn-danger btn-sm"
-                      onClick={() => handleRemoveLink(coverLink)}
-                      disabled={isBusy}
-                    >
-                      Gỡ cover
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-                Chưa có ảnh cover — nhấn &quot;Chọn media&quot; hoặc chờ AI sinh ảnh.
-              </p>
-            )}
-          </div>
-
-          {otherMedia.length > 0 && (
-            <div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: 8 }}>
-                Media khác
-              </div>
-              <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-                {otherMedia.map((link) => {
-                  const asset = assetMap[link.mediaId]
-                  return (
-                    <li
-                      key={link.id}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '8px 0',
-                        borderBottom: '1px solid var(--color-border)',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        {asset?.publicUrl && isImageMime(asset.mimeType) && (
-                          <img
-                            src={asset.publicUrl}
-                            alt=""
-                            style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 6 }}
-                          />
-                        )}
-                        <div>
-                          <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>
-                            {asset?.originalFileName || asset?.fileName || link.mediaId}
-                          </div>
-                          <StatusBadge
-                            label={getMediaRoleLabel(link.mediaRole)}
-                            tone="neutral"
-                          />
-                        </div>
-                      </div>
-                      {canManageMedia && (
+        orderedLinks.length === 0 ? (
+          <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+            Chưa có ảnh — chờ AI sinh ảnh hoặc nhấn &quot;Chọn media phù hợp&quot; để thêm từ kho.
+          </p>
+        ) : (
+          <div className="post-media-gallery">
+            {orderedLinks.map((link) => {
+              const asset = assetMap[link.mediaId]
+              const isCover = isCoverRole(link.mediaRole)
+              return (
+                <div key={link.id} className={`post-media-item ${isCover ? 'is-cover' : ''}`}>
+                  <div className="post-media-thumb">
+                    {asset?.publicUrl && isImageMime(asset.mimeType) ? (
+                      <img
+                        src={asset.publicUrl}
+                        alt={asset.altText || asset.originalFileName || asset.fileName}
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span className="post-media-thumb-fallback">Không xem trước được</span>
+                    )}
+                    {isCover && <span className="post-media-cover-badge">Cover</span>}
+                  </div>
+                  <div className="post-media-item-name" title={asset?.originalFileName || asset?.fileName}>
+                    {asset?.originalFileName || asset?.fileName || link.mediaId}
+                  </div>
+                  {canManageMedia && (
+                    <div className="post-media-item-actions">
+                      {!isCover && (
                         <button
                           type="button"
-                          className="btn btn-danger btn-sm"
-                          onClick={() => handleRemoveLink(link)}
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => handleMakeCover(link)}
                           disabled={isBusy}
                         >
-                          Gỡ
+                          Đặt làm cover
                         </button>
                       )}
-                    </li>
-                  )
-                })}
-              </ul>
-            </div>
-          )}
-        </>
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm"
+                        onClick={() => handleRemoveLink(link)}
+                        disabled={isBusy}
+                      >
+                        Gỡ
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )
       )}
 
-      <MediaPickerModal
+      <AiMediaPickerModal
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
-        onSelect={handleSelectCover}
-        isSelecting={setCover.isPending}
+        onConfirm={handlePickerConfirm}
+        query={aiQuery}
+        initialSelected={attachedAssets}
       />
     </div>
   )

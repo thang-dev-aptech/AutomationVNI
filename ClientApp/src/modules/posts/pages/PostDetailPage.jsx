@@ -103,7 +103,7 @@ export default function PostDetailPage() {
         <PostGenerationStatus postId={post.id} postStatus={post.status} />
       )}
 
-      <PostMediaPanel postId={post.id} />
+      <PostMediaPanel postId={post.id} post={post} />
 
       {timeline?.events?.length > 0 && (
         <div className="card card-body" style={{ marginBottom: 16 }}>

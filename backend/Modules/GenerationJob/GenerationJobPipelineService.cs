@@ -23,6 +23,7 @@ public class GenerationJobPipelineService(
     PostRepository postRepository,
     GenerationJobRepository jobRepository,
     MediaAssetRepository mediaAssetRepository,
+    MediaIntelligenceService mediaIntelligenceService,
     PostMediaRepository postMediaRepository,
     PageContextRepository pageContextRepository,
     PromptTemplateRepository promptTemplateRepository,
@@ -51,15 +52,27 @@ public class GenerationJobPipelineService(
     /// Sinh trọn nội dung cho 1 post: text → image. Dùng chung cho create-and-generate (đồng bộ)
     /// và PostGenerationWorker (bulk, chạy nền). Caller tự Approve nếu muốn bỏ cổng duyệt
     /// (create-and-generate + worker đều auto-approve sau bước này).
+    /// Nếu bài đã có media gắn sẵn (user chọn từ kho) thì bỏ qua bước sinh ảnh AI.
     /// </summary>
     public async Task GenerateForPostAsync(Guid postId, CancellationToken ct = default)
     {
         var textJob = await QueueTextGenerationAsync(postId, ct);
         await ProcessAsync(textJob.JobId, ct);
 
+        if (await HasAttachedMediaAsync(postId, ct))
+        {
+            logger.LogInformation(
+                "Post {PostId} đã có media chọn từ kho — bỏ qua sinh ảnh AI", postId);
+            return;
+        }
+
         var imageJob = await QueueImageGenerationAsync(postId, ct);
         await ProcessAsync(imageJob.JobId, ct);
     }
+
+    private async Task<bool> HasAttachedMediaAsync(Guid postId, CancellationToken ct)
+        => await context.Set<PostMediaModel>()
+            .AnyAsync(x => !x.IsDeleted && x.PostId == postId, ct);
 
     public async Task<QueueTextGenerationResponse> QueueTextGenerationAsync(
         Guid postId, CancellationToken ct = default)
@@ -781,6 +794,24 @@ public class GenerationJobPipelineService(
         }, ct);
 
         await mediaAssetRepository.SetPreviewUrlAsync(mediaAsset, ct);
+        try
+        {
+            // Ảnh được sinh trong lúc tạo post cũng phải có 5-7 keyword như ảnh upload.
+            mediaAsset = await mediaIntelligenceService.AnalyzeAndSaveAsync(mediaAsset.Id, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Không làm hỏng toàn bộ bài viết khi GPT vision tạm lỗi; có thể gắn nhãn lại ở Media.
+            logger.LogWarning(
+                ex,
+                "AI media tagging failed for generated image {MediaId} of post {PostId}",
+                mediaAsset.Id,
+                post.Id);
+        }
         var previewUrl = MediaAssetUrls.Preview(mediaAsset.Id);
 
         // Replace (không cộng dồn) — "tạo lại ảnh" thay cover cũ thay vì thêm cover mới.
