@@ -88,7 +88,7 @@ export default function PromptTemplateImportModal({
       )}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div className="card card-body" style={{ margin: 0, background: 'var(--color-bg-muted, #f8fafc)' }}>
+        <div className="card card-body" style={{ margin: 0, background: 'var(--color-surface-muted)' }}>
           <strong style={{ display: 'block', marginBottom: 8 }}>Hướng dẫn nhanh</strong>
           <ol style={{ margin: 0, paddingLeft: 18, fontSize: 14, lineHeight: 1.5 }}>
             <li>
@@ -117,7 +117,7 @@ export default function PromptTemplateImportModal({
             <p style={{ marginTop: 0 }}>
               <strong>JSON</strong> — mảng object, mỗi object:
             </p>
-            <pre style={{ overflow: 'auto', fontSize: 12, padding: 10, background: '#0f172a0d', borderRadius: 6 }}>
+            <pre style={{ overflow: 'auto', fontSize: 12, padding: 10, background: 'var(--color-surface-muted)', borderRadius: 6 }}>
 {`[
   {
     "name": "Bán hàng",

@@ -86,7 +86,7 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          <div className="dashboard-panels">
+          <div className="dashboard-layout-grid">
             <RecentPostsPanel
               posts={stats.posts?.recent ?? []}
               title={isContentManager ? 'Bài viết gần đây (ưu tiên của bạn)' : 'Bài viết gần đây'}
@@ -94,7 +94,7 @@ export default function DashboardPage() {
               myRecentCount={stats.posts?.myRecentCount ?? 0}
             />
 
-            <div className="dashboard-panels">
+            <div className="dashboard-side-panels">
               <JobHealthPanel
                 jobs={stats.jobs}
                 publishLogs={stats.publishLogs}

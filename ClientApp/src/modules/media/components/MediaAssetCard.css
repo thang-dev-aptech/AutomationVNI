@@ -2,20 +2,37 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--ease-smooth), box-shadow var(--ease-smooth), border-color var(--ease-smooth);
+}
+
+.media-asset-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+  border-color: rgba(45, 108, 182, 0.4);
 }
 
 .media-asset-card-preview {
   aspect-ratio: 4 / 3;
-  background: #f1f5f9;
+  background: var(--color-surface-muted);
   display: grid;
   place-items: center;
   overflow: hidden;
+  position: relative;
 }
 
 .media-asset-card-preview img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform var(--ease-smooth);
+}
+
+.media-asset-card:hover .media-asset-card-preview img {
+  transform: scale(1.06);
 }
 
 .media-asset-card-placeholder {
@@ -26,16 +43,18 @@
 }
 
 .media-asset-card-body {
-  padding: 14px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1;
 }
 
 .media-asset-card-title {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
+  color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -59,36 +78,39 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 12px;
 }
 
 .media-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 20px;
 }
 
 .media-picker-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr));
   gap: 12px;
   max-height: 420px;
   overflow-y: auto;
+  padding: 4px;
 }
 
 .media-picker-item {
   border: 2px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   cursor: pointer;
-  background: #fff;
+  background: var(--color-surface);
   padding: 0;
   text-align: left;
-  transition: border-color 0.15s;
+  transition: all var(--ease-smooth);
 }
 
 .media-picker-item:hover {
   border-color: var(--color-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
 }
 
 .media-picker-item img {
@@ -104,4 +126,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 500;
+  color: var(--color-text);
 }

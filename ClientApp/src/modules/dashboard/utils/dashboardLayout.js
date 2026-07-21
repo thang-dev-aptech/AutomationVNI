@@ -9,6 +9,9 @@ export function buildStatCards(stats, roles) {
   const channels = stats?.channels ?? {}
   const media = stats?.media ?? {}
   const jobs = stats?.jobs ?? {}
+  const templates = stats?.templates ?? {}
+  const pageContexts = stats?.pageContexts ?? {}
+  const bulk = stats?.bulk ?? {}
 
   const cards = [
     {
@@ -19,10 +22,11 @@ export function buildStatCards(stats, roles) {
       to: '/posts',
     },
     {
-      id: 'draft',
-      label: 'Nháp',
-      value: formatCount(posts.draft),
-      tone: 'neutral',
+      id: 'in-pipeline',
+      label: 'Đang xử lý AI',
+      value: formatCount(posts.inPipeline),
+      hint: bulk.activeBatches > 0 ? `${bulk.activeBatches} batch đang chạy` : undefined,
+      tone: 'info',
       to: '/posts',
     },
     {
@@ -32,6 +36,13 @@ export function buildStatCards(stats, roles) {
       tone: 'warning',
       to: '/posts',
       emphasized: hasRole(roles, [ROLES.REVIEWER, ROLES.ADMIN]),
+    },
+    {
+      id: 'approved',
+      label: 'Đã duyệt',
+      value: formatCount(posts.approved),
+      tone: 'info',
+      to: '/posts',
     },
     {
       id: 'scheduled',
@@ -51,6 +62,7 @@ export function buildStatCards(stats, roles) {
       id: 'failed-posts',
       label: 'Bài thất bại',
       value: formatCount(posts.failed),
+      hint: posts.needAction > 0 ? `${posts.needAction} bài cần sửa/thiếu media` : undefined,
       tone: 'danger',
       to: '/posts',
     },
@@ -60,14 +72,38 @@ export function buildStatCards(stats, roles) {
       value: formatCount(jobs.failedTotal),
       tone: 'danger',
       to: '/jobs',
+      hidden: !hasRole(roles, [ROLES.ADMIN, ROLES.CONTENT_MANAGER]),
     },
     {
       id: 'active-channels',
       label: 'Kênh hoạt động',
       value: formatCount(channels.active),
+      hint: channels.expiredCount > 0 ? `${channels.expiredCount} kênh token hết hạn` : undefined,
       tone: 'success',
       to: '/platforms',
       hidden: !hasRole(roles, [ROLES.ADMIN, ROLES.CONTENT_MANAGER, ROLES.VIEWER]),
+    },
+    {
+      id: 'page-contexts',
+      label: 'Page sẵn sàng',
+      value: formatCount(pageContexts.ready),
+      hint:
+        pageContexts.missingChannels > 0
+          ? `${pageContexts.missingChannels} page chưa có context`
+          : pageContexts.total !== undefined
+            ? `${pageContexts.total} context đã tạo`
+            : undefined,
+      tone: pageContexts.missingChannels > 0 ? 'warning' : 'success',
+      to: '/page-contexts',
+      hidden: !hasRole(roles, [ROLES.ADMIN, ROLES.CONTENT_MANAGER]),
+    },
+    {
+      id: 'prompt-templates',
+      label: 'Danh mục template',
+      value: formatCount(templates.total),
+      tone: 'neutral',
+      to: '/prompt-templates',
+      hidden: !hasRole(roles, [ROLES.ADMIN, ROLES.CONTENT_MANAGER]),
     },
     {
       id: 'media-assets',
@@ -105,16 +141,34 @@ export function buildStatCards(stats, roles) {
 
 export const DASHBOARD_QUICK_LINKS = [
   {
+    to: '/posts/create',
+    label: 'Tạo bài viết',
+    desc: 'Nhập chủ đề, chọn page — AI sinh nội dung',
+    visible: (p) => p.canViewPosts,
+  },
+  {
+    to: '/bulk',
+    label: 'Tạo hàng loạt',
+    desc: 'Nhiều ý tưởng × nhiều page, import CSV',
+    visible: (p) => p.canViewPosts,
+  },
+  {
     to: '/platforms',
     label: 'Platforms / Kênh',
     desc: 'Kết nối và quản lý page',
     visible: (p) => p.canViewPlatforms,
   },
   {
-    to: '/posts',
-    label: 'Bài viết',
-    desc: 'Pipeline sinh & đăng bài AI',
-    visible: (p) => p.canViewPosts,
+    to: '/page-contexts',
+    label: 'Page Context',
+    desc: 'Branding, danh mục mặc định, CTA từng page',
+    visible: (p) => p.canManageTemplates,
+  },
+  {
+    to: '/prompt-templates',
+    label: 'Danh mục template',
+    desc: 'Template prompt text + ảnh theo ngành',
+    visible: (p) => p.canManageTemplates,
   },
   {
     to: '/media',

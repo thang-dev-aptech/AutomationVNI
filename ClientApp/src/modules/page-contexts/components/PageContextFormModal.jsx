@@ -14,25 +14,38 @@ const emptyForm = {
   defaultHashtags: '',
   promptTemplateText: '',
   promptTemplateImage: '',
-  defaultTextTemplateId: '',
-  defaultImageTemplateId: '',
+  defaultTemplateId: '',
 }
 
 export default function PageContextFormModal({
   open,
   onClose,
   initialData,
+  mode = 'create',
+  unavailableChannelIds = [],
   onSubmit,
   isSubmitting,
   errorMessage,
 }) {
   const [form, setForm] = useState(emptyForm)
-  const isEdit = Boolean(initialData?.id)
+  const isEdit = mode === 'edit'
   const { data: channels = [] } = useSocialChannelAll()
   const { data: tplData } = usePromptTemplateList({
     isActive: true, index: 1, size: 100,
   })
   const categoryTemplates = tplData?.items ?? []
+  const selectableChannels = channels.filter(
+    (channel) =>
+      isEdit
+      || channel.id === initialData?.socialChannelId
+      || !unavailableChannelIds.includes(channel.id),
+  )
+  const modalTitle =
+    mode === 'edit'
+      ? 'Cập nhật Page Context'
+      : mode === 'copy'
+        ? 'Sao chép Page Context'
+        : 'Thêm Page Context'
 
   useEffect(() => {
     if (!open) return
@@ -47,8 +60,9 @@ export default function PageContextFormModal({
             defaultHashtags: initialData.defaultHashtags || '',
             promptTemplateText: initialData.promptTemplateText || '',
             promptTemplateImage: initialData.promptTemplateImage || '',
-            defaultTextTemplateId: initialData.defaultTextTemplateId || '',
-            defaultImageTemplateId: initialData.defaultImageTemplateId || '',
+            // Danh mục là pack text + image; dữ liệu cũ có thể chỉ set 1 trong 2 id.
+            defaultTemplateId:
+              initialData.defaultTextTemplateId || initialData.defaultImageTemplateId || '',
           }
         : emptyForm,
     )
@@ -69,16 +83,17 @@ export default function PageContextFormModal({
       defaultHashtags: form.defaultHashtags.trim() || null,
       promptTemplateText: form.promptTemplateText.trim() || null,
       promptTemplateImage: form.promptTemplateImage.trim() || null,
-      // Chọn template → gửi id; bỏ trống → khi sửa gửi EMPTY_GUID để xoá, khi tạo mới gửi null.
-      defaultTextTemplateId: form.defaultTextTemplateId || (isEdit ? EMPTY_GUID : null),
-      defaultImageTemplateId: form.defaultImageTemplateId || (isEdit ? EMPTY_GUID : null),
+      // 1 danh mục (pack text + image) → set cả 2 id.
+      // Bỏ trống → khi sửa gửi EMPTY_GUID để xoá, khi tạo mới gửi null.
+      defaultTextTemplateId: form.defaultTemplateId || (isEdit ? EMPTY_GUID : null),
+      defaultImageTemplateId: form.defaultTemplateId || (isEdit ? EMPTY_GUID : null),
     })
   }
 
   return (
     <Modal
       open={open}
-      title={isEdit ? 'Cập nhật Page Context' : 'Thêm Page Context'}
+      title={modalTitle}
       onClose={onClose}
       footer={(
         <>
@@ -91,7 +106,7 @@ export default function PageContextFormModal({
             className="btn btn-primary"
             disabled={isSubmitting}
           >
-            {isSubmitting ? 'Đang lưu...' : 'Lưu'}
+            {isSubmitting ? 'Đang lưu...' : mode === 'copy' ? 'Tạo bản sao' : 'Lưu'}
           </button>
         </>
       )}
@@ -108,12 +123,17 @@ export default function PageContextFormModal({
             disabled={isEdit}
           >
             <option value="">Chọn kênh</option>
-            {channels.map((channel) => (
+            {selectableChannels.map((channel) => (
               <option key={channel.id} value={channel.id}>
                 {channel.pageName}
               </option>
             ))}
           </select>
+          {!isEdit && selectableChannels.length === 0 && (
+            <small className="form-hint">
+              Tất cả page hiện đã có Page Context.
+            </small>
+          )}
         </div>
         <div className="form-group">
           <label htmlFor="context-brand">Tên thương hiệu</label>
@@ -157,34 +177,23 @@ export default function PageContextFormModal({
           />
         </div>
         <div className="form-group">
-          <label htmlFor="context-default-text-tpl">Template mặc định — Nội dung (danh mục)</label>
+          <label htmlFor="context-default-tpl">Danh mục mặc định (template text + ảnh)</label>
           <select
-            id="context-default-text-tpl"
-            value={form.defaultTextTemplateId}
-            onChange={handleChange('defaultTextTemplateId')}
+            id="context-default-tpl"
+            value={form.defaultTemplateId}
+            onChange={handleChange('defaultTemplateId')}
           >
-            <option value="">Không dùng (theo default hệ thống)</option>
+            <option value="">Chưa chọn — khi tạo bài phải chọn danh mục thủ công</option>
             {categoryTemplates.map((tpl) => (
               <option key={tpl.id} value={tpl.id}>
                 {tpl.name}{tpl.isDefault ? ' ⭐' : ''}
               </option>
             ))}
           </select>
-        </div>
-        <div className="form-group">
-          <label htmlFor="context-default-image-tpl">Template mặc định — Ảnh (danh mục)</label>
-          <select
-            id="context-default-image-tpl"
-            value={form.defaultImageTemplateId}
-            onChange={handleChange('defaultImageTemplateId')}
-          >
-            <option value="">Không dùng (theo default hệ thống)</option>
-            {categoryTemplates.map((tpl) => (
-              <option key={tpl.id} value={tpl.id}>
-                {tpl.name}{tpl.isDefault ? ' ⭐' : ''}
-              </option>
-            ))}
-          </select>
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-muted, #888)' }}>
+            Đã chọn danh mục → page này &quot;sẵn sàng&quot;: tạo bài chỉ cần nhập chủ đề,
+            không cần chọn danh mục nữa (vẫn có thể override khi tạo bài).
+          </p>
         </div>
         <details>
           <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--text-muted, #888)', marginBottom: 8 }}>

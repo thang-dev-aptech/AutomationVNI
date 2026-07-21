@@ -4,6 +4,8 @@ import { socialChannelApi } from '@/modules/social-channels/services/socialChann
 import { mediaAssetApi } from '@/modules/media/services/mediaAssetApi'
 import { generationJobApi } from '@/modules/jobs/services/generationJobApi'
 import { publishLogApi } from '@/modules/jobs/services/publishLogApi'
+import { promptTemplateApi } from '@/modules/prompt-templates/services/promptTemplateApi'
+import { pageContextApi } from '@/modules/page-contexts/services/pageContextApi'
 import { unwrapApiData } from '@/shared/utils/apiHelpers'
 import { hasRole, ROLES } from '@/shared/auth/permissions'
 
@@ -65,6 +67,7 @@ async function aggregateFromExistingApis({ userId, roles } = {}) {
     postsTotal,
     postsDraft,
     postsWaitingReview,
+    postsApproved,
     postsScheduled,
     postsPublished,
     postsFailed,
@@ -79,10 +82,13 @@ async function aggregateFromExistingApis({ userId, roles } = {}) {
     jobsDeadLetter,
     publishFailed,
     publishFailedRecent,
+    templatesTotal,
+    pageContextsAll,
   ] = await Promise.all([
     safePagedTotal((p) => postApi.filter(p), COUNT_PAGE, 'posts total'),
     safePagedTotal((p) => postApi.filter(p), { ...COUNT_PAGE, status: 1 }, 'posts draft'),
     safePagedTotal((p) => postApi.filter(p), { ...COUNT_PAGE, status: 10 }, 'posts waiting review'),
+    safePagedTotal((p) => postApi.filter(p), { ...COUNT_PAGE, status: 11 }, 'posts approved'),
     safePagedTotal((p) => postApi.filter(p), { ...COUNT_PAGE, status: 5 }, 'posts scheduled'),
     safePagedTotal((p) => postApi.filter(p), { ...COUNT_PAGE, status: 7 }, 'posts published'),
     safePagedTotal((p) => postApi.filter(p), { ...COUNT_PAGE, status: 8 }, 'posts failed'),
@@ -133,11 +139,30 @@ async function aggregateFromExistingApis({ userId, roles } = {}) {
       { index: 1, size: 5, status: 2 },
       'publish logs failed recent',
     ),
+    safePagedTotal(
+      (p) => promptTemplateApi.filter(p),
+      { ...COUNT_PAGE, isActive: true },
+      'templates total',
+    ),
+    safePagedTotal(
+      (p) => pageContextApi.filter(p),
+      { index: 1, size: 100 },
+      'page contexts all',
+    ),
   ])
 
   const channelItems = channelsAll.items ?? []
   const expiredChannels = channelItems.filter(isChannelExpired)
   const recentPosts = prioritizeRecentPosts(postsRecent.items ?? [], userId, roles)
+
+  const contextItems = pageContextsAll.items ?? []
+  const contextReadyCount = contextItems.filter(
+    (c) => c.defaultTextTemplateId || c.defaultImageTemplateId || c.promptTemplateText,
+  ).length
+  const channelIdsWithContext = new Set(contextItems.map((c) => c.socialChannelId))
+  const missingContextChannels = channelItems.filter(
+    (c) => c.isActive !== false && !channelIdsWithContext.has(c.id),
+  ).length
 
   const sections = {
     posts: postsTotal.available,
@@ -165,6 +190,7 @@ async function aggregateFromExistingApis({ userId, roles } = {}) {
       total: postsTotal.total,
       draft: postsDraft.total,
       waitingReview: postsWaitingReview.total,
+      approved: postsApproved.total,
       scheduled: postsScheduled.total,
       published: postsPublished.total,
       failed: postsFailed.total,
@@ -197,6 +223,19 @@ async function aggregateFromExistingApis({ userId, roles } = {}) {
       recentFailed: publishFailedRecent.items ?? [],
       available: publishFailed.available,
     },
+    templates: {
+      total: templatesTotal.total,
+      available: templatesTotal.available,
+    },
+    pageContexts: {
+      total: pageContextsAll.total,
+      ready: pageContextsAll.available ? contextReadyCount : null,
+      missingChannels: pageContextsAll.available && channelsAll.available
+        ? missingContextChannels
+        : null,
+      available: pageContextsAll.available,
+    },
+    bulk: { activeBatches: null, available: false },
     sections,
     partialErrors,
   }
@@ -210,7 +249,17 @@ export const dashboardApi = {
   async fetchStats({ userId, roles } = {}) {
     const summary = await trySummaryEndpoint()
     if (summary) {
-      return { ...summary, source: 'summary' }
+      // BE trả 20 bài gần nhất; FE tự ưu tiên bài của user và cắt còn 5.
+      const recentRaw = summary.posts?.recent ?? []
+      return {
+        ...summary,
+        posts: {
+          ...summary.posts,
+          recent: prioritizeRecentPosts(recentRaw, userId, roles),
+          myRecentCount: summary.posts?.myRecentCount ?? countOwnPosts(recentRaw, userId),
+        },
+        source: 'summary',
+      }
     }
     return aggregateFromExistingApis({ userId, roles })
   },

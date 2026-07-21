@@ -5,6 +5,8 @@ import ErrorState from '@/shared/components/ErrorState'
 import EmptyState from '@/shared/components/EmptyState'
 import { formatDateTime, getErrorMessage } from '@/shared/utils/apiHelpers'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
+import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
+import { toast } from '@/shared/stores/toastStore'
 import PageContextFormModal from '../components/PageContextFormModal'
 import {
   useCreatePageContext,
@@ -17,6 +19,7 @@ export default function PageContextListPage() {
   const [keyword, setKeyword] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
+  const [copyingItem, setCopyingItem] = useState(null)
   const [formError, setFormError] = useState('')
 
   const params = useMemo(() => ({ keyword, index: 1, size: 50 }), [keyword])
@@ -26,6 +29,12 @@ export default function PageContextListPage() {
   const updateMutation = useUpdatePageContext()
   const deleteMutation = useDeletePageContext()
 
+  const { data: tplData } = usePromptTemplateList({ isActive: true, index: 1, size: 100 })
+  const templateMap = useMemo(
+    () => Object.fromEntries((tplData?.items ?? []).map((t) => [t.id, t.name])),
+    [tplData],
+  )
+
   const channelMap = useMemo(
     () => Object.fromEntries(channels.map((c) => [c.id, c.pageName])),
     [channels],
@@ -33,14 +42,43 @@ export default function PageContextListPage() {
 
   const items = data?.items ?? []
 
+  // Page "sẵn sàng" = có danh mục mặc định hoặc prompt inline → tạo bài không cần chọn danh mục.
+  const isReady = (item) =>
+    Boolean(item.defaultTextTemplateId || item.defaultImageTemplateId || item.promptTemplateText)
+
+  const getTemplateName = (item) => {
+    const tplId = item.defaultTextTemplateId || item.defaultImageTemplateId
+    if (tplId) return templateMap[tplId] || 'Danh mục đã xoá?'
+    if (item.promptTemplateText) return 'Prompt inline'
+    return null
+  }
+
+  const missingChannels = useMemo(() => {
+    const withContext = new Set(items.map((i) => i.socialChannelId))
+    return channels.filter((c) => c.isActive !== false && !withContext.has(c.id))
+  }, [channels, items])
+
   const openCreate = () => {
     setEditingItem(null)
+    setCopyingItem(null)
     setFormError('')
     setModalOpen(true)
   }
 
   const openEdit = (item) => {
     setEditingItem(item)
+    setCopyingItem(null)
+    setFormError('')
+    setModalOpen(true)
+  }
+
+  const openCopy = (item) => {
+    setEditingItem(null)
+    setCopyingItem({
+      ...item,
+      id: undefined,
+      socialChannelId: '',
+    })
     setFormError('')
     setModalOpen(true)
   }
@@ -55,6 +93,13 @@ export default function PageContextListPage() {
         await createMutation.mutateAsync(payload)
       }
       setModalOpen(false)
+      toast.success(
+        editingItem
+          ? 'Đã cập nhật Page Context'
+          : copyingItem
+            ? 'Đã sao chép Page Context'
+            : 'Đã thêm Page Context',
+      )
     } catch (submitError) {
       setFormError(getErrorMessage(submitError))
     }
@@ -64,8 +109,9 @@ export default function PageContextListPage() {
     if (!window.confirm(`Xóa page context "${item.brandName}"?`)) return
     try {
       await deleteMutation.mutateAsync(item.id)
+      toast.success('Đã xóa Page Context')
     } catch (deleteError) {
-      window.alert(getErrorMessage(deleteError))
+      toast.error(getErrorMessage(deleteError))
     }
   }
 
@@ -73,13 +119,22 @@ export default function PageContextListPage() {
     <section>
       <PageHeader
         title="Page Context"
-        description="Branding, prompt template và CTA cho từng kênh"
+        description="Branding, danh mục mặc định và CTA cho từng page — page đã cấu hình sẽ tạo bài không cần chọn danh mục"
         actions={(
           <button type="button" className="btn btn-primary" onClick={openCreate}>
             Thêm context
           </button>
         )}
       />
+
+      {!keyword && missingChannels.length > 0 && (
+        <div className="alert alert-warning" style={{ marginBottom: 16 }}>
+          {missingChannels.length} page chưa có context:{' '}
+          {missingChannels.slice(0, 5).map((c) => c.pageName).join(', ')}
+          {missingChannels.length > 5 ? '…' : ''}
+          {' — '}các page này khi tạo bài sẽ phải chọn danh mục thủ công.
+        </div>
+      )}
 
       <div className="card card-body" style={{ marginBottom: 16 }}>
         <div className="form-group" style={{ marginBottom: 0 }}>
@@ -100,11 +155,14 @@ export default function PageContextListPage() {
           <EmptyState message="Chưa có page context nào" />
         )}
         {!isLoading && !isError && items.length > 0 && (
-          <table>
+          <div className="table-container">
+            <table>
             <thead>
               <tr>
                 <th>Thương hiệu</th>
                 <th>Kênh</th>
+                <th>Danh mục mặc định</th>
+                <th>Trạng thái</th>
                 <th>CTA</th>
                 <th>Cập nhật</th>
                 <th />
@@ -115,37 +173,55 @@ export default function PageContextListPage() {
                 <tr key={item.id}>
                   <td>{item.brandName}</td>
                   <td>{channelMap[item.socialChannelId] || item.socialChannelId}</td>
+                  <td>{getTemplateName(item) || '—'}</td>
+                  <td>
+                    {isReady(item) ? (
+                      <span className="badge badge-success">Sẵn sàng</span>
+                    ) : (
+                      <span className="badge badge-warning">Thiếu danh mục</span>
+                    )}
+                  </td>
                   <td>{item.ctaText || '—'}</td>
                   <td>{formatDateTime(item.updatedAt || item.createdAt)}</td>
-                  <td>
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <button
-                        type="button"
-                        className="btn btn-ghost"
-                        onClick={() => openEdit(item)}
-                      >
-                        Sửa
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-danger"
-                        onClick={() => handleDelete(item)}
-                      >
-                        Xóa
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    <td>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => openEdit(item)}
+                        >
+                          Cập nhật
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => openCopy(item)}
+                        >
+                          Sao chép
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-danger"
+                          onClick={() => handleDelete(item)}
+                        >
+                          Xóa
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
       <PageContextFormModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        initialData={editingItem}
+        initialData={editingItem || copyingItem}
+        mode={editingItem ? 'edit' : copyingItem ? 'copy' : 'create'}
+        unavailableChannelIds={items.map((item) => item.socialChannelId)}
         onSubmit={handleSubmit}
         isSubmitting={createMutation.isPending || updateMutation.isPending}
         errorMessage={formError}

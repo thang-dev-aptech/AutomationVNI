@@ -26,4 +26,13 @@
   .page-header {
     flex-direction: column;
   }
+
+  .page-header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .page-header-actions > * {
+    flex: 1 1 auto;
+  }
 }

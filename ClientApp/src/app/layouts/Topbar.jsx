@@ -7,15 +7,22 @@ const PAGE_TITLES = {
   '/dashboard': 'Tổng quan',
   '/platforms': 'Platforms / Kênh',
   '/posts': 'Bài viết',
+  '/posts/create': 'Tạo bài viết',
+  '/bulk': 'Tạo hàng loạt',
+  '/prompt-templates': 'Danh mục template',
+  '/page-contexts': 'Page Context',
   '/media': 'Media',
-  '/jobs': 'Jobs',
+  '/jobs': 'Jobs & Logs',
 }
 
 function resolveTitle(pathname) {
+  if (pathname === '/posts/create') return 'Tạo bài viết mới'
+  if (pathname.startsWith('/posts/')) return 'Chi tiết bài viết'
+  if (pathname.startsWith('/bulk/')) return 'Chi tiết tiến trình hàng loạt'
   return PAGE_TITLES[pathname] ?? 'VNI Automation'
 }
 
-export default function Topbar() {
+export default function Topbar({ onMenuToggle, isSidebarOpen = false }) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const currentUser = useAuthStore((state) => state.currentUser)
@@ -29,7 +36,18 @@ export default function Topbar() {
 
   return (
     <header className="topbar">
-      <h1 className="topbar-title">{resolveTitle(pathname)}</h1>
+      <div className="topbar-lead">
+        <button
+          type="button"
+          className="topbar-menu-btn"
+          onClick={onMenuToggle}
+          aria-label="Mở menu điều hướng"
+          aria-expanded={isSidebarOpen}
+        >
+          <span className="topbar-menu-icon" aria-hidden="true" />
+        </button>
+        <h1 className="topbar-title">{resolveTitle(pathname)}</h1>
+      </div>
       <div className="topbar-actions">
         <span className="topbar-user">{currentUser?.email}</span>
         <button

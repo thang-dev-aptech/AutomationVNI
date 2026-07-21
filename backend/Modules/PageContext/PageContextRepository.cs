@@ -72,6 +72,16 @@ public class PageContextRepository : GenericRepository<PageContextModel>
     public async Task<PageContextModel> CreateAsync(
         CreatePageContextRequest request, CancellationToken ct = default)
     {
+        var channelExists = await Context.SocialChannels
+            .AnyAsync(x => x.Id == request.SocialChannelId && !x.IsDeleted, ct);
+        if (!channelExists)
+            throw new ArgumentException("Kênh mạng xã hội không tồn tại");
+
+        var contextExists = await QueryActive()
+            .AnyAsync(x => x.SocialChannelId == request.SocialChannelId, ct);
+        if (contextExists)
+            throw new ArgumentException("Page này đã có Page Context. Hãy cập nhật context hiện tại thay vì tạo thêm.");
+
         var entity = new PageContextModel
         {
             SocialChannelId = request.SocialChannelId,

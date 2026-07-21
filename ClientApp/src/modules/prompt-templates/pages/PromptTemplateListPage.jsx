@@ -20,6 +20,7 @@ export default function PromptTemplateListPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
+  const [copyingItem, setCopyingItem] = useState(null)
   const [formError, setFormError] = useState('')
 
   const params = useMemo(
@@ -40,14 +41,39 @@ export default function PromptTemplateListPage() {
 
   const items = data?.items ?? []
 
+  const getCopyName = (name) => {
+    const usedNames = new Set(items.map((item) => item.name.toLocaleLowerCase('vi')))
+    let candidate = `${name} (Bản sao)`
+    let index = 2
+    while (usedNames.has(candidate.toLocaleLowerCase('vi'))) {
+      candidate = `${name} (Bản sao ${index})`
+      index += 1
+    }
+    return candidate
+  }
+
   const openCreate = () => {
     setEditingItem(null)
+    setCopyingItem(null)
     setFormError('')
     setModalOpen(true)
   }
 
   const openEdit = (item) => {
     setEditingItem(item)
+    setCopyingItem(null)
+    setFormError('')
+    setModalOpen(true)
+  }
+
+  const openCopy = (item) => {
+    setEditingItem(null)
+    setCopyingItem({
+      ...item,
+      id: undefined,
+      name: getCopyName(item.name),
+      isDefault: false,
+    })
     setFormError('')
     setModalOpen(true)
   }
@@ -61,7 +87,13 @@ export default function PromptTemplateListPage() {
         await createMutation.mutateAsync(payload)
       }
       setModalOpen(false)
-      toast.success(editingItem ? 'Đã cập nhật danh mục' : 'Đã thêm danh mục')
+      toast.success(
+        editingItem
+          ? 'Đã cập nhật danh mục'
+          : copyingItem
+            ? 'Đã sao chép danh mục'
+            : 'Đã thêm danh mục',
+      )
     } catch (submitError) {
       setFormError(getErrorMessage(submitError))
     }
@@ -138,63 +170,69 @@ export default function PromptTemplateListPage() {
           />
         )}
         {!isLoading && !isError && items.length > 0 && (
-          <table>
-            <thead>
-              <tr>
-                <th>Danh mục</th>
-                <th>Prompt text</th>
-                <th>Prompt ảnh</th>
-                <th>Mặc định</th>
-                <th>Trạng thái</th>
-                <th>Ngày tạo</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <div style={{ fontWeight: 600 }}>{item.name}</div>
-                    {item.description && (
-                      <div style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>
-                        {item.description}
-                      </div>
-                    )}
-                  </td>
-                  <td style={{ maxWidth: 220 }}>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted, #666)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {item.textBody || '—'}
-                    </div>
-                  </td>
-                  <td style={{ maxWidth: 220 }}>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted, #666)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {item.imageBody || '—'}
-                    </div>
-                  </td>
-                  <td>{item.isDefault ? '⭐' : '—'}</td>
-                  <td>{item.isActive ? 'Đang dùng' : 'Tắt'}</td>
-                  <td>{formatDateTime(item.createdAt)}</td>
-                  <td>
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <button type="button" className="btn btn-ghost" onClick={() => openEdit(item)}>
-                        Chi tiết
-                      </button>
-                      <button type="button" className="btn btn-danger" onClick={() => handleDelete(item)}>
-                        Xóa
-                      </button>
-                    </div>
-                  </td>
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Danh mục</th>
+                  <th>Prompt text</th>
+                  <th>Prompt ảnh</th>
+                  <th>Mặc định</th>
+                  <th>Trạng thái</th>
+                  <th>Ngày tạo</th>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{item.name}</div>
+                      {item.description && (
+                        <div style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>
+                          {item.description}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ maxWidth: 220 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted, #666)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {item.textBody || '—'}
+                      </div>
+                    </td>
+                    <td style={{ maxWidth: 220 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted, #666)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {item.imageBody || '—'}
+                      </div>
+                    </td>
+                    <td>{item.isDefault ? '⭐' : '—'}</td>
+                    <td>{item.isActive ? 'Đang dùng' : 'Tắt'}</td>
+                    <td>{formatDateTime(item.createdAt)}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <button type="button" className="btn btn-ghost" onClick={() => openEdit(item)}>
+                          Cập nhật
+                        </button>
+                        <button type="button" className="btn btn-secondary" onClick={() => openCopy(item)}>
+                          Sao chép
+                        </button>
+                        <button type="button" className="btn btn-danger" onClick={() => handleDelete(item)}>
+                          Xóa
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
       <PromptTemplateFormModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        initialData={editingItem}
+        initialData={editingItem || copyingItem}
+        mode={editingItem ? 'edit' : copyingItem ? 'copy' : 'create'}
         onSubmit={handleSubmit}
         isSubmitting={createMutation.isPending || updateMutation.isPending}
         errorMessage={formError}

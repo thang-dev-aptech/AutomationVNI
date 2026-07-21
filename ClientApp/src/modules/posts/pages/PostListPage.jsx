@@ -120,49 +120,51 @@ export default function PostListPage() {
           />
         )}
         {!isLoading && !isError && items.length > 0 && (
-          <table>
-            <thead>
-              <tr>
-                <th>Tiêu đề</th>
-                <th>Kênh</th>
-                <th>Danh mục template</th>
-                <th>Trạng thái</th>
-                <th>Lịch đăng</th>
-                <th>Ngày tạo</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <Link to={`/posts/${item.id}`}>{item.title}</Link>
-                  </td>
-                  <td>{channelMap[item.socialChannelId] || '—'}</td>
-                  <td>{item.promptTemplateName || '—'}</td>
-                  <td><PostStatusBadge status={item.status} /></td>
-                  <td>{formatDateTime(item.scheduledPublishAt)}</td>
-                  <td>{formatDateTime(item.createdAt)}</td>
-                  <td>
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <Link to={`/posts/${item.id}`} className="btn btn-ghost">
-                        Chi tiết
-                      </Link>
-                      {canDeletePost(item.userId) && (
-                        <button
-                          type="button"
-                          className="btn btn-danger"
-                          onClick={() => handleDelete(item)}
-                        >
-                          Xóa
-                        </button>
-                      )}
-                    </div>
-                  </td>
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tiêu đề</th>
+                  <th>Kênh</th>
+                  <th>Danh mục template</th>
+                  <th>Trạng thái</th>
+                  <th>Lịch đăng</th>
+                  <th>Ngày tạo</th>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      <Link to={`/posts/${item.id}`}>{item.title}</Link>
+                    </td>
+                    <td>{channelMap[item.socialChannelId] || '—'}</td>
+                    <td>{item.promptTemplateName || '—'}</td>
+                    <td><PostStatusBadge status={item.status} /></td>
+                    <td>{formatDateTime(item.scheduledPublishAt)}</td>
+                    <td>{formatDateTime(item.createdAt)}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <Link to={`/posts/${item.id}`} className="btn btn-ghost">
+                          Chi tiết
+                        </Link>
+                        {canDeletePost(item.userId) && (
+                          <button
+                            type="button"
+                            className="btn btn-danger"
+                            onClick={() => handleDelete(item)}
+                          >
+                            Xóa
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

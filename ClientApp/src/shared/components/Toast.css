@@ -2,7 +2,7 @@
   position: fixed;
   top: 16px;
   right: 16px;
-  z-index: 9999;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -15,8 +15,8 @@
   justify-content: space-between;
   gap: 12px;
   padding: 12px 14px;
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
   font-size: 0.9rem;
   animation: toast-in 0.2s ease-out;
 }

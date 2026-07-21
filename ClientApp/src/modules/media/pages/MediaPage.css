@@ -1,11 +1,17 @@
+.media-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .media-page-filters {
   display: grid;
   gap: 16px;
   grid-template-columns: 2fr 1fr;
-  margin-bottom: 16px;
+  margin-bottom: 0;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 767px) {
   .media-page-filters {
     grid-template-columns: 1fr;
   }

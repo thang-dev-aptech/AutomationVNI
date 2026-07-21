@@ -36,8 +36,8 @@
 .channel-multi-select__trigger.is-open,
 .channel-multi-select__trigger:focus {
   outline: none;
-  border-color: var(--color-primary, #22c55e);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary, #22c55e) 25%, transparent);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 25%, transparent);
 }
 
 .channel-multi-select__trigger-text {
@@ -66,7 +66,7 @@
   border: 1px solid var(--border-color, #e5e7eb);
   border-radius: 8px;
   background: var(--surface, #fff);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+  box-shadow: var(--shadow-md);
   overflow: hidden;
 }
 
@@ -89,7 +89,7 @@
 
 .channel-multi-select__search:focus {
   outline: none;
-  border-color: var(--color-primary, #22c55e);
+  border-color: var(--color-primary);
 }
 
 .channel-multi-select__search-icon {
@@ -116,7 +116,7 @@
   padding: 0;
   font: inherit;
   font-size: 0.8rem;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   cursor: pointer;
 }
 
@@ -147,18 +147,18 @@
 }
 
 .channel-multi-select__row:hover {
-  background: #e8f4ff;
+  background: var(--color-primary-soft);
 }
 
 .channel-multi-select__row.is-selected {
-  background: color-mix(in srgb, var(--color-primary, #22c55e) 10%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
 
 .channel-multi-select__row input[type='checkbox'] {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  accent-color: var(--color-primary, #22c55e);
+  accent-color: var(--color-primary);
 }
 
 .channel-multi-select__name {
@@ -224,7 +224,7 @@
 }
 
 .channel-multi-select__chip:hover {
-  border-color: var(--color-primary, #22c55e);
+  border-color: var(--color-primary);
 }
 
 .channel-multi-select__chip-more {

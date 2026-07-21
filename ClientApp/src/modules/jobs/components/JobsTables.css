@@ -1,40 +1,59 @@
 .jobs-table-wrap {
+  width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.jobs-table-wrap table {
+  margin-bottom: 0;
+  border: none;
 }
 
 .job-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   justify-content: flex-end;
 }
 
 .jobs-tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
+  display: inline-flex;
+  background: var(--color-surface-muted);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  margin-bottom: 20px;
 }
 
 .jobs-tab {
-  padding: 10px 16px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: #fff;
+  padding: 8px 18px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
   font-weight: 600;
+  font-size: 0.9rem;
   color: var(--color-text-muted);
+  transition: all var(--ease-smooth);
+}
+
+.jobs-tab:hover {
+  color: var(--color-text);
 }
 
 .jobs-tab--active {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: #fff;
+  background: var(--color-surface);
+  color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
 }
 
 .jobs-filters {
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  margin-bottom: 20px;
 }
 
 .jobs-toolbar {
@@ -42,11 +61,12 @@
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
   flex-wrap: wrap;
 }
 
 .jobs-toolbar-hint {
   font-size: 0.85rem;
+  font-weight: 500;
   color: var(--color-text-muted);
 }

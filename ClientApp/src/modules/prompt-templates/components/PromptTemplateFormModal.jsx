@@ -34,6 +34,7 @@ export default function PromptTemplateFormModal({
   open,
   onClose,
   initialData,
+  mode = 'create',
   onSubmit,
   isSubmitting,
   errorMessage,
@@ -41,7 +42,12 @@ export default function PromptTemplateFormModal({
   const [form, setForm] = useState(emptyForm)
   const textRef = useRef(null)
   const imageRef = useRef(null)
-  const isEdit = Boolean(initialData?.id)
+  const modalTitle =
+    mode === 'edit'
+      ? 'Cập nhật danh mục template'
+      : mode === 'copy'
+        ? 'Sao chép danh mục template'
+        : 'Thêm danh mục template'
 
   useEffect(() => {
     if (!open) return
@@ -101,7 +107,7 @@ export default function PromptTemplateFormModal({
   return (
     <Modal
       open={open}
-      title={isEdit ? 'Cập nhật danh mục template' : 'Thêm danh mục template'}
+      title={modalTitle}
       onClose={onClose}
       footer={(
         <>
@@ -114,7 +120,7 @@ export default function PromptTemplateFormModal({
             className="btn btn-primary"
             disabled={isSubmitting}
           >
-            {isSubmitting ? 'Đang lưu...' : 'Lưu'}
+            {isSubmitting ? 'Đang lưu...' : mode === 'copy' ? 'Tạo bản sao' : 'Lưu'}
           </button>
         </>
       )}
