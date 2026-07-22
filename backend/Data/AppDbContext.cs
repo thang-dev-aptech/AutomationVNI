@@ -3,6 +3,7 @@ using Backend.Modules.Category;
 using Backend.Modules.GenerationJob;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaEmbedding;
+using Backend.Modules.MediaFolder;
 using Backend.Modules.PageContext;
 using Backend.Modules.PageMessage;
 using Backend.Modules.Post;
@@ -27,6 +28,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<PageContextModel> PageContexts => Set<PageContextModel>();
     public DbSet<PostModel> Posts => Set<PostModel>();
     public DbSet<MediaAssetModel> MediaAssets => Set<MediaAssetModel>();
+    public DbSet<MediaFolderModel> MediaFolders => Set<MediaFolderModel>();
     public DbSet<PostMediaModel> PostMedias => Set<PostMediaModel>();
     public DbSet<GenerationJobModel> GenerationJobs => Set<GenerationJobModel>();
     public DbSet<PublishLogModel> PublishLogs => Set<PublishLogModel>();
@@ -54,6 +56,16 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasIndex(x => x.IsDeleted);
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.Slug).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<MediaFolderModel>(e =>
+        {
+            e.ToTable("MediaFolders");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.ParentFolderId);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Description).HasMaxLength(500);
         });
 
         modelBuilder.Entity<PromptTemplateModel>(e =>
@@ -145,7 +157,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Source);
             e.HasIndex(x => x.CategoryId);
+            e.HasIndex(x => x.FolderId);
             e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.CategoryIds).HasColumnType("TEXT");
             e.Property(x => x.FileName).HasMaxLength(500);
             e.Property(x => x.OriginalFileName).HasMaxLength(500);
             e.Property(x => x.StoragePath).HasMaxLength(1000);

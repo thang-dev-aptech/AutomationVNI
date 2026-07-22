@@ -153,7 +153,9 @@ RAG    = 2   // Luồng 2: sinh text → vector search media
 | MimeType | string(100) | |
 | FileSize | long | bytes |
 | Source | int | MediaSource enum |
-| CategoryId | Guid? | Index, no FK |
+| CategoryId | Guid? | Index, no FK (legacy đơn trị) |
+| FolderId | Guid? | Index, no FK → MediaFolders. null = "Chưa phân loại" |
+| CategoryIds | TEXT? | JSON array Guid → Categories (đa trị) — "áp dụng cho loại bài nào". Nhánh 2 lọc theo Post.CategoryId. null/rỗng = dùng chung |
 | AltText | string(500)? | |
 | Description | TEXT? | Dùng cho embedding |
 | Tags | TEXT? | JSON array keywords |
@@ -167,6 +169,22 @@ Upload       = 1   // Upload thủ công
 AIGenerated  = 2   // DALL-E / Midjourney
 Overlay      = 3   // AI nền + overlay logo/CTA
 ```
+
+---
+
+## MediaFolders — Thư mục phân loại kho Media (lồng nhiều cấp)
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| Id | Guid (PK) | + BaseEntity |
+| Name | string(200) | Tên thư mục |
+| Description | string(500)? | |
+| ParentFolderId | Guid? | Index, no FK → chính bảng này. null = gốc |
+| SortOrder | int | Thứ tự hiển thị |
+
+- Ảnh trỏ về folder qua `MediaAssets.FolderId`.
+- Repository chống lặp cây khi đổi ParentFolderId; xóa folder → ảnh về `FolderId = null`, chặn nếu còn thư mục con.
+- Endpoint: CRUD `/api/mediafolder` + `GET /api/mediafolder/tree`; `POST /api/mediaasset/move` `{ ids[], folderId }` để kéo-thả.
 
 ---
 

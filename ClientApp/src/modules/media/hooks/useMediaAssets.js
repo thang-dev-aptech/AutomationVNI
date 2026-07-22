@@ -66,6 +66,30 @@ export function useUploadMediaAsset() {
   })
 }
 
+/** Upload nhiều ảnh 1 lần (cả folder). Trả { uploaded, failed, items, errors }. */
+export function useUploadMediaBatch() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (formData) => unwrapApiData(await mediaAssetApi.uploadBatch(formData)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mediaAssetQueryKeys.all })
+    },
+  })
+}
+
+export function useMoveMediaAssets() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ ids, folderId }) =>
+      unwrapApiData(await mediaAssetApi.move(ids, folderId)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mediaAssetQueryKeys.all })
+      // Số ảnh mỗi folder đổi → refresh cây folder.
+      queryClient.invalidateQueries({ queryKey: ['media-folders'] })
+    },
+  })
+}
+
 export function useAnalyzeMediaAsset() {
   const queryClient = useQueryClient()
   return useMutation({

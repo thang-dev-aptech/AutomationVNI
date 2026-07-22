@@ -10,6 +10,11 @@ export const mediaAssetApi = {
   upload: (formData) => axiosInstance.post('/api/MediaAsset/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
+  uploadBatch: (formData) => axiosInstance.post('/api/MediaAsset/upload-batch', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  move: (ids, folderId) =>
+    axiosInstance.post('/api/MediaAsset/move', { ids, folderId: folderId ?? null }),
   analyze: (id) => axiosInstance.post(`/api/MediaAsset/${id}/analyze`),
   analyzeAll: (force = false) =>
     axiosInstance.post(`/api/MediaAsset/analyze-all?force=${force}`),

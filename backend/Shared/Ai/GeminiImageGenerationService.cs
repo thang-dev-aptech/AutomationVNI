@@ -92,7 +92,8 @@ public class GeminiImageGenerationService(
         var payload = new
         {
             contents = new[] { new { parts } },
-            generationConfig = new { responseModalities = modalities }
+            // temperature cao để cùng prompt vẫn ra khung khác nhau; biến thiên chính vẫn đến từ prompt.
+            generationConfig = new { responseModalities = modalities, temperature = 1.0 }
         };
 
         var url = BuildGenerateContentUrl(config, model);

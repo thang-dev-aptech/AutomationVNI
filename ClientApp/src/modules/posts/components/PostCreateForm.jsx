@@ -20,6 +20,7 @@ export default function PostCreateForm({
   channels = [],
   categoryTemplates = [],
   pageContexts = [],
+  categories = [],
   isSubmitting,
   errorMessage,
   onSubmit,
@@ -27,6 +28,9 @@ export default function PostCreateForm({
   const [form, setForm] = useState(emptyForm)
   const [channelIds, setChannelIds] = useState([])
   const [showCategoryOverride, setShowCategoryOverride] = useState(false)
+  // Nhánh 2: bật để AI tự tìm 2–3 ảnh kho phù hợp (GenerationFlow.RAG). Kèm "loại bài" để lọc kho.
+  const [useMedia, setUseMedia] = useState(false)
+  const [postTypeId, setPostTypeId] = useState('')
 
   const contextByChannel = useMemo(() => {
     const map = new Map()
@@ -62,7 +66,8 @@ export default function PostCreateForm({
       socialChannelIds: channelIds,
       socialChannelId: channelIds.length === 1 ? channelIds[0] : undefined,
       promptTemplateId: form.promptTemplateId || null,
-      generationFlow: 1,
+      categoryId: useMedia ? (postTypeId || null) : null,
+      generationFlow: useMedia ? 2 : 1,
     })
   }
 
@@ -151,6 +156,39 @@ export default function PostCreateForm({
           </button>
         </p>
       )}
+
+      <div
+        className="form-group"
+        style={{ border: '1px solid var(--color-border, #e5e7eb)', borderRadius: 8, padding: 12 }}
+      >
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 0, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={useMedia}
+            onChange={(event) => setUseMedia(event.target.checked)}
+          />
+          <span>Dùng ảnh từ kho media (AI tự chọn 2–3 ảnh phù hợp nội dung)</span>
+        </label>
+        {useMedia && (
+          <div style={{ marginTop: 10 }}>
+            <label htmlFor="post-type">Loại bài viết — giúp AI lọc ảnh đúng chủ đề (tuỳ chọn)</label>
+            <select
+              id="post-type"
+              value={postTypeId}
+              onChange={(event) => setPostTypeId(event.target.value)}
+            >
+              <option value="">Tất cả loại (không lọc)</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <p style={{ margin: '6px 0 0', fontSize: '0.82rem', color: 'var(--text-muted, #888)' }}>
+              Ngoài ảnh AI (cover), hệ thống tìm thêm 2–3 ảnh từ kho khớp nội dung
+              {postTypeId ? ' và loại bài đã chọn' : ''}. Bạn vẫn có thể thêm/gỡ ảnh ở màn preview.
+            </p>
+          </div>
+        )}
+      </div>
 
       <button
         type="submit"

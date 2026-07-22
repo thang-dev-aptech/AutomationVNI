@@ -108,6 +108,7 @@ builder.Services.AddScoped<Backend.Modules.PromptTemplate.PromptTemplateReposito
 builder.Services.AddScoped<PostRepository>();
 builder.Services.AddScoped<PostWorkflowService>();
 builder.Services.AddScoped<MediaAssetRepository>();
+builder.Services.AddScoped<Backend.Modules.MediaFolder.MediaFolderRepository>();
 builder.Services.AddHttpClient<MediaIntelligenceService>(client =>
     client.Timeout = TimeSpan.FromSeconds(60));
 builder.Services.AddScoped<PostMediaRepository>();
@@ -132,7 +133,16 @@ builder.Services.AddScoped<ApiLogRepository>();
 builder.Services.AddScoped<IDevDataSeeder, DevDataSeeder>();
 builder.Services.AddHttpClient<IAiTextGenerationService, OpenAiCompatibleTextGenerationService>();
 builder.Services.Configure<AiImageProvidersOptions>(builder.Configuration.GetSection("AiImageProviders"));
-builder.Services.AddHttpClient<IAiImageGenerationService, GeminiImageGenerationService>();
+builder.Services.AddHttpClient<IAiImageGenerationService, GeminiImageGenerationService>((sp, client) =>
+{
+    // Áp dụng TimeoutSeconds theo provider mặc định (trước đây là dead config → HttpClient dùng 100s
+    // mặc định, model ảnh chậm như Pro dễ bị timeout). Tối thiểu 30s.
+    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AiImageProvidersOptions>>().Value;
+    var seconds = opts.Providers.TryGetValue(opts.DefaultProvider, out var cfg) && cfg.TimeoutSeconds > 0
+        ? cfg.TimeoutSeconds
+        : 120;
+    client.Timeout = TimeSpan.FromSeconds(Math.Max(30, seconds));
+});
 builder.Services.AddSingleton<MockSocialPublishService>();
 builder.Services.AddHttpClient<FacebookPagePublishService>((sp, client) =>
 {

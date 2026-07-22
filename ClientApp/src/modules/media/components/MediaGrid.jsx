@@ -10,10 +10,9 @@ export default function MediaGrid({
   isError,
   error,
   onRetry,
-  onEdit,
+  onView,
+  onDetails,
   onDelete,
-  onAnalyze,
-  analyzingId = null,
   canManage = false,
   emptyMessage = 'Chưa có media nào',
 }) {
@@ -27,10 +26,9 @@ export default function MediaGrid({
         <MediaAssetCard
           key={asset.id}
           asset={asset}
-          onEdit={onEdit}
+          onView={onView}
+          onDetails={onDetails}
           onDelete={onDelete}
-          onAnalyze={onAnalyze}
-          isAnalyzing={analyzingId === asset.id}
           canManage={canManage}
         />
       ))}

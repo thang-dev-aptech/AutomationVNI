@@ -12,7 +12,7 @@ public class AiImageProviderConfig
     public string Api { get; set; } = "gemini-generatecontent";
     public string BaseUrl { get; set; } = "https://generativelanguage.googleapis.com/v1beta";
     public string ApiKey { get; set; } = string.Empty;
-    public string DefaultImageModel { get; set; } = "gemini-2.5-flash-image";
+    public string DefaultImageModel { get; set; } = "gemini-3-pro-image-preview";
 
     /// <summary>Path template appended to BaseUrl; "{model}" is replaced at call time.</summary>
     public string GenerateContentPath { get; set; } = "/models/{model}:generateContent";
@@ -23,5 +23,5 @@ public class AiImageProviderConfig
     /// </summary>
     public List<string> ResponseModalities { get; set; } = ["IMAGE"];
 
-    public int TimeoutSeconds { get; set; } = 60;
+    public int TimeoutSeconds { get; set; } = 120;
 }

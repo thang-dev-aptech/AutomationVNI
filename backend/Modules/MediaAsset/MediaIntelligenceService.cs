@@ -50,6 +50,14 @@ public class BulkMediaAnalysisResult
     public List<string> Errors { get; set; } = [];
 }
 
+/// <summary>Kết quả nhánh 2 (MediaMatch): 2–3 ảnh phù hợp nhất + nguồn chọn (ai/lexical).</summary>
+public class MediaMatchResult
+{
+    public List<Guid> MediaIds { get; set; } = [];
+    public string Source { get; set; } = "none";   // ai | lexical | none
+    public int CandidateCount { get; set; }
+}
+
 /// <summary>
 /// Dùng model GPT (OpenAI-compatible chat completions, ảnh gửi dạng data URL)
 /// để phân tích ảnh thành 5-7 keyword + alt/description, và xếp hạng media
@@ -237,6 +245,145 @@ public class MediaIntelligenceService(
             .ToList();
 
         return new MediaRecommendationResponse { QueryKeywords = queryKeywords, Items = ranked };
+    }
+
+    /// <summary>
+    /// Nhánh 2 — tìm 2–3 ảnh kho phù hợp với nội dung bài + loại bài (Post.CategoryId).
+    /// Tối ưu token: lexical (0 token) thu kho về top-K candidate, rồi CHỈ 1 call AI chọn ảnh cuối.
+    /// AI lỗi/timeout → fallback top lexical. Kho rỗng / không khớp → trả rỗng (không ném).
+    /// </summary>
+    public async Task<MediaMatchResult> MatchForPostAsync(
+        string content,
+        Guid? postCategoryId,
+        int take = 3,
+        CancellationToken ct = default)
+    {
+        take = Math.Clamp(take, 1, 5);
+        var contentTokens = Tokenize(content);
+
+        var candidates = await db.MediaAssets.AsNoTracking()
+            .Where(x => !x.IsDeleted && x.MimeType.StartsWith("image/"))
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(500)
+            .ToListAsync(ct);
+
+        // Lọc loại bài: CategoryIds chứa loại-bài-của-post HOẶC rỗng (dùng chung mọi loại).
+        if (postCategoryId is Guid cat && cat != Guid.Empty)
+        {
+            var needle = cat.ToString();
+            candidates = candidates
+                .Where(x => string.IsNullOrWhiteSpace(x.CategoryIds) || x.CategoryIds.Contains(needle))
+                .ToList();
+        }
+
+        // Chấm điểm lexical (tái dùng ý tưởng RecommendAsync) → top 20.
+        var scored = candidates
+            .Select(m =>
+            {
+                var kws = ParseKeywords(m.Tags);
+                var mediaTokens = Tokenize(
+                    $"{string.Join(' ', kws)} {m.AltText} {m.Description} {m.OriginalFileName}");
+                var overlap = contentTokens.Count == 0
+                    ? 0
+                    : contentTokens.Intersect(mediaTokens).Count() / (double)contentTokens.Count;
+                var analyzedBoost = kws.Count >= 5 ? 0.08 : 0;
+                return new ScoredMedia(m, kws, overlap + analyzedBoost);
+            })
+            .OrderByDescending(x => x.Score)
+            .ThenByDescending(x => x.Media.CreatedAt)
+            .Take(20)
+            .ToList();
+
+        if (scored.Count == 0)
+            return new MediaMatchResult { Source = "none", CandidateCount = 0 };
+
+        // 1 call AI chọn ảnh cuối; lỗi → fallback lexical.
+        try
+        {
+            var picked = await PickBestMediaAsync(content, scored, take, ct);
+            if (picked.Count > 0)
+                return new MediaMatchResult { MediaIds = picked, Source = "ai", CandidateCount = scored.Count };
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "MediaMatch: AI pick lỗi, fallback lexical top {Take}", take);
+        }
+
+        // Fallback lexical: chỉ lấy ảnh có điểm > 0 (thật sự khớp), tránh gắn ảnh ngẫu nhiên khi AI offline.
+        var lexicalPicks = scored.Where(x => x.Score > 0).Take(take).Select(x => x.Media.Id).ToList();
+        return new MediaMatchResult
+        {
+            MediaIds = lexicalPicks,
+            Source = lexicalPicks.Count > 0 ? "lexical" : "none",
+            CandidateCount = scored.Count
+        };
+    }
+
+    /// <summary>
+    /// 1 call AI: gửi nội dung bài (cắt ~400 ký tự) + candidate NÉN (index thay GUID, keyword top-5,
+    /// description cắt ~80 ký tự) → nhận mảng index. Map index → MediaAssetId theo thứ tự AI trả.
+    /// </summary>
+    private async Task<List<Guid>> PickBestMediaAsync(
+        string content, List<ScoredMedia> scored, int take, CancellationToken ct)
+    {
+        using var quickCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        quickCts.CancelAfter(TimeSpan.FromSeconds(15));
+        var token = quickCts.Token;
+
+        var (_, config, model) = ResolveConfig();
+
+        // index 1-based → media (nén payload để giảm token).
+        var indexed = scored
+            .Select((s, i) => new { i = i + 1, s.Media, s.Keywords })
+            .ToList();
+        var candidatesPayload = indexed
+            .Select(x => new
+            {
+                x.i,
+                kw = x.Keywords.Take(5).ToList(),
+                d = Limit(x.Media.Description ?? x.Media.AltText, 80)
+            })
+            .ToList();
+
+        var systemPrompt =
+            $"Bạn chọn {take} ảnh phù hợp NHẤT với nội dung bài đăng mạng xã hội Việt Nam, dựa trên keyword và mô tả ảnh. " +
+            "CHỈ trả JSON: {\"picked\":[số i của ảnh, tối đa " + take + ", theo độ phù hợp giảm dần]}. " +
+            "Chỉ chọn ảnh thật sự liên quan; nếu không ảnh nào hợp thì trả {\"picked\":[]}.";
+        var userPrompt =
+            $"NỘI DUNG BÀI:\n{Limit(content, 400)}\n\nDANH SÁCH ẢNH (i, kw=keyword, d=mô tả):\n" +
+            JsonSerializer.Serialize(candidatesPayload, JsonOptions);
+
+        var payload = new
+        {
+            model,
+            messages = new object[]
+            {
+                new { role = "system", content = systemPrompt },
+                new { role = "user", content = userPrompt }
+            },
+            max_tokens = 120,
+            temperature = 0
+        };
+
+        var responseText = await CallChatCompletionsAsync(config, payload, token);
+        var parsed = JsonSerializer.Deserialize<PickPayload>(StripJsonFence(responseText), JsonOptions);
+        var byIndex = indexed.ToDictionary(x => x.i, x => x.Media.Id);
+
+        var result = new List<Guid>();
+        foreach (var idx in parsed?.Picked ?? [])
+        {
+            if (byIndex.TryGetValue(idx, out var id) && !result.Contains(id))
+                result.Add(id);
+            if (result.Count >= take) break;
+        }
+        return result;
+    }
+
+    private sealed record ScoredMedia(MediaAssetModel Media, List<string> Keywords, double Score);
+
+    private sealed class PickPayload
+    {
+        public List<int>? Picked { get; set; }
     }
 
     public async Task<List<string>> ExtractQueryKeywordsAsync(string query, CancellationToken ct = default)

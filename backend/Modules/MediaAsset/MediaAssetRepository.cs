@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Backend.Data;
 using Backend.Modules.MediaAsset.Enums;
 using Backend.Shared;
@@ -11,6 +12,27 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
 {
     public MediaAssetRepository(AppDbContext context, IUserContext userContext)
         : base(context, userContext) { }
+
+    /// <summary>Chuẩn hoá danh sách loại bài → JSON array Guid (null nếu rỗng, để coi là "dùng chung").</summary>
+    public static string? SerializeCategoryIds(IEnumerable<Guid>? ids)
+    {
+        var list = (ids ?? []).Where(x => x != Guid.Empty).Distinct().ToList();
+        return list.Count == 0 ? null : JsonSerializer.Serialize(list);
+    }
+
+    /// <summary>Đọc JSON array Guid từ cột CategoryIds; hỏng/null → rỗng.</summary>
+    public static List<Guid> ParseCategoryIds(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try
+        {
+            return JsonSerializer.Deserialize<List<Guid>>(json) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
 
     public async Task<PagedResult<MediaAssetResponse>> FilterAsync(
         MediaAssetFilterRequest request, CancellationToken ct = default)
@@ -33,6 +55,18 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         if (request.CategoryId.HasValue)
             query = query.Where(x => x.CategoryId == request.CategoryId.Value);
 
+        if (request.AppliesToCategoryId is Guid appliesTo && appliesTo != Guid.Empty)
+        {
+            // Ảnh áp dụng loại bài này (CategoryIds JSON chứa guid). So khớp chuỗi guid "D" (không dấu ngoặc).
+            var needle = appliesTo.ToString();
+            query = query.Where(x => x.CategoryIds != null && x.CategoryIds.Contains(needle));
+        }
+
+        if (request.Unassigned == true)
+            query = query.Where(x => x.FolderId == null);
+        else if (request.FolderId.HasValue)
+            query = query.Where(x => x.FolderId == request.FolderId.Value);
+
         if (!string.IsNullOrWhiteSpace(request.MimeType))
             query = query.Where(x => x.MimeType.StartsWith(request.MimeType.Trim()));
 
@@ -47,7 +81,8 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
     }
 
     public async Task<MediaAssetModel> CreateFromUploadAsync(
-        FileSaveResult saveResult, Guid? categoryId = null, string? altText = null, CancellationToken ct = default)
+        FileSaveResult saveResult, Guid? categoryId = null, string? altText = null,
+        Guid? folderId = null, IEnumerable<Guid>? categoryIds = null, CancellationToken ct = default)
     {
         var entity = new MediaAssetModel
         {
@@ -58,6 +93,8 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
             FileSize = saveResult.SizeBytes,
             Source = MediaSource.Upload,
             CategoryId = categoryId,
+            FolderId = folderId,
+            CategoryIds = SerializeCategoryIds(categoryIds),
             AltText = altText?.Trim()
         };
 
@@ -81,6 +118,8 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
             FileSize = request.FileSize,
             Source = request.Source,
             CategoryId = request.CategoryId,
+            FolderId = request.FolderId,
+            CategoryIds = SerializeCategoryIds(request.CategoryIds),
             AltText = request.AltText?.Trim(),
             Description = request.Description?.Trim(),
             Tags = request.Tags,
@@ -89,6 +128,31 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         };
 
         return await base.CreateAsync(entity, ct);
+    }
+
+    /// <summary>Kéo-thả: chuyển nhiều ảnh vào 1 thư mục (null = "Chưa phân loại"). Trả số ảnh đã chuyển.</summary>
+    public async Task<int> MoveAsync(
+        IEnumerable<Guid> ids, Guid? folderId, CancellationToken ct = default)
+    {
+        var idList = ids.Distinct().ToList();
+        if (idList.Count == 0) return 0;
+
+        if (folderId.HasValue)
+        {
+            var folderExists = await Context.Set<Backend.Modules.MediaFolder.MediaFolderModel>()
+                .AnyAsync(x => x.Id == folderId.Value && !x.IsDeleted, ct);
+            if (!folderExists)
+                throw new InvalidOperationException("Thư mục đích không tồn tại.");
+        }
+
+        var assets = await QueryActive().Where(x => idList.Contains(x.Id)).ToListAsync(ct);
+        foreach (var a in assets)
+        {
+            a.FolderId = folderId;
+            ApplyUpdateAudit(a);
+        }
+        await Context.SaveChangesAsync(ct);
+        return assets.Count;
     }
 
     public async Task SetPreviewUrlAsync(MediaAssetModel entity, CancellationToken ct = default)
@@ -109,6 +173,7 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         if (request.Tags is not null) entity.Tags = request.Tags;
         if (request.PublicUrl is not null) entity.PublicUrl = request.PublicUrl.Trim();
         if (request.CategoryId.HasValue) entity.CategoryId = request.CategoryId;
+        if (request.CategoryIds is not null) entity.CategoryIds = SerializeCategoryIds(request.CategoryIds);
 
         ApplyUpdateAudit(entity);
         await Context.SaveChangesAsync(ct);
@@ -127,6 +192,8 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         FileSize = e.FileSize,
         Source = e.Source,
         CategoryId = e.CategoryId,
+        FolderId = e.FolderId,
+        CategoryIds = ParseCategoryIds(e.CategoryIds),
         AltText = e.AltText,
         Description = e.Description,
         Tags = e.Tags,

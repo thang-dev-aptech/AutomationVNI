@@ -47,10 +47,12 @@ public class MediaAssetController
         [FromForm] IFormFile file,
         [FromForm] Guid? categoryId,
         [FromForm] string? altText,
+        [FromForm] Guid? folderId,
+        [FromForm] List<Guid>? categoryIds,
         CancellationToken ct)
     {
         var saveResult = await _fileStorage.SaveAsync(file, "uploads", ct);
-        var entity = await _repo.CreateFromUploadAsync(saveResult, categoryId, altText, ct);
+        var entity = await _repo.CreateFromUploadAsync(saveResult, categoryId, altText, folderId, categoryIds, ct);
         if (entity.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
         {
             try
@@ -66,6 +68,52 @@ public class MediaAssetController
             nameof(GetById),
             new { id = entity.Id },
             ApiResponse.Ok(ToResponse(entity), "Upload media thành công"));
+    }
+
+    /// <summary>
+    /// Upload nhiều ảnh 1 lần (cả folder). Mỗi ảnh lưu + AI gắn nhãn tuần tự (tránh dồn request GPT).
+    /// Ảnh lỗi (quá lớn / không phải ảnh / AI lỗi) không làm hỏng cả batch.
+    /// </summary>
+    [HttpPost("upload-batch")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> UploadBatch(
+        [FromForm] List<IFormFile> files,
+        [FromForm] Guid? folderId,
+        [FromForm] List<Guid>? categoryIds,
+        CancellationToken ct)
+    {
+        if (files is null || files.Count == 0)
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Chưa chọn file nào để upload"));
+
+        var items = new List<MediaAssetResponse>();
+        var errors = new List<string>();
+        foreach (var file in files)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var saveResult = await _fileStorage.SaveAsync(file, "uploads", ct);
+                var entity = await _repo.CreateFromUploadAsync(saveResult, null, null, folderId, categoryIds, ct);
+                if (entity.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                {
+                    try { entity = await _intelligence.AnalyzeAndSaveAsync(entity.Id, ct); }
+                    catch { /* Ảnh vẫn lưu; có thể "Phân tích lại" sau. */ }
+                }
+                items.Add(ToResponse(entity));
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"{file.FileName}: {ex.Message}");
+            }
+        }
+
+        return Ok(ApiResponse.Ok(
+            new { uploaded = items.Count, failed = errors.Count, items, errors },
+            $"Đã upload {items.Count} ảnh; lỗi {errors.Count}"));
     }
 
     [HttpPost("{id:guid}/analyze")]
@@ -108,6 +156,22 @@ public class MediaAssetController
         catch (Exception ex)
         {
             return BadRequest(ApiResponse.Fail("MEDIA_ANALYSIS_ALL_FAILED", ex.Message));
+        }
+    }
+
+    [HttpPost("move")]
+    public async Task<IActionResult> Move(
+        [FromBody] MoveMediaAssetsRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            var moved = await _repo.MoveAsync(request.Ids, request.FolderId, ct);
+            return Ok(ApiResponse.Ok(new { moved }, $"Đã chuyển {moved} ảnh"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse.Fail("MEDIA_MOVE_FAILED", ex.Message));
         }
     }
 

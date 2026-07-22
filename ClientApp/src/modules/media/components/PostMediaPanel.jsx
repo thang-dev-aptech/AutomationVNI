@@ -136,14 +136,14 @@ export default function PostMediaPanel({ postId, post }) {
               onClick={() => { setActionError(''); setPickerOpen(true) }}
               disabled={isBusy}
             >
-              ✨ Chọn media phù hợp
+              + Chọn trong media
             </button>
           )}
         </div>
       </div>
       <p style={{ margin: '0 0 12px', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-        Ảnh AI sinh sẽ là cover. Có thể thêm nhiều ảnh từ kho (AI lọc theo nội dung bài),
-        gỡ ảnh không ưng hoặc đổi cover trước khi đăng.
+        Ảnh AI sinh là cover; nếu bật &quot;dùng media&quot; khi tạo bài, AI đã tự thêm 2–3 ảnh kho phù hợp.
+        Có thể thêm ảnh từ kho, gỡ ảnh không ưng hoặc đổi cover trước khi đăng.
       </p>
 
       {actionError && <div className="alert alert-error">{actionError}</div>}
@@ -154,7 +154,7 @@ export default function PostMediaPanel({ postId, post }) {
       {!isLoading && !isError && (
         orderedLinks.length === 0 ? (
           <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-            Chưa có ảnh — chờ AI sinh ảnh hoặc nhấn &quot;Chọn media phù hợp&quot; để thêm từ kho.
+            Chưa có ảnh — chờ AI sinh ảnh hoặc nhấn &quot;Chọn trong media&quot; để thêm từ kho.
           </p>
         ) : (
           <div className="post-media-gallery">
@@ -213,6 +213,7 @@ export default function PostMediaPanel({ postId, post }) {
         onConfirm={handlePickerConfirm}
         query={aiQuery}
         initialSelected={attachedAssets}
+        allowAi={false}
       />
     </div>
   )

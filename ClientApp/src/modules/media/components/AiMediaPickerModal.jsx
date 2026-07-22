@@ -20,8 +20,9 @@ export default function AiMediaPickerModal({
   onConfirm,
   query = '',
   initialSelected = [],
+  allowAi = true,
 }) {
-  const [mode, setMode] = useState('ai')
+  const [mode, setMode] = useState(allowAi ? 'ai' : 'all')
   const [searchText, setSearchText] = useState(query)
   const [keyword, setKeyword] = useState('')
   const [selected, setSelected] = useState(new Map())
@@ -29,7 +30,7 @@ export default function AiMediaPickerModal({
   useEffect(() => {
     if (!open) return
     setSearchText(query)
-    setMode(query.trim() ? 'ai' : 'all')
+    setMode(allowAi && query.trim() ? 'ai' : 'all')
     setSelected(new Map(initialSelected.map((asset) => [asset.id, asset])))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -96,7 +97,7 @@ export default function AiMediaPickerModal({
   return (
     <Modal
       open={open}
-      title="Chọn media phù hợp"
+      title={allowAi ? 'Chọn media phù hợp' : 'Chọn ảnh từ kho'}
       onClose={onClose}
       footer={(
         <>
@@ -114,22 +115,24 @@ export default function AiMediaPickerModal({
         </>
       )}
     >
-      <div className="ai-media-picker-tabs">
-        <button
-          type="button"
-          className={`btn btn-sm ${isAi ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setMode('ai')}
-        >
-          ✨ AI gợi ý theo nội dung
-        </button>
-        <button
-          type="button"
-          className={`btn btn-sm ${!isAi ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setMode('all')}
-        >
-          Tất cả media
-        </button>
-      </div>
+      {allowAi && (
+        <div className="ai-media-picker-tabs">
+          <button
+            type="button"
+            className={`btn btn-sm ${isAi ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setMode('ai')}
+          >
+            ✨ AI gợi ý theo nội dung
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${!isAi ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setMode('all')}
+          >
+            Tất cả media
+          </button>
+        </div>
+      )}
 
       {isAi ? (
         <div className="form-group">

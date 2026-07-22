@@ -41,6 +41,71 @@ public class OpenAiCompatibleTextGenerationService(
         - Độ dài thân bài khoảng 80–160 từ (chưa tính hashtag).
         """;
 
+    private const string ImagePromptSystem = """
+        You are a senior creative director at a premium social-media ad agency. From the Vietnamese
+        caption, the brand context, and a CREATIVE DIRECTION brief, WRITE ONE rich, specific English
+        prompt (240-340 words) for an AI image generator to produce a striking, ORIGINAL 1:1 design in
+        the FORMAT given in the brief (a banner, poster, advertising key visual, magazine ad, etc.) —
+        vary the genre so consecutive designs never feel like the same template.
+
+        Your #1 goal: REALIZE the given creative direction so the banner looks intentionally DESIGNED,
+        not like a default AI template. Follow the brief's composition, typography, visual style, mood
+        and hero focus faithfully and boldly — let it drive a distinctive layout.
+
+        AVOID these over-used "AI-looking" layouts:
+        - logo top-left + a person on the right + a row of feature chips + a full-width CTA bar at the bottom;
+        - a plain horizontal three-stack: logo/title on top, one photo in the middle, contact bar at the bottom.
+        Do something clearly different, driven by the brief.
+
+        FILL & FOCUS (important):
+        - Fill the whole square richly — either ONE full-bleed scene, or a rich photo scene on one side
+          plus a densely-designed content panel on the other. Never a subject floating on a plain, empty
+          or studio backdrop; leave no large empty, flat or monotone areas. Do NOT fill with scattered
+          decorative patterns, and do NOT collage or stack multiple large overlapping photos.
+        - Establish ONE clear FOCAL POINT (per the brief) that pops above everything via scale, contrast,
+          lighting or an accent colour — the eye must land there first. Build a strong visual HIERARCHY;
+          everything else is clearly secondary. Avoid a flat, evenly-weighted layout where nothing stands out.
+        - Colour & harmony (IMPORTANT — must always look tasteful, never garish): colour the MAIN CONTENT
+          BLOCK per the brief's "Content block" — vary it across designs, do NOT always default to blue.
+          Blue/navy is the anchor; orange and green appear ONLY as small accents (a thin line, an icon,
+          the CTA, one keyword) — NEVER as a large solid background fill (a big saturated green or orange
+          panel looks cheap). Keep a calm, harmonious, premium palette: one dominant block colour + white/
+          neutral space + at most one accent. Avoid clashing or over-saturated colour combinations. Ensure
+          high contrast so text stays perfectly legible on whatever block colour is chosen.
+        - You MAY add a few tasteful, topic-related supporting graphics or highlight badges (small icons,
+          stat pills, benefit tags) that reinforce the focal point — organised, never cluttered.
+
+        Respect the brand (non-negotiable) but express it creatively:
+        - Reserve a tasteful, uncluttered spot for the PROVIDED brand logo — placement can be creative
+          (not always top-left); keep it exact, do NOT redraw or recolor it.
+        - Use the brand colors as the palette.
+        - Include the exact Vietnamese headline and subheadline; keep ALL Vietnamese text large, clean and
+          perfectly legible with correct diacritics. NEVER sacrifice readability for style (no heavy
+          outline/overlap that garbles Vietnamese text). If the brief's "Script accent" asks for a
+          handwritten/script touch, apply it to only ONE short phrase (a hook or tagline) and keep it
+          clearly legible; otherwise keep all type clean sans-serif.
+        - Feature highlights: if feature labels are provided, use EXACTLY them; otherwise derive 3-4
+          DISTINCT feature points from the caption. Never duplicate a label or add extras — each as a
+          small actual-glyph icon plus its short Vietnamese label.
+        - CTA & CONTACT (MANDATORY — this is a Facebook ad; NEVER omit it, whatever the creative layout):
+          include BOTH a clearly visible CTA button with a short Vietnamese action label AND a legible
+          contact strip that prints the EXACT hotline and website provided, copied verbatim (do not alter,
+          abbreviate, translate or invent). Integrate it tastefully into the composition — but it must be
+          present and readable in every single design.
+
+        Write as labelled lines: Concept, Composition & layout, Focal point & hierarchy (what pops first),
+        Scene & framing (how the frame is filled), Subject/imagery, Typography & headline,
+        Brand, colour & emphasis, Feature highlights, CTA & contact (button + exact hotline/website),
+        Finishing details (shapes, depth, lighting), Quality constraints (ultra realistic OR clean vector
+        as the style fits, 4K, sharp Vietnamese text, no watermark, no gibberish/garbled text on
+        props/screens, no distorted hands/faces, readable on mobile).
+
+        Rules:
+        - Ground every choice in the caption; realize the CREATIVE DIRECTION distinctly each time.
+        - If an AVOID layout/prompt is given, make a clearly different composition from it.
+        - Output ONLY the prompt text. No JSON, no markdown, no preamble.
+        """;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -179,6 +244,127 @@ public class OpenAiCompatibleTextGenerationService(
 
         var content = StripMarkdownJson(ExtractMessageContent(body));
         return ParseIdeas(content, count);
+    }
+
+    public async Task<string> ComposeImagePromptAsync(
+        AiImagePromptRequest request, CancellationToken ct = default)
+    {
+        var providerKey = request.Provider ?? options.Value.DefaultProvider;
+        AiProviderConfig config;
+        try
+        {
+            config = ResolveProviderConfig(providerKey, request.Model);
+        }
+        catch (AiProviderConfigException)
+        {
+            return string.Empty;
+        }
+
+        var model = request.Model ?? config.DefaultTextModel;
+        if (string.IsNullOrWhiteSpace(config.ApiKey)
+            || !string.Equals(config.Api, "openai-completions", StringComparison.OrdinalIgnoreCase))
+            return string.Empty;
+
+        var payload = new
+        {
+            model,
+            messages = new object[]
+            {
+                new { role = "system", content = ImagePromptSystem },
+                new { role = "user", content = BuildImagePromptUser(request) }
+            },
+            max_tokens = config.MaxTokens,
+            // Nhiệt độ cao để mỗi lần sinh cho một bố cục khác (brand vẫn khóa ở AppendBrandLock).
+            temperature = 0.95
+        };
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, BuildCompletionsUrl(config));
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey);
+        httpRequest.Content = new StringContent(
+            JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
+
+        try
+        {
+            var response = await httpClient.SendAsync(httpRequest, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning(
+                    "AI image-prompt provider {Provider} returned HTTP {StatusCode}",
+                    providerKey, (int)response.StatusCode);
+                return string.Empty;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(ct);
+            return StripMarkdownJson(ExtractMessageContent(body)).Trim();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Không chặn sinh ảnh: caller sẽ fallback prompt tĩnh khi trả rỗng.
+            logger.LogWarning(ex, "AI image-prompt composition failed for provider {Provider}", providerKey);
+            return string.Empty;
+        }
+    }
+
+    private static string BuildImagePromptUser(AiImagePromptRequest r)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("## Caption (tiếng Việt) — nguồn ngữ cảnh");
+        sb.AppendLine((string.IsNullOrWhiteSpace(r.Caption) ? r.Title : r.Caption)?.Trim() ?? string.Empty);
+
+        if (!string.IsNullOrWhiteSpace(r.CreativeBrief))
+        {
+            sb.AppendLine();
+            sb.AppendLine("## CREATIVE DIRECTION (realize this fully, boldly — it drives the layout)");
+            sb.AppendLine(r.CreativeBrief.Trim());
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("## Brand context");
+        AppendLine(sb, "Brand", r.Brand);
+        AppendLine(sb, "Category", r.Category);
+        AppendLine(sb, "Brand colors", r.BrandColors);
+        AppendLine(sb, "Banner headline", r.BannerHeadline);
+        AppendLine(sb, "Banner subheadline", r.BannerSubheadline);
+        AppendLine(sb, "CTA button label", string.IsNullOrWhiteSpace(r.BannerCta) ? r.Cta : r.BannerCta);
+        AppendLine(sb, "Feature labels (use exactly these, no duplicates)", r.FeatureLabels);
+        if (r.HasLogoReference)
+            sb.AppendLine("Logo: a brand logo image is provided separately — keep it exact, do not redraw.");
+
+        // CTA/contact bắt buộc — đưa giá trị thật để LLM in đúng, không bịa.
+        if (!string.IsNullOrWhiteSpace(r.Hotline) || !string.IsNullOrWhiteSpace(r.Website))
+        {
+            sb.AppendLine();
+            sb.AppendLine("## CTA & CONTACT (MANDATORY — must appear clearly in the banner, print verbatim)");
+            AppendLine(sb, "Hotline (print exactly)", r.Hotline);
+            AppendLine(sb, "Website (print exactly)", r.Website);
+        }
+
+        if (!string.IsNullOrWhiteSpace(r.StyleGuide))
+        {
+            sb.AppendLine();
+            sb.AppendLine("## Style guide (tham chiếu phong cách, KHÔNG copy nguyên văn)");
+            sb.AppendLine(r.StyleGuide.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(r.ImagePromptHint))
+        {
+            sb.AppendLine();
+            sb.AppendLine("## Gợi ý bố cục ban đầu");
+            sb.AppendLine(r.ImagePromptHint.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(r.AvoidLayout))
+        {
+            sb.AppendLine();
+            sb.AppendLine("## AVOID — bố cục lần trước (hãy làm KHÁC đi)");
+            sb.AppendLine(r.AvoidLayout.Trim());
+        }
+
+        return sb.ToString().Trim();
     }
 
     private static List<string> ParseIdeas(string json, int count)

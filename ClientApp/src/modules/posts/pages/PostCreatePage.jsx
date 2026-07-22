@@ -9,6 +9,7 @@ import { toast } from '@/shared/stores/toastStore'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
 import { usePageContextList } from '@/modules/page-contexts/hooks/usePageContexts'
+import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import PostCreateForm from '../components/PostCreateForm'
 import { useCreateAndGeneratePost } from '../hooks/usePosts'
 
@@ -34,11 +35,16 @@ export default function PostCreatePage() {
     data: pageContextData,
     isLoading: pageContextsLoading,
   } = usePageContextList({ index: 1, size: 200 })
+  const {
+    data: categoryData,
+    isLoading: categoriesLoading,
+  } = useCategoryList({ index: 1, size: 200 })
   const [errorMessage, setErrorMessage] = useState('')
 
   const categoryTemplates = tplData?.items ?? []
   const pageContexts = pageContextData?.items ?? []
-  const isLoading = channelsLoading || templatesLoading || pageContextsLoading
+  const categories = categoryData?.items ?? []
+  const isLoading = channelsLoading || templatesLoading || pageContextsLoading || categoriesLoading
 
   const handleSubmit = async (payload) => {
     setErrorMessage('')
@@ -91,6 +97,7 @@ export default function PostCreatePage() {
             channels={channels}
             categoryTemplates={categoryTemplates}
             pageContexts={pageContexts}
+            categories={categories}
             isSubmitting={createMutation.isPending}
             errorMessage={errorMessage}
             onSubmit={handleSubmit}

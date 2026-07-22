@@ -34,6 +34,50 @@ public class AiTextGenerationResult
     public string? RawResponse { get; set; }
 }
 
+/// <summary>
+/// Yêu cầu LLM viết banner-prompt chi tiết TỪ caption đã sinh (bước ngầm trong image job).
+/// Trả về prompt tiếng Anh giàu art-direction; nhận diện brand (logo/hotline/website) vẫn khóa
+/// ở AppendBrandLock nên phần này chỉ lo bố cục + phong cách để ảnh mỗi lần một khác.
+/// </summary>
+public class AiImagePromptRequest
+{
+    public string? Provider { get; set; }
+    public string? Model { get; set; }
+
+    /// <summary>Caption / nội dung bài đã sinh — nguồn ngữ cảnh chính.</summary>
+    public string? Caption { get; set; }
+    public string? Title { get; set; }
+    public string? Category { get; set; }
+    public string? Brand { get; set; }
+    public string? BrandColors { get; set; }
+    public string? Cta { get; set; }
+    public string? BannerHeadline { get; set; }
+    public string? BannerSubheadline { get; set; }
+    public string? BannerCta { get; set; }
+
+    /// <summary>Hotline/Website thật — LLM phải in đúng vào khối CTA (không bịa, không sửa).</summary>
+    public string? Hotline { get; set; }
+    public string? Website { get; set; }
+
+    /// <summary>Danh sách nhãn tính năng (đúng, không lặp) để LLM không tự bịa/nhân đôi chip.</summary>
+    public string? FeatureLabels { get; set; }
+
+    /// <summary>Gợi ý phong cách/bố cục từ template ImageBody (đã render biến) — LLM tham chiếu, không copy nguyên.</summary>
+    public string? StyleGuide { get; set; }
+
+    /// <summary>Prompt ngắn AI text đã đề xuất — dùng làm gợi ý bổ sung.</summary>
+    public string? ImagePromptHint { get; set; }
+
+    /// <summary>Prompt/bố cục lần sinh trước — LLM phải đề xuất bố cục KHÁC để tránh ảnh na ná.</summary>
+    public string? AvoidLayout { get; set; }
+
+    /// <summary>Hướng sáng tạo bốc ngẫu nhiên (composition/typography/style/mood/hero) để mỗi lần một bố cục khác.</summary>
+    public string? CreativeBrief { get; set; }
+
+    /// <summary>Có logo tham chiếu kèm không — để nhắc chừa chỗ đặt logo, không tự vẽ.</summary>
+    public bool HasLogoReference { get; set; }
+}
+
 public class SuggestIdeasRequest
 {
     public string Topic { get; set; } = string.Empty;

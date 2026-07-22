@@ -48,6 +48,9 @@ public class GenerationJobPipelineService(
     private static readonly PostStatus[] QueueRenderAllowedStatuses =
         [PostStatus.WaitingReview, PostStatus.NeedFix, PostStatus.Failed];
 
+    private static readonly PostStatus[] QueueMediaMatchAllowedStatuses =
+        [PostStatus.WaitingReview, PostStatus.Approved, PostStatus.NeedMedia, PostStatus.GeneratingMedia];
+
     /// <summary>
     /// Sinh trọn nội dung cho 1 post: text → image. Dùng chung cho create-and-generate (đồng bộ)
     /// và PostGenerationWorker (bulk, chạy nền). Caller tự Approve nếu muốn bỏ cổng duyệt
@@ -59,15 +62,27 @@ public class GenerationJobPipelineService(
         var textJob = await QueueTextGenerationAsync(postId, ct);
         await ProcessAsync(textJob.JobId, ct);
 
-        if (await HasAttachedMediaAsync(postId, ct))
+        var post = await RequirePostAsync(postId, ct);
+        var useMedia = post.GenerationFlow == GenerationFlow.RAG;
+
+        // FullAI + user đã gắn media sẵn → giữ hành vi cũ: bỏ sinh ảnh AI.
+        if (!useMedia && await HasAttachedMediaAsync(postId, ct))
         {
             logger.LogInformation(
-                "Post {PostId} đã có media chọn từ kho — bỏ qua sinh ảnh AI", postId);
+                "Post {PostId} (FullAI) đã có media chọn từ kho — bỏ qua sinh ảnh AI", postId);
             return;
         }
 
+        // Nhánh 1 — sinh ảnh AI làm cover (luôn chạy).
         var imageJob = await QueueImageGenerationAsync(postId, ct);
         await ProcessAsync(imageJob.JobId, ct);
+
+        // Nhánh 2 — RAG: tìm 2–3 ảnh kho phù hợp gắn làm attachment (song song về mặt nghiệp vụ).
+        if (useMedia)
+        {
+            var matchJob = await QueueMediaMatchAsync(postId, ct);
+            await ProcessAsync(matchJob.JobId, ct);
+        }
     }
 
     private async Task<bool> HasAttachedMediaAsync(Guid postId, CancellationToken ct)
@@ -198,6 +213,46 @@ public class GenerationJobPipelineService(
         };
     }
 
+    public async Task<QueueMediaMatchResponse> QueueMediaMatchAsync(
+        Guid postId, CancellationToken ct = default)
+    {
+        var post = await RequirePostAsync(postId, ct);
+        EnsurePostStatus(post, "queue media match", QueueMediaMatchAllowedStatuses);
+
+        if (string.IsNullOrWhiteSpace(post.Content))
+            throw new ArgumentException("Bài viết chưa có nội dung text, cần sinh text trước");
+
+        var activeJob = await FindActiveJobAsync(postId, JobType.MediaMatch, ct);
+        if (activeJob is not null)
+            throw new ArgumentException("Đã có job tìm media đang chờ hoặc đang xử lý");
+
+        var idempotencyKey = $"media_match:{postId}:{DateTime.UtcNow:yyyyMMddHHmmss}";
+        var job = await jobRepository.CreateAsync(new CreateGenerationJobRequest
+        {
+            PostId = postId,
+            JobType = JobType.MediaMatch,
+            FlowType = ResolveFlowType(post),
+            Priority = 0,
+            MaxRetries = 1,
+            IdempotencyKey = idempotencyKey,
+            InputPayload = $"{{\"postId\":\"{postId}\",\"categoryId\":\"{post.CategoryId}\"}}"
+        }, ct);
+
+        post.Status = PostStatus.GeneratingMedia;
+        post.GenerationError = null;
+        ApplyPostUpdate(post);
+        await context.SaveChangesAsync(ct);
+
+        return new QueueMediaMatchResponse
+        {
+            PostId = postId,
+            JobId = job.Id,
+            IdempotencyKey = idempotencyKey,
+            JobStatus = job.Status,
+            JobType = job.JobType
+        };
+    }
+
     public async Task<ProcessGenerationJobResponse> ProcessAsync(
         Guid jobId, CancellationToken ct = default)
     {
@@ -209,6 +264,7 @@ public class GenerationJobPipelineService(
             JobType.TextGeneration => await ProcessTextGenerationAsync(job, ct),
             JobType.ImageGeneration => await ProcessImageGenerationAsync(job, ct),
             JobType.ImageOverlay => await ProcessImageOverlayAsync(job, ct),
+            JobType.MediaMatch => await ProcessMediaMatchAsync(job, ct),
             _ => throw new ArgumentException($"Job type '{job.JobType}' chưa được hỗ trợ mock process")
         };
     }
@@ -992,6 +1048,81 @@ public class GenerationJobPipelineService(
         };
     }
 
+    /// <summary>
+    /// Nhánh 2 (RAG): tìm 2–3 ảnh kho phù hợp nội dung + loại bài, gắn làm Attachment.
+    /// Ảnh AI (cover) đã do nhánh 1 tạo trước; bỏ ảnh trùng để không nhân đôi.
+    /// </summary>
+    private async Task<ProcessGenerationJobResponse> ProcessMediaMatchAsync(
+        GenerationJobModel job, CancellationToken ct)
+    {
+        var post = await RequirePostAsync(job.PostId, ct);
+
+        job.Status = JobStatus.Processing;
+        job.StartedAt = DateTime.UtcNow;
+        job.ErrorMessage = null;
+        job.ErrorCode = null;
+        ApplyJobUpdate(job);
+
+        post.Status = PostStatus.GeneratingMedia;
+        ApplyPostUpdate(post);
+        await context.SaveChangesAsync(ct);
+
+        var content = string.IsNullOrWhiteSpace(post.Content) ? post.Title : post.Content!;
+        var match = await mediaIntelligenceService.MatchForPostAsync(content, post.CategoryId, take: 3, ct);
+
+        var existing = await postMediaRepository.GetByPostAsync(post.Id, ct);
+        var existingMediaIds = existing.Select(x => x.MediaId).ToHashSet();
+        var hasCover = existing.Any(x => x.MediaRole == MediaRole.Cover);
+        var maxSort = existing.Count == 0 ? 0 : existing.Max(x => x.SortOrder);
+
+        var attached = new List<Guid>();
+        foreach (var mediaId in match.MediaIds)
+        {
+            if (existingMediaIds.Contains(mediaId)) continue;
+
+            var isCover = !hasCover;
+            hasCover = true;
+            await postMediaRepository.CreateAsync(new CreatePostMediaRequest
+            {
+                PostId = post.Id,
+                MediaId = mediaId,
+                MediaRole = isCover ? MediaRole.Cover : MediaRole.Attachment,
+                SortOrder = isCover ? 0 : ++maxSort
+            }, ct);
+            attached.Add(mediaId);
+        }
+
+        var outputJson = JsonSerializer.Serialize(new
+        {
+            matchedMediaIds = attached,
+            source = match.Source,
+            candidateCount = match.CandidateCount
+        }, JsonOptions);
+
+        job.Status = JobStatus.Completed;
+        job.CompletedAt = DateTime.UtcNow;
+        job.OutputPayload = outputJson;
+        ApplyJobUpdate(job);
+
+        post.Status = PostStatus.WaitingReview;
+        post.GenerationError = null;
+        ApplyPostUpdate(post);
+        await context.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "Post {PostId} media match: gắn {Count} ảnh (nguồn={Source}, candidate={Cand})",
+            post.Id, attached.Count, match.Source, match.CandidateCount);
+
+        return new ProcessGenerationJobResponse
+        {
+            JobId = job.Id,
+            PostId = post.Id,
+            JobType = job.JobType,
+            JobStatus = job.Status,
+            OutputPayload = outputJson
+        };
+    }
+
     // --- helpers ---
 
     private async Task<PostModel> RequirePostAsync(Guid id, CancellationToken ct)
@@ -1062,6 +1193,35 @@ public class GenerationJobPipelineService(
         return textJob is null
             ? null
             : MockImageGenerator.TryExtractImagePrompt(textJob.OutputPayload);
+    }
+
+    /// <summary>
+    /// Prompt của ảnh Completed gần nhất của post — truyền vào LLM làm "AVOID" để ép bố cục khác,
+    /// tránh tạo lại ra ảnh na ná. Không có (lần sinh đầu) thì trả null.
+    /// </summary>
+    private async Task<string?> GetPreviousImagePromptAsync(Guid postId, CancellationToken ct)
+    {
+        var imageJob = await context.Set<GenerationJobModel>()
+            .Where(x => !x.IsDeleted
+                && x.PostId == postId
+                && x.JobType == JobType.ImageGeneration
+                && x.Status == JobStatus.Completed
+                && x.OutputPayload != null)
+            .OrderByDescending(x => x.CompletedAt ?? x.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        if (imageJob?.OutputPayload is null) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(imageJob.OutputPayload);
+            if (doc.RootElement.TryGetProperty("prompt", out var p) && p.ValueKind == JsonValueKind.String)
+                return p.GetString();
+        }
+        catch (JsonException)
+        {
+            // OutputPayload không phải JSON hợp lệ — bỏ qua, coi như không có prompt trước.
+        }
+        return null;
     }
 
     private static JobFlowType ResolveFlowType(PostModel post)
@@ -1187,18 +1347,56 @@ public class GenerationJobPipelineService(
         var banner = ExtractBannerCopy(post.ExtraJson);
         var templateBody = await ResolveImageTemplateBodyAsync(post, ctx.PageContext, ct);
 
-        if (!string.IsNullOrWhiteSpace(templateBody))
+        // Template giờ là "style guide": render biến để LLM tham chiếu phong cách, KHÔNG dùng làm prompt cuối.
+        var styleGuide = string.IsNullOrWhiteSpace(templateBody)
+            ? null
+            : PromptTemplateRenderer.Render(
+                templateBody,
+                ctx.ToVariables(title: post.Title, caption: post.Content, aiImagePrompt: aiImagePrompt, banner: banner));
+
+        // Bước ngầm: LLM viết prompt banner chi tiết TỪ caption (giống thao tác "từ caption viết prompt" trên GPT web).
+        if (aiTextGenerationService.IsAvailable())
         {
-            var vars = ctx.ToVariables(
-                title: post.Title, caption: post.Content, aiImagePrompt: aiImagePrompt, banner: banner);
-            var rendered = PromptTemplateRenderer.Render(templateBody, vars);
-            if (!string.IsNullOrWhiteSpace(rendered))
+            var avoidLayout = await GetPreviousImagePromptAsync(post.Id, ct);
+            // Bốc ngẫu nhiên hướng sáng tạo → mỗi lần một bố cục khác, tránh 2 dạng generic.
+            var creativeBrief = CreativeDirectionLibrary.BuildBrief(new Random());
+            var composed = await aiTextGenerationService.ComposeImagePromptAsync(new AiImagePromptRequest
+            {
+                Caption = string.IsNullOrWhiteSpace(post.Content) ? post.Title : post.Content,
+                Title = post.Title,
+                Category = ctx.Category,
+                Brand = ctx.Brand,
+                BrandColors = ctx.BrandColors,
+                Cta = ctx.Cta,
+                BannerHeadline = FirstNonEmpty(banner?.Headline, post.Title),
+                BannerSubheadline = FirstNonEmpty(banner?.Subheadline, ctx.Category),
+                BannerCta = FirstNonEmpty(banner?.Cta, ctx.Cta),
+                Hotline = ctx.Hotline,
+                Website = ctx.Website,
+                StyleGuide = string.IsNullOrWhiteSpace(styleGuide) ? null : styleGuide,
+                ImagePromptHint = aiImagePrompt,
+                AvoidLayout = avoidLayout,
+                CreativeBrief = creativeBrief,
+                HasLogoReference = ctx.PageContext?.LogoMediaId is not null
+            }, ct);
+
+            if (!string.IsNullOrWhiteSpace(composed))
             {
                 logger.LogInformation(
-                    "Post {PostId} image generation uses prompt template (pageContext={HasPc})",
-                    post.Id, ctx.PageContext is not null);
-                return rendered;
+                    "Post {PostId} image prompt composed by LLM ({Len} chars, styleGuide={HasGuide}, variedFromPrev={Varied}). Creative brief: {Brief}",
+                    post.Id, composed.Length, !string.IsNullOrWhiteSpace(styleGuide), !string.IsNullOrWhiteSpace(avoidLayout),
+                    creativeBrief.Replace("\n", " | "));
+                return composed.Trim();
             }
+        }
+
+        // Fallback khi LLM không khả dụng / lỗi: giữ hành vi cũ — style guide đã render → imagePrompt → generic.
+        if (!string.IsNullOrWhiteSpace(styleGuide))
+        {
+            logger.LogInformation(
+                "Post {PostId} image generation uses rendered template (LLM prompt unavailable, pageContext={HasPc})",
+                post.Id, ctx.PageContext is not null);
+            return styleGuide;
         }
 
         if (!string.IsNullOrWhiteSpace(aiImagePrompt))

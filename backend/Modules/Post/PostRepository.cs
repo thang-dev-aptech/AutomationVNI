@@ -182,6 +182,7 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         Guid? promptTemplateId,
         IReadOnlyDictionary<Guid, PageContextModel> pageContextByChannel,
         string? objective,
+        Guid? categoryId = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(title))
@@ -223,6 +224,7 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
                 Title = title.Trim(),
                 SocialChannelId = ch,
                 GenerationFlow = generationFlow,
+                CategoryId = categoryId,
                 TextTemplateId = textTpl,
                 ImageTemplateId = imageTpl,
                 BatchId = batchId,

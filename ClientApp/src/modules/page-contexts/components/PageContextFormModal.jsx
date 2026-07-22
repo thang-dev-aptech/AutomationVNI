@@ -3,6 +3,7 @@ import Modal from '@/shared/components/Modal'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
 import { useMediaAssetAll } from '@/modules/media/hooks/useMediaAssets'
+import { useMediaFolderTree } from '@/modules/media/hooks/useMediaFolders'
 import { IMAGE_MIME_PREFIX } from '@/modules/media/constants/mediaConstants'
 
 const EMPTY_GUID = '00000000-0000-0000-0000-000000000000'
@@ -41,9 +42,12 @@ export default function PageContextFormModal({
   })
   const categoryTemplates = tplData?.items ?? []
   const { data: mediaAssets = [] } = useMediaAssetAll()
+  const { data: mediaFolders = [] } = useMediaFolderTree()
+  const [logoFolderId, setLogoFolderId] = useState('')
   const logoOptions = mediaAssets.filter((asset) =>
-    asset.mimeType?.startsWith(IMAGE_MIME_PREFIX))
-  const selectedLogo = logoOptions.find((asset) => asset.id === form.logoMediaId)
+    asset.mimeType?.startsWith(IMAGE_MIME_PREFIX)
+    && (!logoFolderId || asset.folderId === logoFolderId))
+  const selectedLogo = mediaAssets.find((asset) => asset.id === form.logoMediaId)
   const selectableChannels = channels.filter(
     (channel) =>
       isEdit
@@ -165,6 +169,19 @@ export default function PageContextFormModal({
         </div>
         <div className="form-group">
           <label htmlFor="context-logo">Logo thương hiệu</label>
+          {mediaFolders.length > 0 && (
+            <select
+              id="context-logo-folder"
+              value={logoFolderId}
+              onChange={(event) => setLogoFolderId(event.target.value)}
+              style={{ marginBottom: 8 }}
+            >
+              <option value="">📁 Tất cả thư mục</option>
+              {mediaFolders.map((folder) => (
+                <option key={folder.id} value={folder.id}>{folder.name}</option>
+              ))}
+            </select>
+          )}
           <select
             id="context-logo"
             value={form.logoMediaId}

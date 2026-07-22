@@ -148,6 +148,7 @@ public class PostController
                 promptTemplateId: packId,
                 pageContextByChannel: pageMap,
                 objective: request.Objective,
+                categoryId: request.CategoryId,
                 ct: ct);
 
             return Ok(ApiResponse.Ok(bulk,
