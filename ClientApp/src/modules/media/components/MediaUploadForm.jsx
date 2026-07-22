@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Modal from '@/shared/components/Modal'
 import {
   fileNameFromUrl,
@@ -30,15 +30,30 @@ export default function MediaUploadForm({
   const [fileError, setFileError] = useState('')
   const [folderId, setFolderId] = useState('')
   const [categoryIds, setCategoryIds] = useState([])
+  const [categorySearch, setCategorySearch] = useState('')
 
   useEffect(() => {
     if (open) {
       setFolderId(defaultFolderId ?? '')
       setFiles([])
       setCategoryIds([])
+      setCategorySearch('')
       setFileError('')
     }
   }, [open, defaultFolderId])
+
+  const categoryMap = useMemo(
+    () => Object.fromEntries(categories.map((c) => [c.id, c.name])),
+    [categories],
+  )
+  // Chỉ render danh sách đã lọc + giới hạn để không dựng hàng trăm nút cùng lúc.
+  const filteredCategories = useMemo(() => {
+    const kw = categorySearch.trim().toLowerCase()
+    const base = kw
+      ? categories.filter((c) => c.name.toLowerCase().includes(kw))
+      : categories
+    return base.slice(0, 50)
+  }, [categories, categorySearch])
 
   const handleChange = (field) => (event) => {
     setForm((prev) => ({ ...prev, [field]: event.target.value }))
@@ -189,23 +204,78 @@ export default function MediaUploadForm({
           {categories.length > 0 && (
             <div className="form-group">
               <label>Áp dụng cho loại bài (tuỳ chọn, chọn nhiều)</label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
-                {categories.map((c) => {
-                  const active = categoryIds.includes(c.id)
-                  return (
+
+              {/* Đã chọn — hiện dạng chip, bấm để bỏ */}
+              {categoryIds.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '4px 0 8px' }}>
+                  {categoryIds.map((id) => (
                     <button
                       type="button"
-                      key={c.id}
-                      className={`btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => toggleCategory(c.id)}
+                      key={id}
+                      className="btn btn-sm btn-primary"
+                      onClick={() => toggleCategory(id)}
+                      title="Bấm để bỏ chọn"
                     >
-                      {active ? '✓ ' : ''}{c.name}
+                      {categoryMap[id] || id} ✕
                     </button>
-                  )
-                })}
+                  ))}
+                </div>
+              )}
+
+              {/* Ô tìm — chỉ render danh sách đã lọc (tối đa 50) để không vỡ khi có hàng trăm loại */}
+              <input
+                type="text"
+                value={categorySearch}
+                onChange={(event) => setCategorySearch(event.target.value)}
+                placeholder={`Tìm loại bài... (${categories.length} loại)`}
+              />
+              <div
+                style={{
+                  maxHeight: 160,
+                  overflowY: 'auto',
+                  marginTop: 6,
+                  border: '1px solid var(--color-border, #e5e7eb)',
+                  borderRadius: 6,
+                }}
+              >
+                {filteredCategories.length === 0 ? (
+                  <p style={{ margin: 0, padding: 8, fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                    Không tìm thấy loại bài khớp.
+                  </p>
+                ) : (
+                  filteredCategories.map((c) => {
+                    const active = categoryIds.includes(c.id)
+                    return (
+                      <button
+                        type="button"
+                        key={c.id}
+                        onClick={() => toggleCategory(c.id)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          width: '100%',
+                          padding: '6px 10px',
+                          background: active ? 'var(--color-primary-soft, #eef2ff)' : 'transparent',
+                          border: 'none',
+                          borderBottom: '1px solid var(--color-border, #f1f1f1)',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          fontSize: '0.9rem',
+                        }}
+                      >
+                        <span style={{ width: 16 }}>{active ? '✓' : ''}</span>
+                        <span>{c.name}</span>
+                      </button>
+                    )
+                  })
+                )}
               </div>
               <p style={{ margin: '6px 0 0', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
                 Không chọn = ảnh dùng chung cho mọi loại bài.
+                {categorySearch.trim() === '' && categories.length > 50
+                  ? ' (Gõ để tìm trong toàn bộ danh sách.)'
+                  : ''}
               </p>
             </div>
           )}

@@ -12,6 +12,7 @@ import PostDetailPage from '@/modules/posts/pages/PostDetailPage'
 import MediaPage from '@/modules/media/pages/MediaPage'
 import JobsPage from '@/modules/jobs/pages/JobsPage'
 import PromptTemplateListPage from '@/modules/prompt-templates/pages/PromptTemplateListPage'
+import CategoryListPage from '@/modules/categories/pages/CategoryListPage'
 import PageContextListPage from '@/modules/page-contexts/pages/PageContextListPage'
 import BulkCreatePage from '@/modules/bulk/pages/BulkCreatePage'
 import BatchProgressPage from '@/modules/bulk/pages/BatchProgressPage'
@@ -55,6 +56,7 @@ export default function AppRouter() {
           <Route path="/media" element={<MediaPage />} />
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.templates} />}>
             <Route path="/prompt-templates" element={<PromptTemplateListPage />} />
+            <Route path="/categories" element={<CategoryListPage />} />
             <Route path="/page-contexts" element={<PageContextListPage />} />
           </Route>
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.jobs} />}>
