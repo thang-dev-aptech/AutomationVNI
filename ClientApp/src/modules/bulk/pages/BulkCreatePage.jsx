@@ -8,6 +8,8 @@ import { toast } from '@/shared/stores/toastStore'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
 import { useCategoryList } from '@/modules/categories/hooks/useCategories'
+import { usePageContextList } from '@/modules/page-contexts/hooks/usePageContexts'
+import { isPageContextTemplateReady } from '@/modules/posts/components/PostCreateForm'
 import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import { useBulkCreate, useSuggestIdeas } from '../hooks/useBulk'
 import { downloadBulkIdeasSampleCsv, parseBulkIdeasFile } from '../utils/bulkIdeasImport'
@@ -31,6 +33,8 @@ export default function BulkCreatePage() {
   const categoryTemplates = tplData?.items ?? []
   const { data: categoryData } = useCategoryList({ index: 1, size: 200 })
   const categories = categoryData?.items ?? []
+  const { data: pageContextData } = usePageContextList({ index: 1, size: 200 })
+  const pageContexts = pageContextData?.items ?? []
 
   const createMutation = useBulkCreate()
   const suggestMutation = useSuggestIdeas()
@@ -38,6 +42,18 @@ export default function BulkCreatePage() {
   const validRows = useMemo(() => rows.filter((r) => r.idea.trim()), [rows])
   const totalPosts = validRows.length * channelIds.length
   const selectedCategoryName = categoryTemplates.find((t) => t.id === promptTemplateId)?.name
+
+  // Page đã có PageContext (template mặc định) thì không cần chọn danh mục — giống tạo bài đơn.
+  const contextByChannel = useMemo(() => {
+    const map = new Map()
+    for (const ctx of pageContexts) if (ctx?.socialChannelId) map.set(ctx.socialChannelId, ctx)
+    return map
+  }, [pageContexts])
+  const needCategoryCount = useMemo(
+    () => channelIds.filter((id) => !isPageContextTemplateReady(contextByChannel.get(id))).length,
+    [channelIds, contextByChannel],
+  )
+  const categoryRequired = needCategoryCount > 0
 
   const setRow = (i, value) => setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, idea: value } : r)))
   const addRow = () => setRows((prev) => [...prev, emptyRow()])
@@ -105,8 +121,8 @@ export default function BulkCreatePage() {
       toast.error('Chọn ít nhất 1 kênh')
       return
     }
-    if (!promptTemplateId) {
-      toast.error('Chọn danh mục (template)')
+    if (categoryRequired && !promptTemplateId) {
+      toast.error('Có page chưa có PageContext — hãy chọn danh mục')
       return
     }
     try {
@@ -207,23 +223,29 @@ export default function BulkCreatePage() {
 
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 16 }}>
               <div className="form-group" style={{ marginBottom: 0, minWidth: 220 }}>
-                <label htmlFor="bulk-category">Danh mục *</label>
+                <label htmlFor="bulk-category">
+                  Danh mục {categoryRequired ? '*' : '(tuỳ chọn — ghi đè PageContext)'}
+                </label>
                 <select
                   id="bulk-category"
                   value={promptTemplateId}
                   onChange={(e) => setPromptTemplateId(e.target.value)}
-                  required
+                  required={categoryRequired}
                 >
-                  <option value="">Chọn danh mục</option>
+                  <option value="">
+                    {categoryRequired ? 'Chọn danh mục' : 'Dùng mặc định PageContext'}
+                  </option>
                   {categoryTemplates.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}{t.isDefault ? ' ⭐' : ''}
                     </option>
                   ))}
                 </select>
-                {categoryTemplates.length === 0 && (
-                  <p style={{ margin: '6px 0 0', fontSize: '0.85rem', color: 'var(--color-warning)' }}>
-                    Chưa có danh mục — tạo tại Prompt Templates.
+                {channelIds.length > 0 && (
+                  <p style={{ margin: '6px 0 0', fontSize: '0.85rem', color: 'var(--text-muted, #888)' }}>
+                    {categoryRequired
+                      ? `${needCategoryCount} page chưa có PageContext — bắt buộc chọn danh mục.`
+                      : 'Tất cả page đã có PageContext — không cần chọn danh mục.'}
                   </p>
                 )}
               </div>
@@ -257,7 +279,7 @@ export default function BulkCreatePage() {
               {totalPosts > 50 && <span style={{ color: 'var(--color-warning,#d97706)' }}> — lô lớn, sẽ sinh dần ở nền</span>}
             </div>
             <button type="button" className="btn btn-primary" onClick={handleSubmit}
-              disabled={createMutation.isPending || totalPosts === 0 || !promptTemplateId}>
+              disabled={createMutation.isPending || totalPosts === 0 || (categoryRequired && !promptTemplateId)}>
               {createMutation.isPending ? 'Đang tạo...' : `Tạo ${totalPosts} bài → AI sinh nền`}
             </button>
           </div>

@@ -196,12 +196,25 @@ public class PostController
     {
         var hasPack = request.PromptTemplateId is Guid p && p != Guid.Empty;
         var hasLegacy = request.TextTemplateId.HasValue || request.ImageTemplateId.HasValue;
+
+        // Không chọn danh mục cho batch → mỗi page dùng PageContext của nó (giống tạo bài đơn).
+        // Chỉ bắt buộc chọn danh mục nếu có page CHƯA setup PageContext.
+        var channelIds = (request.ChannelIds ?? []).Where(c => c != Guid.Empty).Distinct().ToList();
+        var pageMap = await _pageContextRepository.GetMapByChannelsAsync(channelIds, ct);
         if (!hasPack && !hasLegacy)
-            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Phải chọn danh mục (template)"));
+        {
+            var missing = channelIds
+                .Where(id => { pageMap.TryGetValue(id, out var pc); return !PageContextRepository.HasTemplateReady(pc); })
+                .ToList();
+            if (missing.Count > 0)
+                return BadRequest(ApiResponse.Fail(
+                    "VALIDATION_ERROR",
+                    "Có page chưa cấu hình PageContext — hãy chọn danh mục hoặc setup Page Context cho các page đó."));
+        }
 
         try
         {
-            var result = await _repo.BulkCreateAsync(request, ct);
+            var result = await _repo.BulkCreateAsync(request, pageMap, ct);
             return Ok(ApiResponse.Ok(result,
                 $"Đã tạo {result.Created} bài — đang sinh nội dung nền, xem tiến độ ở batch."));
         }

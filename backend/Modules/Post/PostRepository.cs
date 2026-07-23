@@ -99,7 +99,9 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
 
     /// <summary>Tạo hàng loạt post (fan-out items × channels) ở Status=Queued cho worker sinh nền.</summary>
     public async Task<BulkCreateResult> BulkCreateAsync(
-        BulkCreatePostRequest request, CancellationToken ct = default)
+        BulkCreatePostRequest request,
+        IReadOnlyDictionary<Guid, PageContextModel>? pageContextByChannel = null,
+        CancellationToken ct = default)
     {
         var items = (request.Items ?? []).Where(i => !string.IsNullOrWhiteSpace(i.Idea)).ToList();
         var channels = (request.ChannelIds ?? []).Where(c => c != Guid.Empty).Distinct().ToList();
@@ -111,17 +113,7 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
             : (Guid?)null;
         var legacyText = request.TextTemplateId;
         var legacyImage = request.ImageTemplateId;
-
-        if (batchTemplate is null
-            && legacyText is null
-            && legacyImage is null
-            && items.All(i =>
-                (i.PromptTemplateId is null || i.PromptTemplateId == Guid.Empty)
-                && i.TextTemplateId is null
-                && i.ImageTemplateId is null))
-        {
-            throw new ArgumentException("Phải chọn danh mục (template) cho batch");
-        }
+        var pageMap = pageContextByChannel ?? new Dictionary<Guid, PageContextModel>();
 
         var batchId = Guid.NewGuid();
         var userId = GetCurrentUserId();
@@ -139,8 +131,12 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
                 }
                 else
                 {
-                    textTpl = it.TextTemplateId ?? legacyText;
-                    imageTpl = it.ImageTemplateId ?? legacyImage ?? textTpl;
+                    // Không chọn danh mục cho batch → dùng template mặc định trong PageContext của page,
+                    // giống luồng tạo bài đơn. Thiếu cả hai thì để null (pipeline tự fallback default).
+                    pageMap.TryGetValue(ch, out var pc);
+                    var (pcText, pcImage) = PageContextRepository.ResolveDefaultTemplateIds(pc);
+                    textTpl = it.TextTemplateId ?? legacyText ?? pcText;
+                    imageTpl = it.ImageTemplateId ?? legacyImage ?? pcImage ?? textTpl;
                     textTpl ??= imageTpl;
                 }
 
