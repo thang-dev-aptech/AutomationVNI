@@ -7,6 +7,7 @@ import { getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
+import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import { useBulkCreate, useSuggestIdeas } from '../hooks/useBulk'
 import { downloadBulkIdeasSampleCsv, parseBulkIdeasFile } from '../utils/bulkIdeasImport'
@@ -22,10 +23,14 @@ export default function BulkCreatePage() {
   const [promptTemplateId, setPromptTemplateId] = useState('')
   const [topic, setTopic] = useState('')
   const [ideaCount, setIdeaCount] = useState(5)
+  const [useMedia, setUseMedia] = useState(false)
+  const [postTypeId, setPostTypeId] = useState('')
 
   const { data: channels = [], isLoading: channelsLoading } = useSocialChannelAll()
   const { data: tplData } = usePromptTemplateList({ isActive: true, index: 1, size: 100 })
   const categoryTemplates = tplData?.items ?? []
+  const { data: categoryData } = useCategoryList({ index: 1, size: 200 })
+  const categories = categoryData?.items ?? []
 
   const createMutation = useBulkCreate()
   const suggestMutation = useSuggestIdeas()
@@ -108,7 +113,8 @@ export default function BulkCreatePage() {
       const result = await createMutation.mutateAsync({
         items: validRows.map((r) => ({ idea: r.idea.trim() })),
         channelIds,
-        generationFlow: 1,
+        generationFlow: useMedia ? 2 : 1,
+        categoryId: useMedia ? (postTypeId || null) : null,
         promptTemplateId,
       })
       toast.success(result?.message || `Đã tạo ${result?.created} bài`)
@@ -221,6 +227,26 @@ export default function BulkCreatePage() {
                   </p>
                 )}
               </div>
+            </div>
+
+            <div
+              style={{ border: '1px solid var(--color-border, #e5e7eb)', borderRadius: 8, padding: 12, marginTop: 16 }}
+            >
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 0, cursor: 'pointer' }}>
+                <input type="checkbox" checked={useMedia} onChange={(e) => setUseMedia(e.target.checked)} />
+                <span>Dùng ảnh từ kho media (AI tự chọn 2–3 ảnh phù hợp cho mỗi bài)</span>
+              </label>
+              {useMedia && (
+                <div className="form-group" style={{ marginTop: 10, marginBottom: 0, maxWidth: 320 }}>
+                  <label htmlFor="bulk-post-type">Loại bài viết — lọc ảnh đúng chủ đề (tuỳ chọn)</label>
+                  <select id="bulk-post-type" value={postTypeId} onChange={(e) => setPostTypeId(e.target.value)}>
+                    <option value="">Tất cả loại (không lọc)</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 

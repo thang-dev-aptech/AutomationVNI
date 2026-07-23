@@ -7,6 +7,7 @@ export const categoryApi = {
   create: (payload) => axiosInstance.post('/api/Category', payload),
   update: (id, payload) => axiosInstance.put(`/api/Category/${id}`, payload),
   softDelete: (id) => axiosInstance.delete(`/api/Category/${id}`),
+  import: (payload) => axiosInstance.post('/api/Category/import', payload),
 }
 
 export const categoryQueryKeys = {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Modal from '@/shared/components/Modal'
 import {
   fileNameFromUrl,
@@ -31,6 +31,8 @@ export default function MediaUploadForm({
   const [folderId, setFolderId] = useState('')
   const [categoryIds, setCategoryIds] = useState([])
   const [categorySearch, setCategorySearch] = useState('')
+  const [folderMode, setFolderMode] = useState(false)
+  const fileInputRef = useRef(null)
 
   useEffect(() => {
     if (open) {
@@ -38,9 +40,25 @@ export default function MediaUploadForm({
       setFiles([])
       setCategoryIds([])
       setCategorySearch('')
+      setFolderMode(false)
       setFileError('')
     }
   }, [open, defaultFolderId])
+
+  // Bật/tắt chọn-cả-thư mục (webkitdirectory không set được qua JSX chuẩn → set trực tiếp trên DOM).
+  useEffect(() => {
+    const input = fileInputRef.current
+    if (!input) return
+    if (folderMode) {
+      input.setAttribute('webkitdirectory', '')
+      input.setAttribute('directory', '')
+    } else {
+      input.removeAttribute('webkitdirectory')
+      input.removeAttribute('directory')
+    }
+    input.value = ''
+    setFiles([])
+  }, [folderMode])
 
   const categoryMap = useMemo(
     () => Object.fromEntries(categories.map((c) => [c.id, c.name])),
@@ -62,11 +80,15 @@ export default function MediaUploadForm({
   const handleFileChange = (event) => {
     const selected = Array.from(event.target.files ?? [])
     setFileError('')
-    const tooBig = selected.filter((f) => f.size > MAX_UPLOAD_SIZE_BYTES)
-    const ok = selected.filter((f) => f.size <= MAX_UPLOAD_SIZE_BYTES)
-    if (tooBig.length > 0) {
-      setFileError(`${tooBig.length} file vượt quá ${MAX_UPLOAD_SIZE_MB}MB, đã bỏ qua`)
-    }
+    // Chọn cả folder → có thể lẫn file không phải ảnh → chỉ giữ ảnh.
+    const images = selected.filter((f) => f.type.startsWith('image/'))
+    const nonImage = selected.length - images.length
+    const tooBig = images.filter((f) => f.size > MAX_UPLOAD_SIZE_BYTES)
+    const ok = images.filter((f) => f.size <= MAX_UPLOAD_SIZE_BYTES)
+    const notes = []
+    if (nonImage > 0) notes.push(`${nonImage} file không phải ảnh đã bỏ qua`)
+    if (tooBig.length > 0) notes.push(`${tooBig.length} ảnh > ${MAX_UPLOAD_SIZE_MB}MB đã bỏ qua`)
+    if (notes.length > 0) setFileError(notes.join('; '))
     setFiles(ok)
   }
 
@@ -181,11 +203,22 @@ export default function MediaUploadForm({
             gợi ý khi tạo bài.
           </p>
           <div className="form-group">
-            <label htmlFor="media-file">Ảnh * (jpg/png/webp, tối đa {MAX_UPLOAD_SIZE_MB}MB/ảnh)</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={folderMode}
+                onChange={(event) => setFolderMode(event.target.checked)}
+              />
+              <span>Chọn cả thư mục (lấy hết ảnh trong folder)</span>
+            </label>
+            <label htmlFor="media-file">
+              {folderMode ? 'Thư mục ảnh *' : 'Ảnh *'} (jpg/png/webp, tối đa {MAX_UPLOAD_SIZE_MB}MB/ảnh)
+            </label>
             <input
               id="media-file"
+              ref={fileInputRef}
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept={folderMode ? undefined : 'image/jpeg,image/png,image/webp'}
               onChange={handleFileChange}
               multiple
               required

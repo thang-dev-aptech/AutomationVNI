@@ -33,3 +33,12 @@ export function useDeletePageContext() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: pageContextQueryKeys.all }),
   })
 }
+
+/** Import nhiều Page Context (JSON). Trả { created, skipped, errors }. */
+export function useImportPageContexts() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload) => unwrapApiData(await pageContextApi.import(payload)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: pageContextQueryKeys.all }),
+  })
+}

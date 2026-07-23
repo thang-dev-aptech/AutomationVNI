@@ -69,6 +69,57 @@ public class PageContextRepository : GenericRepository<PageContextModel>
     public async Task<PageContextModel?> GetByChannelAsync(Guid socialChannelId, CancellationToken ct = default)
         => await QueryActive().FirstOrDefaultAsync(x => x.SocialChannelId == socialChannelId, ct);
 
+    /// <summary>
+    /// Import nhiều PageContext. Resolve kênh theo SocialChannelId hoặc ChannelName;
+    /// bỏ qua kênh không tồn tại hoặc đã có context. Không dừng cả batch khi 1 dòng lỗi.
+    /// </summary>
+    public async Task<PageContextImportResult> ImportAsync(
+        List<PageContextImportItem> items, CancellationToken ct = default)
+    {
+        var result = new PageContextImportResult();
+        foreach (var item in items)
+        {
+            try
+            {
+                var channelId = item.SocialChannelId;
+                if (channelId == Guid.Empty && !string.IsNullOrWhiteSpace(item.ChannelName))
+                {
+                    var name = item.ChannelName.Trim();
+                    channelId = await Context.SocialChannels
+                        .Where(x => !x.IsDeleted && x.PageName == name)
+                        .Select(x => x.Id)
+                        .FirstOrDefaultAsync(ct);
+                }
+
+                var label = string.IsNullOrWhiteSpace(item.BrandName) ? item.ChannelName : item.BrandName;
+                if (channelId == Guid.Empty)
+                {
+                    result.Skipped++;
+                    if (result.Errors.Count < 20) result.Errors.Add($"{label}: không tìm thấy kênh");
+                    continue;
+                }
+
+                if (await QueryActive().AnyAsync(x => x.SocialChannelId == channelId, ct))
+                {
+                    result.Skipped++;
+                    continue;
+                }
+
+                item.SocialChannelId = channelId;
+                await CreateAsync(item, ct);
+                result.Created++;
+            }
+            catch (Exception ex)
+            {
+                result.Skipped++;
+                if (result.Errors.Count < 20)
+                    result.Errors.Add($"{item.BrandName ?? item.ChannelName}: {ex.Message}");
+            }
+        }
+
+        return result;
+    }
+
     public async Task<PageContextModel> CreateAsync(
         CreatePageContextRequest request, CancellationToken ct = default)
     {

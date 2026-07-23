@@ -37,4 +37,15 @@ public class PageContextController
         if (entity is null) return NotFound(ApiResponse.Fail("NOT_FOUND", "Chưa có page context cho kênh này"));
         return Ok(ApiResponse.Ok(PageContextRepository.ToResponse(entity)));
     }
+
+    /// <summary>Import nhiều Page Context (JSON). Mỗi item trỏ kênh bằng socialChannelId hoặc channelName.</summary>
+    [HttpPost("import")]
+    public async Task<IActionResult> Import([FromBody] PageContextImportRequest request, CancellationToken ct)
+    {
+        if (request?.Items is null || request.Items.Count == 0)
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Chưa có dữ liệu để import"));
+
+        var result = await _repo.ImportAsync(request.Items, ct);
+        return Ok(ApiResponse.Ok(result, $"Đã tạo {result.Created} page context; bỏ qua {result.Skipped}"));
+    }
 }

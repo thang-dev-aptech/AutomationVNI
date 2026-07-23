@@ -30,4 +30,15 @@ public class CategoryController
 
     protected override Task<PagedResult<CategoryResponse>> FilterEntitiesAsync(CategoryFilterRequest request, CancellationToken ct)
         => _repo.FilterAsync(request, ct);
+
+    /// <summary>Import nhanh nhiều loại bài từ danh sách tên (mỗi tên 1 dòng).</summary>
+    [HttpPost("import")]
+    public async Task<IActionResult> Import([FromBody] CategoryImportRequest request, CancellationToken ct)
+    {
+        if (request?.Names is null || request.Names.Count == 0)
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Chưa có tên loại bài nào để import"));
+
+        var result = await _repo.ImportAsync(request.Names, request.ParentCategoryId, ct);
+        return Ok(ApiResponse.Ok(result, $"Đã thêm {result.Created} loại bài; bỏ qua {result.Skipped}"));
+    }
 }

@@ -7,13 +7,27 @@ import { formatDateTime, getErrorMessage } from '@/shared/utils/apiHelpers'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
 import { toast } from '@/shared/stores/toastStore'
+import Modal from '@/shared/components/Modal'
 import PageContextFormModal from '../components/PageContextFormModal'
 import {
   useCreatePageContext,
   useDeletePageContext,
+  useImportPageContexts,
   usePageContextList,
   useUpdatePageContext,
 } from '../hooks/usePageContexts'
+
+const IMPORT_SAMPLE = `[
+  {
+    "channelName": "VNI Education",
+    "brandName": "VNI Education",
+    "toneOfVoice": "Chuyên nghiệp, tin cậy, truyền cảm hứng học tập",
+    "hotline": "1900 xxxx",
+    "website": "vnieducation.edu.vn",
+    "brandColors": "#1565C0, #F59E0B, #22C55E",
+    "ctaText": "Inbox ngay để được tư vấn khóa học 📩"
+  }
+]`
 
 export default function PageContextListPage() {
   const [keyword, setKeyword] = useState('')
@@ -21,6 +35,8 @@ export default function PageContextListPage() {
   const [editingItem, setEditingItem] = useState(null)
   const [copyingItem, setCopyingItem] = useState(null)
   const [formError, setFormError] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
+  const [importText, setImportText] = useState('')
 
   const params = useMemo(() => ({ keyword, index: 1, size: 50 }), [keyword])
   const { data, isLoading, isError, error, refetch } = usePageContextList(params)
@@ -28,6 +44,7 @@ export default function PageContextListPage() {
   const createMutation = useCreatePageContext()
   const updateMutation = useUpdatePageContext()
   const deleteMutation = useDeletePageContext()
+  const importMutation = useImportPageContexts()
 
   const { data: tplData } = usePromptTemplateList({ isActive: true, index: 1, size: 100 })
   const templateMap = useMemo(
@@ -105,6 +122,29 @@ export default function PageContextListPage() {
     }
   }
 
+  const handleImport = async () => {
+    let items
+    try {
+      items = JSON.parse(importText)
+    } catch {
+      toast.error('JSON không hợp lệ — kiểm tra lại định dạng')
+      return
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      toast.error('Cần một mảng JSON có ít nhất 1 phần tử')
+      return
+    }
+    try {
+      const result = await importMutation.mutateAsync({ items })
+      const errPart = result?.errors?.length ? ` — lỗi: ${result.errors.slice(0, 3).join('; ')}` : ''
+      toast.success(`Đã tạo ${result?.created ?? 0} context; bỏ qua ${result?.skipped ?? 0}${errPart}`)
+      setImportOpen(false)
+      setImportText('')
+    } catch (importError) {
+      toast.error(getErrorMessage(importError))
+    }
+  }
+
   const handleDelete = async (item) => {
     if (!window.confirm(`Xóa page context "${item.brandName}"?`)) return
     try {
@@ -121,9 +161,14 @@ export default function PageContextListPage() {
         title="Page Context"
         description="Branding, danh mục mặc định và CTA cho từng page — page đã cấu hình sẽ tạo bài không cần chọn danh mục"
         actions={(
-          <button type="button" className="btn btn-primary" onClick={openCreate}>
-            Thêm context
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="btn btn-secondary" onClick={() => { setImportText(IMPORT_SAMPLE); setImportOpen(true) }}>
+              Import JSON
+            </button>
+            <button type="button" className="btn btn-primary" onClick={openCreate}>
+              Thêm context
+            </button>
+          </div>
         )}
       />
 
@@ -226,6 +271,41 @@ export default function PageContextListPage() {
         isSubmitting={createMutation.isPending || updateMutation.isPending}
         errorMessage={formError}
       />
+
+      <Modal
+        open={importOpen}
+        title="Import Page Context (JSON)"
+        onClose={() => setImportOpen(false)}
+        footer={(
+          <>
+            <button type="button" className="btn btn-secondary" onClick={() => setImportOpen(false)}>
+              Hủy
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleImport}
+              disabled={importMutation.isPending}
+            >
+              {importMutation.isPending ? 'Đang import...' : 'Import'}
+            </button>
+          </>
+        )}
+      >
+        <div className="form-group">
+          <label htmlFor="pc-import">
+            Mảng JSON — mỗi item trỏ kênh bằng <code>channelName</code> (tên page) hoặc <code>socialChannelId</code>.
+            Kênh không tồn tại / đã có context sẽ bỏ qua.
+          </label>
+          <textarea
+            id="pc-import"
+            rows={14}
+            value={importText}
+            onChange={(event) => setImportText(event.target.value)}
+            style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
+          />
+        </div>
+      </Modal>
     </section>
   )
 }

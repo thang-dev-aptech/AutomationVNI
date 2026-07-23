@@ -8,6 +8,7 @@ export const pageContextApi = {
   create: (payload) => axiosInstance.post('/api/PageContext', payload),
   update: (id, payload) => axiosInstance.put(`/api/PageContext/${id}`, payload),
   softDelete: (id) => axiosInstance.delete(`/api/PageContext/${id}`),
+  import: (payload) => axiosInstance.post('/api/PageContext/import', payload),
 }
 
 export const pageContextQueryKeys = {

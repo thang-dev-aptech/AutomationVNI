@@ -33,3 +33,12 @@ export function useDeleteCategory() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: categoryQueryKeys.all }),
   })
 }
+
+/** Import nhanh nhiều loại bài từ danh sách tên. Trả { created, skipped, items, errors }. */
+export function useImportCategories() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload) => unwrapApiData(await categoryApi.import(payload)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: categoryQueryKeys.all }),
+  })
+}

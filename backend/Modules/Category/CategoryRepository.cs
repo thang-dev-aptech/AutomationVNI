@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 using Backend.Data;
 using Backend.Shared;
 using Backend.Shared.Repositories;
@@ -9,6 +12,59 @@ public class CategoryRepository : GenericRepository<CategoryModel>
 {
     public CategoryRepository(AppDbContext context, IUserContext userContext)
         : base(context, userContext) { }
+
+    /// <summary>Sinh slug từ tên tiếng Việt: bỏ dấu, đ→d, còn chữ-số nối bằng "-".</summary>
+    public static string Slugify(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+        var s = name.Trim().ToLowerInvariant().Replace('đ', 'd');
+        s = s.Normalize(NormalizationForm.FormD);
+        s = string.Concat(s.Where(c =>
+            CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark));
+        s = Regex.Replace(s, @"[^a-z0-9]+", "-").Trim('-');
+        return s;
+    }
+
+    /// <summary>Import nhanh: mỗi tên → 1 loại bài; slug trùng (hiện có hoặc trong batch) thì bỏ qua.</summary>
+    public async Task<CategoryImportResult> ImportAsync(
+        List<string> names, Guid? parentCategoryId, CancellationToken ct = default)
+    {
+        var result = new CategoryImportResult();
+        var existingSlugs = (await QueryActive().Select(x => x.Slug).ToListAsync(ct))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var raw in names)
+        {
+            var name = raw?.Trim();
+            if (string.IsNullOrWhiteSpace(name)) { result.Skipped++; continue; }
+
+            var slug = Slugify(name);
+            if (string.IsNullOrWhiteSpace(slug) || existingSlugs.Contains(slug))
+            {
+                result.Skipped++;
+                continue;
+            }
+
+            try
+            {
+                var entity = await base.CreateAsync(new CategoryModel
+                {
+                    Name = name,
+                    Slug = slug,
+                    ParentCategoryId = parentCategoryId
+                }, ct);
+                existingSlugs.Add(slug);
+                result.Created++;
+                result.Items.Add(ToResponse(entity));
+            }
+            catch (Exception ex)
+            {
+                if (result.Errors.Count < 20) result.Errors.Add($"{name}: {ex.Message}");
+            }
+        }
+
+        return result;
+    }
 
     public async Task<PagedResult<CategoryResponse>> FilterAsync(
         CategoryFilterRequest request, CancellationToken ct = default)

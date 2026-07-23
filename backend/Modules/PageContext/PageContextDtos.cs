@@ -20,6 +20,25 @@ public class CreatePageContextRequest
     public Guid? DefaultImageTemplateId { get; set; }
 }
 
+/// <summary>1 dòng import PageContext. Có thể trỏ kênh bằng SocialChannelId hoặc ChannelName (tên page).</summary>
+public class PageContextImportItem : CreatePageContextRequest
+{
+    /// <summary>Tên page để resolve kênh khi không có SocialChannelId.</summary>
+    public string? ChannelName { get; set; }
+}
+
+public class PageContextImportRequest
+{
+    public List<PageContextImportItem> Items { get; set; } = [];
+}
+
+public class PageContextImportResult
+{
+    public int Created { get; set; }
+    public int Skipped { get; set; }
+    public List<string> Errors { get; set; } = [];
+}
+
 public class UpdatePageContextRequest
 {
     public string? BrandName { get; set; }

@@ -3,12 +3,15 @@ import PageHeader from '@/shared/components/PageHeader'
 import LoadingState from '@/shared/components/LoadingState'
 import ErrorState from '@/shared/components/ErrorState'
 import EmptyState from '@/shared/components/EmptyState'
+import Modal from '@/shared/components/Modal'
+import { toast } from '@/shared/stores/toastStore'
 import { formatDateTime, getErrorMessage } from '@/shared/utils/apiHelpers'
 import CategoryFormModal from '../components/CategoryFormModal'
 import {
   useCategoryList,
   useCreateCategory,
   useDeleteCategory,
+  useImportCategories,
   useUpdateCategory,
 } from '../hooks/useCategories'
 
@@ -17,6 +20,8 @@ export default function CategoryListPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
   const [formError, setFormError] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
+  const [importText, setImportText] = useState('')
 
   const params = useMemo(
     () => ({ keyword, index: 1, size: 50 }),
@@ -27,6 +32,7 @@ export default function CategoryListPage() {
   const createMutation = useCreateCategory()
   const updateMutation = useUpdateCategory()
   const deleteMutation = useDeleteCategory()
+  const importMutation = useImportCategories()
 
   const items = data?.items ?? []
 
@@ -56,6 +62,25 @@ export default function CategoryListPage() {
     }
   }
 
+  const handleImport = async () => {
+    const names = importText
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (names.length === 0) {
+      toast.error('Nhập ít nhất 1 tên loại bài (mỗi dòng một tên)')
+      return
+    }
+    try {
+      const result = await importMutation.mutateAsync({ names })
+      toast.success(`Đã thêm ${result?.created ?? 0} loại bài; bỏ qua ${result?.skipped ?? 0}`)
+      setImportOpen(false)
+      setImportText('')
+    } catch (importError) {
+      toast.error(getErrorMessage(importError))
+    }
+  }
+
   const handleDelete = async (item) => {
     if (!window.confirm(`Xóa danh mục "${item.name}"?`)) return
     try {
@@ -71,9 +96,14 @@ export default function CategoryListPage() {
         title="Danh mục"
         description="Phân loại bài viết và media"
         actions={(
-          <button type="button" className="btn btn-primary" onClick={openCreate}>
-            Thêm danh mục
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="btn btn-secondary" onClick={() => setImportOpen(true)}>
+              Import nhanh
+            </button>
+            <button type="button" className="btn btn-primary" onClick={openCreate}>
+              Thêm danh mục
+            </button>
+          </div>
         )}
       />
 
@@ -146,6 +176,38 @@ export default function CategoryListPage() {
         isSubmitting={createMutation.isPending || updateMutation.isPending}
         errorMessage={formError}
       />
+
+      <Modal
+        open={importOpen}
+        title="Import nhanh loại bài"
+        onClose={() => setImportOpen(false)}
+        footer={(
+          <>
+            <button type="button" className="btn btn-secondary" onClick={() => setImportOpen(false)}>
+              Hủy
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleImport}
+              disabled={importMutation.isPending}
+            >
+              {importMutation.isPending ? 'Đang import...' : 'Import'}
+            </button>
+          </>
+        )}
+      >
+        <div className="form-group">
+          <label htmlFor="category-import">Mỗi dòng một tên loại bài (slug tự sinh, trùng bỏ qua)</label>
+          <textarea
+            id="category-import"
+            rows={8}
+            value={importText}
+            onChange={(event) => setImportText(event.target.value)}
+            placeholder={'Tuyển sinh\nBán khóa học\nKhai giảng\nƯu đãi\nChứng chỉ'}
+          />
+        </div>
+      </Modal>
     </section>
   )
 }
