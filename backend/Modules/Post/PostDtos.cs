@@ -72,6 +72,12 @@ public class BulkScheduleRequest : BulkTargetRequest
     /// <summary>Khung giờ vàng trong ngày (local), ví dụ ["08:00","12:00","20:00"].</summary>
     public List<string> TimeSlots { get; set; } = ["08:00", "12:00", "20:00"];
     public string Timezone { get; set; } = "Asia/Ho_Chi_Minh";
+
+    /// <summary>
+    /// Lệch ngẫu nhiên ± phút quanh mỗi khung giờ, để không đăng khít cùng một phút mỗi ngày
+    /// (dấu vết đăng tự động). 0 = tắt, đăng đúng khung giờ.
+    /// </summary>
+    public int JitterMinutes { get; set; } = 10;
 }
 
 public class BulkOperationResult
@@ -115,6 +121,8 @@ public class PostResponse
     public string? PromptTemplateName { get; set; }
     public PostStatus Status { get; set; }
     public Guid UserId { get; set; }
+    /// <summary>Lô tạo hàng loạt sinh ra bài này — để UI quay lại trang rải lịch của lô.</summary>
+    public Guid? BatchId { get; set; }
     public DateTime? ScheduledPublishAt { get; set; }
     public string? ScheduleTimezone { get; set; }
     public DateTime? PublishedAt { get; set; }

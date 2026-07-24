@@ -11,6 +11,7 @@ import { toast } from '@/shared/stores/toastStore'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import PostFilterBar from '../components/PostFilterBar'
 import PostStatusBadge from '../components/PostStatusBadge'
+import { getAvailableWorkflowActions } from '../constants/postStatus'
 import { useDeleteAllPosts, useDeletePost, usePosts } from '../hooks/usePosts'
 
 export default function PostListPage() {
@@ -145,7 +146,8 @@ export default function PostListPage() {
                         <Link to={`/posts/${item.id}`} className="btn btn-ghost">
                           Chi tiết
                         </Link>
-                        {canDeletePost(item.userId) && (
+                        {canDeletePost(item.userId)
+                          && getAvailableWorkflowActions(item.status).canDelete && (
                           <button
                             type="button"
                             className="btn btn-danger"

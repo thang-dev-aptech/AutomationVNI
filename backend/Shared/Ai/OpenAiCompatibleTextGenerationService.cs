@@ -140,52 +140,29 @@ public class OpenAiCompatibleTextGenerationService(
         if (!string.Equals(config.Api, "openai-completions", StringComparison.OrdinalIgnoreCase))
             throw new AiProviderConfigException($"AI provider '{providerKey}' API '{config.Api}' is not supported.");
 
-        var url = BuildCompletionsUrl(config);
-        var payload = new
-        {
-            model,
-            messages = new object[]
+        var outcome = await CallChatAsync(
+            config, providerKey, BuildModelCandidates(model, config), "text-generation",
+            m => new
             {
-                new { role = "system", content = SystemPrompt },
-                new { role = "user", content = BuildUserPrompt(request) }
+                model = m,
+                messages = new object[]
+                {
+                    new { role = "system", content = SystemPrompt },
+                    new { role = "user", content = BuildUserPrompt(request) }
+                },
+                max_tokens = config.MaxTokens,
+                temperature = config.Temperature
             },
-            max_tokens = config.MaxTokens,
-            temperature = config.Temperature
-        };
+            ct);
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey);
-        httpRequest.Content = new StringContent(
-            JsonSerializer.Serialize(payload, JsonOptions),
-            Encoding.UTF8,
-            "application/json");
+        if (!outcome.Ok) throw new AiTextGenerationException(outcome.Error);
 
-        HttpResponseMessage response;
-        try
-        {
-            response = await httpClient.SendAsync(httpRequest, ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "AI text generation HTTP call failed for provider {Provider}", providerKey);
-            throw new AiTextGenerationException("AI provider request failed. Check BaseUrl and network connectivity.");
-        }
-
-        var responseBody = await response.Content.ReadAsStringAsync(ct);
-        if (!response.IsSuccessStatusCode)
-        {
-            logger.LogWarning(
-                "AI provider {Provider} returned HTTP {StatusCode}",
-                providerKey, (int)response.StatusCode);
-            throw new AiTextGenerationException(
-                $"AI provider returned HTTP {(int)response.StatusCode}. Verify model and provider configuration.");
-        }
-
-        var content = ExtractMessageContent(responseBody);
+        var content = ExtractMessageContent(outcome.Body);
         var stripped = StripMarkdownJson(content);
         var result = ParseModelJson(stripped, content);
         result.Provider = providerKey;
-        result.Model = model;
+        // Model thật sự sinh ra nội dung — có thể là model dự phòng chứ không phải model mặc định.
+        result.Model = outcome.Model;
         return result;
     }
 
@@ -206,43 +183,25 @@ public class OpenAiCompatibleTextGenerationService(
         user.AppendLine($"Đề xuất {count} ý tưởng bài đăng, mỗi ý tưởng là một tiêu đề ngắn gọn, hấp dẫn.");
         user.Append($"Trả về JSON array gồm đúng {count} chuỗi.");
 
-        var payload = new
-        {
-            model = config.DefaultTextModel,
-            messages = new object[]
+        var outcome = await CallChatAsync(
+            config, options.Value.DefaultProvider,
+            BuildModelCandidates(config.DefaultTextModel, config), "suggest-ideas",
+            m => new
             {
-                new { role = "system", content = sys },
-                new { role = "user", content = user.ToString() }
+                model = m,
+                messages = new object[]
+                {
+                    new { role = "system", content = sys },
+                    new { role = "user", content = user.ToString() }
+                },
+                max_tokens = config.MaxTokens,
+                temperature = 0.9
             },
-            max_tokens = config.MaxTokens,
-            temperature = 0.9
-        };
+            ct);
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, BuildCompletionsUrl(config));
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey);
-        httpRequest.Content = new StringContent(
-            JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
+        if (!outcome.Ok) throw new AiTextGenerationException(outcome.Error);
 
-        HttpResponseMessage response;
-        try
-        {
-            response = await httpClient.SendAsync(httpRequest, ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "AI suggest-ideas HTTP call failed");
-            throw new AiTextGenerationException("AI provider request failed. Check BaseUrl and network connectivity.");
-        }
-
-        var body = await response.Content.ReadAsStringAsync(ct);
-        if (!response.IsSuccessStatusCode)
-        {
-            logger.LogWarning("AI suggest-ideas provider returned HTTP {StatusCode}", (int)response.StatusCode);
-            throw new AiTextGenerationException(
-                $"AI provider returned HTTP {(int)response.StatusCode}. Verify model and provider configuration.");
-        }
-
-        var content = StripMarkdownJson(ExtractMessageContent(body));
+        var content = StripMarkdownJson(ExtractMessageContent(outcome.Body));
         return ParseIdeas(content, count);
     }
 
@@ -265,47 +224,38 @@ public class OpenAiCompatibleTextGenerationService(
             || !string.Equals(config.Api, "openai-completions", StringComparison.OrdinalIgnoreCase))
             return string.Empty;
 
-        var payload = new
-        {
-            model,
-            messages = new object[]
-            {
-                new { role = "system", content = ImagePromptSystem },
-                new { role = "user", content = BuildImagePromptUser(request) }
-            },
-            max_tokens = config.MaxTokens,
-            // Nhiệt độ cao để mỗi lần sinh cho một bố cục khác (brand vẫn khóa ở AppendBrandLock).
-            temperature = 0.95
-        };
-
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, BuildCompletionsUrl(config));
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey);
-        httpRequest.Content = new StringContent(
-            JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
+        var userPrompt = BuildImagePromptUser(request);
 
         try
         {
-            var response = await httpClient.SendAsync(httpRequest, ct);
-            if (!response.IsSuccessStatusCode)
+            var outcome = await CallChatAsync(
+                config, providerKey, BuildModelCandidates(model, config), "image-prompt",
+                m => new
+                {
+                    model = m,
+                    messages = new object[]
+                    {
+                        new { role = "system", content = ImagePromptSystem },
+                        new { role = "user", content = userPrompt }
+                    },
+                    max_tokens = config.MaxTokens,
+                    // Nhiệt độ cao để mỗi lần sinh cho một bố cục khác (brand vẫn khóa ở AppendBrandLock).
+                    temperature = 0.95
+                },
+                ct);
+
+            // Không chặn sinh ảnh: caller sẽ fallback prompt tĩnh khi trả rỗng.
+            if (!outcome.Ok)
             {
-                logger.LogWarning(
-                    "AI image-prompt provider {Provider} returned HTTP {StatusCode}",
-                    providerKey, (int)response.StatusCode);
+                logger.LogWarning("AI image-prompt composition failed: {Error}", outcome.Error);
                 return string.Empty;
             }
 
-            var body = await response.Content.ReadAsStringAsync(ct);
-            return StripMarkdownJson(ExtractMessageContent(body)).Trim();
+            return StripMarkdownJson(ExtractMessageContent(outcome.Body)).Trim();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
-        }
-        catch (Exception ex)
-        {
-            // Không chặn sinh ảnh: caller sẽ fallback prompt tĩnh khi trả rỗng.
-            logger.LogWarning(ex, "AI image-prompt composition failed for provider {Provider}", providerKey);
-            return string.Empty;
         }
     }
 
@@ -412,6 +362,167 @@ public class OpenAiCompatibleTextGenerationService(
             throw new AiProviderConfigException($"AI provider '{key}' DefaultTextModel is not configured.");
 
         return config;
+    }
+
+    /// <summary>Kết quả một lượt gọi provider, đã gộp cả retry lẫn xoay model.</summary>
+    private sealed record ChatCallOutcome(bool Ok, string Body, string Model, string Error);
+
+    /// <summary>
+    /// Model mặc định trước, rồi tới FallbackTextModels. Bỏ trùng và bỏ chuỗi rỗng để không tốn
+    /// một lượt gọi vô nghĩa khi cấu hình lặp model.
+    /// </summary>
+    private static List<string> BuildModelCandidates(string? primary, AiProviderConfig config)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var list = new List<string>();
+
+        foreach (var m in new[] { primary }.Concat(config.FallbackTextModels))
+        {
+            if (string.IsNullOrWhiteSpace(m)) continue;
+            var trimmed = m.Trim();
+            if (seen.Add(trimmed)) list.Add(trimmed);
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Gọi chat/completions với 2 lớp chống lỗi: retry cùng model cho lỗi nhất thời, rồi xoay sang
+    /// model dự phòng. Gateway nhiều channel quá tải lệch nhau nên xoay model thường ăn ngay, trong
+    /// khi ngồi retry mãi một model đang chết thì chỉ tốn thời gian.
+    ///
+    /// Không ném ngoại lệ khi thất bại — trả Ok=false kèm Error để caller tự quyết (sinh bài thì ném
+    /// lỗi cho người dùng thấy, còn prompt ảnh thì rơi về prompt tĩnh).
+    /// </summary>
+    private async Task<ChatCallOutcome> CallChatAsync(
+        AiProviderConfig config,
+        string providerKey,
+        IReadOnlyList<string> models,
+        string operation,
+        Func<string, object> payloadFactory,
+        CancellationToken ct)
+    {
+        if (models.Count == 0)
+            return new ChatCallOutcome(false, "", "",
+                $"AI provider '{providerKey}' chưa cấu hình model nào cho {operation}.");
+
+        // Mỗi model thử tối đa 3 lần (chờ 5s rồi 15s). Trước đây một model được retry tới 5 lần,
+        // tổng chờ 120s mà vẫn chỉ đâm vào đúng channel đang hỏng.
+        var retryDelaysSeconds = new[] { 5, 15 };
+        var url = BuildCompletionsUrl(config);
+        string lastError = $"AI provider '{providerKey}' không gọi được model nào cho {operation}.";
+
+        for (var i = 0; i < models.Count; i++)
+        {
+            var model = models[i];
+            var isLastModel = i == models.Count - 1;
+            var requestBody = JsonSerializer.Serialize(payloadFactory(model), JsonOptions);
+
+            for (var attempt = 0; ; attempt++)
+            {
+                using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
+                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey);
+                httpRequest.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+
+                HttpResponseMessage response;
+                try
+                {
+                    response = await httpClient.SendAsync(httpRequest, ct);
+                }
+                catch (Exception ex) when (!ct.IsCancellationRequested)
+                {
+                    lastError = $"AI provider '{providerKey}' (model {model}) không gọi được: {ex.Message}";
+                    if (attempt < retryDelaysSeconds.Length)
+                    {
+                        logger.LogWarning(
+                            "AI {Operation} gọi {Model} lỗi mạng (lần {Attempt}), thử lại sau {Delay}s: {Message}",
+                            operation, model, attempt + 1, retryDelaysSeconds[attempt], ex.Message);
+                        await Task.Delay(TimeSpan.FromSeconds(retryDelaysSeconds[attempt]), ct);
+                        continue;
+                    }
+
+                    logger.LogWarning(ex,
+                        "AI {Operation} bỏ model {Model} sau {Count} lần lỗi mạng",
+                        operation, model, retryDelaysSeconds.Length + 1);
+                    break; // sang model kế tiếp
+                }
+
+                using (response)
+                {
+                    var body = await response.Content.ReadAsStringAsync(ct);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        if (i > 0)
+                            logger.LogWarning(
+                                "AI {Operation} phải dùng model dự phòng {Model} (model chính: {Primary})",
+                                operation, model, models[0]);
+                        return new ChatCallOutcome(true, body, model, "");
+                    }
+
+                    var status = (int)response.StatusCode;
+                    // Kèm nguyên văn lỗi gateway: 429/503 gần như luôn là upstream quá tải chứ không
+                    // phải sai cấu hình, message chung chung khiến người đọc đi kiểm tra nhầm chỗ.
+                    lastError = $"AI provider '{providerKey}' (model {model}) returned HTTP {status}. " +
+                                $"Provider says: {Summarize(body)}";
+
+                    logger.LogWarning(
+                        "AI {Operation} — provider {Provider} model {Model} trả HTTP {StatusCode}: {Body}",
+                        operation, providerKey, model, status, body.Length > 300 ? body[..300] : body);
+
+                    // Sai key hoặc bị chặn quyền thì đổi model cũng vô ích — dừng luôn cho nhanh.
+                    if (status is 401 or 403)
+                        return new ChatCallOutcome(false, body, model, lastError);
+
+                    var transient = status is 408 or 429 or 500 or 502 or 503 or 504;
+                    if (transient && attempt < retryDelaysSeconds.Length)
+                    {
+                        // Model cuối mới đáng chờ lâu; còn model dự phòng thì xoay sang luôn cho nhanh.
+                        if (!isLastModel && attempt >= 1) break;
+                        await Task.Delay(TimeSpan.FromSeconds(retryDelaysSeconds[attempt]), ct);
+                        continue;
+                    }
+
+                    break; // hết retry, hoặc lỗi 4xx kiểu model_not_found → sang model kế tiếp
+                }
+            }
+        }
+
+        return new ChatCallOutcome(false, "", "", lastError);
+    }
+
+    /// <summary>
+    /// Rút gọn body lỗi của provider để nhét vào message ngoại lệ. Gateway kiểu one-api trả
+    /// {"error":{"message":"..."}} — lấy đúng câu đó, không có thì cắt ngắn body thô.
+    /// </summary>
+    private static string Summarize(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return "(empty response body)";
+
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("error", out var error))
+            {
+                var text = error.ValueKind == JsonValueKind.Object
+                    && error.TryGetProperty("message", out var msg)
+                        ? msg.GetString()
+                        : error.ToString();
+                if (!string.IsNullOrWhiteSpace(text)) return Trim(text!);
+            }
+        }
+        catch (JsonException)
+        {
+            // Body không phải JSON (HTML từ proxy, plain text...) — dùng nguyên văn đã cắt.
+        }
+
+        return Trim(body);
+
+        static string Trim(string s)
+        {
+            s = s.Trim();
+            return s.Length > 200 ? s[..200] + "…" : s;
+        }
     }
 
     private static string BuildCompletionsUrl(AiProviderConfig config)

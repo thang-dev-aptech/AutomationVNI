@@ -32,6 +32,22 @@ public partial class FacebookPagePublishService(
 
         var mediaItems = ResolveMediaItems(request);
 
+        // Chốt chặn cuối: ảnh placeholder (PNG 1x1, ~70 byte) sinh ra khi provider ảnh lỗi.
+        // Thà không đăng còn hơn đăng lên Page một ô ảnh rỗng.
+        foreach (var item in mediaItems.Where(x => !string.IsNullOrWhiteSpace(x.StorageKey)))
+        {
+            var placeholderKey = await IsPlaceholderImageAsync(item.StorageKey!, ct);
+            if (placeholderKey)
+            {
+                logger.LogError(
+                    "Chặn đăng post {PostId}: ảnh {StorageKey} là placeholder hỏng, không phải ảnh thật",
+                    request.PostId, item.StorageKey);
+                return SocialPublishResult.Failed(
+                    "FB_MEDIA_PLACEHOLDER",
+                    "Bài đang dùng ảnh placeholder do sinh ảnh AI thất bại. Hãy bấm Tạo lại ảnh trước khi đăng.");
+            }
+        }
+
         if (mediaItems.Count > 1)
             return await PublishMultiPhotoFeedAsync(request, mediaItems, ct);
 
@@ -48,6 +64,31 @@ public partial class FacebookPagePublishService(
             "Facebook publish for post {PostId} has no uploadable media (storage/public url). Falling back to text feed post.",
             request.PostId);
         return await PublishFeedTextAsync(request, ct);
+    }
+
+    /// <summary>
+    /// Ảnh placeholder do MockImageGenerator sinh khi provider ảnh lỗi: PNG 1x1, khoảng 70 byte.
+    /// Nhận diện bằng dung lượng — ảnh banner thật luôn hàng trăm KB.
+    /// </summary>
+    private async Task<bool> IsPlaceholderImageAsync(string storageKey, CancellationToken ct)
+    {
+        const int minRealImageBytes = 2048;
+        try
+        {
+            if (!await fileStorage.ExistsAsync(storageKey, ct)) return false;
+            await using var stream = await fileStorage.OpenReadAsync(storageKey, ct);
+            if (stream.CanSeek) return stream.Length < minRealImageBytes;
+
+            var buffer = new byte[minRealImageBytes];
+            var read = await stream.ReadAsync(buffer, ct);
+            return read < minRealImageBytes;
+        }
+        catch (Exception ex)
+        {
+            // Không chặn đăng chỉ vì không đọc được file — để các bước sau báo lỗi cụ thể hơn.
+            logger.LogWarning(ex, "Không kiểm tra được kích thước ảnh {StorageKey}", storageKey);
+            return false;
+        }
     }
 
     /// <summary>

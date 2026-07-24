@@ -56,6 +56,25 @@ public class PostController
     protected override Task<PagedResult<PostResponse>> FilterEntitiesAsync(PostFilterRequest request, CancellationToken ct)
         => _repo.FilterAsync(request, ct);
 
+    /// <summary>
+    /// Xoá bài. Chặn khi bài đang có lịch đăng: lịch có thể đã đẩy sang Facebook, xoá bài trong
+    /// hệ thống sẽ để lại "bài mồ côi" — Facebook vẫn đăng đúng giờ mà mình không còn đường huỷ.
+    /// Người dùng phải huỷ lịch trước.
+    /// </summary>
+    public override async Task<IActionResult> SoftDelete(Guid id, CancellationToken ct)
+    {
+        var post = await _workflow.GetPostAsync(id, ct);
+        if (post is null)
+            return NotFound(ApiResponse.Fail("NOT_FOUND", "Không tìm thấy bài viết"));
+
+        if (post.Status == PostStatus.Scheduled)
+            return BadRequest(ApiResponse.Fail(
+                "POST_SCHEDULED",
+                "Bài đang có lịch đăng. Hãy huỷ lịch trước khi xoá."));
+
+        return await base.SoftDelete(id, ct);
+    }
+
     /// <summary>Soft-delete tất cả bài viết (Admin: toàn bộ; ContentManager: bài của mình).</summary>
     [HttpDelete("all")]
     [Authorize(Roles = "Admin,ContentManager")]
@@ -65,8 +84,8 @@ public class PostController
         var deleted = await _repo.SoftDeleteAllAsync(deleteAllUsers, ct);
         return Ok(ApiResponse.Ok(new { deleted },
             deleted == 0
-                ? "Không có bài viết nào để xóa"
-                : $"Đã xóa {deleted} bài viết"));
+                ? "Không có bài viết nào để xóa (bài đang có lịch đăng được giữ lại)"
+                : $"Đã xóa {deleted} bài viết — bài đang có lịch đăng được giữ lại"));
     }
 
     // --- Generation pipeline ---
@@ -294,7 +313,9 @@ public class PostController
     public async Task<IActionResult> BulkSchedule([FromBody] BulkScheduleRequest request, CancellationToken ct)
     {
         var posts = await _repo.ResolveTargetsAsync(request.BatchId, request.PostIds, [PostStatus.Approved], ct);
-        var times = ComputeSlotTimesUtc(request.StartAtUtc ?? DateTime.UtcNow, request.TimeSlots, request.Timezone, posts.Count);
+        var times = ComputeSlotTimesUtc(
+            request.StartAtUtc ?? DateTime.UtcNow, request.TimeSlots, request.Timezone,
+            posts.Count, request.JitterMinutes);
 
         var ok = new List<Guid>();
         for (var i = 0; i < posts.Count && i < times.Count; i++)
@@ -307,7 +328,9 @@ public class PostController
             Affected = ok.Count,
             Skipped = posts.Count - ok.Count,
             PostIds = ok,
-            Message = $"Đã lên lịch {ok.Count}/{posts.Count} bài, rải theo khung giờ"
+            Message = request.JitterMinutes > 0
+                ? $"Đã lên lịch {ok.Count}/{posts.Count} bài, rải theo khung giờ (lệch ngẫu nhiên ±{request.JitterMinutes} phút)"
+                : $"Đã lên lịch {ok.Count}/{posts.Count} bài, rải theo khung giờ"
         }));
     }
 
@@ -327,8 +350,14 @@ public class PostController
         }));
     }
 
-    /// <summary>Sinh danh sách mốc UTC theo khung giờ (local) rải qua các ngày, chỉ lấy mốc tương lai.</summary>
-    private static List<DateTime> ComputeSlotTimesUtc(DateTime startUtc, List<string> slots, string timezone, int count)
+    /// <summary>
+    /// Sinh danh sách mốc UTC theo khung giờ (local) rải qua các ngày, chỉ lấy mốc tương lai.
+    /// <paramref name="jitterMinutes"/> &gt; 0 thì mỗi mốc lệch ngẫu nhiên trong ±jitter phút để
+    /// không đăng khít cùng một phút mỗi ngày. Mốc lệch không bao giờ bị kéo về quá khứ và luôn
+    /// giữ thứ tự tăng dần (mốc sau ít nhất hơn mốc trước 1 phút).
+    /// </summary>
+    private static List<DateTime> ComputeSlotTimesUtc(
+        DateTime startUtc, List<string> slots, string timezone, int count, int jitterMinutes = 0)
     {
         if (count <= 0) return [];
         var tz = ResolveTimeZone(timezone);
@@ -343,6 +372,9 @@ public class PostController
         var effectiveStartUtc = startUtc > nowUtc ? startUtc : nowUtc;
         var day = TimeZoneInfo.ConvertTimeFromUtc(effectiveStartUtc, tz).Date;
 
+        var jitter = Math.Clamp(jitterMinutes, 0, 240);
+        var rnd = new Random();
+
         var result = new List<DateTime>();
         var guard = 0;
         while (result.Count < count && guard++ < 500)
@@ -350,12 +382,25 @@ public class PostController
             foreach (var slot in slotSpans)
             {
                 var local = DateTime.SpecifyKind(day + slot, DateTimeKind.Unspecified);
-                var utc = TimeZoneInfo.ConvertTimeToUtc(local, tz);
-                if (utc > nowUtc)
+                var baseUtc = TimeZoneInfo.ConvertTimeToUtc(local, tz);
+                // So với mốc bắt đầu (đã gồm cả giờ), không chỉ so với hiện tại — nhập
+                // "09:45 ngày 25/07" thì khung 09:00 của chính ngày 25/07 phải bị bỏ qua.
+                if (baseUtc <= effectiveStartUtc) continue;
+
+                var utc = baseUtc;
+                if (jitter > 0)
                 {
-                    result.Add(utc);
-                    if (result.Count >= count) break;
+                    // Lệch theo giây để hai bài cùng khung giờ không trùng phút.
+                    utc = baseUtc.AddSeconds(rnd.Next(-jitter * 60, jitter * 60 + 1));
+                    if (utc <= effectiveStartUtc) utc = baseUtc; // lệch âm không được vượt qua mốc bắt đầu
                 }
+
+                // Giữ thứ tự tăng dần: jitter lớn hơn khoảng cách 2 khung giờ có thể làm đảo mốc.
+                if (result.Count > 0 && utc <= result[^1])
+                    utc = result[^1].AddMinutes(1);
+
+                result.Add(utc);
+                if (result.Count >= count) break;
             }
             day = day.AddDays(1);
         }

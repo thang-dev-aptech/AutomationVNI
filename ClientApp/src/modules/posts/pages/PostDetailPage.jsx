@@ -58,9 +58,17 @@ export default function PostDetailPage() {
         title={post.title}
         description={`Kênh: ${channelName || '—'} · Danh mục: ${post.promptTemplateName || '—'} · ${getGenerationFlowLabel(post.generationFlow)}`}
         actions={(
-          <Link to="/posts" className="btn btn-secondary">
-            Danh sách
-          </Link>
+          <>
+            {/* Bài sinh từ tạo hàng loạt → cho đường quay lại trang rải lịch của lô */}
+            {post.batchId && (
+              <Link to={`/bulk/${post.batchId}`} className="btn btn-primary">
+                ← Về lô rải lịch
+              </Link>
+            )}
+            <Link to="/posts" className="btn btn-secondary">
+              Danh sách
+            </Link>
+          </>
         )}
       />
 

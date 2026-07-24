@@ -66,7 +66,9 @@ export function getAvailableWorkflowActions(status) {
     schedule: status === 11,
     cancelSchedule: status === 5,
     publishNow: status === 11 || status === 5,
-    canDelete: status !== 6 && status !== 7,
+    // Không cho xoá bài đang có lịch (5): lịch có thể đã đẩy sang Facebook, xoá sẽ để lại
+    // bài mồ côi vẫn tự đăng. Phải huỷ lịch trước. Backend cũng chặn ở PostController.SoftDelete.
+    canDelete: status !== 5 && status !== 6 && status !== 7,
     canEditContent: status !== 6 && status !== 7,
   }
 }

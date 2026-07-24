@@ -131,7 +131,9 @@ export default function BulkCreatePage() {
         channelIds,
         generationFlow: useMedia ? 2 : 1,
         categoryId: useMedia ? (postTypeId || null) : null,
-        promptTemplateId,
+        // Chuỗi rỗng không parse được thành Guid? → backend trả 400 ngay ở bước bind model.
+        // Không chọn danh mục thì phải gửi null để mỗi page dùng template trong PageContext của nó.
+        promptTemplateId: promptTemplateId || null,
       })
       toast.success(result?.message || `Đã tạo ${result?.created} bài`)
       if (result?.batchId) navigate(`/bulk/${result.batchId}`)

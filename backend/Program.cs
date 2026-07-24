@@ -109,8 +109,10 @@ builder.Services.AddScoped<PostRepository>();
 builder.Services.AddScoped<PostWorkflowService>();
 builder.Services.AddScoped<MediaAssetRepository>();
 builder.Services.AddScoped<Backend.Modules.MediaFolder.MediaFolderRepository>();
+// 60s không đủ cho model vision họ Claude qua gateway (đo thực tế: opus-4.6 ~24s cho prompt text,
+// ảnh còn nặng hơn). Timeout quá chặt làm phân tích media fail hàng loạt.
 builder.Services.AddHttpClient<MediaIntelligenceService>(client =>
-    client.Timeout = TimeSpan.FromSeconds(60));
+    client.Timeout = TimeSpan.FromSeconds(120));
 builder.Services.AddScoped<PostMediaRepository>();
 builder.Services.AddScoped<GenerationJobRepository>();
 builder.Services.AddScoped<GenerationJobPipelineService>();
@@ -131,7 +133,10 @@ builder.Services.AddHostedService<PageMessageReconcileWorker>();
 builder.Services.AddScoped<MediaEmbeddingRepository>();
 builder.Services.AddScoped<ApiLogRepository>();
 builder.Services.AddScoped<IDevDataSeeder, DevDataSeeder>();
-builder.Services.AddHttpClient<IAiTextGenerationService, OpenAiCompatibleTextGenerationService>();
+// Trước đây không set timeout → HttpClient dùng mặc định 100s. Model qua gateway có thể chạy lâu
+// hơn thế, và timeout bị bắt như lỗi mạng nên còn bị retry thêm 4 lần nữa.
+builder.Services.AddHttpClient<IAiTextGenerationService, OpenAiCompatibleTextGenerationService>(client =>
+    client.Timeout = TimeSpan.FromSeconds(180));
 builder.Services.Configure<AiImageProvidersOptions>(builder.Configuration.GetSection("AiImageProviders"));
 builder.Services.AddHttpClient<IAiImageGenerationService, GeminiImageGenerationService>((sp, client) =>
 {

@@ -256,6 +256,9 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
             query = query.Where(x => x.UserId == userId);
         }
 
+        // Bỏ qua bài đang có lịch — xoá sẽ để lại bài mồ côi trên Facebook (xem PostController.SoftDelete).
+        query = query.Where(x => x.Status != PostStatus.Scheduled);
+
         var posts = await query.ToListAsync(cancellationToken);
         if (posts.Count == 0)
             return 0;
@@ -332,6 +335,7 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
             PromptTemplateName = promptTemplateName,
             Status = entity.Status,
             UserId = entity.UserId,
+            BatchId = entity.BatchId,
             ScheduledPublishAt = entity.ScheduledPublishAt,
             ScheduleTimezone = entity.ScheduleTimezone,
             PublishedAt = entity.PublishedAt,

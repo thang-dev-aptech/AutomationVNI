@@ -97,35 +97,72 @@ public class GeminiImageGenerationService(
         };
 
         var url = BuildGenerateContentUrl(config, model);
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
-        httpRequest.Headers.Add("x-goog-api-key", config.ApiKey);
-        httpRequest.Content = new StringContent(
-            JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
+        var requestBody = JsonSerializer.Serialize(payload, JsonOptions);
 
         logger.LogInformation(
             "Gemini image request → provider={Provider}, model={Model}, referenceImages={RefCount}, promptChars={PromptChars}",
             providerKey, model, referenceCount, request.Prompt.Length);
 
-        HttpResponseMessage response;
-        try
+        // Gemini image (503 "high demand", 404 body rỗng) hay lỗi nhất thời. Không thử lại thì pipeline
+        // rơi xuống ảnh placeholder 1x1 mà bài vẫn được duyệt — ảnh hỏng lọt ra tận Page.
+        // Cửa sổ chập chờn của endpoint có khi kéo dài cả chục giây nên giãn tới ~48s (4 lần thử).
+        var retryDelaysSeconds = new[] { 3, 8, 15, 25 };
+        string responseBody;
+        for (var attempt = 0; ; attempt++)
         {
-            response = await httpClient.SendAsync(httpRequest, ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Gemini image HTTP call failed for provider {Provider}", providerKey);
-            throw new AiImageGenerationException("Image provider request failed. Check BaseUrl and network connectivity.");
-        }
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
+            httpRequest.Headers.Add("x-goog-api-key", config.ApiKey);
+            httpRequest.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
 
-        var responseBody = await response.Content.ReadAsStringAsync(ct);
-        if (!response.IsSuccessStatusCode)
-        {
-            var error = ExtractError(responseBody);
-            logger.LogWarning(
-                "Gemini image provider {Provider} returned HTTP {StatusCode}: {Error}",
-                providerKey, (int)response.StatusCode, error);
-            throw new AiImageGenerationException(
-                $"Image provider returned HTTP {(int)response.StatusCode}: {error}");
+            HttpResponseMessage response;
+            try
+            {
+                response = await httpClient.SendAsync(httpRequest, ct);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                if (attempt < retryDelaysSeconds.Length)
+                {
+                    logger.LogWarning(
+                        "Gemini image HTTP call failed (lần {Attempt}), thử lại sau {Delay}s: {Message}",
+                        attempt + 1, retryDelaysSeconds[attempt], ex.Message);
+                    await Task.Delay(TimeSpan.FromSeconds(retryDelaysSeconds[attempt]), ct);
+                    continue;
+                }
+
+                logger.LogWarning(ex, "Gemini image HTTP call failed for provider {Provider}", providerKey);
+                throw new AiImageGenerationException(
+                    "Image provider request failed. Check BaseUrl and network connectivity.");
+            }
+
+            using (response)
+            {
+                responseBody = await response.Content.ReadAsStringAsync(ct);
+                if (response.IsSuccessStatusCode) break;
+
+                var error = ExtractError(responseBody);
+                var status = (int)response.StatusCode;
+                // 404 nằm trong nhóm tạm thời: endpoint generateContent của Gemini image thỉnh thoảng
+                // nhả 404 body rỗng rồi tự khỏi ở lần gọi kế (đã tái hiện: cùng key/model, 200 và 404
+                // xoay vòng từng phút). Model sai tên cũng 404 — nhưng khi đó retry cạn rồi fail với
+                // message có tên model, kết cục không tệ hơn, đổi lại cứu được phần lớn ca chập chờn.
+                var transient = status is 404 or 408 or 429 or 500 or 502 or 503 or 504;
+
+                if (transient && attempt < retryDelaysSeconds.Length)
+                {
+                    logger.LogWarning(
+                        "Gemini image provider {Provider} trả HTTP {StatusCode} (lần {Attempt}), thử lại sau {Delay}s: {Error}",
+                        providerKey, status, attempt + 1, retryDelaysSeconds[attempt], error);
+                    await Task.Delay(TimeSpan.FromSeconds(retryDelaysSeconds[attempt]), ct);
+                    continue;
+                }
+
+                logger.LogWarning(
+                    "Gemini image provider {Provider} returned HTTP {StatusCode}: {Error}",
+                    providerKey, status, error);
+                throw new AiImageGenerationException(
+                    $"Image provider returned HTTP {status}: {error}");
+            }
         }
 
         var inline = ExtractInlineImage(responseBody)

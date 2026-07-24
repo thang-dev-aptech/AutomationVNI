@@ -455,15 +455,20 @@ public class GenerationJobPipelineService(
             }
             catch (AiProviderUnavailableException)
             {
+                // Chưa cấu hình ApiKey → chế độ chạy thử, nội dung mock là đúng ý đồ.
                 logger.LogInformation(
                     "AI text generation unavailable for post {PostId}, using mock fallback",
                     post.Id);
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex,
-                    "AI text generation failed for post {PostId}, using mock fallback",
+                // Provider có cấu hình nhưng gọi lỗi (429 hết quota, timeout...). KHÔNG được lặng lẽ
+                // dùng nội dung mock rồi để bài tự duyệt — bài rác sẽ được rải lịch và đăng lên Page.
+                logger.LogError(ex,
+                    "AI text generation failed for post {PostId} — dừng lại thay vì dùng nội dung mock",
                     post.Id);
+                throw new AiTextGenerationException(
+                    $"Sinh nội dung AI thất bại: {ex.Message}. Bài chưa có nội dung — hãy bấm Tạo lại nội dung.");
             }
         }
 
@@ -778,7 +783,7 @@ public class GenerationJobPipelineService(
             Source = "ai",
             Provider = request.Provider,
             Model = request.Model,
-            Content = ComposeFacebookPost(ai.Caption, cta, hashtags),
+            Content = ComposeFacebookPost(ai.BannerHeadline, ai.Caption, cta, hashtags),
             Hashtags = hashtags,
             Cta = cta,
             ImagePrompt = ai.ImagePrompt,
@@ -789,13 +794,33 @@ public class GenerationJobPipelineService(
     }
 
     /// <summary>
-    /// Ghép caption + CTA + hashtag thành 1 bài Facebook sẵn đăng
+    /// Ghép tiêu đề + caption + CTA + hashtag thành 1 bài Facebook sẵn đăng
     /// (tránh mất CTA/hashtag khi chỉ lưu field caption).
+    ///
+    /// Dòng tiêu đề: Facebook TỰ phóng to dòng đầu tiên khi nó ngắn (~≤ 80 ký tự) và có dòng trống
+    /// ngăn cách với thân bài. Nội dung bài (text thuần) không có in đậm/cỡ chữ — chữ to nổi bật chỉ
+    /// đến từ mẹo "dòng đầu ngắn + dòng trống" này. bannerHeadline (≤ 8 từ) là dòng lý tưởng cho việc đó.
     /// </summary>
-    private static string ComposeFacebookPost(string? caption, string cta, IReadOnlyList<string> hashtags)
+    private const int MaxTitleLineChars = 80;
+
+    private static string ComposeFacebookPost(
+        string? titleLine, string? caption, string cta, IReadOnlyList<string> hashtags)
     {
         var body = (caption ?? string.Empty).Trim();
-        var sb = new StringBuilder(body);
+        var sb = new StringBuilder();
+
+        // Chỉ ghép tiêu đề khi nó đủ ngắn để Facebook phóng to, và caption chưa tự mở đầu bằng nó
+        // (tránh lặp khi model đã đưa headline vào ngay đầu caption).
+        var title = NormalizeTitleLine(titleLine);
+        if (title.Length > 0
+            && title.Length <= MaxTitleLineChars
+            && !StartsWithIgnoreCase(body, title))
+        {
+            sb.Append(title);
+            if (body.Length > 0) sb.Append("\n\n");
+        }
+
+        sb.Append(body);
 
         if (!string.IsNullOrWhiteSpace(cta) && !ContainsIgnoreCase(body, cta))
         {
@@ -834,6 +859,26 @@ public class GenerationJobPipelineService(
 
     private static bool ContainsIgnoreCase(string haystack, string needle)
         => haystack.Contains(needle, StringComparison.OrdinalIgnoreCase);
+
+    private static bool StartsWithIgnoreCase(string text, string prefix)
+        => text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Chuẩn hoá dòng tiêu đề: gộp về 1 dòng, VIẾT HOA (chữ to nổi bật), bỏ dấu chấm câu thừa ở cuối.
+    /// ToUpperInvariant xử lý đúng nguyên âm tiếng Việt có dấu (ư→Ư, ơ→Ơ, ế→Ế...) vì chúng là ký tự
+    /// tổ hợp sẵn, không bị vỡ như mẹo "in đậm" bằng ký tự Unicode toán học.
+    /// </summary>
+    private static string NormalizeTitleLine(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return string.Empty;
+
+        // Gộp mọi khoảng trắng (kể cả xuống dòng) thành 1 space — tiêu đề phải nằm gọn 1 dòng.
+        var line = string.Join(' ', title.Split(
+            (char[]?)null, StringSplitOptions.RemoveEmptyEntries)).Trim();
+
+        line = line.TrimEnd('.', ',', ';', ':', '!', '。', ' ');
+        return line.ToUpperInvariant();
+    }
 
     private static string? MergeTextGenerationExtraJson(
         string? existingExtraJson, TextGenerationJobOutput output)
@@ -1519,13 +1564,19 @@ public class GenerationJobPipelineService(
             }
             catch (AiProviderUnavailableException ex)
             {
+                // Chưa cấu hình ApiKey → đây là chế độ chạy thử, ảnh placeholder là đúng ý đồ.
                 logger.LogInformation(
                     "AI image unavailable for post {PostId}: {Message}. Using mock placeholder.", post.Id, ex.Message);
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex,
-                    "AI image generation failed for post {PostId}. Using mock placeholder.", post.Id);
+                // Provider có cấu hình nhưng gọi lỗi (503 quá tải, timeout, model sai...).
+                // KHÔNG được lặng lẽ thay ảnh placeholder 1x1 rồi để bài tự duyệt — ảnh hỏng sẽ
+                // lọt ra tận Page. Ném lỗi để job ghi Failed và bài dừng lại cho người xử lý.
+                logger.LogError(ex,
+                    "AI image generation failed for post {PostId} — dừng lại thay vì dùng ảnh placeholder", post.Id);
+                throw new AiImageGenerationException(
+                    $"Sinh ảnh AI thất bại: {ex.Message}. Bài chưa có ảnh — hãy bấm Tạo lại ảnh.", ex);
             }
         }
 
