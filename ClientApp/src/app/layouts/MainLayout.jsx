@@ -170,7 +170,7 @@ export default function MainLayout() {
       />
       <aside className={`sidebar${isSidebarOpen ? ' sidebar--open' : ''}`}>
         <div className="sidebar-brand">
-          <img className="sidebar-logo" src="/vni-logo.png" alt="VNI Education" />
+          <img className="sidebar-logo" src="/app-mark.svg" alt="" />
           <span className="sidebar-title">Automation</span>
         </div>
         <nav className="sidebar-nav">

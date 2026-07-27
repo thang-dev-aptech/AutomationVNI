@@ -7,16 +7,16 @@ export default function PrivacyPolicyPage() {
     <main className="legal-page">
       <article className="legal-card card">
         <header className="legal-header">
-          <img className="legal-logo" src="/vni-logo.png" alt="VNI Education" />
+          <img className="legal-logo" src="/app-mark.svg" alt="" />
           <h1 className="legal-title">Chính sách quyền riêng tư</h1>
           <p className="legal-subtitle">
-            Privacy Policy — VNI Automation · Cập nhật ngày 21/07/2026
+            Privacy Policy — Automation · Cập nhật ngày 21/07/2026
           </p>
         </header>
 
         <section className="legal-section">
           <p>
-            Chính sách này mô tả cách VNI Automation thu thập, sử dụng, lưu trữ
+            Chính sách này mô tả cách Automation thu thập, sử dụng, lưu trữ
             và bảo vệ dữ liệu khi bạn sử dụng ứng dụng hoặc kết nối tài khoản
             Facebook, Instagram Business và Threads.
           </p>
@@ -25,7 +25,7 @@ export default function PrivacyPolicyPage() {
         <section className="legal-section">
           <h2>1. Dữ liệu chúng tôi thu thập</h2>
           <ul>
-            <li>Thông tin tài khoản dùng để đăng nhập VNI Automation.</li>
+            <li>Thông tin tài khoản dùng để đăng nhập Automation.</li>
             <li>
               ID, tên, ảnh đại diện và thông tin các Page, kênh hoặc tài khoản
               mạng xã hội mà bạn cho phép kết nối.

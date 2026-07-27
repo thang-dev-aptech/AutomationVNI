@@ -35,9 +35,10 @@
 
 .auth-logo {
   display: block;
-  height: 56px;
-  width: auto;
-  margin-bottom: 20px;
+  height: 48px;
+  width: 48px;
+  margin-bottom: 16px;
+  border-radius: 12px;
 }
 
 .auth-title {

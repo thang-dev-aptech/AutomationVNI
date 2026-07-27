@@ -19,7 +19,7 @@ function resolveTitle(pathname) {
   if (pathname === '/posts/create') return 'Tạo bài viết mới'
   if (pathname.startsWith('/posts/')) return 'Chi tiết bài viết'
   if (pathname.startsWith('/bulk/')) return 'Chi tiết tiến trình hàng loạt'
-  return PAGE_TITLES[pathname] ?? 'VNI Automation'
+  return PAGE_TITLES[pathname] ?? 'Automation'
 }
 
 export default function Topbar({ onMenuToggle, isSidebarOpen = false }) {

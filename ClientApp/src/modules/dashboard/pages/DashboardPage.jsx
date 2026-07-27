@@ -28,7 +28,7 @@ export default function DashboardPage() {
     <section className="dashboard-page">
       <PageHeader
         title="Tổng quan"
-        description="VNI Automation — dashboard vận hành nội dung AI"
+        description="Automation — dashboard vận hành nội dung AI"
         actions={
           !isLoading ? (
             <button

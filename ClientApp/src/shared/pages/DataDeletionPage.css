@@ -35,9 +35,10 @@
 
 .legal-logo {
   display: block;
-  height: 48px;
-  width: auto;
-  margin-bottom: 20px;
+  height: 44px;
+  width: 44px;
+  margin-bottom: 16px;
+  border-radius: 12px;
 }
 
 .legal-title {

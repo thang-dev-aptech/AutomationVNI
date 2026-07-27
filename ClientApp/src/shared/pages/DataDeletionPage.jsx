@@ -7,16 +7,16 @@ export default function DataDeletionPage() {
     <main className="legal-page">
       <div className="legal-card card">
         <header className="legal-header">
-          <img className="legal-logo" src="/vni-logo.png" alt="VNI Education" />
+          <img className="legal-logo" src="/app-mark.svg" alt="" />
           <h1 className="legal-title">Hướng dẫn xóa dữ liệu người dùng</h1>
           <p className="legal-subtitle">
-            User Data Deletion Instructions — VNI Automation
+            User Data Deletion Instructions — Automation
           </p>
         </header>
 
         <section className="legal-section">
           <p>
-            VNI Automation kết nối các trang Facebook, tài khoản Instagram
+            Automation kết nối các trang Facebook, tài khoản Instagram
             Business và Threads của bạn để đăng bài, đọc và trả lời bình luận,
             tin nhắn. Chúng tôi lưu trữ token truy cập, thông tin trang/kênh và
             nội dung do bạn tạo. Bạn có toàn quyền yêu cầu xóa các dữ liệu này

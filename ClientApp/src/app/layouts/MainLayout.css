@@ -34,13 +34,10 @@
 }
 
 .sidebar-logo {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
-  background: #fff;
   object-fit: contain;
-  padding: 4px;
-  box-shadow: var(--shadow);
   flex-shrink: 0;
 }
 

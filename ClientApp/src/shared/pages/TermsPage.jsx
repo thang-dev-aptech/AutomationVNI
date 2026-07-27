@@ -7,16 +7,16 @@ export default function TermsPage() {
     <main className="legal-page">
       <article className="legal-card card">
         <header className="legal-header">
-          <img className="legal-logo" src="/vni-logo.png" alt="VNI Education" />
+          <img className="legal-logo" src="/app-mark.svg" alt="" />
           <h1 className="legal-title">Điều khoản dịch vụ</h1>
           <p className="legal-subtitle">
-            Terms of Service — VNI Automation · Cập nhật ngày 21/07/2026
+            Terms of Service — Automation · Cập nhật ngày 21/07/2026
           </p>
         </header>
 
         <section className="legal-section">
           <p>
-            Khi truy cập hoặc sử dụng VNI Automation, bạn đồng ý với các điều
+            Khi truy cập hoặc sử dụng Automation, bạn đồng ý với các điều
             khoản dưới đây. Nếu không đồng ý, vui lòng không sử dụng dịch vụ.
           </p>
         </section>
@@ -34,7 +34,7 @@ export default function TermsPage() {
         <section className="legal-section">
           <h2>2. Phạm vi dịch vụ</h2>
           <p>
-            VNI Automation hỗ trợ tạo, quản lý, lên lịch và đăng nội dung; đồng
+            Automation hỗ trợ tạo, quản lý, lên lịch và đăng nội dung; đồng
             thời hỗ trợ quản lý tương tác trên các nền tảng được tích hợp. Tính
             năng có thể phụ thuộc vào API, quyền truy cập và chính sách của nền
             tảng bên thứ ba như Meta.
