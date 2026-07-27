@@ -243,6 +243,45 @@ public class PostController
         }
     }
 
+    /// <summary>
+    /// Import CSV: 1 row = 1 bài / 1 kênh. Lịch pending trong ExtraJson → worker tự schedule sau Approved.
+    /// </summary>
+    [HttpPost("bulk-import")]
+    public async Task<IActionResult> BulkImport([FromBody] BulkImportRequest request, CancellationToken ct)
+    {
+        var rows = (request.Rows ?? [])
+            .Where(r => !string.IsNullOrWhiteSpace(r.Idea) && r.SocialChannelId != Guid.Empty)
+            .ToList();
+        if (rows.Count == 0)
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "File không có dòng hợp lệ (cần idea + kênh)."));
+
+        var hasPack = request.PromptTemplateId is Guid p && p != Guid.Empty;
+        var channelIds = rows.Select(r => r.SocialChannelId).Distinct().ToList();
+        var pageMap = await _pageContextRepository.GetMapByChannelsAsync(channelIds, ct);
+        if (!hasPack)
+        {
+            var missing = channelIds
+                .Where(id => { pageMap.TryGetValue(id, out var pc); return !PageContextRepository.HasTemplateReady(pc); })
+                .ToList();
+            if (missing.Count > 0)
+                return BadRequest(ApiResponse.Fail(
+                    "VALIDATION_ERROR",
+                    "Có page chưa cấu hình PageContext — hãy chọn danh mục ghi đè hoặc setup Page Context."));
+        }
+
+        try
+        {
+            request.Rows = rows;
+            var result = await _repo.BulkImportAsync(request, pageMap, ct);
+            return Ok(ApiResponse.Ok(result,
+                $"Đã import {result.Created} bài — AI sinh nền, xong sẽ tự lên lịch nếu có scheduled_at."));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", ex.Message));
+        }
+    }
+
     private static List<Guid> ResolveChannelIds(CreatePostRequest request)
     {
         var fromList = (request.SocialChannelIds ?? [])

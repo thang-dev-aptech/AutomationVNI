@@ -168,6 +168,95 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
     }
 
     /// <summary>
+    /// Import CSV: 1 row = 1 post / 1 channel. Lịch dự kiến ghi ExtraJson.pendingSchedule
+    /// (worker schedule sau khi Approved).
+    /// </summary>
+    public async Task<BulkCreateResult> BulkImportAsync(
+        BulkImportRequest request,
+        IReadOnlyDictionary<Guid, PageContextModel>? pageContextByChannel = null,
+        CancellationToken ct = default)
+    {
+        var rows = (request.Rows ?? [])
+            .Where(r => !string.IsNullOrWhiteSpace(r.Idea) && r.SocialChannelId != Guid.Empty)
+            .ToList();
+        if (rows.Count == 0)
+            throw new ArgumentException("Danh sách import trống (cần idea + socialChannelId)");
+
+        var timezone = string.IsNullOrWhiteSpace(request.Timezone)
+            ? "Asia/Ho_Chi_Minh"
+            : request.Timezone.Trim();
+        var batchTemplate = request.PromptTemplateId is Guid p && p != Guid.Empty ? p : (Guid?)null;
+        var pageMap = pageContextByChannel ?? new Dictionary<Guid, PageContextModel>();
+
+        var batchId = Guid.NewGuid();
+        var userId = GetCurrentUserId();
+        var posts = new List<PostModel>();
+
+        foreach (var row in rows)
+        {
+            Guid? textTpl;
+            Guid? imageTpl;
+            var itemPack = row.PromptTemplateId is Guid ip && ip != Guid.Empty ? ip : batchTemplate;
+            if (itemPack is Guid pack)
+            {
+                textTpl = pack;
+                imageTpl = pack;
+            }
+            else
+            {
+                pageMap.TryGetValue(row.SocialChannelId, out var pc);
+                var (pcText, pcImage) = PageContextRepository.ResolveDefaultTemplateIds(pc);
+                textTpl = pcText;
+                imageTpl = pcImage ?? pcText;
+                textTpl ??= imageTpl;
+            }
+
+            var post = new PostModel
+            {
+                Title = row.Idea.Trim(),
+                SocialChannelId = row.SocialChannelId,
+                CategoryId = row.CategoryId ?? request.CategoryId,
+                GenerationFlow = request.GenerationFlow,
+                TextTemplateId = textTpl,
+                ImageTemplateId = imageTpl,
+                BatchId = batchId,
+                UserId = userId,
+                Status = PostStatus.Queued,
+                ExtraJson = BuildImportExtraJson(row.Objective, row.ScheduledAtLocal, timezone),
+            };
+            posts.Add(post);
+        }
+
+        await MultiCreateAsync(posts, ct);
+        return new BulkCreateResult
+        {
+            BatchId = batchId,
+            Created = posts.Count,
+            PostIds = posts.Select(p => p.Id).ToList()
+        };
+    }
+
+    private static string? BuildImportExtraJson(string? objective, string? scheduledAtLocal, string timezone)
+    {
+        var hasObjective = !string.IsNullOrWhiteSpace(objective);
+        var hasSchedule = !string.IsNullOrWhiteSpace(scheduledAtLocal);
+        if (!hasObjective && !hasSchedule) return null;
+
+        var root = new Dictionary<string, object?>();
+        if (hasObjective)
+            root["input"] = new Dictionary<string, object?> { ["objective"] = objective!.Trim() };
+        if (hasSchedule)
+        {
+            root["pendingSchedule"] = new Dictionary<string, object?>
+            {
+                ["atLocal"] = scheduledAtLocal!.Trim(),
+                ["timezone"] = timezone,
+            };
+        }
+        return System.Text.Json.JsonSerializer.Serialize(root);
+    }
+
+    /// <summary>
     /// Fan-out 1 ý tưởng × N kênh → Queued. Template: PromptTemplateId chung,
     /// hoặc default từ PageContext theo từng kênh.
     /// </summary>

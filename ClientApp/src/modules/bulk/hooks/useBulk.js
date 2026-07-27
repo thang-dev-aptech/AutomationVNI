@@ -8,6 +8,12 @@ export function useBulkCreate() {
   })
 }
 
+export function useBulkImport() {
+  return useMutation({
+    mutationFn: async (payload) => unwrapApiData(await bulkApi.import(payload)),
+  })
+}
+
 export function useBulkApprove() {
   return useMutation({
     mutationFn: async (payload) => unwrapApiData(await bulkApi.approve(payload)),

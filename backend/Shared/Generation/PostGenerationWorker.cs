@@ -8,9 +8,9 @@ using Microsoft.Extensions.Options;
 namespace Backend.Shared.Generation;
 
 /// <summary>
-/// Worker nền rút các post Status=Queued (do bulk-create đẩy vào) và sinh nội dung text+image
+/// Worker nền rút các post Status=Queued (do bulk-create / bulk-import đẩy vào) và sinh nội dung text+image
 /// bất đồng bộ, giới hạn concurrency để tôn trọng rate-limit AI.
-/// Xong → Approved (cùng flow create-and-generate, bỏ cổng WaitingReview).
+/// Xong → Approved; nếu ExtraJson có pendingSchedule thì tự Schedule.
 /// Bật/tắt qua config "GenerationWorker".
 /// </summary>
 public class PostGenerationWorker(
@@ -90,6 +90,7 @@ public class PostGenerationWorker(
             {
                 await workflow.ApproveAsync(postId, ct);
                 logger.LogInformation("PostGenerationWorker generated+approved post {PostId}", postId);
+                post = await workflow.GetPostAsync(postId, ct);
             }
             else
             {
@@ -97,6 +98,8 @@ public class PostGenerationWorker(
                     "PostGenerationWorker generated post {PostId} (status={Status}, skipped auto-approve)",
                     postId, post?.Status);
             }
+
+            await TryApplyPendingScheduleAsync(workflow, post, postId, ct);
         }
         catch (Exception ex)
         {
@@ -105,12 +108,12 @@ public class PostGenerationWorker(
             try
             {
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var post = await db.Set<PostModel>().FirstOrDefaultAsync(p => p.Id == postId, ct);
-                if (post is not null && post.Status is PostStatus.Queued or PostStatus.Generating)
+                var failed = await db.Set<PostModel>().FirstOrDefaultAsync(p => p.Id == postId, ct);
+                if (failed is not null && failed.Status is PostStatus.Queued or PostStatus.Generating)
                 {
-                    post.Status = PostStatus.Failed;
-                    post.GenerationError = ex.Message;
-                    post.UpdatedAt = DateTime.UtcNow;
+                    failed.Status = PostStatus.Failed;
+                    failed.GenerationError = ex.Message;
+                    failed.UpdatedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync(ct);
                 }
             }
@@ -118,6 +121,48 @@ public class PostGenerationWorker(
             {
                 logger.LogWarning(saveEx, "PostGenerationWorker could not mark post {PostId} failed", postId);
             }
+        }
+    }
+
+    private async Task TryApplyPendingScheduleAsync(
+        PostWorkflowService workflow,
+        PostModel? post,
+        Guid postId,
+        CancellationToken ct)
+    {
+        post ??= await workflow.GetPostAsync(postId, ct);
+        if (post is null || post.Status != PostStatus.Approved) return;
+
+        var pending = PendingScheduleHelper.TryRead(post.ExtraJson);
+        if (pending is null) return;
+
+        if (!PendingScheduleHelper.TryParseLocalToUtc(pending.AtLocal, pending.Timezone, out var utc))
+        {
+            logger.LogWarning(
+                "PostGenerationWorker skip schedule post {PostId}: cannot parse '{AtLocal}'",
+                postId, pending.AtLocal);
+            return;
+        }
+
+        if (utc <= DateTime.UtcNow)
+        {
+            logger.LogWarning(
+                "PostGenerationWorker skip schedule post {PostId}: time {Utc} already passed",
+                postId, utc);
+            return;
+        }
+
+        try
+        {
+            await workflow.ScheduleAsync(postId, utc, pending.Timezone, ct);
+            logger.LogInformation(
+                "PostGenerationWorker auto-scheduled post {PostId} at {Utc} ({Tz} {Local})",
+                postId, utc, pending.Timezone, pending.AtLocal);
+        }
+        catch (Exception ex)
+        {
+            // Không fail generation — để Approved, user lên lịch tay trên batch page.
+            logger.LogWarning(ex, "PostGenerationWorker could not auto-schedule post {PostId}", postId);
         }
     }
 }

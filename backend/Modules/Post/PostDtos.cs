@@ -59,6 +59,28 @@ public class BulkCreateResult
     public List<Guid> PostIds { get; set; } = [];
 }
 
+/// <summary>1 dòng CSV = 1 bài / 1 kênh (không fan-out). Lịch lưu pending trong ExtraJson.</summary>
+public class BulkImportRow
+{
+    public string Idea { get; set; } = string.Empty;
+    public string? Objective { get; set; }
+    public Guid SocialChannelId { get; set; }
+    /// <summary>Giờ local yyyy-MM-dd HH:mm (timezone của request).</summary>
+    public string? ScheduledAtLocal { get; set; }
+    public Guid? PromptTemplateId { get; set; }
+    public Guid? CategoryId { get; set; }
+}
+
+public class BulkImportRequest
+{
+    public List<BulkImportRow> Rows { get; set; } = [];
+    public string Timezone { get; set; } = "Asia/Ho_Chi_Minh";
+    public GenerationFlow GenerationFlow { get; set; } = GenerationFlow.FullAI;
+    /// <summary>Ghi đè danh mục cho cả lô; null = mỗi page dùng PageContext.</summary>
+    public Guid? PromptTemplateId { get; set; }
+    public Guid? CategoryId { get; set; }
+}
+
 public class BulkTargetRequest
 {
     public Guid? BatchId { get; set; }
