@@ -35,6 +35,12 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         if (request.GenerationFlow.HasValue)
             query = query.Where(x => x.GenerationFlow == request.GenerationFlow.Value);
 
+        if (request.IsRecycled == true)
+            query = query.Where(x => x.SourcePostId != null);
+        
+        if (request.IsRecycled == false)
+            query = query.Where(x => x.SourcePostId == null);
+
         if (request.FromDate.HasValue)
             query = query.Where(x => x.CreatedAt >= request.FromDate.Value);
 
@@ -425,6 +431,7 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
             Status = entity.Status,
             UserId = entity.UserId,
             BatchId = entity.BatchId,
+            SourcePostId = entity.SourcePostId,
             ScheduledPublishAt = entity.ScheduledPublishAt,
             ScheduleTimezone = entity.ScheduleTimezone,
             PublishedAt = entity.PublishedAt,

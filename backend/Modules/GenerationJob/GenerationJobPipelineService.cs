@@ -59,10 +59,31 @@ public class GenerationJobPipelineService(
     /// </summary>
     public async Task GenerateForPostAsync(Guid postId, CancellationToken ct = default)
     {
+        var post = await RequirePostAsync(postId, ct);
+
+        // ── Nhánh Recycle Rewrite: sinh text
+        if (post.GenerationFlow == GenerationFlow.RecycleRewrite)
+        {
+            var textJobRv = await QueueTextGenerationAsync(postId, ct);
+            await ProcessAsync(textJobRv.JobId, ct);
+            
+            // Nếu đã có ảnh (người dùng chọn KeepOld ở bước trước), dừng.
+            if (await HasAttachedMediaAsync(postId, ct)) return;
+
+            // Nếu chưa có ảnh (người dùng chọn VectorSearch, được đánh dấu bằng ImageTemplateId = Guid.Empty)
+            post = await RequirePostAsync(postId, ct);
+            if (post.ImageTemplateId == Guid.Empty)
+            {
+                var matchJob = await QueueMediaMatchAsync(postId, ct);
+                await ProcessAsync(matchJob.JobId, ct);
+            }
+            return;
+        }
+
         var textJob = await QueueTextGenerationAsync(postId, ct);
         await ProcessAsync(textJob.JobId, ct);
 
-        var post = await RequirePostAsync(postId, ct);
+        post = await RequirePostAsync(postId, ct);
         var useMedia = post.GenerationFlow == GenerationFlow.RAG;
 
         // FullAI + user đã gắn media sẵn → giữ hành vi cũ: bỏ sinh ảnh AI.

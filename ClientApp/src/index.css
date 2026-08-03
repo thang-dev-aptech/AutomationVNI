@@ -397,3 +397,13 @@ tbody tr:last-child td {
     scroll-behavior: auto !important;
   }
 }
+
+.btn-success {
+  background-color: #10b981;
+  color: white;
+  border: 1px solid #059669;
+}
+
+.btn-success:hover:not(:disabled) {
+  background-color: #059669;
+}

@@ -15,6 +15,7 @@ public class PostController
 {
     private readonly PostRepository _repo;
     private readonly PostWorkflowService _workflow;
+    private readonly PostRecycleService _recycleService;
     private readonly GenerationJob.GenerationJobPipelineService _generationPipeline;
     private readonly PublishLog.IPublishPipelineService _publishPipeline;
     private readonly PageContextRepository _pageContextRepository;
@@ -22,12 +23,14 @@ public class PostController
     public PostController(
         PostRepository repository,
         PostWorkflowService workflow,
+        PostRecycleService recycleService,
         GenerationJob.GenerationJobPipelineService generationPipeline,
         PublishLog.IPublishPipelineService publishPipeline,
         PageContextRepository pageContextRepository) : base(repository)
     {
         _repo = repository;
         _workflow = workflow;
+        _recycleService = recycleService;
         _generationPipeline = generationPipeline;
         _publishPipeline = publishPipeline;
         _pageContextRepository = pageContextRepository;
@@ -207,6 +210,22 @@ public class PostController
         var final = await _workflow.GetPostAsync(post.Id, ct);
         var response = await _repo.GetResponseByIdAsync(final!.Id, ct);
         return Ok(ApiResponse.Ok(response!, "Đã tạo bài và sinh nội dung xong"));
+    }
+
+    /// <summary>
+    /// Tạo batch bài mới từ các bài đã đăng (Published) của một kênh.
+    /// Ảnh cũ được tái sử dụng, không sinh ảnh mới.
+    /// flow=Recycle → copy nguyên văn, Status=Approved ngay.
+    /// flow=RecycleRewrite → AI paraphrase, Status=Queued (worker xử lý).
+    /// </summary>
+    [HttpPost("recycle")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> RecyclePosts(
+        [FromBody] RecyclePostRequest request,
+        CancellationToken ct)
+    {
+        var result = await _recycleService.CreateRecycleBatchAsync(request, ct);
+        return Ok(ApiResponse.Ok(result));
     }
 
     /// <summary>Tạo hàng loạt bài (items × channels). Trả về ngay; worker sinh nội dung nền.</summary>

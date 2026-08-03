@@ -5,6 +5,7 @@ export const postApi = {
   getById: (id) => axiosInstance.get(`/api/Post/${id}`),
   filter: (params) => axiosInstance.post('/api/Post/filter', params),
   create: (payload) => axiosInstance.post('/api/Post', payload),
+  recycle: (payload) => axiosInstance.post('/api/Post/recycle', payload),
   update: (id, payload) => axiosInstance.put(`/api/Post/${id}`, payload),
   softDelete: (id) => axiosInstance.delete(`/api/Post/${id}`),
   softDeleteAll: () => axiosInstance.delete('/api/Post/all'),
