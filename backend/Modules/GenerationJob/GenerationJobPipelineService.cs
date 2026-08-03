@@ -61,18 +61,10 @@ public class GenerationJobPipelineService(
     {
         var post = await RequirePostAsync(postId, ct);
 
-        // ── Nhánh Recycle Rewrite: sinh text
-        if (post.GenerationFlow == GenerationFlow.RecycleRewrite)
+        // ── Nhánh Recycle (Copy nguyên văn) + VectorSearch
+        if (post.GenerationFlow == GenerationFlow.Recycle)
         {
-            var textJobRv = await QueueTextGenerationAsync(postId, ct);
-            await ProcessAsync(textJobRv.JobId, ct);
-            
-            // Nếu đã có ảnh (người dùng chọn KeepOld ở bước trước), dừng.
-            if (await HasAttachedMediaAsync(postId, ct)) return;
-
-            // Nếu chưa có ảnh (người dùng chọn VectorSearch, được đánh dấu bằng ImageTemplateId = Guid.Empty)
-            post = await RequirePostAsync(postId, ct);
-            if (post.ImageTemplateId == Guid.Empty)
+            if (post.ImageTemplateId == Guid.Empty && !await HasAttachedMediaAsync(postId, ct))
             {
                 var matchJob = await QueueMediaMatchAsync(postId, ct);
                 await ProcessAsync(matchJob.JobId, ct);

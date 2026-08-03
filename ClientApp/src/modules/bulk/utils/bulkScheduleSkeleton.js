@@ -99,7 +99,7 @@ export function parseTimeSlots(slotsText) {
     .filter(Boolean)
 }
 
-function eachDateInclusive(fromYmd, toYmd) {
+export function eachDateInclusive(fromYmd, toYmd) {
   const from = new Date(`${fromYmd}T00:00:00`)
   const to = new Date(`${toYmd}T00:00:00`)
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to < from) {

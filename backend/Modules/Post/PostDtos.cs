@@ -118,14 +118,13 @@ public enum RecycleImageStrategy
 
 public class RecyclePostRequest
 {
-    public Guid ChannelId { get; set; }
+    public List<Guid> ChannelIds { get; set; } = [];
     public int Count { get; set; } = 10;
     public GenerationFlow Flow { get; set; } = GenerationFlow.Recycle;
     
     // Scheduling
     public bool ScheduleEnabled { get; set; }
-    public DateTime? StartTime { get; set; }
-    public int? IntervalMinutes { get; set; }
+    public List<DateTime>? StartTimes { get; set; }
     
     // Image Strategy
     public RecycleImageStrategy ImageStrategy { get; set; } = RecycleImageStrategy.KeepOld;
