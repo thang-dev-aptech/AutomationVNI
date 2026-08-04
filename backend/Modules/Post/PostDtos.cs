@@ -125,6 +125,7 @@ public class RecyclePostRequest
     // Scheduling
     public bool ScheduleEnabled { get; set; }
     public List<DateTime>? StartTimes { get; set; }
+    public int JitterMinutes { get; set; } = 35;
     
     // Image Strategy
     public RecycleImageStrategy ImageStrategy { get; set; } = RecycleImageStrategy.KeepOld;

@@ -6,6 +6,7 @@ import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialCh
 import { useRecyclePosts } from '../hooks/usePosts'
 import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import {
+  eachDateInclusive,
   buildJitteredTimesForDay,
   parseTimeSlots
 } from '@/modules/bulk/utils/bulkScheduleSkeleton'
@@ -15,13 +16,18 @@ function defaultDateFrom() {
   return d.toISOString().slice(0, 10)
 }
 
+function defaultDateTo() {
+  const d = new Date()
+  d.setDate(d.getDate() + 6)
+  return d.toISOString().slice(0, 10)
+}
+
 export default function RecyclePostModal({ open, onClose }) {
   const [channelIds, setChannelIds] = useState([])
-  const [count, setCount] = useState(10)
-  const [scheduleEnabled, setScheduleEnabled] = useState(false)
   const [skelFrom, setSkelFrom] = useState(defaultDateFrom)
+  const [skelTo, setSkelTo] = useState(defaultDateTo)
   const [skelSlots, setSkelSlots] = useState('09:00,15:00')
-  const [skelJitter, setSkelJitter] = useState(35)
+  const [skelJitter, setSkelJitter] = useState(60)
   const [imageStrategy, setImageStrategy] = useState(1) // 1 = KeepOld, 2 = VectorSearch
 
   const { data: channels = [] } = useSocialChannelAll()
@@ -30,9 +36,8 @@ export default function RecyclePostModal({ open, onClose }) {
   const handleClose = () => {
     if (recycleMutation.isPending) return
     setChannelIds([])
-    setCount(10)
-    setScheduleEnabled(false)
     setSkelFrom(defaultDateFrom())
+    setSkelTo(defaultDateTo())
     setSkelSlots('09:00,15:00')
     setSkelJitter(35)
     setImageStrategy(1)
@@ -44,49 +49,46 @@ export default function RecyclePostModal({ open, onClose }) {
       toast.error('Vui lòng chọn ít nhất một kênh mạng xã hội')
       return
     }
-    const reqCount = Number(count)
-    if (reqCount < 1 || reqCount > 100) {
-      toast.error('Số lượng bài phải từ 1 đến 100')
-      return
-    }
 
     let startTimes = []
-    if (scheduleEnabled) {
-      try {
-        const jitter = Math.max(0, Math.min(240, Number(skelJitter) || 0))
-        const slots = parseTimeSlots(skelSlots)
-        if (slots.length === 0) {
-          toast.error('Vui lòng nhập ít nhất 1 khung giờ hợp lệ, ví dụ 09:00,15:00')
-          return
-        }
-        let scheduledTimes = []
-        let currentDay = new Date(skelFrom)
-        
-        while (scheduledTimes.length < reqCount) {
-          const dayStr = currentDay.toISOString().slice(0, 10)
-          const times = buildJitteredTimesForDay(dayStr, slots, jitter, 0)
-          for (const t of times) {
-            if (scheduledTimes.length < reqCount) {
-              scheduledTimes.push(t.toISOString())
-            }
-          }
-          currentDay.setDate(currentDay.getDate() + 1)
-        }
-        
-        startTimes = scheduledTimes
-      } catch (err) {
-        toast.error(err.message || 'Lỗi tính toán khung giờ')
+    try {
+      const days = eachDateInclusive(skelFrom, skelTo)
+      const jitterValue = Math.max(0, Math.min(240, Number(skelJitter) || 0))
+      const slots = parseTimeSlots(skelSlots)
+      if (slots.length === 0) {
+        toast.error('Vui lòng nhập ít nhất 1 khung giờ hợp lệ, ví dụ 09:00,15:00')
         return
       }
+
+      for (const day of days) {
+        // Gọi hàm nhưng truyền jitter = 0 để Frontend không tự xê dịch
+        const times = buildJitteredTimesForDay(day, slots, 0, 0)
+        for (const t of times) {
+          startTimes.push(t.toISOString())
+        }
+      }
+
+      if (startTimes.length === 0) {
+        toast.error('Không tính toán được mốc thời gian nào từ lịch trình đã chọn')
+        return
+      }
+      if (startTimes.length > 100) {
+        toast.error(`Lịch trình sinh ra tới ${startTimes.length} bài. Tối đa chỉ hỗ trợ tạo 100 bài mỗi lần.`)
+        return
+      }
+    } catch (err) {
+      toast.error(err.message || 'Lỗi tính toán khung giờ')
+      return
     }
 
     try {
       const result = await recycleMutation.mutateAsync({
         channelIds,
-        count: reqCount,
+        count: startTimes.length,
         flow: 3, // GenerationFlow.Recycle
-        scheduleEnabled,
-        startTimes: scheduleEnabled ? startTimes : null,
+        scheduleEnabled: true,
+        startTimes: startTimes,
+        jitterMinutes: Number(skelJitter) || 0,
         imageStrategy: Number(imageStrategy)
       })
       const createdCount = result?.created ?? 0
@@ -160,19 +162,6 @@ export default function RecyclePostModal({ open, onClose }) {
         </div>
 
         <div className="form-group" style={{ marginBottom: 0 }}>
-          <label htmlFor="recycle-count">Số lượng bài muốn tạo mới</label>
-          <input
-            id="recycle-count"
-            type="number"
-            min="1"
-            max="100"
-            value={count}
-            onChange={(e) => setCount(e.target.value)}
-            disabled={recycleMutation.isPending}
-          />
-        </div>
-
-        <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Chiến lược hình ảnh</label>
           <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 'normal' }}>
@@ -201,50 +190,48 @@ export default function RecyclePostModal({ open, onClose }) {
         </div>
 
         <div className="form-group" style={{ marginBottom: 0 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={scheduleEnabled}
-              onChange={(e) => setScheduleEnabled(e.target.checked)}
-              disabled={recycleMutation.isPending}
-            />
-            Tự động lên lịch đăng
-          </label>
-          {scheduleEnabled && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 12 }}>
-              <div>
-                <label style={{ fontSize: '0.85rem' }}>Từ ngày</label>
-                <input
-                  type="date"
-                  value={skelFrom}
-                  onChange={(e) => setSkelFrom(e.target.value)}
-                  disabled={recycleMutation.isPending}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '0.85rem' }}>Khung giờ / ngày</label>
-                <input
-                  value={skelSlots}
-                  onChange={(e) => setSkelSlots(e.target.value)}
-                  placeholder="09:00,15:00"
-                  disabled={recycleMutation.isPending}
-                />
-                <p className="bulk-field-hint" style={{ marginTop: 4, fontSize: '0.75rem', color: '#666' }}>Ví dụ: 09:00,15:00</p>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.85rem' }}>Lệch giờ ± phút</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="240"
-                  value={skelJitter}
-                  onChange={(e) => setSkelJitter(e.target.value)}
-                  disabled={recycleMutation.isPending}
-                />
-                <p className="bulk-field-hint" style={{ marginTop: 4, fontSize: '0.75rem', color: '#666' }}>0 = đúng khung</p>
-              </div>
+          <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Cấu hình lịch đăng</label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 12 }}>
+            <div>
+              <label style={{ fontSize: '0.85rem' }}>Từ ngày</label>
+              <input
+                type="date"
+                value={skelFrom}
+                onChange={(e) => setSkelFrom(e.target.value)}
+                disabled={recycleMutation.isPending}
+              />
             </div>
-          )}
+            <div>
+              <label style={{ fontSize: '0.85rem' }}>Đến ngày</label>
+              <input
+                type="date"
+                value={skelTo}
+                onChange={(e) => setSkelTo(e.target.value)}
+                disabled={recycleMutation.isPending}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '0.85rem' }}>Khung giờ / ngày</label>
+              <input
+                value={skelSlots}
+                onChange={(e) => setSkelSlots(e.target.value)}
+                placeholder="09:00,15:00"
+                disabled={recycleMutation.isPending}
+              />
+              <p className="bulk-field-hint" style={{ marginTop: 4, fontSize: '0.75rem', color: '#666' }}>Ví dụ: 09:00,15:00</p>
+            </div>
+            <div>
+              <label style={{ fontSize: '0.85rem' }}>Độ lệch giờ (phút)</label>
+              <input
+                type="number"
+                min="0"
+                value={skelJitter}
+                onChange={(e) => setSkelJitter(e.target.value)}
+                disabled={recycleMutation.isPending}
+              />
+              <p className="bulk-field-hint" style={{ marginTop: 4, fontSize: '0.75rem', color: '#666' }}>Lệch ngẫu nhiên ± phút</p>
+            </div>
+          </div>
         </div>
       </div>
     </Modal>

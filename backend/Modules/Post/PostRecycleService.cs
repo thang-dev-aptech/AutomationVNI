@@ -53,7 +53,10 @@ public class PostRecycleService(
                 DateTime? scheduledAt = null;
                 if (request.ScheduleEnabled && request.StartTimes != null && i < request.StartTimes.Count)
                 {
-                    scheduledAt = request.StartTimes[i];
+                    // Lệch giờ ngẫu nhiên trong khoảng [-JitterMinutes, +JitterMinutes]
+                    int jitter = request.JitterMinutes;
+                    int offsetMinutes = jitter > 0 ? Random.Shared.Next(-jitter, jitter + 1) : 0;
+                    scheduledAt = request.StartTimes[i].AddMinutes(offsetMinutes);
                 }
 
                 var baseStatus = request.Flow == GenerationFlow.Recycle
