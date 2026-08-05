@@ -293,6 +293,7 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
             return PageContextRepository.HasTemplateReady(pc);
         });
 
+        var channelIndex = 0;
         foreach (var ch in channelIds.Distinct())
         {
             pageContextByChannel.TryGetValue(ch, out var pc);
@@ -323,7 +324,13 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
                 UserId = userId,
                 Status = PostStatus.Queued
             };
-            post.ExtraJson = BuildFanOutExtraJson(objective, sourceArticle);
+            // Mỗi kênh một góc nhìn khác nhau. Không giao góc thì AI viết tiêu đề 60 ký tự
+            // gần như y hệt cho mọi page — đo thực tế chỉ khác đúng một cụm từ.
+            post.ExtraJson = BuildFanOutExtraJson(
+                objective,
+                sourceArticle is null ? null
+                    : sourceArticle with { Angle = HeadlineAngles.ForIndex(channelIndex, sourceArticle.Title) });
+            channelIndex++;
             posts.Add(post);
         }
 
