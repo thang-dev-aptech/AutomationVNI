@@ -1,0 +1,185 @@
+using Backend.Modules.ContentCrawl.Enums;
+using Backend.Modules.Post.Enums;
+using Backend.Shared;
+
+namespace Backend.Modules.ContentCrawl;
+
+// ── Nguồn cào ───────────────────────────────────────────────────────────────
+
+public class CreateCrawlSourceRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public CrawlSourceType SourceType { get; set; } = CrawlSourceType.Rss;
+    public string Url { get; set; } = string.Empty;
+    public Guid? CategoryId { get; set; }
+    public bool IsActive { get; set; } = true;
+    public int IntervalMinutes { get; set; } = 30;
+    public int MaxItemsPerRun { get; set; } = 30;
+    public int LookbackHours { get; set; } = 48;
+    public List<string>? IncludeKeywords { get; set; }
+    public List<string>? ExcludeKeywords { get; set; }
+    public List<Guid>? DefaultChannelIds { get; set; }
+    public string? BrowserProfile { get; set; }
+}
+
+public class UpdateCrawlSourceRequest
+{
+    public string? Name { get; set; }
+    public string? Url { get; set; }
+    public Guid? CategoryId { get; set; }
+    public bool? IsActive { get; set; }
+    public int? IntervalMinutes { get; set; }
+    public int? MaxItemsPerRun { get; set; }
+    public int? LookbackHours { get; set; }
+    public List<string>? IncludeKeywords { get; set; }
+    public List<string>? ExcludeKeywords { get; set; }
+    public List<Guid>? DefaultChannelIds { get; set; }
+    public string? BrowserProfile { get; set; }
+}
+
+public class CrawlSourceResponse
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public CrawlSourceType SourceType { get; set; }
+    public string Url { get; set; } = string.Empty;
+    public string? SiteDomain { get; set; }
+    public Guid? CategoryId { get; set; }
+    public bool IsActive { get; set; }
+    public int IntervalMinutes { get; set; }
+    public int MaxItemsPerRun { get; set; }
+    public int LookbackHours { get; set; }
+    public DateTime? LastRunAt { get; set; }
+    public DateTime? LastSuccessAt { get; set; }
+    public string? LastError { get; set; }
+    public int ConsecutiveFailures { get; set; }
+    public List<string> IncludeKeywords { get; set; } = [];
+    public List<string> ExcludeKeywords { get; set; } = [];
+    public List<Guid> DefaultChannelIds { get; set; } = [];
+    public string? BrowserProfile { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+// ── Lượt cào ────────────────────────────────────────────────────────────────
+
+public class CrawlRunResponse
+{
+    public Guid Id { get; set; }
+    public Guid CrawlSourceId { get; set; }
+    public string? SourceName { get; set; }
+    public CrawlRunStatus Status { get; set; }
+    public DateTime StartedAt { get; set; }
+    public DateTime? FinishedAt { get; set; }
+    public int ItemsFetched { get; set; }
+    public int ItemsNew { get; set; }
+    public int ItemsDuplicate { get; set; }
+    public int ItemsFiltered { get; set; }
+    public int DurationMs { get; set; }
+    public string? ErrorMessage { get; set; }
+    public string? TriggerSource { get; set; }
+}
+
+// ── Tin đã cào ──────────────────────────────────────────────────────────────
+
+public class CrawledArticleFilterRequest : PagedFilterRequest
+{
+    public Guid? CrawlSourceId { get; set; }
+    public CrawledArticleStatus? Status { get; set; }
+    public List<CrawledArticleStatus>? Statuses { get; set; }
+    public string? Keyword { get; set; }
+    public DateTime? FromDate { get; set; }
+    public DateTime? ToDate { get; set; }
+}
+
+public class CrawledArticleResponse
+{
+    public Guid Id { get; set; }
+    public Guid CrawlSourceId { get; set; }
+    public string? SourceName { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string? Summary { get; set; }
+    public string SourceUrl { get; set; } = string.Empty;
+    public string? Author { get; set; }
+    public string? SourceCategory { get; set; }
+    public string? ThumbnailUrl { get; set; }
+    public DateTime? PublishedAt { get; set; }
+    public DateTime FetchedAt { get; set; }
+
+    public CrawledArticleStatus Status { get; set; }
+    public DedupMethod DuplicateMethod { get; set; }
+    public DuplicateTarget DuplicateTarget { get; set; }
+    public Guid? DuplicateOfId { get; set; }
+    public double? DuplicateScore { get; set; }
+    public string? DuplicateReason { get; set; }
+
+    public string? DraftContent { get; set; }
+    /// <summary>Cảnh báo từ CrawlContentGuard: số/tên trong bản nháp không có trong tư liệu gốc.</summary>
+    public List<string> FactWarnings { get; set; } = [];
+
+    public string? RejectReason { get; set; }
+    public string? ErrorMessage { get; set; }
+    public string? ReviewedBy { get; set; }
+    public DateTime? ReviewedAt { get; set; }
+    public Guid? ResultBatchId { get; set; }
+    public int ResultPostCount { get; set; }
+}
+
+public class ApproveCrawledArticleRequest
+{
+    /// <summary>Bỏ trống thì lấy DefaultChannelIds của nguồn.</summary>
+    public List<Guid>? ChannelIds { get; set; }
+    public GenerationFlow GenerationFlow { get; set; } = GenerationFlow.FullAI;
+    public Guid? PromptTemplateId { get; set; }
+    public string? Objective { get; set; }
+    /// <summary>Mốc bắt đầu rải lịch. Bỏ trống = từ bây giờ.</summary>
+    public DateTime? StartAtUtc { get; set; }
+    /// <summary>Ghi đè AutoScheduleOnApprove trong config cho riêng lần duyệt này.</summary>
+    public bool? AutoSchedule { get; set; }
+}
+
+public class ApproveCrawledArticleResult
+{
+    public Guid ArticleId { get; set; }
+    public Guid BatchId { get; set; }
+    public int Created { get; set; }
+    public List<Guid> PostIds { get; set; } = [];
+    public List<DateTime> ScheduledTimesUtc { get; set; } = [];
+    public string Message { get; set; } = string.Empty;
+}
+
+public class RejectCrawledArticleRequest
+{
+    public string? Reason { get; set; }
+}
+
+public class CrawlNowRequest
+{
+    public string? TriggerSource { get; set; }
+}
+
+/// <summary>Kết quả thử một feed — parse thật nhưng KHÔNG ghi gì vào DB.</summary>
+public class TestCrawlSourceResult
+{
+    public bool Ok { get; set; }
+    public string? Error { get; set; }
+    public int ItemCount { get; set; }
+    public List<TestCrawlItem> Items { get; set; } = [];
+}
+
+public class TestCrawlItem
+{
+    public string Title { get; set; } = string.Empty;
+    public string? Summary { get; set; }
+    public string Link { get; set; } = string.Empty;
+    public string? Author { get; set; }
+    public string? ThumbnailUrl { get; set; }
+    public DateTime? PublishedAtUtc { get; set; }
+}
+
+public class CrawlInboxSummaryResponse
+{
+    public Dictionary<string, int> ByStatus { get; set; } = [];
+    public int PendingCount { get; set; }
+    public int TotalActiveSources { get; set; }
+    public DateTime? LastRunAt { get; set; }
+}

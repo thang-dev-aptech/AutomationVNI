@@ -522,6 +522,24 @@ public class GenerationJobPipelineService(
                 post.Id, request.PromptOverride.Length, ctx.PageContext is not null);
         }
 
+        // Bài sinh từ tin crawl: chèn TƯ LIỆU GỐC lên ĐẦU prompt. Tư liệu chỉ ~50 từ nên khối
+        // ràng buộc chống bịa đi kèm là bắt buộc — system prompt mặc định đòi thân bài 80-160 từ,
+        // đưa 50 từ vào mà đòi 160 từ ra là bảo đảm model phải bịa cho đủ.
+        // Đặt TRƯỚC template để model đọc dữ kiện + giới hạn trước, rồi mới tới yêu cầu phong
+        // cách của Page. PageContext theo kênh do ResolvePromptContextAsync lo ở trên, nên mỗi
+        // kênh vẫn ra một bản viết riêng — đúng yêu cầu "mỗi Page xào riêng".
+        var sourceArticle = SourceArticleHelper.TryRead(post.ExtraJson);
+        if (sourceArticle is not null)
+        {
+            var material = SourceArticleHelper.BuildPromptBlock(sourceArticle);
+            request.PromptOverride = string.IsNullOrWhiteSpace(request.PromptOverride)
+                ? material
+                : $"{material}\n\n{request.PromptOverride}";
+            logger.LogInformation(
+                "Post {PostId} sinh từ tin crawl \"{SourceTitle}\" — đã chèn khối tư liệu gốc",
+                post.Id, sourceArticle.Title);
+        }
+
         return request;
     }
 

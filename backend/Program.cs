@@ -3,6 +3,7 @@ using Backend.Data;
 using Backend.Modules.ApiLog;
 using Backend.Modules.Auth;
 using Backend.Modules.Category;
+using Backend.Modules.ContentCrawl;
 using Backend.Modules.GenerationJob;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaEmbedding;
@@ -131,6 +132,34 @@ builder.Services.AddHostedService<Backend.Shared.Generation.PostGenerationWorker
 builder.Services.AddHostedService<CommentWebhookHydrationWorker>();
 builder.Services.AddHostedService<CommentReconcileWorker>();
 builder.Services.AddHostedService<PageMessageReconcileWorker>();
+
+// ── Cào tin (ContentCrawl) ────────────────────────────────────────────────────
+builder.Services.Configure<ContentCrawlOptions>(builder.Configuration.GetSection("ContentCrawl"));
+builder.Services.AddScoped<ContentCrawlRepository>();
+builder.Services.AddScoped<ContentDedupService>();
+builder.Services.AddScoped<ContentCrawlPipelineService>();
+builder.Services.AddHttpClient<IAiJudgeService, AiJudgeService>(client =>
+    client.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient<RssFeedReader>((sp, client) =>
+    {
+        var o = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ContentCrawlOptions>>().Value;
+        client.Timeout = TimeSpan.FromSeconds(Math.Max(10, o.FetchTimeoutSeconds));
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(o.UserAgent);
+        client.DefaultRequestHeaders.Accept.ParseAdd(
+            "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8");
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        // giaoduc.net.vn LUÔN trả gzip kể cả khi client không xin (đo thực tế: header
+        // content-encoding gzip, magic byte 1f 8b 08). Mặc định .NET là DecompressionMethods.None
+        // nên thiếu dòng này thì đọc feed ra binary rác mà không có lỗi nào báo ra.
+        AutomaticDecompression = System.Net.DecompressionMethods.GZip
+                                 | System.Net.DecompressionMethods.Deflate
+                                 | System.Net.DecompressionMethods.Brotli,
+        AllowAutoRedirect = true,
+        MaxAutomaticRedirections = 5,
+    });
+builder.Services.AddHostedService<ContentCrawlWorker>();
 builder.Services.AddScoped<MediaEmbeddingRepository>();
 builder.Services.AddScoped<ApiLogRepository>();
 builder.Services.AddScoped<IDevDataSeeder, DevDataSeeder>();

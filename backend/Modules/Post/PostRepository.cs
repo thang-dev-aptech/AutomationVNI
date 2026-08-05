@@ -274,6 +274,7 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         IReadOnlyDictionary<Guid, PageContextModel> pageContextByChannel,
         string? objective,
         Guid? categoryId = null,
+        SourceArticleBrief? sourceArticle = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(title))
@@ -322,9 +323,7 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
                 UserId = userId,
                 Status = PostStatus.Queued
             };
-            if (!string.IsNullOrWhiteSpace(objective))
-                post.ExtraJson = System.Text.Json.JsonSerializer.Serialize(
-                    new { input = new { objective = objective.Trim() } });
+            post.ExtraJson = BuildFanOutExtraJson(objective, sourceArticle);
             posts.Add(post);
         }
 
@@ -335,6 +334,20 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
             Created = posts.Count,
             PostIds = posts.Select(p => p.Id).ToList()
         };
+    }
+
+    /// <summary>
+    /// Dựng ExtraJson lúc fan-out. Bài từ tin crawl mang thêm khối sourceArticle để pipeline
+    /// sinh text đọc lại lúc dựng prompt — xem SourceArticleHelper.
+    /// </summary>
+    private static string? BuildFanOutExtraJson(string? objective, SourceArticleBrief? sourceArticle)
+    {
+        var root = new Dictionary<string, object?>();
+        if (!string.IsNullOrWhiteSpace(objective))
+            root["input"] = new Dictionary<string, object?> { ["objective"] = objective.Trim() };
+        if (sourceArticle is not null)
+            root[SourceArticleHelper.ExtraJsonKey] = SourceArticleHelper.ToJsonBlock(sourceArticle);
+        return root.Count == 0 ? null : System.Text.Json.JsonSerializer.Serialize(root);
     }
 
     /// <summary>

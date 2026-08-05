@@ -1,0 +1,102 @@
+using Microsoft.Extensions.Options;
+
+namespace Backend.Modules.ContentCrawl;
+
+/// <summary>
+/// Worker cào tin. Theo đúng khuôn PostGenerationWorker: guard Enabled + thoát sớm,
+/// try/catch loại OperationCanceledException BÊN TRONG vòng lặp để một lần lỗi không giết
+/// cả worker, và chặn sàn cho khoảng nghỉ.
+///
+/// Mỗi tick làm 3 việc, cố ý gộp vào một worker thay vì đẻ thêm hai BackgroundService nữa
+/// (đã có sẵn 5 cái rồi).
+/// </summary>
+public class ContentCrawlWorker(
+    IServiceScopeFactory scopeFactory,
+    IOptions<ContentCrawlOptions> options,
+    ILogger<ContentCrawlWorker> logger) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var settings = options.Value;
+        if (!settings.Enabled)
+        {
+            logger.LogInformation("ContentCrawlWorker bị tắt trong cấu hình");
+            return;
+        }
+
+        logger.LogInformation(
+            "ContentCrawlWorker chạy (chu kỳ={Interval}s, tối đa {Sources} nguồn/lượt, song song={Concurrency})",
+            settings.IntervalSeconds, settings.MaxSourcesPerTick, settings.MaxConcurrency);
+
+        // Chờ một nhịp cho migration và seed xong trước khi đụng DB.
+        try { await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken); }
+        catch (OperationCanceledException) { return; }
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await FetchDueSourcesAsync(settings, stoppingToken);
+                await ProcessArticlesAsync(stoppingToken);
+                await SyncPublishedFingerprintsAsync(stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "ContentCrawlWorker lỗi vòng lặp");
+            }
+
+            try { await Task.Delay(TimeSpan.FromSeconds(Math.Max(10, settings.IntervalSeconds)), stoppingToken); }
+            catch (OperationCanceledException) { break; }
+        }
+    }
+
+    /// <summary>Cào song song có chặn, MỘT scope cho mỗi nguồn — DbContext không thread-safe.</summary>
+    private async Task FetchDueSourcesAsync(ContentCrawlOptions settings, CancellationToken ct)
+    {
+        List<Guid> dueIds;
+        using (var scope = scopeFactory.CreateScope())
+        {
+            var repository = scope.ServiceProvider.GetRequiredService<ContentCrawlRepository>();
+            var sources = await repository.GetDueSourcesAsync(settings.MaxSourcesPerTick, ct);
+            dueIds = sources.Select(s => s.Id).ToList();
+        }
+        if (dueIds.Count == 0) return;
+
+        using var sem = new SemaphoreSlim(Math.Max(1, settings.MaxConcurrency));
+        var tasks = dueIds.Select(async id =>
+        {
+            await sem.WaitAsync(ct);
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                var pipeline = scope.ServiceProvider.GetRequiredService<ContentCrawlPipelineService>();
+                await pipeline.RunSourceAsync(id, "worker", ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Cào nguồn {SourceId} thất bại", id);
+            }
+            finally { sem.Release(); }
+        });
+        await Task.WhenAll(tasks);
+    }
+
+    /// <summary>
+    /// Chấm trùng + xào nháp chạy TUẦN TỰ trên một scope. SQLite ở journal mode mặc định
+    /// (không WAL) serialize writer, ghi dồn từ nhiều scope là đường dẫn thẳng tới SQLITE_BUSY.
+    /// </summary>
+    private async Task ProcessArticlesAsync(CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var pipeline = scope.ServiceProvider.GetRequiredService<ContentCrawlPipelineService>();
+        var processed = await pipeline.ProcessPendingAsync(ct);
+        if (processed > 0) logger.LogInformation("Đã xử lý {Count} tin (chấm trùng + xào nháp)", processed);
+    }
+
+    private async Task SyncPublishedFingerprintsAsync(CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var pipeline = scope.ServiceProvider.GetRequiredService<ContentCrawlPipelineService>();
+        await pipeline.SyncPublishedPostFingerprintsAsync(200, ct);
+    }
+}

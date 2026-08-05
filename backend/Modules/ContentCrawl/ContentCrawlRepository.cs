@@ -1,0 +1,298 @@
+using System.Text.Json;
+using Backend.Data;
+using Backend.Modules.ContentCrawl.Enums;
+using Backend.Shared;
+using Backend.Shared.Repositories;
+using Microsoft.EntityFrameworkCore;
+
+namespace Backend.Modules.ContentCrawl;
+
+/// <summary>
+/// Một repository cho cả module (nguồn / lượt cào / tin) — theo quy ước dự án là không tách
+/// quá nhiều file nhỏ.
+/// </summary>
+public class ContentCrawlRepository(AppDbContext context, IUserContext userContext)
+    : GenericRepository<CrawledArticleModel>(context, userContext)
+{
+    // ── Nguồn cào ───────────────────────────────────────────────────────────
+
+    public async Task<List<CrawlSourceModel>> GetSourcesAsync(bool onlyActive, CancellationToken ct = default)
+    {
+        var query = Context.Set<CrawlSourceModel>().Where(x => !x.IsDeleted);
+        if (onlyActive) query = query.Where(x => x.IsActive);
+        return await query.OrderBy(x => x.Name).ToListAsync(ct);
+    }
+
+    public async Task<CrawlSourceModel?> GetSourceAsync(Guid id, CancellationToken ct = default)
+        => await Context.Set<CrawlSourceModel>().FirstOrDefaultAsync(x => !x.IsDeleted && x.Id == id, ct);
+
+    /// <summary>
+    /// Nguồn tới hạn cào. Nguồn lỗi liên tiếp bị giãn chu kỳ theo bội số (chặn ở 8 lần) để
+    /// một feed chết không nện vào server của người ta mỗi 30 phút.
+    /// </summary>
+    public async Task<List<CrawlSourceModel>> GetDueSourcesAsync(int max, CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        var sources = await Context.Set<CrawlSourceModel>()
+            .Where(x => !x.IsDeleted && x.IsActive)
+            .ToListAsync(ct);
+
+        return sources
+            .Where(s =>
+            {
+                if (s.LastRunAt is null) return true;
+                var backoff = Math.Min(Math.Max(1, s.ConsecutiveFailures), 8);
+                return s.LastRunAt.Value.AddMinutes(Math.Max(1, s.IntervalMinutes) * backoff) <= now;
+            })
+            .OrderBy(s => s.LastRunAt ?? DateTime.MinValue)
+            .Take(Math.Max(1, max))
+            .ToList();
+    }
+
+    public async Task<CrawlSourceModel> CreateSourceAsync(CreateCrawlSourceRequest request, CancellationToken ct = default)
+    {
+        var entity = new CrawlSourceModel
+        {
+            Name = request.Name.Trim(),
+            SourceType = request.SourceType,
+            Url = request.Url.Trim(),
+            SiteDomain = ExtractDomain(request.Url),
+            CategoryId = request.CategoryId,
+            IsActive = request.IsActive,
+            IntervalMinutes = Math.Clamp(request.IntervalMinutes, 5, 1440),
+            MaxItemsPerRun = Math.Clamp(request.MaxItemsPerRun, 1, 200),
+            LookbackHours = Math.Clamp(request.LookbackHours, 1, 720),
+            IncludeKeywords = SerializeList(request.IncludeKeywords),
+            ExcludeKeywords = SerializeList(request.ExcludeKeywords),
+            DefaultChannelIds = SerializeList(request.DefaultChannelIds),
+            BrowserProfile = request.BrowserProfile?.Trim(),
+        };
+        StampCreate(entity);
+        Context.Set<CrawlSourceModel>().Add(entity);
+        await Context.SaveChangesAsync(ct);
+        return entity;
+    }
+
+    public async Task<CrawlSourceModel?> UpdateSourceAsync(Guid id, UpdateCrawlSourceRequest request, CancellationToken ct = default)
+    {
+        var entity = await GetSourceAsync(id, ct);
+        if (entity is null) return null;
+
+        if (request.Name is not null) entity.Name = request.Name.Trim();
+        if (request.Url is not null)
+        {
+            entity.Url = request.Url.Trim();
+            entity.SiteDomain = ExtractDomain(entity.Url);
+        }
+        if (request.CategoryId.HasValue) entity.CategoryId = request.CategoryId;
+        if (request.IsActive.HasValue) entity.IsActive = request.IsActive.Value;
+        if (request.IntervalMinutes.HasValue) entity.IntervalMinutes = Math.Clamp(request.IntervalMinutes.Value, 5, 1440);
+        if (request.MaxItemsPerRun.HasValue) entity.MaxItemsPerRun = Math.Clamp(request.MaxItemsPerRun.Value, 1, 200);
+        if (request.LookbackHours.HasValue) entity.LookbackHours = Math.Clamp(request.LookbackHours.Value, 1, 720);
+        if (request.IncludeKeywords is not null) entity.IncludeKeywords = SerializeList(request.IncludeKeywords);
+        if (request.ExcludeKeywords is not null) entity.ExcludeKeywords = SerializeList(request.ExcludeKeywords);
+        if (request.DefaultChannelIds is not null) entity.DefaultChannelIds = SerializeList(request.DefaultChannelIds);
+        if (request.BrowserProfile is not null) entity.BrowserProfile = request.BrowserProfile.Trim();
+
+        StampUpdate(entity);
+        await Context.SaveChangesAsync(ct);
+        return entity;
+    }
+
+    public async Task<bool> SoftDeleteSourceAsync(Guid id, CancellationToken ct = default)
+    {
+        var entity = await GetSourceAsync(id, ct);
+        if (entity is null) return false;
+        entity.IsDeleted = true;
+        entity.DeletedAt = DateTime.UtcNow;
+        entity.DeletedBy = GetCurrentUserName();
+        await Context.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // GenericRepository ràng buộc audit theo TEntity (= CrawledArticleModel), nên nguồn cào
+    // phải tự đóng dấu. Giữ đúng quy ước: UtcNow + tên người dùng hiện tại.
+    private void StampCreate(BaseEntity entity)
+    {
+        if (entity.Id == Guid.Empty) entity.Id = Guid.NewGuid();
+        entity.CreatedAt = DateTime.UtcNow;
+        entity.CreatedBy = GetCurrentUserName();
+    }
+
+    private void StampUpdate(BaseEntity entity)
+    {
+        entity.UpdatedAt = DateTime.UtcNow;
+        entity.UpdatedBy = GetCurrentUserName();
+    }
+
+    // ── Lượt cào ────────────────────────────────────────────────────────────
+
+    public async Task<List<CrawlRunModel>> GetRecentRunsAsync(Guid? sourceId, int take, CancellationToken ct = default)
+    {
+        var query = Context.Set<CrawlRunModel>().Where(x => !x.IsDeleted);
+        if (sourceId.HasValue) query = query.Where(x => x.CrawlSourceId == sourceId.Value);
+        return await query.OrderByDescending(x => x.StartedAt).Take(Math.Clamp(take, 1, 200)).ToListAsync(ct);
+    }
+
+    // ── Tin đã cào ──────────────────────────────────────────────────────────
+
+    public async Task<PagedResult<CrawledArticleModel>> FilterArticlesAsync(
+        CrawledArticleFilterRequest request, CancellationToken ct = default)
+    {
+        var query = QueryActive();
+
+        if (request.CrawlSourceId.HasValue)
+            query = query.Where(x => x.CrawlSourceId == request.CrawlSourceId.Value);
+        if (request.Status.HasValue)
+            query = query.Where(x => x.Status == request.Status.Value);
+        if (request.Statuses is { Count: > 0 })
+            query = query.Where(x => request.Statuses.Contains(x.Status));
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var kw = request.Keyword.Trim();
+            query = query.Where(x => x.Title.Contains(kw) || (x.Summary != null && x.Summary.Contains(kw)));
+        }
+        if (request.FromDate.HasValue)
+            query = query.Where(x => x.FetchedAt >= request.FromDate.Value);
+        if (request.ToDate.HasValue)
+            query = query.Where(x => x.FetchedAt <= request.ToDate.Value);
+
+        query = query.OrderByDescending(x => x.PublishedAt ?? x.FetchedAt);
+        return await PaginateAsync(query, request.Index, request.Size, ct);
+    }
+
+    public async Task<List<CrawledArticleModel>> GetPendingProcessAsync(int take, CancellationToken ct = default)
+        => await QueryActive()
+            .Where(x => x.Status == CrawledArticleStatus.New
+                        || x.Status == CrawledArticleStatus.Deduping
+                        || x.Status == CrawledArticleStatus.Rewriting)
+            .OrderBy(x => x.FetchedAt)
+            .Take(Math.Clamp(take, 1, 100))
+            .ToListAsync(ct);
+
+    public async Task<Dictionary<CrawledArticleStatus, int>> CountByStatusAsync(CancellationToken ct = default)
+        => await QueryActive()
+            .GroupBy(x => x.Status)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+
+    /// <summary>Guid feed đã có, để bỏ qua ngay lúc cào mà khỏi tạo bản ghi rác.</summary>
+    public async Task<HashSet<string>> GetKnownGuidsAsync(Guid sourceId, CancellationToken ct = default)
+    {
+        var guids = await QueryActive()
+            .Where(x => x.CrawlSourceId == sourceId && x.SourceGuid != null)
+            .Select(x => x.SourceGuid!)
+            .ToListAsync(ct);
+        return guids.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    // ── Helper ──────────────────────────────────────────────────────────────
+
+    public static List<string> DeserializeStringList(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return JsonSerializer.Deserialize<List<string>>(json) ?? []; }
+        catch (JsonException) { return []; }
+    }
+
+    public static List<Guid> DeserializeGuidList(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return JsonSerializer.Deserialize<List<Guid>>(json) ?? []; }
+        catch (JsonException) { return []; }
+    }
+
+    private static string? SerializeList<T>(List<T>? values)
+        => values is null || values.Count == 0 ? null : JsonSerializer.Serialize(values);
+
+    private static string? ExtractDomain(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return null;
+        return Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri) ? uri.Host : null;
+    }
+
+    public static CrawlSourceResponse ToResponse(CrawlSourceModel e) => new()
+    {
+        Id = e.Id,
+        Name = e.Name,
+        SourceType = e.SourceType,
+        Url = e.Url,
+        SiteDomain = e.SiteDomain,
+        CategoryId = e.CategoryId,
+        IsActive = e.IsActive,
+        IntervalMinutes = e.IntervalMinutes,
+        MaxItemsPerRun = e.MaxItemsPerRun,
+        LookbackHours = e.LookbackHours,
+        LastRunAt = e.LastRunAt,
+        LastSuccessAt = e.LastSuccessAt,
+        LastError = e.LastError,
+        ConsecutiveFailures = e.ConsecutiveFailures,
+        IncludeKeywords = DeserializeStringList(e.IncludeKeywords),
+        ExcludeKeywords = DeserializeStringList(e.ExcludeKeywords),
+        DefaultChannelIds = DeserializeGuidList(e.DefaultChannelIds),
+        BrowserProfile = e.BrowserProfile,
+        CreatedAt = e.CreatedAt,
+    };
+
+    public static CrawlRunResponse ToResponse(CrawlRunModel e, string? sourceName = null) => new()
+    {
+        Id = e.Id,
+        CrawlSourceId = e.CrawlSourceId,
+        SourceName = sourceName,
+        Status = e.Status,
+        StartedAt = e.StartedAt,
+        FinishedAt = e.FinishedAt,
+        ItemsFetched = e.ItemsFetched,
+        ItemsNew = e.ItemsNew,
+        ItemsDuplicate = e.ItemsDuplicate,
+        ItemsFiltered = e.ItemsFiltered,
+        DurationMs = e.DurationMs,
+        ErrorMessage = e.ErrorMessage,
+        TriggerSource = e.TriggerSource,
+    };
+
+    public static CrawledArticleResponse ToResponse(CrawledArticleModel e, string? sourceName = null) => new()
+    {
+        Id = e.Id,
+        CrawlSourceId = e.CrawlSourceId,
+        SourceName = sourceName,
+        Title = e.Title,
+        Summary = e.Summary,
+        SourceUrl = e.SourceUrl,
+        Author = e.Author,
+        SourceCategory = e.SourceCategory,
+        ThumbnailUrl = e.ThumbnailUrl,
+        PublishedAt = e.PublishedAt,
+        FetchedAt = e.FetchedAt,
+        Status = e.Status,
+        DuplicateMethod = e.DuplicateMethod,
+        DuplicateTarget = e.DuplicateTarget,
+        DuplicateOfId = e.DuplicateOfId,
+        DuplicateScore = e.DuplicateScore,
+        DuplicateReason = e.DuplicateReason,
+        DraftContent = e.DraftContent,
+        FactWarnings = ReadFactWarnings(e.DraftExtraJson),
+        RejectReason = e.RejectReason,
+        ErrorMessage = e.ErrorMessage,
+        ReviewedBy = e.ReviewedBy,
+        ReviewedAt = e.ReviewedAt,
+        ResultBatchId = e.ResultBatchId,
+        ResultPostCount = e.ResultPostCount,
+    };
+
+    private static List<string> ReadFactWarnings(string? draftExtraJson)
+    {
+        if (string.IsNullOrWhiteSpace(draftExtraJson)) return [];
+        try
+        {
+            using var doc = JsonDocument.Parse(draftExtraJson);
+            if (!doc.RootElement.TryGetProperty("factWarnings", out var el)
+                || el.ValueKind != JsonValueKind.Array) return [];
+            return el.EnumerateArray()
+                .Where(x => x.ValueKind == JsonValueKind.String)
+                .Select(x => x.GetString()!)
+                .ToList();
+        }
+        catch (JsonException) { return []; }
+    }
+}
