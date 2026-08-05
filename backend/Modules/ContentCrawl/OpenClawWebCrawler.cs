@@ -114,8 +114,13 @@ public class OpenClawWebCrawler(
         }
         """;
 
+    /// <param name="knownUrls">
+    /// URL đã cào rồi. Lọc TRƯỚC khi mở bài, vì mỗi bài là một lượt mở trình duyệt thật (~15s):
+    /// không lọc thì suất MaxItemsPerRun bị đốt vào bài cũ rồi mới vứt ở bước chấm trùng, và
+    /// người dùng thấy "cào xong mà chẳng có gì mới" dù trang có bài mới ở dưới.
+    /// </param>
     public async Task<List<CrawledPageItem>> FetchAsync(
-        CrawlSourceModel source, CancellationToken ct = default)
+        CrawlSourceModel source, ISet<string>? knownUrls = null, CancellationToken ct = default)
     {
         if (!browser.IsConfigured)
             throw new OpenClawException(
@@ -126,6 +131,21 @@ public class OpenClawWebCrawler(
         {
             logger.LogWarning("Không tìm được link bài nào ở {Url} — kiểm tra URL có phải trang chuyên mục không", source.Url);
             return [];
+        }
+
+        var found = links.Count;
+        if (knownUrls is { Count: > 0 })
+        {
+            links = links.Where(l => !knownUrls.Contains(l.Url)).ToList();
+            var skipped = found - links.Count;
+            if (skipped > 0)
+                logger.LogInformation("Bỏ qua {Skipped}/{Found} link đã cào, còn {Left} link mới",
+                    skipped, found, links.Count);
+            if (links.Count == 0)
+            {
+                logger.LogInformation("Nguồn {Source}: không có bài mới nào trên trang chuyên mục", source.Name);
+                return [];
+            }
         }
 
         var take = Math.Clamp(source.MaxItemsPerRun, 1, 100);
@@ -149,8 +169,8 @@ public class OpenClawWebCrawler(
             if (delay > 0) await Task.Delay(delay, ct);
         }
 
-        logger.LogInformation("Cào {Source}: thấy {Found} link, bóc được {Got} bài toàn văn",
-            source.Name, links.Count, items.Count);
+        logger.LogInformation("Cào {Source}: thấy {Found} link ({New} mới), bóc được {Got} bài toàn văn",
+            source.Name, found, links.Count, items.Count);
         return items;
     }
 

@@ -50,7 +50,15 @@ public class ContentCrawlWorker(
         }
     }
 
-    /// <summary>Cào song song có chặn, MỘT scope cho mỗi nguồn — DbContext không thread-safe.</summary>
+    /// <summary>
+    /// Cào TUẦN TỰ từng nguồn, MỘT scope cho mỗi nguồn (DbContext không thread-safe).
+    ///
+    /// KHÔNG được chạy song song: OpenClaw chỉ có MỘT tab trình duyệt dùng chung, hai nguồn
+    /// cùng gọi /navigate sẽ đè lên nhau — cái này huỷ điều hướng của cái kia.
+    /// Đã gặp thật: lịch 14:00 nổ, cả hai nguồn cùng chạy, một cái ăn net::ERR_ABORTED còn
+    /// cái kia chạy "thành công" nhưng lấy về 0 bài vì đang đứng ở trang trắng.
+    /// Ở quy mô vài nguồn × vài bài mỗi ngày thì tuần tự không hề chậm.
+    /// </summary>
     private async Task FetchDueSourcesAsync(ContentCrawlOptions settings, CancellationToken ct)
     {
         List<Guid> dueIds;
@@ -62,10 +70,9 @@ public class ContentCrawlWorker(
         }
         if (dueIds.Count == 0) return;
 
-        using var sem = new SemaphoreSlim(Math.Max(1, settings.MaxConcurrency));
-        var tasks = dueIds.Select(async id =>
+        foreach (var id in dueIds)
         {
-            await sem.WaitAsync(ct);
+            ct.ThrowIfCancellationRequested();
             try
             {
                 using var scope = scopeFactory.CreateScope();
@@ -74,11 +81,10 @@ public class ContentCrawlWorker(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                // Một nguồn hỏng không được làm chết các nguồn còn lại.
                 logger.LogError(ex, "Cào nguồn {SourceId} thất bại", id);
             }
-            finally { sem.Release(); }
-        });
-        await Task.WhenAll(tasks);
+        }
     }
 
     /// <summary>

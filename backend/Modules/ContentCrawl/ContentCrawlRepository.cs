@@ -233,6 +233,21 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
             .Select(g => new { g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
 
+    /// <summary>
+    /// URL bài đã cào của MỌI nguồn — crawler lọc trước khi mở bài, khỏi tốn một lượt mở
+    /// trình duyệt (~15s) cho bài rồi cũng bị vứt ở bước chấm trùng.
+    /// Lấy cả nguồn khác vì hai báo có thể đăng lại cùng một URL.
+    /// </summary>
+    public async Task<HashSet<string>> GetKnownUrlsAsync(Guid sourceId, CancellationToken ct = default)
+    {
+        var urls = await QueryActive()
+            .Where(x => x.CrawlSourceId == sourceId)
+            .Select(x => x.SourceUrl)
+            .ToListAsync(ct);
+        return urls.Where(u => !string.IsNullOrWhiteSpace(u))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
     /// <summary>Guid feed đã có, để bỏ qua ngay lúc cào mà khỏi tạo bản ghi rác.</summary>
     public async Task<HashSet<string>> GetKnownGuidsAsync(Guid sourceId, CancellationToken ct = default)
     {

@@ -84,7 +84,9 @@ public class ContentCrawlController(
                 SourceType = CrawlSourceType.WebPage,
                 MaxItemsPerRun = Math.Clamp(request.MaxItemsPerRun, 1, 5),
             };
-            var items = await webCrawler.FetchAsync(probe, ct);
+            // Cào thử KHÔNG lọc bài đã cào — mục đích là xem bộ bóc có chạy trên báo này không,
+            // nên cần thấy kết quả kể cả với bài đã có trong kho.
+            var items = await webCrawler.FetchAsync(probe, null, ct);
             return Ok(ApiResponse.Ok(new TestCrawlSourceResult
             {
                 Ok = true,

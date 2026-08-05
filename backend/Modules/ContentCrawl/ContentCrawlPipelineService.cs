@@ -57,9 +57,12 @@ public class ContentCrawlPipelineService(
 
         try
         {
+            // Nạp URL đã cào để crawler bỏ qua ngay từ trang danh sách, khỏi mở lại bài cũ.
+            var knownUrls = await repository.GetKnownUrlsAsync(source.Id, ct);
+
             var items = source.SourceType switch
             {
-                CrawlSourceType.WebPage => await webCrawler.FetchAsync(source, ct),
+                CrawlSourceType.WebPage => await webCrawler.FetchAsync(source, knownUrls, ct),
                 _ => throw new NotSupportedException(
                     $"Loại nguồn '{source.SourceType}' chưa hỗ trợ. Cào fanpage Facebook thuộc Phase 3.")
             };
