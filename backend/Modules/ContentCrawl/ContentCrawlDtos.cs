@@ -13,6 +13,8 @@ public class CreateCrawlSourceRequest
     public string Url { get; set; } = string.Empty;
     public Guid? CategoryId { get; set; }
     public bool IsActive { get; set; } = true;
+    /// <summary>Giờ cào cố định "HH:mm" giờ VN, vd ["08:00","14:00"]. Có giá trị thì bỏ qua IntervalMinutes.</summary>
+    public List<string>? CrawlTimes { get; set; }
     public int IntervalMinutes { get; set; } = 30;
     public int MaxItemsPerRun { get; set; } = 30;
     public int LookbackHours { get; set; } = 48;
@@ -28,6 +30,7 @@ public class UpdateCrawlSourceRequest
     public string? Url { get; set; }
     public Guid? CategoryId { get; set; }
     public bool? IsActive { get; set; }
+    public List<string>? CrawlTimes { get; set; }
     public int? IntervalMinutes { get; set; }
     public int? MaxItemsPerRun { get; set; }
     public int? LookbackHours { get; set; }
@@ -46,6 +49,7 @@ public class CrawlSourceResponse
     public string? SiteDomain { get; set; }
     public Guid? CategoryId { get; set; }
     public bool IsActive { get; set; }
+    public List<string> CrawlTimes { get; set; } = [];
     public int IntervalMinutes { get; set; }
     public int MaxItemsPerRun { get; set; }
     public int LookbackHours { get; set; }

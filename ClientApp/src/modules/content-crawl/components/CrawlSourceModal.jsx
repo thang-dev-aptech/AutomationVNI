@@ -12,7 +12,14 @@ import {
   useUpdateCrawlSource,
 } from '../hooks/useCrawl'
 
-const EMPTY = { name: '', url: '', intervalMinutes: 30, maxItemsPerRun: 30, lookbackHours: 48 }
+const EMPTY = {
+  name: '',
+  url: '',
+  crawlTimes: ['08:00', '14:00'],
+  intervalMinutes: 30,
+  maxItemsPerRun: 4,
+  lookbackHours: 48,
+}
 
 export default function CrawlSourceModal({ open, onClose, canManage }) {
   const { data: sources = [], isLoading } = useCrawlSources()
@@ -26,6 +33,16 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
   const [preview, setPreview] = useState(null)
 
   const setField = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
+
+  const setTimeAt = (idx) => (e) => setForm((f) => {
+    const next = [...f.crawlTimes]
+    next[idx] = e.target.value
+    return { ...f, crawlTimes: next }
+  })
+  const addTime = () => setForm((f) => ({ ...f, crawlTimes: [...f.crawlTimes, '20:00'] }))
+  const removeTime = (idx) => setForm((f) => ({
+    ...f, crawlTimes: f.crawlTimes.filter((_, i) => i !== idx),
+  }))
 
   const handleTest = async () => {
     setPreview(null)
@@ -70,9 +87,10 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
     <Modal open={open} title="Nguồn cào tin" onClose={onClose}>
       <div className="crawl-sources">
         {isLoading && <p>Đang tải...</p>}
+        <div className="crawl-source-table-wrap">
         <table className="crawl-source-table">
           <thead>
-            <tr><th>Nguồn</th><th>Lần cào gần nhất</th><th /></tr>
+            <tr><th>Nguồn</th><th>Giờ cào</th><th>Lần cào gần nhất</th><th /></tr>
           </thead>
           <tbody>
             {sources.map((s) => (
@@ -81,6 +99,11 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
                   <strong>{s.name}</strong>
                   <div className="crawl-source-url">{s.siteDomain || s.url}</div>
                   {s.lastError && <div className="crawl-source-error">{s.lastError}</div>}
+                </td>
+                <td>
+                  {s.crawlTimes?.length
+                    ? s.crawlTimes.join(', ')
+                    : <span className="crawl-source-url">mỗi {s.intervalMinutes} phút</span>}
                 </td>
                 <td>
                   {s.lastRunAt ? formatDateTime(s.lastRunAt) : 'chưa cào'}
@@ -107,10 +130,11 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
               </tr>
             ))}
             {sources.length === 0 && !isLoading && (
-              <tr><td colSpan={3}>Chưa có nguồn nào.</td></tr>
+              <tr><td colSpan={4}>Chưa có nguồn nào.</td></tr>
             )}
           </tbody>
         </table>
+        </div>
 
         {canManage && (
           <div className="crawl-source-form">
@@ -127,11 +151,33 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
               value={form.name} onChange={setField('name')} />
             <input className="form-control" placeholder="URL trang chuyên mục, vd https://dantri.com.vn/giao-duc.htm"
               value={form.url} onChange={setField('url')} />
+            <div className="crawl-times">
+              <span className="crawl-times-label">Giờ cào mỗi ngày</span>
+              <div className="crawl-times-list">
+                {form.crawlTimes.map((t, i) => (
+                  // eslint-disable-next-line react/no-array-index-key
+                  <span className="crawl-time-item" key={i}>
+                    <input type="time" className="form-control" value={t} onChange={setTimeAt(i)} />
+                    <button type="button" className="btn btn-ghost btn-sm"
+                      onClick={() => removeTime(i)} title="Bỏ mốc này">×</button>
+                  </span>
+                ))}
+                <button type="button" className="btn btn-ghost btn-sm" onClick={addTime}>+ Thêm giờ</button>
+              </div>
+              <p className="form-hint">
+                {form.crawlTimes.length > 0
+                  ? `Cào ${form.crawlTimes.length} lượt/ngày vào ${form.crawlTimes.join(', ')} (giờ Việt Nam). Máy tắt lúc đến giờ thì bật lên sẽ cào bù.`
+                  : 'Không đặt giờ nào thì chạy theo chu kỳ lặp bên dưới.'}
+              </p>
+            </div>
+
             <div className="crawl-form-row">
-              <label>Chu kỳ (phút)
-                <input className="form-control" type="number" value={form.intervalMinutes}
-                  onChange={setField('intervalMinutes')} />
-              </label>
+              {form.crawlTimes.length === 0 && (
+                <label>Chu kỳ (phút)
+                  <input className="form-control" type="number" value={form.intervalMinutes}
+                    onChange={setField('intervalMinutes')} />
+                </label>
+              )}
               <label>Tối đa mỗi lượt
                 <input className="form-control" type="number" value={form.maxItemsPerRun}
                   onChange={setField('maxItemsPerRun')} />

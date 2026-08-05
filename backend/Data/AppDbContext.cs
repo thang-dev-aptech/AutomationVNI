@@ -370,6 +370,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.SiteDomain).HasMaxLength(200);
             e.Property(x => x.BrowserProfile).HasMaxLength(100);
             e.Property(x => x.LastError).HasColumnType("TEXT");
+            e.Property(x => x.CrawlTimes).HasColumnType("TEXT");
             e.Property(x => x.IncludeKeywords).HasColumnType("TEXT");
             e.Property(x => x.ExcludeKeywords).HasColumnType("TEXT");
             e.Property(x => x.DefaultChannelIds).HasColumnType("TEXT");

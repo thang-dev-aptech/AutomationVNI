@@ -13,8 +13,15 @@ public class CrawlSourceModel : BaseEntity
     public Guid? CategoryId { get; set; }                         // No FK — gợi ý danh mục cho post sinh ra
     public bool IsActive { get; set; } = true;
 
+    /// <summary>
+    /// Giờ cào cố định trong ngày — JSON array "HH:mm" theo giờ Việt Nam.
+    /// Ví dụ ["08:00","14:00"] = sáng một lượt, chiều một lượt.
+    /// CÓ giá trị thì BỎ QUA IntervalMinutes hoàn toàn.
+    /// </summary>
+    public string? CrawlTimes { get; set; }
+    /// <summary>Chu kỳ lặp — chỉ dùng khi CrawlTimes để trống.</summary>
     public int IntervalMinutes { get; set; } = 30;
-    public int MaxItemsPerRun { get; set; } = 30;                 // chặn feed trả 1000 item (vietnamnet)
+    public int MaxItemsPerRun { get; set; } = 30;                 // chặn trang chuyên mục trả quá nhiều link
     public int LookbackHours { get; set; } = 48;
 
     public DateTime? LastRunAt { get; set; }

@@ -27,8 +27,9 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
         => await Context.Set<CrawlSourceModel>().FirstOrDefaultAsync(x => !x.IsDeleted && x.Id == id, ct);
 
     /// <summary>
-    /// Nguồn tới hạn cào. Nguồn lỗi liên tiếp bị giãn chu kỳ theo bội số (chặn ở 8 lần) để
-    /// một feed chết không nện vào server của người ta mỗi 30 phút.
+    /// Nguồn tới hạn cào. Hai chế độ: theo GIỜ CỐ ĐỊNH (nếu đặt CrawlTimes) hoặc theo CHU KỲ.
+    /// Nguồn lỗi liên tiếp bị giãn theo bội số (chặn ở 8 lần) để một nguồn chết không nện vào
+    /// server của người ta liên tục — chỉ áp cho chế độ chu kỳ, giờ cố định thì vẫn đúng giờ.
     /// </summary>
     public async Task<List<CrawlSourceModel>> GetDueSourcesAsync(int max, CancellationToken ct = default)
     {
@@ -38,14 +39,68 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
             .ToListAsync(ct);
 
         return sources
-            .Where(s =>
-            {
-                if (s.LastRunAt is null) return true;
-                var backoff = Math.Min(Math.Max(1, s.ConsecutiveFailures), 8);
-                return s.LastRunAt.Value.AddMinutes(Math.Max(1, s.IntervalMinutes) * backoff) <= now;
-            })
+            .Where(s => IsDue(s, now))
             .OrderBy(s => s.LastRunAt ?? DateTime.MinValue)
             .Take(Math.Max(1, max))
+            .ToList();
+    }
+
+    public static bool IsDue(CrawlSourceModel source, DateTime nowUtc, string timezone = "Asia/Ho_Chi_Minh")
+    {
+        var slots = ParseCrawlTimes(source.CrawlTimes);
+        return slots.Count > 0
+            ? IsDueBySlots(source, nowUtc, slots, timezone)
+            : IsDueByInterval(source, nowUtc);
+    }
+
+    private static bool IsDueByInterval(CrawlSourceModel s, DateTime nowUtc)
+    {
+        if (s.LastRunAt is null) return true;
+        var backoff = Math.Min(Math.Max(1, s.ConsecutiveFailures), 8);
+        return s.LastRunAt.Value.AddMinutes(Math.Max(1, s.IntervalMinutes) * backoff) <= nowUtc;
+    }
+
+    /// <summary>
+    /// Tới hạn khi có một MỐC GIỜ đã qua mà lần cào gần nhất còn trước mốc đó.
+    ///
+    /// Cách này TỰ BÙ khi backend tắt: đặt 08:00 mà 9 giờ mới bật máy thì vẫn cào ngay, vì mốc
+    /// 08:00 đã qua và LastRunAt vẫn nằm trước nó. Nếu chỉ so "đang đúng 08:00 không" thì lỡ
+    /// giờ là mất luôn lượt cào hôm đó mà không ai biết.
+    ///
+    /// Chưa tới mốc nào trong hôm nay thì lấy mốc CUỐI của hôm qua làm mốc so — nhờ vậy máy bật
+    /// lúc 6 giờ sáng vẫn cào bù cho lượt 20:00 tối qua nếu tối qua máy tắt.
+    /// </summary>
+    private static bool IsDueBySlots(
+        CrawlSourceModel s, DateTime nowUtc, List<TimeSpan> slots, string timezone)
+    {
+        var tz = Backend.Modules.Post.PendingScheduleHelper.ResolveTimeZone(timezone);
+        var nowLocal = TimeZoneInfo.ConvertTimeFromUtc(nowUtc, tz);
+
+        DateTime? lastPassedLocal = null;
+        foreach (var slot in slots)
+        {
+            var todaySlot = nowLocal.Date + slot;
+            if (todaySlot <= nowLocal && (lastPassedLocal is null || todaySlot > lastPassedLocal))
+                lastPassedLocal = todaySlot;
+        }
+        lastPassedLocal ??= nowLocal.Date.AddDays(-1) + slots.Max();
+
+        if (s.LastRunAt is null) return true;
+        var lastRunLocal = TimeZoneInfo.ConvertTimeFromUtc(
+            DateTime.SpecifyKind(s.LastRunAt.Value, DateTimeKind.Utc), tz);
+        return lastRunLocal < lastPassedLocal.Value;
+    }
+
+    /// <summary>Đọc JSON array "HH:mm". Mốc hỏng thì bỏ qua, không làm chết cả nguồn.</summary>
+    public static List<TimeSpan> ParseCrawlTimes(string? json)
+    {
+        return DeserializeStringList(json)
+            .Select(x => TimeSpan.TryParse(x?.Trim(), out var ts) && ts >= TimeSpan.Zero && ts < TimeSpan.FromDays(1)
+                ? ts : (TimeSpan?)null)
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .Distinct()
+            .OrderBy(x => x)
             .ToList();
     }
 
@@ -59,6 +114,7 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
             SiteDomain = ExtractDomain(request.Url),
             CategoryId = request.CategoryId,
             IsActive = request.IsActive,
+            CrawlTimes = SerializeList(NormalizeTimes(request.CrawlTimes)),
             IntervalMinutes = Math.Clamp(request.IntervalMinutes, 5, 1440),
             MaxItemsPerRun = Math.Clamp(request.MaxItemsPerRun, 1, 200),
             LookbackHours = Math.Clamp(request.LookbackHours, 1, 720),
@@ -86,6 +142,7 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
         }
         if (request.CategoryId.HasValue) entity.CategoryId = request.CategoryId;
         if (request.IsActive.HasValue) entity.IsActive = request.IsActive.Value;
+        if (request.CrawlTimes is not null) entity.CrawlTimes = SerializeList(NormalizeTimes(request.CrawlTimes));
         if (request.IntervalMinutes.HasValue) entity.IntervalMinutes = Math.Clamp(request.IntervalMinutes.Value, 5, 1440);
         if (request.MaxItemsPerRun.HasValue) entity.MaxItemsPerRun = Math.Clamp(request.MaxItemsPerRun.Value, 1, 200);
         if (request.LookbackHours.HasValue) entity.LookbackHours = Math.Clamp(request.LookbackHours.Value, 1, 720);
@@ -202,6 +259,19 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
         catch (JsonException) { return []; }
     }
 
+    /// <summary>Chuẩn hoá về "HH:mm", bỏ mốc không đọc được, sắp xếp và loại trùng.</summary>
+    private static List<string>? NormalizeTimes(List<string>? raw)
+    {
+        if (raw is null) return null;
+        return raw
+            .Select(x => TimeSpan.TryParse(x?.Trim(), out var ts) && ts >= TimeSpan.Zero && ts < TimeSpan.FromDays(1)
+                ? ts : (TimeSpan?)null)
+            .Where(x => x.HasValue).Select(x => x!.Value)
+            .Distinct().OrderBy(x => x)
+            .Select(x => x.ToString(@"hh\:mm"))
+            .ToList();
+    }
+
     private static string? SerializeList<T>(List<T>? values)
         => values is null || values.Count == 0 ? null : JsonSerializer.Serialize(values);
 
@@ -220,6 +290,7 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
         SiteDomain = e.SiteDomain,
         CategoryId = e.CategoryId,
         IsActive = e.IsActive,
+        CrawlTimes = ParseCrawlTimes(e.CrawlTimes).Select(t => t.ToString(@"hh\:mm")).ToList(),
         IntervalMinutes = e.IntervalMinutes,
         MaxItemsPerRun = e.MaxItemsPerRun,
         LookbackHours = e.LookbackHours,
