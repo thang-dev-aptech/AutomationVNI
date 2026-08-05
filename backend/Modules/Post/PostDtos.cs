@@ -110,6 +110,35 @@ public class BulkOperationResult
     public string? Message { get; set; }
 }
 
+public enum RecycleImageStrategy
+{
+    KeepOld = 1,
+    VectorSearch = 2
+}
+
+public class RecyclePostRequest
+{
+    public List<Guid> ChannelIds { get; set; } = [];
+    public int Count { get; set; } = 10;
+    public GenerationFlow Flow { get; set; } = GenerationFlow.Recycle;
+    
+    // Scheduling
+    public bool ScheduleEnabled { get; set; }
+    public List<DateTime>? StartTimes { get; set; }
+    public int JitterMinutes { get; set; } = 35;
+    
+    // Image Strategy
+    public RecycleImageStrategy ImageStrategy { get; set; } = RecycleImageStrategy.KeepOld;
+}
+
+public class RecycleBatchResult
+{
+    public Guid BatchId { get; set; }
+    public int Created { get; set; }
+    public int Skipped { get; set; }
+    public List<Guid> PostIds { get; set; } = [];
+}
+
 public class UpdatePostRequest
 {
     public string? Title { get; set; }
@@ -125,6 +154,7 @@ public class PostFilterRequest : PagedFilterRequest
     public Guid? SocialChannelId { get; set; }
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
+    public bool? IsRecycled { get; set; }
 }
 
 public class PostResponse
@@ -143,8 +173,9 @@ public class PostResponse
     public string? PromptTemplateName { get; set; }
     public PostStatus Status { get; set; }
     public Guid UserId { get; set; }
-    /// <summary>Lô tạo hàng loạt sinh ra bài này — để UI quay lại trang rải lịch của lô.</summary>
     public Guid? BatchId { get; set; }
+    /// <summary>Id bài viết gốc nếu bài này được tạo từ chức năng Recycle. Null nếu là bài tạo mới.</summary>
+    public Guid? SourcePostId { get; set; }
     public DateTime? ScheduledPublishAt { get; set; }
     public string? ScheduleTimezone { get; set; }
     public DateTime? PublishedAt { get; set; }

@@ -5,6 +5,8 @@ export default function PostFilterBar({
   onKeywordChange,
   status,
   onStatusChange,
+  isRecycled,
+  onIsRecycledChange,
 }) {
   return (
     <div
@@ -37,6 +39,18 @@ export default function PostFilterBar({
               {meta.label}
             </option>
           ))}
+        </select>
+      </div>
+      <div className="form-group" style={{ marginBottom: 0 }}>
+        <label htmlFor="post-is-recycled">Loại bài</label>
+        <select
+          id="post-is-recycled"
+          value={isRecycled}
+          onChange={(event) => onIsRecycledChange(event.target.value)}
+        >
+          <option value="">Tất cả</option>
+          <option value="false">Tạo mới</option>
+          <option value="true">Tái sử dụng</option>
         </select>
       </div>
     </div>

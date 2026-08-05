@@ -89,7 +89,17 @@ public class PostGenerationWorker(
             if (post?.Status == PostStatus.WaitingReview)
             {
                 await workflow.ApproveAsync(postId, ct);
-                logger.LogInformation("PostGenerationWorker generated+approved post {PostId}", postId);
+                
+                if (post.ScheduledPublishAt.HasValue)
+                {
+                    var scheduledUtc = DateTime.SpecifyKind(post.ScheduledPublishAt.Value, DateTimeKind.Utc);
+                    await workflow.ScheduleAsync(postId, scheduledUtc, post.ScheduleTimezone, ct);
+                    logger.LogInformation("PostGenerationWorker generated+scheduled post {PostId}", postId);
+                }
+                else
+                {
+                    logger.LogInformation("PostGenerationWorker generated+approved post {PostId}", postId);
+                }
                 post = await workflow.GetPostAsync(postId, ct);
             }
             else

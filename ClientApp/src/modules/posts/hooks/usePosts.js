@@ -63,6 +63,14 @@ export function useCreatePost() {
   })
 }
 
+export function useRecyclePosts() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload) => unwrapApiData(await postApi.recycle(payload)),
+    onSuccess: () => invalidatePostQueries(queryClient),
+  })
+}
+
 export function useUpdatePost() {
   const queryClient = useQueryClient()
   return useMutation({

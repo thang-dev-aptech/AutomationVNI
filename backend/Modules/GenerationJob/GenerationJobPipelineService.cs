@@ -59,10 +59,23 @@ public class GenerationJobPipelineService(
     /// </summary>
     public async Task GenerateForPostAsync(Guid postId, CancellationToken ct = default)
     {
+        var post = await RequirePostAsync(postId, ct);
+
+        // ── Nhánh Recycle (Copy nguyên văn) + VectorSearch
+        if (post.GenerationFlow == GenerationFlow.Recycle)
+        {
+            if (post.ImageTemplateId == Guid.Empty && !await HasAttachedMediaAsync(postId, ct))
+            {
+                var matchJob = await QueueMediaMatchAsync(postId, ct);
+                await ProcessAsync(matchJob.JobId, ct);
+            }
+            return;
+        }
+
         var textJob = await QueueTextGenerationAsync(postId, ct);
         await ProcessAsync(textJob.JobId, ct);
 
-        var post = await RequirePostAsync(postId, ct);
+        post = await RequirePostAsync(postId, ct);
         var useMedia = post.GenerationFlow == GenerationFlow.RAG;
 
         // FullAI + user đã gắn media sẵn → giữ hành vi cũ: bỏ sinh ảnh AI.

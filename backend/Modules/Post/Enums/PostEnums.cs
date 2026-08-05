@@ -21,6 +21,8 @@ public enum PostStatus
 
 public enum GenerationFlow
 {
-    FullAI = 1,
-    RAG    = 2
+    FullAI         = 1,
+    RAG            = 2,
+    Recycle        = 3,
+    RecycleRewrite = 4
 }

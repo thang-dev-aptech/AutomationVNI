@@ -14,9 +14,11 @@ public class PostModel : BaseEntity
     /// <summary>Override template prompt cho riêng bài này (thư viện PromptTemplate). No FK.</summary>
     public Guid? TextTemplateId { get; set; }
     public Guid? ImageTemplateId { get; set; }
-
     /// <summary>Nhóm các bài tạo cùng một lần bulk (fan-out/CSV/AI ideas). No FK.</summary>
     public Guid? BatchId { get; set; }
+
+    /// <summary>Id bài viết gốc nếu bài này được tạo từ chức năng Recycle. Null nếu là bài tạo mới hoàn toàn. No FK.</summary>
+    public Guid? SourcePostId { get; set; }
 
     public PostStatus Status { get; set; } = PostStatus.Draft;
     public DateTime? ScheduledPublishAt { get; set; }

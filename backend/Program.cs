@@ -114,6 +114,7 @@ builder.Services.AddScoped<Backend.Modules.MediaFolder.MediaFolderRepository>();
 builder.Services.AddHttpClient<MediaIntelligenceService>(client =>
     client.Timeout = TimeSpan.FromSeconds(120));
 builder.Services.AddScoped<PostMediaRepository>();
+builder.Services.AddScoped<PostRecycleService>();
 builder.Services.AddScoped<GenerationJobRepository>();
 builder.Services.AddScoped<GenerationJobPipelineService>();
 builder.Services.AddScoped<IPublishPipelineService, PublishPipelineService>();

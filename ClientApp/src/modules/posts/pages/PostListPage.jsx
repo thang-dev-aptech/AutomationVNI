@@ -11,6 +11,7 @@ import { toast } from '@/shared/stores/toastStore'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import PostFilterBar from '../components/PostFilterBar'
 import PostStatusBadge from '../components/PostStatusBadge'
+import RecyclePostModal from '../components/RecyclePostModal'
 import { getAvailableWorkflowActions } from '../constants/postStatus'
 import { useDeleteAllPosts, useDeletePost, usePosts } from '../hooks/usePosts'
 
@@ -18,7 +19,9 @@ export default function PostListPage() {
   const { canCreatePost, canDeletePost, canDeleteAllPosts } = usePermissions()
   const [keyword, setKeyword] = useState('')
   const [status, setStatus] = useState('')
+  const [isRecycled, setIsRecycled] = useState('')
   const [page, setPage] = useState(1)
+  const [showRecycleModal, setShowRecycleModal] = useState(false)
 
   const params = useMemo(
     () => ({
@@ -26,8 +29,9 @@ export default function PostListPage() {
       index: page,
       size: 20,
       status: status ? Number(status) : undefined,
+      isRecycled: isRecycled === 'true' ? true : isRecycled === 'false' ? false : undefined,
     }),
-    [keyword, page, status],
+    [keyword, page, status, isRecycled],
   )
 
   const { data, isLoading, isError, error, refetch } = usePosts(params)
@@ -84,9 +88,18 @@ export default function PostListPage() {
               </button>
             )}
             {canCreatePost ? (
-              <Link to="/posts/create" className="btn btn-primary">
-                Tạo bài viết
-              </Link>
+              <>
+                <button
+                  type="button"
+                  className="btn btn-success"
+                  onClick={() => setShowRecycleModal(true)}
+                >
+                  Tái sử dụng bài
+                </button>
+                <Link to="/posts/create" className="btn btn-primary">
+                  Tạo bài viết
+                </Link>
+              </>
             ) : null}
           </div>
         }
@@ -98,6 +111,8 @@ export default function PostListPage() {
           onKeywordChange={(value) => { setKeyword(value); setPage(1) }}
           status={status}
           onStatusChange={(value) => { setStatus(value); setPage(1) }}
+          isRecycled={isRecycled}
+          onIsRecycledChange={(value) => { setIsRecycled(value); setPage(1) }}
         />
       </div>
 
@@ -189,6 +204,11 @@ export default function PostListPage() {
           </button>
         </div>
       )}
+
+      <RecyclePostModal
+        open={showRecycleModal}
+        onClose={() => setShowRecycleModal(false)}
+      />
     </section>
   )
 }
