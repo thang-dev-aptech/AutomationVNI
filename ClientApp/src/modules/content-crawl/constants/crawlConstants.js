@@ -58,6 +58,30 @@ export const STATUS_TABS = [
   { key: 'rejected', label: 'Đã loại', status: CRAWLED_ARTICLE_STATUS.REJECTED },
 ]
 
+export const CRAWL_SOURCE_TYPE = {
+  WEB_PAGE: 1,
+  FACEBOOK_PAGE: 2,
+}
+
+export const CRAWL_SOURCE_TYPE_OPTIONS = [
+  {
+    value: CRAWL_SOURCE_TYPE.WEB_PAGE,
+    label: 'Trang web / báo',
+    urlLabel: 'URL trang chuyên mục',
+    placeholder: 'https://dantri.com.vn/giao-duc.htm',
+    hint: 'Dán link TRANG CHUYÊN MỤC (nơi liệt kê nhiều bài), không phải link một bài lẻ. '
+      + 'Trình duyệt sẽ mở trang này lấy danh sách bài rồi vào từng bài bóc toàn văn.',
+  },
+  {
+    value: CRAWL_SOURCE_TYPE.FACEBOOK_PAGE,
+    label: 'Fanpage Facebook',
+    urlLabel: 'URL fanpage',
+    placeholder: 'https://www.facebook.com/tenfanpage',
+    hint: 'Cần trình duyệt OpenClaw ĐANG ĐĂNG NHẬP Facebook thì mới đọc được. '
+      + 'Nên dùng tài khoản phụ, không phải tài khoản đang quản trị Page của bạn.',
+  },
+]
+
 /**
  * Trang CHUYÊN MỤC của báo (không phải feed RSS) — trình duyệt sẽ mở trang này để lấy
  * danh sách bài, rồi mở từng bài bóc toàn văn.

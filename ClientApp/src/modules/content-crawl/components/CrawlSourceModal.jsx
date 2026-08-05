@@ -2,12 +2,17 @@ import { useState } from 'react'
 import Modal from '@/shared/components/Modal'
 import { toast } from '@/shared/stores/toastStore'
 import { getErrorMessage, formatDateTime } from '@/shared/utils/apiHelpers'
-import { SUGGESTED_FEEDS } from '../constants/crawlConstants'
+import {
+  CRAWL_SOURCE_TYPE,
+  CRAWL_SOURCE_TYPE_OPTIONS,
+  SUGGESTED_FEEDS,
+} from '../constants/crawlConstants'
 import {
   useCrawlNow,
   useCrawlSources,
   useCreateCrawlSource,
   useDeleteCrawlSource,
+  useFacebookStatus,
   useTestCrawlSource,
   useUpdateCrawlSource,
 } from '../hooks/useCrawl'
@@ -15,6 +20,7 @@ import {
 const EMPTY = {
   name: '',
   url: '',
+  sourceType: CRAWL_SOURCE_TYPE.WEB_PAGE,
   crawlTimes: ['08:00', '14:00'],
   intervalMinutes: 30,
   maxItemsPerRun: 4,
@@ -31,6 +37,13 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
 
   const [form, setForm] = useState(EMPTY)
   const [preview, setPreview] = useState(null)
+
+  const isFacebook = Number(form.sourceType) === CRAWL_SOURCE_TYPE.FACEBOOK_PAGE
+  const typeMeta = CRAWL_SOURCE_TYPE_OPTIONS.find((t) => t.value === Number(form.sourceType))
+    ?? CRAWL_SOURCE_TYPE_OPTIONS[0]
+  // Chỉ hỏi trạng thái đăng nhập khi thực sự chọn fanpage — mỗi lần hỏi là một lượt
+  // điều hướng trình duyệt sang facebook.com, đừng chạy vô cớ.
+  const { data: fbStatus, isFetching: fbChecking } = useFacebookStatus(open && isFacebook)
 
   const setField = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
 
@@ -139,18 +152,50 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
         {canManage && (
           <div className="crawl-source-form">
             <h4>Thêm nguồn cào</h4>
-            <div className="crawl-suggest">
-              {SUGGESTED_FEEDS.map((f) => (
-                <button key={f.url} type="button" className="btn btn-ghost btn-sm"
-                  onClick={() => setForm((v) => ({ ...v, name: f.name, url: f.url }))}>
-                  {f.name}
-                </button>
+            {!isFacebook && (
+              <div className="crawl-suggest">
+                {SUGGESTED_FEEDS.map((f) => (
+                  <button key={f.url} type="button" className="btn btn-ghost btn-sm"
+                    onClick={() => setForm((v) => ({ ...v, name: f.name, url: f.url }))}>
+                    {f.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            <span className="crawl-times-label">Loại nguồn</span>
+            <div className="crawl-type-row">
+              {CRAWL_SOURCE_TYPE_OPTIONS.map((t) => (
+                <label key={t.value} className="crawl-type-option">
+                  <input
+                    type="radio"
+                    name="crawl-source-type"
+                    checked={Number(form.sourceType) === t.value}
+                    onChange={() => setForm((f) => ({ ...f, sourceType: t.value, url: '' }))}
+                  />
+                  <span>{t.label}</span>
+                </label>
               ))}
             </div>
+
+            {isFacebook && (
+              <div className={`crawl-note ${fbStatus?.loggedIn ? 'crawl-note-success' : 'crawl-note-warning'}`}>
+                {fbChecking && 'Đang kiểm tra đăng nhập Facebook...'}
+                {!fbChecking && fbStatus?.loggedIn && '✓ Trình duyệt đã đăng nhập Facebook.'}
+                {!fbChecking && fbStatus && !fbStatus.loggedIn && (
+                  <>
+                    <strong>Chưa đăng nhập Facebook</strong> — cào fanpage sẽ không đọc được gì.
+                    <div>{fbStatus.reason}</div>
+                  </>
+                )}
+              </div>
+            )}
+
             <input className="form-control" placeholder="Tên hiển thị"
               value={form.name} onChange={setField('name')} />
-            <input className="form-control" placeholder="URL trang chuyên mục, vd https://dantri.com.vn/giao-duc.htm"
+            <span className="crawl-times-label">{typeMeta.urlLabel}</span>
+            <input className="form-control" placeholder={typeMeta.placeholder}
               value={form.url} onChange={setField('url')} />
+            <p className="form-hint">{typeMeta.hint}</p>
             <div className="crawl-times">
               <span className="crawl-times-label">Giờ cào mỗi ngày</span>
               <div className="crawl-times-list">

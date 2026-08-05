@@ -72,6 +72,21 @@ export function useTestCrawlSource() {
   })
 }
 
+/**
+ * Trạng thái đăng nhập Facebook của trình duyệt OpenClaw.
+ * Mỗi lần gọi là một lượt điều hướng trình duyệt sang facebook.com, nên chỉ bật khi
+ * người dùng thực sự đang chọn loại nguồn fanpage.
+ */
+export function useFacebookStatus(enabled) {
+  return useQuery({
+    queryKey: crawlQueryKeys.facebookStatus(),
+    queryFn: async () => unwrapApiData(await crawlApi.facebookStatus()),
+    enabled: Boolean(enabled),
+    staleTime: 60_000,
+    retry: false,
+  })
+}
+
 export function useCrawlNow() {
   const queryClient = useQueryClient()
   return useMutation({

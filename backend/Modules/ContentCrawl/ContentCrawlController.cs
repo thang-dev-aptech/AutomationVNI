@@ -31,8 +31,16 @@ public class ContentCrawlController(
     {
         if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Url))
             return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Tên và URL không được để trống"));
-        if (!Uri.TryCreate(request.Url.Trim(), UriKind.Absolute, out _))
+        if (!Uri.TryCreate(request.Url.Trim(), UriKind.Absolute, out var uri))
             return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "URL không hợp lệ"));
+
+        var isFacebookUrl = uri.Host.Contains("facebook.com", StringComparison.OrdinalIgnoreCase);
+        if (request.SourceType == CrawlSourceType.FacebookPage && !isFacebookUrl)
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR",
+                "Đã chọn loại Fanpage nhưng URL không phải facebook.com"));
+        if (request.SourceType == CrawlSourceType.WebPage && isFacebookUrl)
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR",
+                "URL là fanpage Facebook — hãy chọn loại nguồn \"Fanpage Facebook\""));
 
         var entity = await repository.CreateSourceAsync(request, ct);
         return Ok(ApiResponse.Ok(ContentCrawlRepository.ToResponse(entity), "Đã thêm nguồn cào"));
@@ -120,6 +128,47 @@ public class ContentCrawlController(
                 + "browser đã start (`openclaw browser start`), và biến "
                 + "OPENCLAW_EAGER_BROWSER_CONTROL_SERVER=1 còn trong service-env."
         }, ok ? "OpenClaw sẵn sàng" : "OpenClaw không phản hồi"));
+    }
+
+    /// <summary>
+    /// Trình duyệt OpenClaw đã đăng nhập Facebook chưa. Cào fanpage bắt buộc phải có phiên
+    /// đăng nhập, nên hỏi trước để báo cho người dùng thay vì để họ tạo nguồn rồi mới lỗi.
+    /// </summary>
+    [HttpGet("openclaw/facebook-status")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> FacebookStatus(CancellationToken ct)
+    {
+        if (!browser.IsConfigured)
+            return Ok(ApiResponse.Ok(new { loggedIn = false, reason = "OpenClaw chưa cấu hình" }));
+
+        try
+        {
+            await browser.NavigateAsync("https://www.facebook.com/", ct);
+            var eval = await browser.EvaluateAsync(
+                """
+                () => ({
+                  hasLoginForm: !!document.querySelector('input[name="pass"]'),
+                  hasSession: document.cookie.includes('c_user')
+                })
+                """, ct);
+
+            var hasLogin = eval.Result.TryGetProperty("hasLoginForm", out var l) && l.GetBoolean();
+            var hasSession = eval.Result.TryGetProperty("hasSession", out var s) && s.GetBoolean();
+            var loggedIn = hasSession && !hasLogin;
+
+            return Ok(ApiResponse.Ok(new
+            {
+                loggedIn,
+                reason = loggedIn ? null
+                    : "Trình duyệt chưa đăng nhập Facebook. Chạy `openclaw browser open https://facebook.com` "
+                      + "rồi đăng nhập bằng tài khoản phụ — phiên sẽ được giữ lại cho các lần cào sau."
+            }, loggedIn ? "Đã đăng nhập Facebook" : "Chưa đăng nhập Facebook"));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Kiểm tra đăng nhập Facebook thất bại");
+            return Ok(ApiResponse.Ok(new { loggedIn = false, reason = ex.Message }, "Không kiểm tra được"));
+        }
     }
 
     [HttpPost("sources/{id:guid}/crawl-now")]

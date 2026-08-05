@@ -293,3 +293,18 @@
   min-width: 108px;
   margin-bottom: 0;
 }
+
+.crawl-type-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.crawl-type-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.88rem;
+  cursor: pointer;
+}

@@ -10,6 +10,7 @@ export const crawlApi = {
   /** Đọc thử feed, KHÔNG ghi gì vào DB — dùng để debug một nguồn trước khi thêm. */
   testSource: (payload) => axiosInstance.post('/api/ContentCrawl/sources/test', payload),
   crawlNow: (id) => axiosInstance.post(`/api/ContentCrawl/sources/${id}/crawl-now`, {}),
+  facebookStatus: () => axiosInstance.get('/api/ContentCrawl/openclaw/facebook-status'),
 
   // Lượt cào
   getRuns: (sourceId, take = 30) =>
@@ -32,4 +33,5 @@ export const crawlQueryKeys = {
   articles: (params) => ['content-crawl', 'articles', params],
   article: (id) => ['content-crawl', 'article', id],
   summary: () => ['content-crawl', 'summary'],
+  facebookStatus: () => ['content-crawl', 'facebook-status'],
 }
