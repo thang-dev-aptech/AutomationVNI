@@ -1,5 +1,6 @@
 using Backend.Modules.ApiLog;
 using Backend.Modules.Category;
+using Backend.Modules.ContentCrawl;
 using Backend.Modules.GenerationJob;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaEmbedding;
@@ -42,6 +43,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<PageConversationModel> PageConversations => Set<PageConversationModel>();
     public DbSet<PageMessageModel> PageMessages => Set<PageMessageModel>();
     public DbSet<MessageActionLogModel> MessageActionLogs => Set<MessageActionLogModel>();
+    public DbSet<CrawlSourceModel> CrawlSources => Set<CrawlSourceModel>();
+    public DbSet<CrawlRunModel> CrawlRuns => Set<CrawlRunModel>();
+    public DbSet<CrawledArticleModel> CrawledArticles => Set<CrawledArticleModel>();
+    public DbSet<ContentFingerprintModel> ContentFingerprints => Set<ContentFingerprintModel>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -350,6 +355,89 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.ExternalResultId).HasMaxLength(500);
             e.Property(x => x.PayloadJson).HasColumnType("TEXT");
             e.Property(x => x.ErrorMessage).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<CrawlSourceModel>(e =>
+        {
+            e.ToTable("CrawlSources");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.SourceType);
+            e.HasIndex(x => x.IsActive);
+            e.HasIndex(x => x.CategoryId);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Url).HasMaxLength(1000);
+            e.Property(x => x.SiteDomain).HasMaxLength(200);
+            e.Property(x => x.BrowserProfile).HasMaxLength(100);
+            e.Property(x => x.LastError).HasColumnType("TEXT");
+            e.Property(x => x.IncludeKeywords).HasColumnType("TEXT");
+            e.Property(x => x.ExcludeKeywords).HasColumnType("TEXT");
+            e.Property(x => x.DefaultChannelIds).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<CrawlRunModel>(e =>
+        {
+            e.ToTable("CrawlRuns");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrawlSourceId);
+            e.HasIndex(x => x.Status);
+            e.HasIndex(x => x.StartedAt);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.TriggerSource).HasMaxLength(50);
+            e.Property(x => x.ErrorMessage).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<CrawledArticleModel>(e =>
+        {
+            e.ToTable("CrawledArticles");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrawlSourceId);
+            e.HasIndex(x => x.CrawlRunId);
+            e.HasIndex(x => x.Status);
+            e.HasIndex(x => x.ContentHash);
+            e.HasIndex(x => x.SimHash);
+            e.HasIndex(x => x.PublishedAt);
+            e.HasIndex(x => x.FetchedAt);
+            e.HasIndex(x => x.DuplicateOfId);
+            e.HasIndex(x => x.ResultBatchId);
+            e.HasIndex(x => x.NormalizedUrl);
+            e.HasIndex(x => x.IsDeleted);
+            // KHÔNG unique: soft-delete rồi cào lại có thể va nhau hợp lệ. Chặn trùng bằng
+            // code như tiền lệ WebhookEventModel.EventKey.
+            e.HasIndex(x => new { x.CrawlSourceId, x.SourceGuid });
+            e.Property(x => x.Title).HasMaxLength(500);
+            e.Property(x => x.SourceUrl).HasMaxLength(1000);
+            e.Property(x => x.NormalizedUrl).HasMaxLength(1000);
+            e.Property(x => x.SourceGuid).HasMaxLength(1000);
+            e.Property(x => x.Author).HasMaxLength(200);
+            e.Property(x => x.SourceCategory).HasMaxLength(200);
+            e.Property(x => x.ThumbnailUrl).HasMaxLength(1000);
+            e.Property(x => x.ContentHash).HasMaxLength(64);
+            e.Property(x => x.ReviewedBy).HasMaxLength(200);
+            e.Property(x => x.Summary).HasColumnType("TEXT");
+            e.Property(x => x.DuplicateReason).HasColumnType("TEXT");
+            e.Property(x => x.ErrorMessage).HasColumnType("TEXT");
+            e.Property(x => x.RejectReason).HasColumnType("TEXT");
+            e.Property(x => x.DraftContent).HasColumnType("TEXT");
+            e.Property(x => x.DraftExtraJson).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<ContentFingerprintModel>(e =>
+        {
+            e.ToTable("ContentFingerprints");
+            e.HasKey(x => x.Id);
+            // Mỗi band một index riêng: truy vấn ứng viên bắn 4 câu Where(BandN == ...) độc lập
+            // rồi hợp nhất trong bộ nhớ. Gộp thành OR thì phải trông chờ vào planner SQLite.
+            e.HasIndex(x => x.Band0);
+            e.HasIndex(x => x.Band1);
+            e.HasIndex(x => x.Band2);
+            e.HasIndex(x => x.Band3);
+            e.HasIndex(x => x.ContentHash);
+            e.HasIndex(x => x.ContentAt);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => new { x.OwnerType, x.OwnerId });
+            e.Property(x => x.ContentHash).HasMaxLength(64);
+            e.Property(x => x.TitleSnippet).HasMaxLength(500);
         });
     }
 }
