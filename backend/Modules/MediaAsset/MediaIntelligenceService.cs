@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using Backend.Data;
 using Backend.Shared.Ai;
 using Backend.Shared.Storage;
+using Backend.Shared.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -522,16 +523,9 @@ public class MediaIntelligenceService(
             .Take(7)
             .ToList();
 
+    /// <summary>Tách từ bỏ dấu. Logic nằm ở VietnameseTextHelper để ContentCrawl dùng chung.</summary>
     private static HashSet<string> Tokenize(string? input)
-    {
-        if (string.IsNullOrWhiteSpace(input)) return [];
-        var normalized = input.ToLowerInvariant().Normalize(NormalizationForm.FormD);
-        var withoutMarks = string.Concat(normalized.Where(c =>
-            CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark));
-        return Regex.Split(withoutMarks, @"[^\p{L}\p{N}]+")
-            .Where(x => x.Length >= 2)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-    }
+        => VietnameseTextHelper.TokenSet(input);
 
     private static string StripJsonFence(string value)
     {
