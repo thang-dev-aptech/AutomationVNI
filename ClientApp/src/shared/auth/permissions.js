@@ -137,3 +137,23 @@ export function canViewMessages(userRoles) {
 export function canManageMessages(userRoles) {
   return canManageComments(userRoles)
 }
+
+/** Tin đã cào: ai cũng xem được để nắm nội dung sắp lên page. */
+export function canViewCrawl(userRoles) {
+  return hasRole(userRoles, [
+    ROLES.ADMIN,
+    ROLES.CONTENT_MANAGER,
+    ROLES.REVIEWER,
+    ROLES.VIEWER,
+  ])
+}
+
+/** Thêm/sửa/xoá nguồn cào — cùng nhóm quyền với quản lý template. */
+export function canManageCrawlSources(userRoles) {
+  return hasRole(userRoles, [ROLES.ADMIN, ROLES.CONTENT_MANAGER])
+}
+
+/** Duyệt tin = tạo bài lên page, nên theo đúng quyền duyệt bài (Admin + Reviewer). */
+export function canApproveCrawl(userRoles) {
+  return hasRole(userRoles, [ROLES.ADMIN, ROLES.REVIEWER])
+}
