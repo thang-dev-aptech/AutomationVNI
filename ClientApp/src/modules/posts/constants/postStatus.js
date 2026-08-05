@@ -21,6 +21,7 @@ export const GENERATION_FLOW = {
   2: { value: 2, label: 'RAG (Text + Media nội bộ)' },
   3: { value: 3, label: 'Copy nguyên văn' },
   4: { value: 4, label: 'AI viết lại' },
+  5: { value: 5, label: 'Chỉ chữ + link (không sinh ảnh)' },
 }
 
 export const GENERATION_FLOW_OPTIONS = Object.values(GENERATION_FLOW)

@@ -24,5 +24,11 @@ public enum GenerationFlow
     FullAI         = 1,
     RAG            = 2,
     Recycle        = 3,
-    RecycleRewrite = 4
+    RecycleRewrite = 4,
+    /// <summary>
+    /// Chỉ sinh CHỮ, không sinh ảnh — dùng cho bài từ tin đã cào: tóm tắt + link nguồn.
+    /// Tiết kiệm một lượt gọi AI ảnh cho mỗi bài, mà tin tức vốn cũng không cần banner.
+    /// Bài tự tạo tay vẫn dùng FullAI và vẫn sinh ảnh như cũ.
+    /// </summary>
+    TextOnly       = 5
 }

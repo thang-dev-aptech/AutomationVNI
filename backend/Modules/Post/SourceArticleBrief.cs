@@ -121,7 +121,9 @@ public static class SourceArticleHelper
             sb.AppendLine("  tên trường, mốc thời gian hay phát ngôn nào không xuất hiện ở trên.");
             sb.AppendLine("- Không sao chép nguyên văn quá 1 câu liên tiếp — phải viết lại bằng lời của Page.");
             sb.AppendLine("- Chọn 2–4 ý đáng chú ý nhất với phụ huynh/học sinh, bỏ phần thủ tục hành chính.");
-            sb.AppendLine("- Bố cục: nêu sự việc → vì sao đáng quan tâm → CTA của Page.");
+            sb.AppendLine("- Đây là bài TÓM TẮT TIN, phía dưới sẽ tự động gắn link bài gốc.");
+            sb.AppendLine("  Viết gọn 90–150 từ, KHÔNG tự chèn đường link nào vào bài.");
+            sb.AppendLine("- Bố cục: nêu sự việc → vì sao đáng quan tâm → mời đọc chi tiết ở link bên dưới.");
         }
         else
         {

@@ -76,6 +76,15 @@ public class GenerationJobPipelineService(
         await ProcessAsync(textJob.JobId, ct);
 
         post = await RequirePostAsync(postId, ct);
+
+        // Bài từ tin cào: chỉ cần chữ + link nguồn, không sinh ảnh. Dừng ngay sau bước text —
+        // tiết kiệm một lượt gọi AI ảnh cho MỖI bài × MỖI page.
+        if (post.GenerationFlow == GenerationFlow.TextOnly)
+        {
+            logger.LogInformation("Post {PostId} là TextOnly — bỏ qua sinh ảnh", postId);
+            return;
+        }
+
         var useMedia = post.GenerationFlow == GenerationFlow.RAG;
 
         // FullAI + user đã gắn media sẵn → giữ hành vi cũ: bỏ sinh ảnh AI.
@@ -434,7 +443,9 @@ public class GenerationJobPipelineService(
         job.OutputPayload = outputJson;
         ApplyJobUpdate(job);
 
-        post.Content = output.Content;
+        // Bài từ tin cào: gắn link bài gốc xuống cuối. Vừa dẫn nguồn đàng hoàng, vừa để
+        // Facebook tự dựng thẻ xem trước từ URL trong nội dung.
+        post.Content = AppendSourceLinkIfNeeded(output.Content, post);
         post.ExtraJson = MergeTextGenerationExtraJson(post.ExtraJson, output);
         post.Status = PostStatus.WaitingReview;
         post.GenerationError = null;
@@ -494,6 +505,23 @@ public class GenerationJobPipelineService(
             Cta = mock.Cta,
             ImagePrompt = mock.ImagePrompt
         };
+    }
+
+    /// <summary>
+    /// Gắn "Nguồn: &lt;link&gt;" vào cuối bài sinh từ tin cào.
+    /// Chỉ gắn khi có sourceArticle.sourceUrl và bài chưa tự chứa link đó — AI đôi khi cũng
+    /// tự chèn dù prompt đã dặn không, gắn thêm nữa thành lặp hai lần.
+    /// </summary>
+    private static string AppendSourceLinkIfNeeded(string? caption, PostModel post)
+    {
+        var text = caption ?? string.Empty;
+        var brief = SourceArticleHelper.TryRead(post.ExtraJson);
+        var url = brief?.SourceUrl?.Trim();
+        if (string.IsNullOrWhiteSpace(url)) return text;
+        if (text.Contains(url, StringComparison.OrdinalIgnoreCase)) return text;
+
+        var source = string.IsNullOrWhiteSpace(brief!.SourceName) ? "Nguồn" : $"Nguồn ({brief.SourceName.Trim()})";
+        return $"{text.TrimEnd()}\n\n👉 {source}: {url}";
     }
 
     private async Task<AiTextGenerationRequest> BuildAiTextRequestAsync(

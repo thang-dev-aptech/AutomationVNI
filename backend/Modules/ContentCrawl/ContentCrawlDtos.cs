@@ -128,7 +128,11 @@ public class ApproveCrawledArticleRequest
 {
     /// <summary>Bỏ trống thì lấy DefaultChannelIds của nguồn.</summary>
     public List<Guid>? ChannelIds { get; set; }
-    public GenerationFlow GenerationFlow { get; set; } = GenerationFlow.FullAI;
+    /// <summary>
+    /// Mặc định TextOnly: bài tin chỉ cần tóm tắt + link nguồn, không sinh ảnh.
+    /// Muốn có banner AI thì đổi sang FullAI cho riêng lần duyệt đó.
+    /// </summary>
+    public GenerationFlow GenerationFlow { get; set; } = GenerationFlow.TextOnly;
     public Guid? PromptTemplateId { get; set; }
     public string? Objective { get; set; }
     /// <summary>Mốc bắt đầu rải lịch. Bỏ trống = từ bây giờ.</summary>

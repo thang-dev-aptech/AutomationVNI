@@ -10,6 +10,9 @@ export default function ApproveArticleModal({ open, article, onClose, onSubmit, 
   const [channelIds, setChannelIds] = useState([])
   const [templateId, setTemplateId] = useState('')
   const [autoSchedule, setAutoSchedule] = useState(false)
+  // Mặc định chỉ sinh chữ + link nguồn — tin tức không cần banner, đỡ hẳn một lượt gọi AI ảnh
+  // cho mỗi bài × mỗi page.
+  const [withImage, setWithImage] = useState(false)
 
   const channels = useMemo(() => channelData?.items ?? channelData ?? [], [channelData])
   const templates = useMemo(() => templateData?.items ?? templateData ?? [], [templateData])
@@ -19,6 +22,7 @@ export default function ApproveArticleModal({ open, article, onClose, onSubmit, 
       setChannelIds([])
       setTemplateId('')
       setAutoSchedule(false)
+      setWithImage(false)
     }
   }, [open])
 
@@ -29,6 +33,7 @@ export default function ApproveArticleModal({ open, article, onClose, onSubmit, 
       channelIds,
       promptTemplateId: templateId || null,
       autoSchedule,
+      generationFlow: withImage ? 1 : 5, // 1 = Full AI (có ảnh), 5 = TextOnly
     })
   }
 
@@ -78,6 +83,19 @@ export default function ApproveArticleModal({ open, article, onClose, onSubmit, 
         </select>
         <p className="form-hint">
           Bắt buộc chọn nếu có page chưa cấu hình PageContext hoặc template mặc định.
+        </p>
+
+        <label className="form-check">
+          <input
+            type="checkbox"
+            checked={withImage}
+            onChange={(e) => setWithImage(e.target.checked)}
+          />
+          <span>Sinh thêm ảnh banner bằng AI</span>
+        </label>
+        <p className="form-hint">
+          Mặc định KHÔNG sinh ảnh — bài tin đăng dạng tóm tắt kèm link bài gốc bên dưới,
+          tiết kiệm một lượt gọi AI ảnh cho mỗi page. Tick nếu muốn có banner.
         </p>
 
         <label className="form-check">

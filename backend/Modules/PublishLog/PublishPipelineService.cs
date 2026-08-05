@@ -458,7 +458,11 @@ public class PublishPipelineService(
         if (string.IsNullOrWhiteSpace(post.Content))
             throw new ArgumentException("Bài viết chưa có nội dung để đăng");
 
-        if (!await HasPublishableMediaAsync(post.Id, ct))
+        // Bài TextOnly (sinh từ tin đã cào) CỐ Ý không có ảnh — đăng dạng chữ + link nguồn.
+        // Các luồng còn lại vẫn bắt buộc có ảnh: chốt chặn này sinh ra để không đăng lên Page
+        // một ô ảnh rỗng khi provider ảnh lỗi, nên đừng gỡ cho toàn bộ.
+        if (post.GenerationFlow != GenerationFlow.TextOnly
+            && !await HasPublishableMediaAsync(post.Id, ct))
             throw new ArgumentException("Bài viết chưa có media (cover hoặc ảnh đính kèm)");
 
         return channel;
