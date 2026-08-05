@@ -475,7 +475,9 @@ public class GenerationJobPipelineService(
                     post.Id, aiResult.Provider ?? request.Provider ?? "default");
                 request.Provider ??= aiResult.Provider;
                 request.Model ??= aiResult.Model;
-                return MapAiResult(aiResult, request);
+                // Bài sinh từ tin cào → dựng nội dung kiểu bản tin, không CTA không hashtag.
+                var newsStyle = SourceArticleHelper.TryRead(post.ExtraJson) is not null;
+                return MapAiResult(aiResult, request, newsStyle);
             }
             catch (AiProviderUnavailableException)
             {
@@ -540,31 +542,40 @@ public class GenerationJobPipelineService(
             Hashtags = ctx.Hashtags
         };
 
-        var templateBody = await ResolveTextTemplateBodyAsync(post, ctx.PageContext, ct);
-        if (!string.IsNullOrWhiteSpace(templateBody))
+        var sourceArticle = SourceArticleHelper.TryRead(post.ExtraJson);
+
+        // Bài từ tin cào KHÔNG dùng template bán hàng của Page. Template đó viết cho bài quảng
+        // cáo khoá học nên kéo theo CTA "Inbox ngay để được tư vấn" và hashtag thương hiệu —
+        // ghép vào một bản tin thời sự thì thành quảng cáo trá hình.
+        // Vẫn giữ BrandContext + Tone của từng Page (đặt ở request bên trên) nên mỗi Page vẫn
+        // ra một bản viết riêng, chỉ là theo prompt tin tức thay vì prompt bán hàng.
+        if (sourceArticle is null)
         {
-            request.PromptOverride = PromptTemplateRenderer.Render(
-                templateBody, ctx.ToVariables(title: post.Title));
-            logger.LogInformation(
-                "Post {PostId} text generation uses prompt template ({Len} chars rendered, pageContext={HasPc})",
-                post.Id, request.PromptOverride.Length, ctx.PageContext is not null);
+            var templateBody = await ResolveTextTemplateBodyAsync(post, ctx.PageContext, ct);
+            if (!string.IsNullOrWhiteSpace(templateBody))
+            {
+                request.PromptOverride = PromptTemplateRenderer.Render(
+                    templateBody, ctx.ToVariables(title: post.Title));
+                logger.LogInformation(
+                    "Post {PostId} text generation uses prompt template ({Len} chars rendered, pageContext={HasPc})",
+                    post.Id, request.PromptOverride.Length, ctx.PageContext is not null);
+            }
+        }
+        else
+        {
+            // Bỏ gợi ý CTA và hashtag của Page khỏi context — để nguyên thì model vẫn nhét vào
+            // dù prompt tin tức đã dặn không.
+            request.CtaText = null;
+            request.Hashtags = null;
         }
 
-        // Bài sinh từ tin crawl: chèn TƯ LIỆU GỐC lên ĐẦU prompt. Tư liệu chỉ ~50 từ nên khối
-        // ràng buộc chống bịa đi kèm là bắt buộc — system prompt mặc định đòi thân bài 80-160 từ,
-        // đưa 50 từ vào mà đòi 160 từ ra là bảo đảm model phải bịa cho đủ.
-        // Đặt TRƯỚC template để model đọc dữ kiện + giới hạn trước, rồi mới tới yêu cầu phong
-        // cách của Page. PageContext theo kênh do ResolvePromptContextAsync lo ở trên, nên mỗi
-        // kênh vẫn ra một bản viết riêng — đúng yêu cầu "mỗi Page xào riêng".
-        var sourceArticle = SourceArticleHelper.TryRead(post.ExtraJson);
+        // Prompt RIÊNG cho bài tin: tư liệu gốc + luật viết bản tin. Đây là toàn bộ PromptOverride,
+        // không ghép thêm template nào của Page.
         if (sourceArticle is not null)
         {
-            var material = SourceArticleHelper.BuildPromptBlock(sourceArticle);
-            request.PromptOverride = string.IsNullOrWhiteSpace(request.PromptOverride)
-                ? material
-                : $"{material}\n\n{request.PromptOverride}";
+            request.PromptOverride = SourceArticleHelper.BuildPromptBlock(sourceArticle);
             logger.LogInformation(
-                "Post {PostId} sinh từ tin crawl \"{SourceTitle}\" — đã chèn khối tư liệu gốc",
+                "Post {PostId} sinh từ tin crawl \"{SourceTitle}\" — dùng prompt tin tức, bỏ template Page",
                 post.Id, sourceArticle.Title);
         }
 
@@ -830,19 +841,26 @@ public class GenerationJobPipelineService(
     }
 
     private static TextGenerationJobOutput MapAiResult(
-        AiTextGenerationResult ai, AiTextGenerationRequest request)
+        AiTextGenerationResult ai, AiTextGenerationRequest request, bool newsStyle = false)
     {
-        var hashtags = NormalizeHashtags(ai.Hashtags);
-        var cta = string.IsNullOrWhiteSpace(ai.Cta)
-            ? (request.CtaText?.Trim() ?? "Inbox ngay để được tư vấn chi tiết nhé 💬")
-            : ai.Cta.Trim();
+        // Bản tin: bỏ hẳn CTA bán hàng và hashtag, chỉ giữ phần tóm tắt.
+        // Chặn ở đây chứ không chỉ dặn trong prompt — model vẫn trả CTA/hashtag khá thường
+        // xuyên dù đã bảo đừng, mà bài đã đăng lên Page rồi thì không rút lại được.
+        var hashtags = newsStyle ? [] : NormalizeHashtags(ai.Hashtags);
+        var cta = newsStyle
+            ? string.Empty
+            : (string.IsNullOrWhiteSpace(ai.Cta)
+                ? (request.CtaText?.Trim() ?? "Inbox ngay để được tư vấn chi tiết nhé 💬")
+                : ai.Cta.Trim());
 
         return new TextGenerationJobOutput
         {
             Source = "ai",
             Provider = request.Provider,
             Model = request.Model,
-            Content = ComposeFacebookPost(ai.BannerHeadline, ai.Caption, cta, hashtags),
+            Content = newsStyle
+                ? StripTrailingNoise(ai.Caption)
+                : ComposeFacebookPost(ai.BannerHeadline, ai.Caption, cta, hashtags),
             Hashtags = hashtags,
             Cta = cta,
             ImagePrompt = ai.ImagePrompt,
@@ -861,6 +879,33 @@ public class GenerationJobPipelineService(
     /// đến từ mẹo "dòng đầu ngắn + dòng trống" này. bannerHeadline (≤ 8 từ) là dòng lý tưởng cho việc đó.
     /// </summary>
     private const int MaxTitleLineChars = 80;
+
+    /// <summary>
+    /// Dọn caption bản tin: cắt dòng hashtag và dòng mời chào bán hàng nếu model vẫn nhét vào
+    /// caption dù prompt đã cấm. Chỉ cắt ở CUỐI bài để không đụng nội dung chính.
+    /// </summary>
+    private static string StripTrailingNoise(string? caption)
+    {
+        var lines = (caption ?? string.Empty).Replace("\r\n", "\n").Split('\n').ToList();
+
+        static bool IsNoise(string raw)
+        {
+            var line = raw.Trim();
+            if (line.Length == 0) return true;
+            // Dòng chỉ toàn hashtag
+            var words = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length > 0 && words.All(w => w.StartsWith('#'))) return true;
+            // Dòng mời chào bán hàng
+            return line.Contains("inbox", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("đăng ký ngay", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("liên hệ ngay", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("để được tư vấn", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("hotline", StringComparison.OrdinalIgnoreCase);
+        }
+
+        while (lines.Count > 0 && IsNoise(lines[^1])) lines.RemoveAt(lines.Count - 1);
+        return string.Join('\n', lines).Trim();
+    }
 
     private static string ComposeFacebookPost(
         string? titleLine, string? caption, string cta, IReadOnlyList<string> hashtags)

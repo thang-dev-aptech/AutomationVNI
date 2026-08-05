@@ -366,24 +366,21 @@ public class ContentCrawlPipelineService(
         if (channelIds.Count == 0)
             throw new ArgumentException("Chưa chọn kênh đăng, và nguồn cũng chưa đặt kênh mặc định");
 
-        var pageMap = await pageContextRepository.GetMapByChannelsAsync(channelIds, ct);
-        var missing = channelIds
-            .Where(id => !PageContextRepository.HasTemplateReady(pageMap.GetValueOrDefault(id)))
-            .ToList();
-        if (missing.Count > 0 && request.PromptTemplateId is null && options.Value.CrawlPromptTemplateId is null)
-            throw new ArgumentException(
-                $"{missing.Count} kênh chưa cấu hình PageContext hoặc template mặc định. " +
-                "Chọn một danh mục prompt, hoặc cấu hình PageContext cho các kênh đó.");
-
         var brief = new SourceArticleBrief(
             article.Title, article.Summary, source?.Name, article.SourceUrl, article.PublishedAt,
             article.Content);
+
+        // Mỗi page vẫn sinh một bản riêng (brand + giọng văn của page khác nhau), NHƯNG dùng
+        // prompt tin tức chứ không dùng template bán hàng của page — xem
+        // GenerationJobPipelineService.BuildAiTextRequestAsync.
+        // Vì vậy KHÔNG cần kiểm tra page đã cấu hình template hay chưa như luồng bài thường.
+        var pageMap = await pageContextRepository.GetMapByChannelsAsync(channelIds, ct);
 
         var bulk = await postRepository.CreateFanOutQueuedAsync(
             title: article.Title,
             channelIds: channelIds,
             generationFlow: request.GenerationFlow,
-            promptTemplateId: request.PromptTemplateId ?? options.Value.CrawlPromptTemplateId,
+            promptTemplateId: null,
             pageContextByChannel: pageMap,
             objective: request.Objective ?? options.Value.DefaultObjective,
             categoryId: source?.CategoryId,

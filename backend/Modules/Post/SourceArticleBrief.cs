@@ -88,6 +88,32 @@ public static class SourceArticleHelper
     private const int MaxPromptContent = 4000;
 
     /// <summary>
+    /// Luật viết BẢN TIN — thay hoàn toàn cho template bán hàng của Page.
+    /// Template của Page viết cho bài quảng cáo khoá học nên luôn kéo theo CTA "Inbox ngay để
+    /// được tư vấn" và hashtag thương hiệu; ghép vào bản tin thời sự thì thành quảng cáo trá
+    /// hình, người đọc nhận ra ngay.
+    /// </summary>
+    private const string NewsRules =
+        """
+        ### ĐÂY LÀ BẢN TIN, KHÔNG PHẢI BÀI QUẢNG CÁO (ưu tiên cao nhất)
+        - TUYỆT ĐỐI KHÔNG viết hashtag. Trường "hashtags" trong JSON phải trả về mảng RỖNG [].
+        - TUYỆT ĐỐI KHÔNG viết lời mời chào bán hàng kiểu "Inbox ngay", "Đăng ký ngay",
+          "Liên hệ để được tư vấn", không nhắc hotline, không nhắc khoá học của trung tâm.
+          Trường "cta" phải trả về chuỗi RỖNG "".
+        - Không tự chèn đường link nào — hệ thống sẽ tự gắn link bài gốc xuống cuối.
+        - Giọng: đưa tin khách quan, bình tĩnh. Được dùng tối đa 2–3 emoji, đừng nhiều hơn.
+
+        ### NỘI DUNG
+        - Chỉ dùng dữ kiện CÓ trong tư liệu trên. Không thêm số liệu, tên người, tên trường,
+          mốc thời gian hay phát ngôn nào không xuất hiện ở trên.
+        - Không sao chép nguyên văn quá 1 câu liên tiếp — viết lại bằng lời của mình.
+        - Chọn 2–4 ý đáng chú ý nhất với phụ huynh/học sinh, bỏ phần thủ tục hành chính.
+        - Độ dài 90–150 từ.
+        - Bố cục: câu mở nêu sự việc → 2–4 gạch đầu dòng chi tiết → một câu mời đọc bản đầy đủ
+          ở link bên dưới.
+        """;
+
+    /// <summary>
     /// Khối tư liệu chèn lên ĐẦU prompt.
     ///
     /// Ràng buộc thay đổi theo LƯỢNG tư liệu thực có:
@@ -116,14 +142,7 @@ public static class SourceArticleHelper
             sb.AppendLine("### NỘI DUNG BÀI BÁO");
             sb.AppendLine(content);
             sb.AppendLine();
-            sb.AppendLine("### RÀNG BUỘC (ưu tiên cao nhất)");
-            sb.AppendLine("- Chỉ dùng dữ kiện CÓ trong nội dung trên. Không thêm số liệu, tên người,");
-            sb.AppendLine("  tên trường, mốc thời gian hay phát ngôn nào không xuất hiện ở trên.");
-            sb.AppendLine("- Không sao chép nguyên văn quá 1 câu liên tiếp — phải viết lại bằng lời của Page.");
-            sb.AppendLine("- Chọn 2–4 ý đáng chú ý nhất với phụ huynh/học sinh, bỏ phần thủ tục hành chính.");
-            sb.AppendLine("- Đây là bài TÓM TẮT TIN, phía dưới sẽ tự động gắn link bài gốc.");
-            sb.AppendLine("  Viết gọn 90–150 từ, KHÔNG tự chèn đường link nào vào bài.");
-            sb.AppendLine("- Bố cục: nêu sự việc → vì sao đáng quan tâm → mời đọc chi tiết ở link bên dưới.");
+            sb.AppendLine(NewsRules);
         }
         else
         {
