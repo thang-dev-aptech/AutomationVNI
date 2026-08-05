@@ -140,25 +140,14 @@ builder.Services.AddScoped<ContentDedupService>();
 builder.Services.AddScoped<ContentCrawlPipelineService>();
 builder.Services.AddHttpClient<IAiJudgeService, AiJudgeService>(client =>
     client.Timeout = TimeSpan.FromSeconds(30));
-builder.Services.AddHttpClient<RssFeedReader>((sp, client) =>
-    {
-        var o = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ContentCrawlOptions>>().Value;
-        client.Timeout = TimeSpan.FromSeconds(Math.Max(10, o.FetchTimeoutSeconds));
-        client.DefaultRequestHeaders.UserAgent.ParseAdd(o.UserAgent);
-        client.DefaultRequestHeaders.Accept.ParseAdd(
-            "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8");
-    })
-    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
-    {
-        // giaoduc.net.vn LUÔN trả gzip kể cả khi client không xin (đo thực tế: header
-        // content-encoding gzip, magic byte 1f 8b 08). Mặc định .NET là DecompressionMethods.None
-        // nên thiếu dòng này thì đọc feed ra binary rác mà không có lỗi nào báo ra.
-        AutomaticDecompression = System.Net.DecompressionMethods.GZip
-                                 | System.Net.DecompressionMethods.Deflate
-                                 | System.Net.DecompressionMethods.Brotli,
-        AllowAutoRedirect = true,
-        MaxAutomaticRedirections = 5,
-    });
+// Cào bằng trình duyệt OpenClaw (thay hẳn RSS): lấy được TOÀN VĂN bài báo thay vì ~50 từ tóm tắt.
+builder.Services.Configure<Backend.Shared.OpenClaw.OpenClawOptions>(
+    builder.Configuration.GetSection("OpenClaw"));
+builder.Services.AddHttpClient<Backend.Shared.OpenClaw.IOpenClawBrowserClient,
+        Backend.Shared.OpenClaw.OpenClawBrowserClient>(client =>
+    // Mỗi lượt gọi tự đặt hạn riêng bằng CTS; để rộng ở đây cho khỏi cắt ngang trang tải chậm.
+    client.Timeout = TimeSpan.FromSeconds(120));
+builder.Services.AddScoped<OpenClawWebCrawler>();
 builder.Services.AddHostedService<ContentCrawlWorker>();
 builder.Services.AddScoped<MediaEmbeddingRepository>();
 builder.Services.AddScoped<ApiLogRepository>();

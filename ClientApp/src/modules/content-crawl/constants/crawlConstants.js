@@ -58,12 +58,20 @@ export const STATUS_TABS = [
   { key: 'rejected', label: 'Đã loại', status: CRAWLED_ARTICLE_STATUS.REJECTED },
 ]
 
-/** Nguồn RSS giáo dục đã kiểm chứng thực tế — điền sẵn cho nhanh khi thêm nguồn. */
+/**
+ * Trang CHUYÊN MỤC của báo (không phải feed RSS) — trình duyệt sẽ mở trang này để lấy
+ * danh sách bài, rồi mở từng bài bóc toàn văn.
+ */
 export const SUGGESTED_FEEDS = [
-  { name: 'Dân trí — Giáo dục', url: 'https://dantri.com.vn/rss/giao-duc.rss' },
-  { name: 'VnExpress — Giáo dục', url: 'https://vnexpress.net/rss/giao-duc.rss' },
-  { name: 'Thanh Niên — Giáo dục', url: 'https://thanhnien.vn/rss/giao-duc.rss' },
-  { name: 'Tuổi Trẻ — Giáo dục', url: 'https://tuoitre.vn/rss/giao-duc.rss' },
-  { name: 'Giáo dục Việt Nam', url: 'https://giaoduc.net.vn/rss/home.rss' },
-  { name: 'VietnamNet — Giáo dục', url: 'https://vietnamnet.vn/rss/giao-duc.rss' },
+  { name: 'Dân trí — Giáo dục', url: 'https://dantri.com.vn/giao-duc.htm' },
+  { name: 'VnExpress — Giáo dục', url: 'https://vnexpress.net/giao-duc' },
+  { name: 'Thanh Niên — Giáo dục', url: 'https://thanhnien.vn/giao-duc.htm' },
+  { name: 'Tuổi Trẻ — Giáo dục', url: 'https://tuoitre.vn/giao-duc.htm' },
+  { name: 'Giáo dục Việt Nam', url: 'https://giaoduc.net.vn/giao-duc-24h' },
+  { name: 'VietnamNet — Giáo dục', url: 'https://vietnamnet.vn/giao-duc' },
+]
+
+/** Từ khoá nên chặn với fanpage trường học — tin đúng chủ đề nhưng không hợp đăng. */
+export const SUGGESTED_EXCLUDE = [
+  'bạo hành', 'tử vong', 'khởi tố', 'hiếp dâm', 'đánh nhau', 'tự tử', 'bắt giam',
 ]

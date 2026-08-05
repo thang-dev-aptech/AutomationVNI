@@ -1,5 +1,6 @@
 using Backend.Modules.ContentCrawl.Enums;
 using Backend.Shared;
+using Backend.Shared.OpenClaw;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,7 +12,8 @@ namespace Backend.Modules.ContentCrawl;
 public class ContentCrawlController(
     ContentCrawlRepository repository,
     ContentCrawlPipelineService pipeline,
-    RssFeedReader rssReader,
+    OpenClawWebCrawler webCrawler,
+    IOpenClawBrowserClient browser,
     ILogger<ContentCrawlController> logger) : ControllerBase
 {
     // ── Nguồn cào ───────────────────────────────────────────────────────────
@@ -66,7 +68,15 @@ public class ContentCrawlController(
 
         try
         {
-            var items = await rssReader.FetchAsync(request.Url.Trim(), Math.Clamp(request.MaxItemsPerRun, 1, 20), ct);
+            // Cào thử chỉ vài bài — mỗi bài là một lượt mở trang thật nên đừng để nhiều.
+            var probe = new CrawlSourceModel
+            {
+                Name = "test",
+                Url = request.Url.Trim(),
+                SourceType = CrawlSourceType.WebPage,
+                MaxItemsPerRun = Math.Clamp(request.MaxItemsPerRun, 1, 5),
+            };
+            var items = await webCrawler.FetchAsync(probe, ct);
             return Ok(ApiResponse.Ok(new TestCrawlSourceResult
             {
                 Ok = true,
@@ -75,12 +85,15 @@ public class ContentCrawlController(
                 {
                     Title = i.Title,
                     Summary = i.Summary,
+                    ContentLength = i.Content?.Length ?? 0,
+                    ContentPreview = i.Content is { Length: > 0 }
+                        ? i.Content[..Math.Min(300, i.Content.Length)] : null,
                     Link = i.Link,
                     Author = i.Author,
                     ThumbnailUrl = i.ThumbnailUrl,
                     PublishedAtUtc = i.PublishedAtUtc,
                 }).ToList()
-            }, $"Đọc được {items.Count} bài"));
+            }, $"Bóc được {items.Count} bài toàn văn"));
         }
         catch (Exception ex)
         {
@@ -88,6 +101,25 @@ public class ContentCrawlController(
             return Ok(ApiResponse.Ok(new TestCrawlSourceResult { Ok = false, Error = ex.Message },
                 "Không đọc được feed"));
         }
+    }
+
+    /// <summary>Kiểm tra OpenClaw có sẵn sàng không — luôn trả 200, không bao giờ 500.</summary>
+    [HttpGet("openclaw/ping")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> PingOpenClaw(CancellationToken ct)
+    {
+        if (!browser.IsConfigured)
+            return Ok(ApiResponse.Ok(new { ok = false, reason = "Chưa bật OpenClaw:Enabled hoặc thiếu OpenClaw:Token" },
+                "OpenClaw chưa cấu hình"));
+
+        var ok = await browser.PingAsync(ct);
+        return Ok(ApiResponse.Ok(new
+        {
+            ok,
+            reason = ok ? null : "Không kết nối được browser control. Kiểm tra: gateway đang chạy, "
+                + "browser đã start (`openclaw browser start`), và biến "
+                + "OPENCLAW_EAGER_BROWSER_CONTROL_SERVER=1 còn trong service-env."
+        }, ok ? "OpenClaw sẵn sàng" : "OpenClaw không phản hồi"));
     }
 
     [HttpPost("sources/{id:guid}/crawl-now")]

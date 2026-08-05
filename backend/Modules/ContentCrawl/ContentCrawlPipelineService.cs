@@ -27,7 +27,7 @@ public class ContentCrawlPipelineService(
     PostRepository postRepository,
     PageContextRepository pageContextRepository,
     ContentDedupService dedupService,
-    RssFeedReader rssReader,
+    OpenClawWebCrawler webCrawler,
     IAiTextGenerationService aiTextService,
     IUserContext userContext,
     IOptions<ContentCrawlOptions> options,
@@ -59,9 +59,9 @@ public class ContentCrawlPipelineService(
         {
             var items = source.SourceType switch
             {
-                CrawlSourceType.Rss => await rssReader.FetchAsync(source.Url, source.MaxItemsPerRun, ct),
+                CrawlSourceType.WebPage => await webCrawler.FetchAsync(source, ct),
                 _ => throw new NotSupportedException(
-                    $"Loại nguồn '{source.SourceType}' chưa hỗ trợ. Cào fanpage Facebook thuộc Phase 3 (qua OpenClaw).")
+                    $"Loại nguồn '{source.SourceType}' chưa hỗ trợ. Cào fanpage Facebook thuộc Phase 3.")
             };
 
             var (added, duplicate, filtered) = await IngestAsync(source, run.Id, items, ct);
@@ -106,7 +106,7 @@ public class ContentCrawlPipelineService(
 
     /// <summary>Lưu tin mới. Chặn trùng guid ngay tại đây để khỏi tạo bản ghi rác.</summary>
     private async Task<(int Added, int Duplicate, int Filtered)> IngestAsync(
-        CrawlSourceModel source, Guid runId, List<RssItem> items, CancellationToken ct)
+        CrawlSourceModel source, Guid runId, List<CrawledPageItem> items, CancellationToken ct)
     {
         var known = await repository.GetKnownGuidsAsync(source.Id, ct);
         var include = ContentCrawlRepository.DeserializeStringList(source.IncludeKeywords);
@@ -123,15 +123,22 @@ public class ContentCrawlPipelineService(
 
         foreach (var item in items)
         {
-            var guid = item.Guid ?? item.Link;
+            var guid = item.Link;
             if (known.Contains(guid)) { duplicate++; continue; }
             known.Add(guid);
 
             var tooOld = item.PublishedAtUtc.HasValue && item.PublishedAtUtc.Value < cutoff;
-            var blocked = MatchesAny(item, exclude);
-            var missesInclude = include.Count > 0 && !MatchesAny(item, include);
-            var isFiltered = tooOld || blocked || missesInclude;
+            // Lọc từ khoá CHỈ trên tiêu đề + tóm tắt, KHÔNG trên toàn văn. Bài 10.000 ký tự gần
+            // như chắc chắn có nhắc "khởi tố" hay "tử vong" ở đâu đó dù nội dung chính không hề
+            // về chuyện đó — soi toàn văn thì chặn oan gần hết bài tốt.
+            var haystack = $"{item.Title} {item.Summary}";
+            var blocked = MatchesAny(haystack, exclude);
+            var missesInclude = include.Count > 0 && !MatchesAny(haystack, include);
+            var tooShort = (item.Content?.Trim().Length ?? 0) < options.Value.MinContentLength;
+            var isFiltered = tooOld || blocked || missesInclude || tooShort;
 
+            // Chấm trùng trên tiêu đề + tóm tắt, KHÔNG trên toàn văn: hai báo đưa cùng một tin
+            // sẽ viết thân bài khác nhau khá nhiều, so toàn văn thì gần như không bao giờ khớp.
             var fingerprint = SimHashCalculator.Compute(item.Title, item.Summary);
             var article = new CrawledArticleModel
             {
@@ -140,12 +147,12 @@ public class ContentCrawlPipelineService(
                 CrawlRunId = runId,
                 Title = Truncate(item.Title, 500),
                 Summary = item.Summary,
+                Content = item.Content,
                 SourceUrl = Truncate(item.Link, 1000),
                 NormalizedUrl = NormalizeUrl(item.Link),
                 SourceGuid = Truncate(guid, 1000),
                 Author = Truncate(item.Author, 200),
-                SourceCategory = Truncate(item.Category, 200),
-                ThumbnailUrl = options.Value.ImportThumbnails ? Truncate(item.ThumbnailUrl, 1000) : Truncate(item.ThumbnailUrl, 1000),
+                ThumbnailUrl = Truncate(item.ThumbnailUrl, 1000),
                 PublishedAt = item.PublishedAtUtc,
                 FetchedAt = now,
                 ContentHash = fingerprint.ContentHash,
@@ -156,6 +163,7 @@ public class ContentCrawlPipelineService(
                 RejectReason = isFiltered
                     ? (tooOld ? "Quá cũ so với LookbackHours"
                         : blocked ? "Dính từ khoá chặn"
+                        : tooShort ? $"Không bóc được nội dung ({item.Content?.Trim().Length ?? 0} ký tự) — có thể là trang video/ảnh"
                         : "Không khớp từ khoá bắt buộc")
                     : null,
                 CreatedAt = now,
@@ -290,7 +298,7 @@ public class ContentCrawlPipelineService(
         }
 
         var brief = new SourceArticleBrief(
-            article.Title, article.Summary, null, article.SourceUrl, article.PublishedAt);
+            article.Title, article.Summary, null, article.SourceUrl, article.PublishedAt, article.Content);
 
         try
         {
@@ -305,7 +313,10 @@ public class ContentCrawlPipelineService(
             article.DraftContent = result.Caption;
 
             var warnings = options.Value.FactGuardEnabled
-                ? CrawlContentGuard.FindUnsupportedFacts(result.Caption, $"{article.Title}\n{article.Summary}")
+                // Đối chiếu với TOÀN VĂN, không chỉ tóm tắt — nếu không thì mọi con số có thật
+                // trong bài đều bị báo nhầm là bịa, cảnh báo nhiễu tới mức người dùng bỏ qua hết.
+                ? CrawlContentGuard.FindUnsupportedFacts(
+                    result.Caption, $"{article.Title}\n{article.Summary}\n{article.Content}")
                 : [];
             if (warnings.Count > 0)
                 logger.LogWarning("Bản nháp tin {Id} có {N} dữ kiện không có trong tư liệu gốc", article.Id, warnings.Count);
@@ -362,7 +373,8 @@ public class ContentCrawlPipelineService(
                 "Chọn một danh mục prompt, hoặc cấu hình PageContext cho các kênh đó.");
 
         var brief = new SourceArticleBrief(
-            article.Title, article.Summary, source?.Name, article.SourceUrl, article.PublishedAt);
+            article.Title, article.Summary, source?.Name, article.SourceUrl, article.PublishedAt,
+            article.Content);
 
         var bulk = await postRepository.CreateFanOutQueuedAsync(
             title: article.Title,
@@ -596,10 +608,10 @@ public class ContentCrawlPipelineService(
 
     // ── Helper ──────────────────────────────────────────────────────────────
 
-    private static bool MatchesAny(RssItem item, List<string> keywords)
+    private static bool MatchesAny(string text, List<string> keywords)
     {
         if (keywords.Count == 0) return false;
-        var haystack = VietnameseTextHelper.NormalizeForHash($"{item.Title} {item.Summary}");
+        var haystack = VietnameseTextHelper.NormalizeForHash(text);
         return keywords.Any(k =>
             !string.IsNullOrWhiteSpace(k)
             && haystack.Contains(VietnameseTextHelper.NormalizeForHash(k), StringComparison.Ordinal));

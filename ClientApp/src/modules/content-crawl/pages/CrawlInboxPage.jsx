@@ -113,7 +113,7 @@ export default function CrawlInboxPage() {
         <EmptyState
           title="Chưa có tin nào"
           description={tab === 'pending'
-            ? 'Thêm nguồn RSS rồi bấm "Cào ngay" để lấy tin về.'
+            ? 'Thêm nguồn (URL trang chuyên mục của báo) rồi bấm "Cào ngay".'
             : 'Không có tin ở trạng thái này.'}
         />
       )}

@@ -2,7 +2,9 @@ namespace Backend.Modules.ContentCrawl.Enums;
 
 public enum CrawlSourceType
 {
-    Rss = 1,
+    /// <summary>Trang chuyên mục của báo — mở bằng trình duyệt OpenClaw, bóc TOÀN VĂN từng bài.</summary>
+    WebPage = 1,
+    /// <summary>Phase 3 — fanpage Facebook, dùng profile trình duyệt giữ phiên đăng nhập.</summary>
     FacebookPage = 2
 }
 

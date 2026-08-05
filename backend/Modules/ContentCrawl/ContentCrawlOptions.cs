@@ -16,6 +16,12 @@ public class ContentCrawlOptions
 
     public int DefaultLookbackHours { get; set; } = 48;
     public int DefaultMaxItemsPerRun { get; set; } = 30;
+    /// <summary>
+    /// Toàn văn ngắn hơn mức này thì coi như bóc hỏng → đánh Filtered, không đưa cho AI.
+    /// Gặp thật: trang chuyên mục video (dantri.com.vn/dt360/...) không có bài chữ nào, bóc ra
+    /// đúng 54 ký tự là chuỗi trợ năng của trình phát video.
+    /// </summary>
+    public int MinContentLength { get; set; } = 300;
 
     /// <summary>Số bài chấm trùng / xào nháp mỗi tick.</summary>
     public int ProcessBatchSize { get; set; } = 10;

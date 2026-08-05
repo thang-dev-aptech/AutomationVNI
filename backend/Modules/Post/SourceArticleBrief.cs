@@ -3,9 +3,13 @@ using System.Text.Json;
 
 namespace Backend.Modules.Post;
 
-/// <summary>Tư liệu gốc của một tin đã cào, đi kèm Post để AI viết đúng dữ kiện.</summary>
+/// <summary>
+/// Tư liệu gốc của một tin đã cào, đi kèm Post để AI viết đúng dữ kiện.
+/// <paramref name="Content"/> là TOÀN VĂN bài báo (có thể null nếu bóc hỏng).
+/// </summary>
 public sealed record SourceArticleBrief(
-    string Title, string? Summary, string? SourceName, string? SourceUrl, DateTime? PublishedAt);
+    string Title, string? Summary, string? SourceName, string? SourceUrl, DateTime? PublishedAt,
+    string? Content = null);
 
 /// <summary>
 /// Đọc/ghi khối sourceArticle trong Post.ExtraJson (tiền lệ: pendingSchedule của bulk-import).
@@ -56,13 +60,17 @@ public static class SourceArticleHelper
 
             DateTime? published = DateTime.TryParse(Read("publishedAt"), out var p) ? p : null;
             return new SourceArticleBrief(
-                title, Read("summary"), Read("sourceName"), Read("sourceUrl"), published);
+                title, Read("summary"), Read("sourceName"), Read("sourceUrl"), published,
+                Read("content"));
         }
         catch (JsonException)
         {
             return null;
         }
     }
+
+    /// <summary>Toàn văn cắt bớt trước khi nhét vào ExtraJson — không để phình cột.</summary>
+    private const int MaxStoredContent = 6000;
 
     public static Dictionary<string, object?> ToJsonBlock(SourceArticleBrief brief) => new()
     {
@@ -71,36 +79,64 @@ public static class SourceArticleHelper
         ["sourceName"] = brief.SourceName,
         ["sourceUrl"] = brief.SourceUrl,
         ["publishedAt"] = brief.PublishedAt?.ToString("O"),
+        ["content"] = brief.Content is { Length: > MaxStoredContent }
+            ? brief.Content[..MaxStoredContent]
+            : brief.Content,
     };
+
+    /// <summary>Toàn văn đưa vào prompt — đủ dày để viết đúng, không quá dài để tốn token.</summary>
+    private const int MaxPromptContent = 4000;
 
     /// <summary>
     /// Khối tư liệu chèn lên ĐẦU prompt.
     ///
-    /// Phần ràng buộc chống bịa là thứ quan trọng nhất ở đây: system prompt mặc định yêu cầu
-    /// thân bài 80–160 từ, mà tư liệu RSS chỉ ~50 từ. Đưa 50 từ vào rồi đòi 160 từ ra là
-    /// BẢO ĐẢM model phải bịa cho đủ. Nên phải hạ giới hạn độ dài xuống và liệt kê rõ những
-    /// thứ tuyệt đối không được tự nghĩ ra.
+    /// Ràng buộc thay đổi theo LƯỢNG tư liệu thực có:
+    /// - CÓ toàn văn (cào bằng trình duyệt): tư liệu thật vài nghìn ký tự → cho viết đủ dài
+    ///   theo chuẩn Facebook, chỉ cấm thêm dữ kiện ngoài bài.
+    /// - CHỈ có tóm tắt: system prompt mặc định đòi 80–160 từ mà tư liệu chỉ ~50 từ, đưa vào
+    ///   thế nào cũng phải bịa cho đủ → buộc phải hạ trần độ dài xuống 60–110 từ.
     /// </summary>
     public static string BuildPromptBlock(SourceArticleBrief brief)
     {
+        var hasFullText = !string.IsNullOrWhiteSpace(brief.Content) && brief.Content!.Trim().Length >= 400;
+
         var sb = new StringBuilder();
         sb.AppendLine("## TƯ LIỆU GỐC (nguồn báo — CHỈ được dùng dữ kiện trong đây)");
         sb.AppendLine($"Tiêu đề gốc: {brief.Title.Trim()}");
-        if (!string.IsNullOrWhiteSpace(brief.Summary))
-            sb.AppendLine($"Tóm tắt gốc: {brief.Summary.Trim()}");
         if (!string.IsNullOrWhiteSpace(brief.SourceName))
             sb.AppendLine($"Nguồn: {brief.SourceName.Trim()}");
         if (brief.PublishedAt.HasValue)
             sb.AppendLine($"Ngày đăng gốc: {brief.PublishedAt.Value:dd/MM/yyyy}");
-        sb.AppendLine();
-        sb.AppendLine("### RÀNG BUỘC CHỐNG BỊA (ưu tiên cao nhất, ghi đè mọi hướng dẫn độ dài khác)");
-        sb.AppendLine("- Tư liệu trên RẤT NGẮN (~50 từ). Chỉ được diễn giải lại những gì CÓ trong đó.");
-        sb.AppendLine("- TUYỆT ĐỐI KHÔNG thêm: con số, tỉ lệ %, mốc thời gian, học phí, chỉ tiêu,");
-        sb.AppendLine("  tên người, tên trường, tên cơ quan, phát ngôn, trích dẫn — nếu tư liệu không nêu.");
-        sb.AppendLine("- Không viết như thể đã đọc toàn văn bài báo. Không dùng cụm \"theo bài viết\".");
-        sb.AppendLine("- Thân bài 60–110 từ. Viết dài hơn sẽ buộc phải bịa.");
-        sb.AppendLine("- Bố cục: nêu sự việc → 1 câu vì sao đáng quan tâm với phụ huynh/học sinh → CTA của Page.");
-        sb.AppendLine("- Tư liệu quá mỏng thì viết khái quát rồi mời tương tác, KHÔNG lấp bằng chi tiết tự nghĩ.");
+
+        if (hasFullText)
+        {
+            var content = brief.Content!.Trim();
+            if (content.Length > MaxPromptContent) content = content[..MaxPromptContent] + "…";
+            sb.AppendLine();
+            sb.AppendLine("### NỘI DUNG BÀI BÁO");
+            sb.AppendLine(content);
+            sb.AppendLine();
+            sb.AppendLine("### RÀNG BUỘC (ưu tiên cao nhất)");
+            sb.AppendLine("- Chỉ dùng dữ kiện CÓ trong nội dung trên. Không thêm số liệu, tên người,");
+            sb.AppendLine("  tên trường, mốc thời gian hay phát ngôn nào không xuất hiện ở trên.");
+            sb.AppendLine("- Không sao chép nguyên văn quá 1 câu liên tiếp — phải viết lại bằng lời của Page.");
+            sb.AppendLine("- Chọn 2–4 ý đáng chú ý nhất với phụ huynh/học sinh, bỏ phần thủ tục hành chính.");
+            sb.AppendLine("- Bố cục: nêu sự việc → vì sao đáng quan tâm → CTA của Page.");
+        }
+        else
+        {
+            if (!string.IsNullOrWhiteSpace(brief.Summary))
+                sb.AppendLine($"Tóm tắt gốc: {brief.Summary.Trim()}");
+            sb.AppendLine();
+            sb.AppendLine("### RÀNG BUỘC CHỐNG BỊA (ưu tiên cao nhất, ghi đè mọi hướng dẫn độ dài khác)");
+            sb.AppendLine("- Tư liệu trên RẤT NGẮN. Chỉ được diễn giải lại những gì CÓ trong đó.");
+            sb.AppendLine("- TUYỆT ĐỐI KHÔNG thêm: con số, tỉ lệ %, mốc thời gian, học phí, chỉ tiêu,");
+            sb.AppendLine("  tên người, tên trường, tên cơ quan, phát ngôn, trích dẫn — nếu tư liệu không nêu.");
+            sb.AppendLine("- Không viết như thể đã đọc toàn văn bài báo. Không dùng cụm \"theo bài viết\".");
+            sb.AppendLine("- Thân bài 60–110 từ. Viết dài hơn sẽ buộc phải bịa.");
+            sb.AppendLine("- Tư liệu quá mỏng thì viết khái quát rồi mời tương tác, KHÔNG lấp bằng chi tiết tự nghĩ.");
+        }
+
         return sb.ToString().TrimEnd();
     }
 }

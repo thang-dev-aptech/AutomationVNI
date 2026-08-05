@@ -11,8 +11,13 @@ public class CrawledArticleModel : BaseEntity
 
     // ── Nội dung thô từ feed ────────────────────────────────────────────────
     public string Title { get; set; } = string.Empty;
-    /// <summary>Tóm tắt ~50 từ đã gỡ HTML. RSS KHÔNG trả toàn văn — đây là tất cả tư liệu AI có.</summary>
+    /// <summary>Tóm tắt ngắn (og:description) — dùng hiển thị và chấm trùng.</summary>
     public string? Summary { get; set; }
+    /// <summary>
+    /// TOÀN VĂN bài báo do trình duyệt bóc ra. Đây là tư liệu chính cho AI viết lại —
+    /// khác hẳn thời dùng RSS khi chỉ có ~50 từ và AI buộc phải bịa cho đủ độ dài.
+    /// </summary>
+    public string? Content { get; set; }
     public string SourceUrl { get; set; } = string.Empty;
     /// <summary>URL đã bỏ query/utm/fragment — chống trùng rẻ nhất khi hai feed đăng lại cùng bài.</summary>
     public string? NormalizedUrl { get; set; }

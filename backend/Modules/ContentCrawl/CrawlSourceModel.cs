@@ -7,7 +7,7 @@ namespace Backend.Modules.ContentCrawl;
 public class CrawlSourceModel : BaseEntity
 {
     public string Name { get; set; } = string.Empty;              // "Dân trí — Giáo dục"
-    public CrawlSourceType SourceType { get; set; } = CrawlSourceType.Rss;
+    public CrawlSourceType SourceType { get; set; } = CrawlSourceType.WebPage;
     public string Url { get; set; } = string.Empty;
     public string? SiteDomain { get; set; }                       // "dantri.com.vn" — hiển thị + giãn nhịp theo site
     public Guid? CategoryId { get; set; }                         // No FK — gợi ý danh mục cho post sinh ra

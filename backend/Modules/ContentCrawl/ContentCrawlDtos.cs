@@ -9,7 +9,7 @@ namespace Backend.Modules.ContentCrawl;
 public class CreateCrawlSourceRequest
 {
     public string Name { get; set; } = string.Empty;
-    public CrawlSourceType SourceType { get; set; } = CrawlSourceType.Rss;
+    public CrawlSourceType SourceType { get; set; } = CrawlSourceType.WebPage;
     public string Url { get; set; } = string.Empty;
     public Guid? CategoryId { get; set; }
     public bool IsActive { get; set; } = true;
@@ -170,6 +170,9 @@ public class TestCrawlItem
 {
     public string Title { get; set; } = string.Empty;
     public string? Summary { get; set; }
+    /// <summary>Số ký tự toàn văn bóc được — 0 nghĩa là bóc hỏng, cần xem lại.</summary>
+    public int ContentLength { get; set; }
+    public string? ContentPreview { get; set; }
     public string Link { get; set; } = string.Empty;
     public string? Author { get; set; }
     public string? ThumbnailUrl { get; set; }

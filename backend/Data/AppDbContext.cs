@@ -415,6 +415,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.ContentHash).HasMaxLength(64);
             e.Property(x => x.ReviewedBy).HasMaxLength(200);
             e.Property(x => x.Summary).HasColumnType("TEXT");
+            e.Property(x => x.Content).HasColumnType("TEXT");
             e.Property(x => x.DuplicateReason).HasColumnType("TEXT");
             e.Property(x => x.ErrorMessage).HasColumnType("TEXT");
             e.Property(x => x.RejectReason).HasColumnType("TEXT");

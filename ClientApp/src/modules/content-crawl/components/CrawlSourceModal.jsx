@@ -114,7 +114,7 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
 
         {canManage && (
           <div className="crawl-source-form">
-            <h4>Thêm nguồn RSS</h4>
+            <h4>Thêm nguồn cào</h4>
             <div className="crawl-suggest">
               {SUGGESTED_FEEDS.map((f) => (
                 <button key={f.url} type="button" className="btn btn-ghost btn-sm"
@@ -125,7 +125,7 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
             </div>
             <input className="form-control" placeholder="Tên hiển thị"
               value={form.name} onChange={setField('name')} />
-            <input className="form-control" placeholder="URL feed RSS"
+            <input className="form-control" placeholder="URL trang chuyên mục, vd https://dantri.com.vn/giao-duc.htm"
               value={form.url} onChange={setField('url')} />
             <div className="crawl-form-row">
               <label>Chu kỳ (phút)
@@ -144,7 +144,7 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
             <div className="crawl-form-actions">
               <button type="button" className="btn btn-ghost"
                 onClick={handleTest} disabled={!form.url || testSource.isPending}>
-                {testSource.isPending ? 'Đang đọc thử...' : 'Đọc thử (không lưu)'}
+                {testSource.isPending ? 'Đang cào thử...' : 'Cào thử (không lưu)'}
               </button>
               <button type="button" className="btn btn-primary"
                 onClick={handleCreate} disabled={!form.name || !form.url || createSource.isPending}>
@@ -154,8 +154,10 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
 
             {preview?.ok && (
               <div className="crawl-preview">
-                <strong>Đọc được {preview.itemCount} bài:</strong>
-                <ul>{preview.items.map((i) => <li key={i.link}>{i.title}</li>)}</ul>
+                <strong>Bóc được {preview.itemCount} bài toàn văn:</strong>
+                <ul>{preview.items.map((i) => (
+                    <li key={i.link}>{i.title} <em>({i.contentLength} ký tự)</em></li>
+                  ))}</ul>
               </div>
             )}
             {preview && !preview.ok && (
