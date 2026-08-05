@@ -22,6 +22,7 @@ public class PublishPipelineService(
     PostMediaRepository postMediaRepository,
     MediaAssetRepository mediaAssetRepository,
     ISocialPublishService socialPublishService,
+    Microsoft.Extensions.Options.IOptions<Backend.Modules.ContentCrawl.ContentCrawlOptions> crawlOptions,
     IUserContext userContext,
     ILogger<PublishPipelineService> logger) : IPublishPipelineService
 {
@@ -109,6 +110,12 @@ public class PublishPipelineService(
             MediaFileName = firstMedia?.FileName,
             MediaMimeType = firstMedia?.MimeType,
             MediaItems = mediaItems,
+            // Bài tin (TextOnly, không ảnh) đăng dạng nền màu cho nổi trên bảng tin.
+            TextFormatPresetId = post.GenerationFlow == GenerationFlow.TextOnly
+                                 && mediaItems.Count == 0
+                                 && crawlOptions.Value.UseFacebookBackground
+                ? crawlOptions.Value.FacebookBackgroundPresetId
+                : null,
             ForceReal = forceReal
         };
 

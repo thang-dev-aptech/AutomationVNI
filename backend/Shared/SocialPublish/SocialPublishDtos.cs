@@ -24,6 +24,11 @@ public class SocialPublishRequest
     public List<SocialPublishMediaItem> MediaItems { get; set; } = [];
 
     public string? Link { get; set; }
+    /// <summary>
+    /// Mã nền màu của Facebook (text_format_preset_id). Chỉ dùng cho bài KHÔNG có ảnh và
+    /// nội dung ≤130 ký tự — vượt hai điều kiện đó Facebook lặng lẽ đăng thành bài chữ thường.
+    /// </summary>
+    public string? TextFormatPresetId { get; set; }
     public bool ForceReal { get; set; }
 }
 

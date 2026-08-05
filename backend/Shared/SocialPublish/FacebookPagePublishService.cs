@@ -324,6 +324,24 @@ public partial class FacebookPagePublishService(
         if (!string.IsNullOrWhiteSpace(request.Link))
             form["link"] = request.Link;
 
+        // Nền màu: Facebook chỉ chấp nhận khi bài không có ảnh và message ≤130 ký tự.
+        // Vượt ngưỡng thì API vẫn trả 200 nhưng đăng ra bài chữ thường — hỏng trong im lặng,
+        // nên chặn ở đây và ghi log để còn biết đường sửa.
+        if (!string.IsNullOrWhiteSpace(request.TextFormatPresetId))
+        {
+            var message = form["message"] ?? string.Empty;
+            if (message.Length <= 130)
+            {
+                form["text_format_preset_id"] = request.TextFormatPresetId;
+            }
+            else
+            {
+                logger.LogWarning(
+                    "Post {PostId}: bài dài {Len} ký tự (>130) nên bỏ nền màu, đăng dạng chữ thường",
+                    request.PostId, message.Length);
+            }
+        }
+
         return await SendGraphAsync(url, new FormUrlEncodedContent(form), request.PostId, ct);
     }
 

@@ -12,6 +12,7 @@ using Backend.Modules.PromptTemplate;
 using Backend.Modules.PublishLog;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialComment;
+using Backend.Modules.ShortLink;
 using Backend.Modules.SocialConnection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -47,6 +48,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<CrawlRunModel> CrawlRuns => Set<CrawlRunModel>();
     public DbSet<CrawledArticleModel> CrawledArticles => Set<CrawledArticleModel>();
     public DbSet<ContentFingerprintModel> ContentFingerprints => Set<ContentFingerprintModel>();
+    public DbSet<ShortLinkModel> ShortLinks => Set<ShortLinkModel>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -422,6 +424,18 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.RejectReason).HasColumnType("TEXT");
             e.Property(x => x.DraftContent).HasColumnType("TEXT");
             e.Property(x => x.DraftExtraJson).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<ShortLinkModel>(e =>
+        {
+            e.ToTable("ShortLinks");
+            e.HasKey(x => x.Id);
+            // Tra cứu theo Code chạy trên MỌI lượt bấm của độc giả nên phải có index.
+            e.HasIndex(x => x.Code).IsUnique();
+            e.HasIndex(x => x.PostId);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.Code).HasMaxLength(16);
+            e.Property(x => x.TargetUrl).HasMaxLength(1000);
         });
 
         modelBuilder.Entity<ContentFingerprintModel>(e =>

@@ -107,10 +107,12 @@ public static class SourceArticleHelper
         - Chỉ dùng dữ kiện CÓ trong tư liệu trên. Không thêm số liệu, tên người, tên trường,
           mốc thời gian hay phát ngôn nào không xuất hiện ở trên.
         - Không sao chép nguyên văn quá 1 câu liên tiếp — viết lại bằng lời của mình.
-        - Chọn 2–4 ý đáng chú ý nhất với phụ huynh/học sinh, bỏ phần thủ tục hành chính.
-        - Độ dài 90–150 từ.
-        - Bố cục: câu mở nêu sự việc → 2–4 gạch đầu dòng chi tiết → một câu mời đọc bản đầy đủ
-          ở link bên dưới.
+        - Trường "caption" viết 60–90 từ: một câu nêu sự việc, 2–3 gạch đầu dòng ý chính,
+          một câu mời đọc bản đầy đủ.
+        - Trường "bannerHeadline" là thứ QUAN TRỌNG NHẤT ở đây: viết MỘT CÂU nêu đúng cốt lõi
+          bản tin, TỐI ĐA 80 KÝ TỰ (đếm cả dấu cách). Đây là dòng chữ sẽ hiện to trên nền màu
+          Facebook nên phải tự đứng một mình mà người đọc vẫn hiểu chuyện gì.
+          Viết như tít báo: cụ thể, không hô hào, không dấu chấm cuối câu.
         """;
 
     /// <summary>

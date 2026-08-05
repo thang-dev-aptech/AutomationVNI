@@ -37,6 +37,18 @@ public class ContentCrawlOptions
     public bool DraftRewriteEnabled { get; set; } = true;
 
     /// <summary>
+    /// Đăng dạng bài NỀN MÀU của Facebook (text_format_preset_id) thay vì bài chữ thường.
+    /// Đánh đổi đã cân nhắc: nền màu chỉ cho 130 KÝ TỰ và link không có thẻ xem trước, đổi lại
+    /// bài nổi bật hơn hẳn trên bảng tin. Vì URL báo Việt Nam trung bình 111 ký tự nên BẮT BUỘC
+    /// phải bật rút gọn link (ShortLink:PublicBaseUrl), nếu không sẽ không còn chỗ viết chữ.
+    /// </summary>
+    public bool UseFacebookBackground { get; set; } = true;
+    /// <summary>Mã nền Facebook. Mặc định tím đậm — dễ đọc chữ trắng, hợp tông giáo dục.</summary>
+    public string FacebookBackgroundPresetId { get; set; } = "106018623298955";
+    /// <summary>Trần cứng của Facebook cho bài nền màu.</summary>
+    public int BackgroundPostMaxChars { get; set; } = 130;
+
+    /// <summary>
     /// false = duyệt xong bài dừng ở Approved cho người rà trên /bulk/{batchId} rồi mới lên lịch.
     /// Nên giữ false vài tuần đầu để soi chất lượng nội dung AI trước khi thả tự động.
     /// </summary>

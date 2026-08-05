@@ -133,6 +133,11 @@ builder.Services.AddHostedService<CommentWebhookHydrationWorker>();
 builder.Services.AddHostedService<CommentReconcileWorker>();
 builder.Services.AddHostedService<PageMessageReconcileWorker>();
 
+// ── Link rút gọn (cho bài đăng nền màu Facebook, giới hạn 130 ký tự) ──────────
+builder.Services.Configure<Backend.Modules.ShortLink.ShortLinkOptions>(
+    builder.Configuration.GetSection("ShortLink"));
+builder.Services.AddScoped<Backend.Modules.ShortLink.ShortLinkService>();
+
 // ── Cào tin (ContentCrawl) ────────────────────────────────────────────────────
 builder.Services.Configure<ContentCrawlOptions>(builder.Configuration.GetSection("ContentCrawl"));
 builder.Services.AddScoped<ContentCrawlRepository>();

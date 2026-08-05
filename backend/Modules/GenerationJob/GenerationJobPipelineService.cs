@@ -11,10 +11,13 @@ using Backend.Modules.Post.Enums;
 using Backend.Modules.PromptTemplate;
 using Backend.Modules.PromptTemplate.Enums;
 using Backend.Modules.SocialChannel;
+using Backend.Modules.ContentCrawl;
+using Backend.Modules.ShortLink;
 using Backend.Shared.Ai;
 using Backend.Shared.Repositories;
 using Backend.Shared.Storage;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Backend.Modules.GenerationJob;
 
@@ -31,6 +34,8 @@ public class GenerationJobPipelineService(
     IImageOverlayService imageOverlayService,
     IAiTextGenerationService aiTextGenerationService,
     IAiImageGenerationService aiImageGenerationService,
+    ShortLinkService shortLinkService,
+    IOptions<ContentCrawlOptions> crawlOptions,
     IUserContext userContext,
     ILogger<GenerationJobPipelineService> logger)
 {
@@ -445,7 +450,7 @@ public class GenerationJobPipelineService(
 
         // Bài từ tin cào: gắn link bài gốc xuống cuối. Vừa dẫn nguồn đàng hoàng, vừa để
         // Facebook tự dựng thẻ xem trước từ URL trong nội dung.
-        post.Content = AppendSourceLinkIfNeeded(output.Content, post);
+        post.Content = await ComposeCrawlPostContentAsync(output, post, ct);
         post.ExtraJson = MergeTextGenerationExtraJson(post.ExtraJson, output);
         post.Status = PostStatus.WaitingReview;
         post.GenerationError = null;
@@ -510,20 +515,59 @@ public class GenerationJobPipelineService(
     }
 
     /// <summary>
-    /// Gắn "Nguồn: &lt;link&gt;" vào cuối bài sinh từ tin cào.
-    /// Chỉ gắn khi có sourceArticle.sourceUrl và bài chưa tự chứa link đó — AI đôi khi cũng
-    /// tự chèn dù prompt đã dặn không, gắn thêm nữa thành lặp hai lần.
+    /// Ghép nội dung cuối cùng cho bài sinh từ tin cào, kèm link nguồn.
+    ///
+    /// Hai dạng bài:
+    /// - NỀN MÀU Facebook: trần CỨNG 130 ký tự tính cả link. URL báo Việt Nam trung bình 111 ký
+    ///   tự nên bắt buộc rút gọn, và tiêu đề phải cắt cho vừa phần còn lại. Vượt 130 thì
+    ///   Facebook từ chối nền màu và đăng thành bài chữ thường — mất hẳn thứ ta muốn.
+    /// - Bài chữ thường: tóm tắt đầy đủ + link ở cuối, không giới hạn.
     /// </summary>
-    private static string AppendSourceLinkIfNeeded(string? caption, PostModel post)
+    private async Task<string> ComposeCrawlPostContentAsync(
+        TextGenerationJobOutput output, PostModel post, CancellationToken ct)
     {
-        var text = caption ?? string.Empty;
         var brief = SourceArticleHelper.TryRead(post.ExtraJson);
         var url = brief?.SourceUrl?.Trim();
-        if (string.IsNullOrWhiteSpace(url)) return text;
-        if (text.Contains(url, StringComparison.OrdinalIgnoreCase)) return text;
+        var caption = output.Content ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(url)) return caption;
 
-        var source = string.IsNullOrWhiteSpace(brief!.SourceName) ? "Nguồn" : $"Nguồn ({brief.SourceName.Trim()})";
-        return $"{text.TrimEnd()}\n\n👉 {source}: {url}";
+        var opt = crawlOptions.Value;
+        if (!opt.UseFacebookBackground)
+        {
+            if (caption.Contains(url, StringComparison.OrdinalIgnoreCase)) return caption;
+            var label = string.IsNullOrWhiteSpace(brief!.SourceName)
+                ? "Nguồn" : $"Nguồn ({brief.SourceName.Trim()})";
+            return $"{caption.TrimEnd()}\n\n👉 {label}: {url}";
+        }
+
+        var link = await shortLinkService.ShortenAsync(url, post.Id, ct);
+        var headline = FirstNonEmpty(output.BannerHeadline, caption, post.Title).Trim();
+
+        // Ngân sách: 130 − độ dài link − 2 ký tự xuống dòng.
+        var budget = opt.BackgroundPostMaxChars - link.Length - 2;
+        if (budget < 20)
+        {
+            // Link dài tới mức không còn chỗ viết — gần như chắc chắn do chưa bật rút gọn.
+            logger.LogWarning(
+                "Post {PostId}: link dài {LinkLen} ký tự, không đủ chỗ cho bài nền màu. " +
+                "Cấu hình ShortLink:PublicBaseUrl để rút gọn. Tạm đăng dạng bài chữ thường.",
+                post.Id, link.Length);
+            return $"{caption.TrimEnd()}\n\n👉 {url}";
+        }
+
+        return $"{TrimToLength(headline, budget)}\n{link}";
+    }
+
+    /// <summary>Cắt theo RANH GIỚI TỪ rồi thêm dấu lửng — cắt giữa từ tiếng Việt đọc rất kỳ.</summary>
+    private static string TrimToLength(string text, int max)
+    {
+        var clean = text.Replace("\r", " ").Replace("\n", " ").Trim();
+        if (clean.Length <= max) return clean;
+
+        var cut = clean[..Math.Max(1, max - 1)];
+        var lastSpace = cut.LastIndexOf(' ');
+        if (lastSpace > max / 2) cut = cut[..lastSpace];
+        return cut.TrimEnd('.', ',', ':', ';', '-') + "…";
     }
 
     private async Task<AiTextGenerationRequest> BuildAiTextRequestAsync(
