@@ -148,6 +148,8 @@ public class PublishPipelineService(
         await CompletePublishJobAsync(post.Id, responseJson, ct);
         await context.SaveChangesAsync(ct);
 
+        await TryCommentSourceLinkAsync(post, channel, publishResult, forceReal, ct);
+
         logger.LogInformation(
             "Publish succeeded for post {PostId}, mock={UsedMock}",
             post.Id, publishResult.UsedMock);
@@ -161,6 +163,54 @@ public class PublishPipelineService(
             PublishedUrl = publishResult.PublishedUrl,
             ResponsePayload = responseJson
         };
+    }
+
+    /// <summary>
+    /// Đăng link bài gốc xuống bình luận đầu tiên.
+    ///
+    /// Vì sao không để trong thân bài: bài nền màu Facebook chặn ở 130 ký tự, mà URL báo Việt
+    /// Nam trung bình 111 ký tự — đo trên kho thật thì 11/12 bài sẽ không còn chỗ viết tiêu đề.
+    /// Đưa xuống bình luận giữ được URL GỐC đầy đủ (không cần rút gọn) mà tiêu đề vẫn nguyên vẹn.
+    ///
+    /// Lỗi ở đây KHÔNG được làm hỏng việc đăng bài — bài đã lên rồi, thiếu bình luận thì bổ sung
+    /// tay được, còn ném lỗi ở đây sẽ khiến post bị đánh dấu thất bại dù thực tế đã đăng thành công.
+    /// </summary>
+    private async Task TryCommentSourceLinkAsync(
+        PostModel post, SocialChannelModel channel, SocialPublishResult publishResult,
+        bool forceReal, CancellationToken ct)
+    {
+        if (post.GenerationFlow != GenerationFlow.TextOnly) return;
+        if (!crawlOptions.Value.PostSourceLinkAsComment) return;
+        if (string.IsNullOrWhiteSpace(publishResult.PublishedExternalId)) return;
+
+        var brief = Backend.Modules.Post.SourceArticleHelper.TryRead(post.ExtraJson);
+        var url = brief?.SourceUrl?.Trim();
+        if (string.IsNullOrWhiteSpace(url)) return;
+
+        var label = string.IsNullOrWhiteSpace(brief!.SourceName)
+            ? "Nguồn" : $"Nguồn: {brief.SourceName.Trim()}";
+        try
+        {
+            var result = await socialPublishService.CommentAsync(new SocialCommentPublishRequest
+            {
+                PostId = post.Id,
+                Platform = channel.Platform,
+                ExternalPostId = publishResult.PublishedExternalId!,
+                AccessToken = channel.AccessToken,
+                Message = $"👉 {label}\n{url}",
+                ForceReal = forceReal,
+            }, ct);
+
+            if (result.Success)
+                logger.LogInformation("Đã bình luận link nguồn cho post {PostId}", post.Id);
+            else
+                logger.LogWarning("Bình luận link nguồn thất bại cho post {PostId}: [{Code}] {Msg}",
+                    post.Id, result.ErrorCode, result.ErrorMessage);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Bình luận link nguồn lỗi cho post {PostId} — bài vẫn đã đăng", post.Id);
+        }
     }
 
     private async Task ApplyPublishFailureAsync(

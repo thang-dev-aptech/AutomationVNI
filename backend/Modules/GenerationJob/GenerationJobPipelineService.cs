@@ -540,22 +540,12 @@ public class GenerationJobPipelineService(
             return $"{caption.TrimEnd()}\n\n👉 {label}: {url}";
         }
 
-        var link = await shortLinkService.ShortenAsync(url, post.Id, ct);
+        // Bài nền màu: CHỈ tiêu đề, KHÔNG link. Link nguồn (URL gốc, đầy đủ) sẽ được đăng
+        // xuống bình luận đầu tiên ngay sau khi bài lên — xem PublishPipelineService.
+        // Lý do: URL báo Việt Nam trung bình 111 ký tự, nhét vào thân bài thì 11/12 bài không
+        // còn chỗ viết tiêu đề. Đưa xuống bình luận thì giữ được URL gốc mà tiêu đề vẫn đủ chỗ.
         var headline = FirstNonEmpty(output.BannerHeadline, caption, post.Title).Trim();
-
-        // Ngân sách: 130 − độ dài link − 2 ký tự xuống dòng.
-        var budget = opt.BackgroundPostMaxChars - link.Length - 2;
-        if (budget < 20)
-        {
-            // Link dài tới mức không còn chỗ viết — gần như chắc chắn do chưa bật rút gọn.
-            logger.LogWarning(
-                "Post {PostId}: link dài {LinkLen} ký tự, không đủ chỗ cho bài nền màu. " +
-                "Cấu hình ShortLink:PublicBaseUrl để rút gọn. Tạm đăng dạng bài chữ thường.",
-                post.Id, link.Length);
-            return $"{caption.TrimEnd()}\n\n👉 {url}";
-        }
-
-        return $"{TrimToLength(headline, budget)}\n{link}";
+        return TrimToLength(headline, opt.BackgroundPostMaxChars);
     }
 
     /// <summary>Cắt theo RANH GIỚI TỪ rồi thêm dấu lửng — cắt giữa từ tiếng Việt đọc rất kỳ.</summary>

@@ -345,6 +345,30 @@ public partial class FacebookPagePublishService(
         return await SendGraphAsync(url, new FormUrlEncodedContent(form), request.PostId, ct);
     }
 
+    /// <summary>
+    /// Đăng bình luận vào bài của chính Page. Graph API dùng chung endpoint /{id}/comments cho
+    /// cả bài viết lẫn bình luận, nên chỉ cần truyền ID bài.
+    /// </summary>
+    public async Task<SocialPublishResult> CommentAsync(
+        SocialCommentPublishRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.ExternalPostId))
+            return SocialPublishResult.Failed("FB_POST_ID_MISSING", "Thiếu ID bài để bình luận");
+        if (string.IsNullOrWhiteSpace(request.AccessToken))
+            return SocialPublishResult.Failed("FB_TOKEN_MISSING", "Thiếu access token");
+        if (string.IsNullOrWhiteSpace(request.Message))
+            return SocialPublishResult.Failed("FB_EMPTY_COMMENT", "Nội dung bình luận trống");
+
+        var fb = options.Value.Facebook;
+        var url = $"{fb.GraphBaseUrl.TrimEnd('/')}/{fb.GraphVersion}/{Uri.EscapeDataString(request.ExternalPostId)}/comments";
+        var form = new Dictionary<string, string>
+        {
+            ["access_token"] = request.AccessToken!,
+            ["message"] = request.Message.Trim(),
+        };
+        return await SendGraphAsync(url, new FormUrlEncodedContent(form), request.PostId, ct);
+    }
+
     private async Task<SocialPublishResult> SendGraphAsync(
         string url, HttpContent content, Guid postId, CancellationToken ct)
     {

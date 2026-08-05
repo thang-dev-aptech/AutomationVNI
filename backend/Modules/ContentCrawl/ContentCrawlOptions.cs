@@ -38,15 +38,20 @@ public class ContentCrawlOptions
 
     /// <summary>
     /// Đăng dạng bài NỀN MÀU của Facebook (text_format_preset_id) thay vì bài chữ thường.
-    /// Đánh đổi đã cân nhắc: nền màu chỉ cho 130 KÝ TỰ và link không có thẻ xem trước, đổi lại
-    /// bài nổi bật hơn hẳn trên bảng tin. Vì URL báo Việt Nam trung bình 111 ký tự nên BẮT BUỘC
-    /// phải bật rút gọn link (ShortLink:PublicBaseUrl), nếu không sẽ không còn chỗ viết chữ.
+    /// Đánh đổi đã cân nhắc: nền màu chỉ cho 130 KÝ TỰ và không đính được ảnh, đổi lại bài nổi
+    /// bật hơn hẳn trên bảng tin. Link nguồn không nằm trong thân bài mà xuống bình luận đầu
+    /// tiên (PostSourceLinkAsComment) — nhờ vậy giữ URL GỐC đầy đủ mà tiêu đề vẫn đủ chỗ.
     /// </summary>
     public bool UseFacebookBackground { get; set; } = true;
     /// <summary>Mã nền Facebook. Mặc định tím đậm — dễ đọc chữ trắng, hợp tông giáo dục.</summary>
     public string FacebookBackgroundPresetId { get; set; } = "106018623298955";
     /// <summary>Trần cứng của Facebook cho bài nền màu.</summary>
     public int BackgroundPostMaxChars { get; set; } = 130;
+    /// <summary>
+    /// Đăng link bài gốc xuống BÌNH LUẬN đầu tiên thay vì nhét vào thân bài.
+    /// Nhờ vậy giữ được URL gốc đầy đủ mà không phải rút gọn, và tiêu đề vẫn đủ 130 ký tự.
+    /// </summary>
+    public bool PostSourceLinkAsComment { get; set; } = true;
 
     /// <summary>
     /// false = duyệt xong bài dừng ở Approved cho người rà trên /bulk/{batchId} rồi mới lên lịch.

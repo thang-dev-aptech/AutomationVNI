@@ -10,6 +10,26 @@ public class SocialPublishService(
     ThreadsPublishService threadsService,
     ILogger<SocialPublishService> logger) : ISocialPublishService
 {
+    /// <summary>
+    /// Bình luận chỉ chạy thật với Facebook. Chế độ mock trả thành công giả để luồng phía trên
+    /// không phải rẽ nhánh — bình luận là phần phụ, không được làm hỏng việc đăng bài.
+    /// </summary>
+    public async Task<SocialPublishResult> CommentAsync(
+        SocialCommentPublishRequest request, CancellationToken ct = default)
+    {
+        var wantsReal = request.ForceReal || options.Value.UseRealFacebook;
+        if (!wantsReal
+            || request.Platform != Backend.Modules.SocialChannel.Enums.SocialPlatform.Facebook
+            || string.IsNullOrWhiteSpace(request.AccessToken))
+        {
+            logger.LogInformation(
+                "Bỏ qua bình luận link nguồn cho post {PostId} (chế độ mock hoặc nền tảng không hỗ trợ)",
+                request.PostId);
+            return SocialPublishResult.Succeeded("mock-comment", string.Empty, null, usedMock: true);
+        }
+        return await facebookService.CommentAsync(request, ct);
+    }
+
     public async Task<SocialPublishResult> PublishAsync(
         SocialPublishRequest request, CancellationToken ct = default)
     {
