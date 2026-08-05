@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import LoadingState from '@/shared/components/LoadingState'
 import ErrorState from '@/shared/components/ErrorState'
 import { usePermissions } from '@/shared/hooks/usePermissions'
@@ -15,6 +15,14 @@ import {
 } from '../hooks/usePostMedia'
 import AiMediaPickerModal from './AiMediaPickerModal'
 import './MediaAssetCard.css'
+
+/** Các field ảnh backend trả kèm trong link post-media (bỏ field rỗng để không đè fallback). */
+function pickAssetFields(link) {
+  const fields = ['publicUrl', 'previewUrl', 'mimeType', 'fileName', 'originalFileName', 'altText']
+  return Object.fromEntries(
+    fields.filter((key) => link[key] != null && link[key] !== '').map((key) => [key, link[key]]),
+  )
+}
 
 /**
  * Gallery ảnh của bài viết trong preview: ảnh AI gen (cover) + ảnh chọn từ kho.
@@ -35,6 +43,14 @@ export default function PostMediaPanel({ postId, post }) {
     error,
     refetch,
   } = usePostMediaByPost(postId, { refetchInterval: isGenerating ? 4000 : false })
+
+  // Post chuyển khỏi trạng thái đang sinh → poll tắt ngay lúc đó, lần fetch cuối có thể
+  // vẫn là dữ liệu trước khi ảnh được lưu. Fetch thêm 1 nhịp để ảnh chắc chắn hiện.
+  useEffect(() => {
+    if (!postId || isGenerating) return undefined
+    const timer = setTimeout(() => refetch(), 800)
+    return () => clearTimeout(timer)
+  }, [postId, isGenerating, refetch])
 
   const { data: allAssets = [] } = useMediaAssetAll()
   const attachMedia = useAttachPostMedia()
@@ -159,7 +175,9 @@ export default function PostMediaPanel({ postId, post }) {
         ) : (
           <div className="post-media-gallery">
             {orderedLinks.map((link) => {
-              const asset = assetMap[link.mediaId]
+              // API by-post đã trả kèm publicUrl/mimeType — ảnh AI vừa sinh hiện ngay,
+              // không phải chờ danh sách media toàn cục refetch. assetMap chỉ là fallback.
+              const asset = { ...(assetMap[link.mediaId] || {}), ...pickAssetFields(link) }
               const isCover = isCoverRole(link.mediaRole)
               return (
                 <div key={link.id} className={`post-media-item ${isCover ? 'is-cover' : ''}`}>

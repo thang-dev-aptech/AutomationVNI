@@ -246,7 +246,7 @@ public class PostMediaController
     [HttpGet("by-post/{postId:guid}")]
     public async Task<IActionResult> GetByPost(Guid postId, CancellationToken ct)
     {
-        var items = await _repo.GetByPostAsync(postId, ct);
-        return Ok(ApiResponse.Ok(items.Select(PostMediaRepository.ToResponse).ToList()));
+        var items = await _repo.GetByPostWithAssetsAsync(postId, ct);
+        return Ok(ApiResponse.Ok(items));
     }
 }

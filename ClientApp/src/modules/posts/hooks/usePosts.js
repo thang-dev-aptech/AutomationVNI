@@ -1,14 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { unwrapApiData } from '@/shared/utils/apiHelpers'
 import { generationJobApi } from '@/modules/jobs/services/generationJobApi'
+import { mediaAssetQueryKeys } from '@/modules/media/services/mediaAssetApi'
+import { postMediaQueryKeys } from '@/modules/media/services/postMediaApi'
 import { postApi, postQueryKeys } from '../services/postApi'
 
 function invalidatePostQueries(queryClient, id) {
   queryClient.invalidateQueries({ queryKey: postQueryKeys.all })
+  // Sinh/tạo lại ảnh đổi luôn link ảnh của bài + thêm asset mới vào kho.
+  // Thiếu 2 dòng này thì ảnh AI vừa xong không hiện ra cho tới khi F5.
+  queryClient.invalidateQueries({ queryKey: postMediaQueryKeys.all })
+  queryClient.invalidateQueries({ queryKey: mediaAssetQueryKeys.all })
   if (id) {
     queryClient.invalidateQueries({ queryKey: postQueryKeys.detail(id) })
     queryClient.invalidateQueries({ queryKey: postQueryKeys.generationStatus(id) })
     queryClient.invalidateQueries({ queryKey: postQueryKeys.timeline(id) })
+    queryClient.invalidateQueries({ queryKey: postMediaQueryKeys.byPost(id) })
   }
 }
 

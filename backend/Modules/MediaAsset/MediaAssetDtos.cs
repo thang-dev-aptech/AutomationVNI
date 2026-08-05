@@ -108,4 +108,13 @@ public class PostMediaResponse
     public MediaRole MediaRole { get; set; }
     public int SortOrder { get; set; }
     public DateTime CreatedAt { get; set; }
+
+    // Thông tin ảnh đi kèm luôn — trước đây client phải join với danh sách media toàn cục,
+    // nên ảnh AI vừa sinh (chưa có trong list đã cache) hiện ra ô trống.
+    public string? PublicUrl { get; set; }
+    public string? PreviewUrl { get; set; }
+    public string? MimeType { get; set; }
+    public string? FileName { get; set; }
+    public string? OriginalFileName { get; set; }
+    public string? AltText { get; set; }
 }

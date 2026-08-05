@@ -227,7 +227,7 @@ public class PostMediaRepository : GenericRepository<PostMediaModel>
         var paged = await PaginateAsync(query, request.Index, request.Size, ct);
         return new PagedResult<PostMediaResponse>
         {
-            Items = paged.Items.Select(ToResponse).ToList(),
+            Items = await AttachAssetsAsync(paged.Items, ct),
             Total = paged.Total,
             Index = paged.Index,
             Size = paged.Size
@@ -239,6 +239,40 @@ public class PostMediaRepository : GenericRepository<PostMediaModel>
             .Where(x => x.PostId == postId)
             .OrderBy(x => x.SortOrder)
             .ToListAsync(ct);
+
+    /// <summary>
+    /// Link + thông tin ảnh trong 1 lần gọi. Client render thẳng từ đây, không phụ thuộc
+    /// danh sách media toàn cục (thứ hay cache cũ ngay sau khi AI sinh ảnh).
+    /// </summary>
+    public async Task<List<PostMediaResponse>> GetByPostWithAssetsAsync(
+        Guid postId, CancellationToken ct = default)
+        => await AttachAssetsAsync(await GetByPostAsync(postId, ct), ct);
+
+    private async Task<List<PostMediaResponse>> AttachAssetsAsync(
+        IReadOnlyList<PostMediaModel> links, CancellationToken ct)
+    {
+        var responses = links.Select(ToResponse).ToList();
+        if (responses.Count == 0) return responses;
+
+        var mediaIds = responses.Select(r => r.MediaId).Distinct().ToList();
+        var assets = await Context.Set<MediaAssetModel>()
+            .AsNoTracking()
+            .Where(a => mediaIds.Contains(a.Id))
+            .ToDictionaryAsync(a => a.Id, ct);
+
+        foreach (var response in responses)
+        {
+            if (!assets.TryGetValue(response.MediaId, out var asset)) continue;
+            response.PublicUrl = asset.PublicUrl ?? MediaAssetUrls.Preview(asset.Id);
+            response.PreviewUrl = MediaAssetUrls.Preview(asset.Id);
+            response.MimeType = asset.MimeType;
+            response.FileName = asset.FileName;
+            response.OriginalFileName = asset.OriginalFileName;
+            response.AltText = asset.AltText;
+        }
+
+        return responses;
+    }
 
     public async Task<PostMediaModel> CreateAsync(
         CreatePostMediaRequest request, CancellationToken ct = default)

@@ -103,10 +103,19 @@ public class GeminiImageGenerationService(
             "Gemini image request → provider={Provider}, model={Model}, referenceImages={RefCount}, promptChars={PromptChars}",
             providerKey, model, referenceCount, request.Prompt.Length);
 
-        // Gemini image (503 "high demand", 404 body rỗng) hay lỗi nhất thời. Không thử lại thì pipeline
-        // rơi xuống ảnh placeholder 1x1 mà bài vẫn được duyệt — ảnh hỏng lọt ra tận Page.
-        // Cửa sổ chập chờn của endpoint có khi kéo dài cả chục giây nên giãn tới ~48s (4 lần thử).
-        var retryDelaysSeconds = new[] { 3, 8, 15, 25 };
+        // Gemini API: retry 404/503 tạm thời. Google Flow (Selenium local) KHÔNG retry —
+        // mỗi lần = mở Chrome mới (~1–2 phút); retry 500 tạo vòng lặp "ảnh 1 lỗi, ảnh 2 chạy lại từ đầu".
+        var isLocalFlow = IsLocalFlowProvider(providerKey, config);
+        var retryDelaysSeconds = isLocalFlow
+            ? Array.Empty<int>()
+            : new[] { 3, 8, 15, 25 };
+        if (isLocalFlow)
+        {
+            logger.LogInformation(
+                "Provider {Provider} is local Google Flow — disable HTTP retries (Selenium is not idempotent)",
+                providerKey);
+        }
+
         string responseBody;
         for (var attempt = 0; ; attempt++)
         {
@@ -118,6 +127,24 @@ public class GeminiImageGenerationService(
             try
             {
                 response = await httpClient.SendAsync(httpRequest, ct);
+            }
+            catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+            {
+                // Timeout HttpClient — với Flow thường do TimeoutSeconds quá thấp (<180s).
+                if (attempt < retryDelaysSeconds.Length)
+                {
+                    logger.LogWarning(
+                        "Gemini image HTTP call timed out (lần {Attempt}), thử lại sau {Delay}s",
+                        attempt + 1, retryDelaysSeconds[attempt]);
+                    await Task.Delay(TimeSpan.FromSeconds(retryDelaysSeconds[attempt]), ct);
+                    continue;
+                }
+
+                throw new AiImageGenerationException(
+                    isLocalFlow
+                        ? "Google Flow timed out. Tăng AiImageProviders:Providers:google-flow:TimeoutSeconds (≥300) và giữ LocalImageWorker chạy tới khi xong."
+                        : "Image provider request timed out. Check TimeoutSeconds and network.",
+                    ex);
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
@@ -146,7 +173,7 @@ public class GeminiImageGenerationService(
                 // nhả 404 body rỗng rồi tự khỏi ở lần gọi kế (đã tái hiện: cùng key/model, 200 và 404
                 // xoay vòng từng phút). Model sai tên cũng 404 — nhưng khi đó retry cạn rồi fail với
                 // message có tên model, kết cục không tệ hơn, đổi lại cứu được phần lớn ca chập chờn.
-                var transient = status is 404 or 408 or 429 or 500 or 502 or 503 or 504;
+                var transient = !isLocalFlow && status is 404 or 408 or 429 or 500 or 502 or 503 or 504;
 
                 if (transient && attempt < retryDelaysSeconds.Length)
                 {
@@ -161,7 +188,9 @@ public class GeminiImageGenerationService(
                     "Gemini image provider {Provider} returned HTTP {StatusCode}: {Error}",
                     providerKey, status, error);
                 throw new AiImageGenerationException(
-                    $"Image provider returned HTTP {status}: {error}");
+                    isLocalFlow
+                        ? $"Google Flow trả HTTP {status}. Xem log LocalImageWorker (login/settings/upload logo). Không tự retry để tránh vòng lặp Chrome."
+                        : $"Image provider returned HTTP {status}: {error}");
             }
         }
 
@@ -191,6 +220,21 @@ public class GeminiImageGenerationService(
             throw new AiProviderConfigException($"Image provider '{key}' BaseUrl is not configured.");
 
         return config;
+    }
+
+    /// <summary>
+    /// LocalImageWorker / Google Flow Selenium — không dùng retry kiểu Gemini API.
+    /// </summary>
+    private static bool IsLocalFlowProvider(string providerKey, AiImageProviderConfig config)
+    {
+        if (providerKey.Contains("flow", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (string.Equals(config.ApiKey, "local-flow", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var baseUrl = config.BaseUrl ?? "";
+        return baseUrl.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+            || baseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string BuildGenerateContentUrl(AiImageProviderConfig config, string model)
