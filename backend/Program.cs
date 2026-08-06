@@ -154,6 +154,16 @@ builder.Services.AddHttpClient<Backend.Shared.OpenClaw.IOpenClawBrowserClient,
     client.Timeout = TimeSpan.FromSeconds(120));
 builder.Services.AddScoped<OpenClawWebCrawler>();
 builder.Services.AddHostedService<ContentCrawlWorker>();
+
+// ── Bot Telegram duyệt tin ────────────────────────────────────────────────────
+builder.Services.Configure<Backend.Shared.Notification.TelegramOptions>(
+    builder.Configuration.GetSection("Telegram"));
+builder.Services.AddHttpClient<Backend.Shared.Notification.TelegramClient>(client =>
+    // PHẢI lớn hơn Telegram:PollTimeoutSeconds. Long-polling giữ kết nối tới hết timeout của
+    // Telegram; để bằng nhau là chắc chắn ăn TaskCanceledException mỗi lượt không có update.
+    client.Timeout = TimeSpan.FromSeconds(90));
+builder.Services.AddScoped<CrawlTelegramService>();
+builder.Services.AddHostedService<CrawlTelegramWorker>();
 builder.Services.AddScoped<MediaEmbeddingRepository>();
 builder.Services.AddScoped<ApiLogRepository>();
 builder.Services.AddScoped<IDevDataSeeder, DevDataSeeder>();

@@ -227,6 +227,49 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
             .Take(Math.Clamp(take, 1, 100))
             .ToListAsync(ct);
 
+    /// <summary>Tin đang chờ người duyệt, mới nhất trước.</summary>
+    public async Task<List<CrawledArticleModel>> GetPendingAsync(int take, CancellationToken ct = default)
+        => await QueryActive()
+            .Where(x => x.Status == CrawledArticleStatus.Pending)
+            .OrderByDescending(x => x.FetchedAt)
+            .Take(Math.Clamp(take, 1, 100))
+            .ToListAsync(ct);
+
+    /// <summary>Tin sạch, chờ duyệt, CHƯA báo Telegram lần nào (TelegramMessageId rỗng).</summary>
+    public async Task<List<CrawledArticleModel>> GetUnnotifiedPendingAsync(int take, CancellationToken ct = default)
+        => await QueryActive()
+            .Where(x => x.Status == CrawledArticleStatus.Pending && x.TelegramMessageId == null)
+            .OrderBy(x => x.FetchedAt)
+            .Take(Math.Clamp(take, 1, 20))
+            .ToListAsync(ct);
+
+    /// <summary>
+    /// Tra tin theo mã ngắn 6 ký tự đầu của Guid (mã người dùng gõ trong Telegram).
+    ///
+    /// Lọc trong bộ nhớ chứ không dịch sang SQL: SQLite lưu Guid dạng TEXT hoa có gạch nối,
+    /// so tiền tố bằng LINQ-to-SQL là trò may rủi theo provider. Tập ứng viên chỉ vài chục
+    /// dòng (tin chưa xử lý), nạp về lọc tay vừa chắc vừa đủ nhanh.
+    ///
+    /// Trả về nhiều hơn 1 dòng nghĩa là mã bị đụng — người gọi phải bắt bạn gõ dài thêm,
+    /// KHÔNG được tự chọn bừa cái đầu tiên rồi đăng nhầm bài.
+    /// </summary>
+    public async Task<List<CrawledArticleModel>> FindByShortIdAsync(string shortId, CancellationToken ct = default)
+    {
+        var key = new string(shortId.Where(Uri.IsHexDigit).ToArray()).ToUpperInvariant();
+        if (key.Length < 3) return [];
+
+        var candidates = await QueryActive()
+            .Where(x => x.Status == CrawledArticleStatus.Pending
+                        || x.Status == CrawledArticleStatus.Duplicate)
+            .OrderByDescending(x => x.FetchedAt)
+            .Take(300)
+            .ToListAsync(ct);
+
+        return candidates
+            .Where(x => x.Id.ToString("N").StartsWith(key, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
     public async Task<Dictionary<CrawledArticleStatus, int>> CountByStatusAsync(CancellationToken ct = default)
         => await QueryActive()
             .GroupBy(x => x.Status)

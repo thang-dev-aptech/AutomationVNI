@@ -28,7 +28,6 @@ public class ContentCrawlPipelineService(
     PageContextRepository pageContextRepository,
     ContentDedupService dedupService,
     OpenClawWebCrawler webCrawler,
-    IAiTextGenerationService aiTextService,
     IUserContext userContext,
     IOptions<ContentCrawlOptions> options,
     ILogger<ContentCrawlPipelineService> logger)
