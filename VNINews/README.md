@@ -3,6 +3,10 @@
 Giao diện công khai cho trang tin của VNI Education. Hiện là **HTML tĩnh với nội
 dung mẫu** để duyệt bố cục; phần backend đưa tin thật lên chưa làm.
 
+Bố cục đối chiếu trực tiếp với `dantri.com.vn/giao-duc` và `vnexpress.net/giao-duc`:
+phẳng (không thẻ bo tròn, không đổ bóng), dày (nhiều tin một màn), tít chữ có chân,
+tiêu đề mục gạch chân màu. Đó là bốn thứ phân biệt giao diện báo với giao diện blog.
+
 ```
 VNINews/
 ├── index.html          Trang chủ: dải mốc tuyển sinh + tin chính + danh sách
@@ -42,23 +46,29 @@ Backend chỉ cần thay phần thân, giữ nguyên cấu trúc class.
 Mặc định là **khối màu theo chủ đề**, không phải ảnh của toà soạn — ảnh gốc thuộc
 bản quyền báo, đăng lại lên trang mình là rủi ro rõ ràng hơn cả phần chữ.
 
+Đặt class chủ đề lên `div.thumb`:
+
 | Class | Dùng cho |
 |---|---|
-| `cover--policy` | chính sách, chỉ thị, quy định |
-| `cover--admission` | tuyển sinh, lọc ảo, nguyện vọng |
-| `cover--score` | điểm chuẩn, điểm thi |
-| `cover--research` | nghiên cứu, khoa học |
-| `cover--default` | còn lại |
+| `t-policy` | chính sách, chỉ thị, quy định |
+| `t-admission` | tuyển sinh, lọc ảo, nguyện vọng |
+| `t-score` | điểm chuẩn, điểm thi |
+| `t-research` | nghiên cứu, khoa học |
+| `t-default` | còn lại |
 
+Thêm `thumb--wide` cho ảnh tin đầu và ảnh trong bài (16:9 thay vì 16:10).
 Muốn dùng ảnh thật sau này thì đặt `style="background-image:url(...)"` đè lên, cấu
 trúc không đổi.
 
 ### Dải mốc tuyển sinh
 
+Nằm ở cột phải (`aside`), đúng vị trí vnexpress đặt ô tra cứu điểm thi — mùa tuyển
+sinh ai vào cũng tìm một con số.
+
 ```html
-<div class="slot done">   <!-- đã qua: mờ + gạch ngang -->
-<div class="slot next">   <!-- mốc gần nhất chưa qua — CHỈ MỘT thẻ có class này -->
-<div class="slot">        <!-- các mốc sau -->
+<li class="done">   <!-- đã qua: mờ + gạch ngang -->
+<li class="next">   <!-- mốc gần nhất chưa qua — CHỈ MỘT thẻ có class này -->
+<li>                <!-- các mốc sau -->
 ```
 
 Mốc phải lấy từ **một bảng lịch riêng**, không bóc tự động từ thân bài. Sai một
@@ -128,4 +138,5 @@ Sau khi đổi nội dung một bài đã share, dùng
 - [ ] Bảng mốc tuyển sinh để dựng dải lịch
 - [ ] Ảnh `og:image` cho từng bài (hiện là khối màu, chưa có ảnh thật)
 - [ ] Trang chuyên mục (`/chuyen-muc/...` đã có trên thanh điều hướng nhưng chưa có trang)
+- [ ] Danh sách "Đọc nhiều" hiện là tĩnh — cần nối với `ViewCount`
 - [ ] `sitemap.xml` và `robots.txt`
