@@ -215,6 +215,10 @@ public class ContentCrawlController(
     [HttpPost("articles/filter")]
     public async Task<IActionResult> FilterArticles([FromBody] CrawledArticleFilterRequest request, CancellationToken ct)
     {
+        // Cấp số cho tin chưa có, để web và Telegram luôn nói cùng một hệ mã. Rẻ: chỉ ghi
+        // khi thực sự có tin thiếu số, còn lại là một truy vấn đọc.
+        await repository.EnsureShortCodesAsync(ct);
+
         var paged = await repository.FilterArticlesAsync(request, ct);
         var sources = await repository.GetSourcesAsync(false, ct);
         var nameById = sources.ToDictionary(s => s.Id, s => s.Name);

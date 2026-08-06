@@ -51,6 +51,16 @@ public class CrawledArticleModel : BaseEntity
 
     // ── Bản nháp AI (để người duyệt đọc, KHÔNG phải bài đăng cuối) ──────────
 
+    /// <summary>
+    /// Số thứ tự nhỏ để gõ trên Telegram: 1, 2, 3… thay cho 6 ký tự hex.
+    ///
+    /// Cấp khi tin vào hàng CHỜ DUYỆT và giữ nguyên suốt thời gian nằm đó. Tin rời hàng
+    /// (duyệt/bỏ) thì số được trả lại cho tin mới — nhờ vậy danh sách luôn là 1..N chứ không
+    /// trôi dần lên hàng trăm. Đổi lại, một số CÓ THỂ trỏ sang tin khác sau khi tin cũ rời đi;
+    /// chốt chặn là /dang luôn mở ô chọn page có hiện TIÊU ĐỀ trước khi đăng.
+    /// </summary>
+    public int? ShortCode { get; set; }
+
     // ── Chấm điểm bằng AI ───────────────────────────────────────────────────
     /// <summary>0–100. null = chưa chấm được (AI hỏng) — KHÁC với chấm ra điểm thấp.</summary>
     public int? QualityScore { get; set; }

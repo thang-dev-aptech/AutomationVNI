@@ -121,6 +121,16 @@
 
 .crawl-note ul { margin: 4px 0 0; padding-left: 18px; }
 
+.crawl-code {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-surface-muted, #f3f4f6);
+  color: var(--color-text-muted, #6b7280);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .crawl-screen { margin-top: 12px; }
 
 .crawl-screen summary {

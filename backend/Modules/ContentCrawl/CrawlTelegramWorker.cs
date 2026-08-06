@@ -63,6 +63,8 @@ public class CrawlTelegramWorker(
         try { await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken); }
         catch (OperationCanceledException) { return; }
 
+        if (_chatId == 0) _chatId = await RecallChatIdAsync(stoppingToken);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -139,6 +141,44 @@ public class CrawlTelegramWorker(
             // thành "Đang đăng…" rồi thành kết quả, thay vì đẻ thêm tin.
             if (answer.Keyboard is not null && sentId is not null)
                 await service.RememberPickerMessageAsync(u.ChatId, u.Text, sentId.Value, ct);
+        }
+    }
+
+    /// <summary>
+    /// Nhớ lại chat đã nhắn lần trước, đọc từ tin đã gửi trong DB.
+    ///
+    /// Không có bước này thì mỗi lần khởi động lại backend là bot câm: nó chỉ học chat_id khi
+    /// có người nhắn tới, mà Telegram cấm bot nhắn trước. Sếp sẽ tưởng hệ thống ngừng cào,
+    /// trong khi thật ra nó vẫn chạy và chỉ không biết báo về đâu. Đây là kiểu hỏng im lặng
+    /// đúng nghĩa — không log lỗi, không ai biết.
+    /// </summary>
+    private async Task<long> RecallChatIdAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<Backend.Data.AppDbContext>();
+            // Chọn chat DÙNG NHIỀU NHẤT, không phải chat gần nhất. Đo thật trên DB: có 2 chat
+            // từng nhắn bot — một cái 14 tin, một cái đúng 1 tin. Lấy "gần nhất" thì một người
+            // lạ nhắn duy nhất một câu là cướp luôn luồng thông báo của cả hệ thống, im lặng.
+            var rows = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+                .ToListAsync(
+                    context.Set<CrawledArticleModel>()
+                        .Where(x => x.TelegramChatId != null)
+                        .GroupBy(x => x.TelegramChatId!.Value)
+                        .Select(g => new { Chat = g.Key, Count = g.Count() }), ct);
+
+            var best = rows.OrderByDescending(r => r.Count).FirstOrDefault();
+            if (best is null) return 0;
+
+            logger.LogInformation(
+                "Nhớ lại chat Telegram {Chat} ({N} tin đã gửi) từ lần chạy trước", best.Chat, best.Count);
+            return best.Chat;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Không đọc lại được chat Telegram");
+            return 0;
         }
     }
 

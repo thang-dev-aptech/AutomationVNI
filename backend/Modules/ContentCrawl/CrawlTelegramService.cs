@@ -30,8 +30,12 @@ public class CrawlTelegramService(
     IOptions<TelegramOptions> options,
     ILogger<CrawlTelegramService> logger)
 {
-    /// <summary>Mã ngắn hiện cho người dùng gõ — 6 ký tự hex đầu của Guid.</summary>
-    public static string ShortId(Guid id) => id.ToString("N")[..6].ToLowerInvariant();
+    /// <summary>
+    /// Mã hiện cho người dùng gõ. Ưu tiên số thứ tự nhỏ (1, 2, 3…); tin chưa được cấp số thì
+    /// rơi về 6 ký tự hex — vẫn tra được, chỉ khó gõ hơn.
+    /// </summary>
+    public static string ShortId(CrawledArticleModel a)
+        => a.ShortCode is int n ? n.ToString() : a.Id.ToString("N")[..6].ToLowerInvariant();
 
     // ── Báo tin mới ─────────────────────────────────────────────────────────
 
@@ -41,6 +45,7 @@ public class CrawlTelegramService(
     /// </summary>
     public async Task<int> NotifyPendingAsync(long chatId, CancellationToken ct = default)
     {
+        await repository.EnsureShortCodesAsync(ct);
         var articles = await repository.GetUnnotifiedPendingAsync(options.Value.MaxNotifyPerTick, ct);
         if (articles.Count == 0) return 0;
 
@@ -53,7 +58,7 @@ public class CrawlTelegramService(
         foreach (var a in articles)
         {
             ct.ThrowIfCancellationRequested();
-            var code = ShortId(a.Id);
+            var code = ShortId(a);
             var caption = FormatArticle(a, pagesBySource.GetValueOrDefault(a.CrawlSourceId));
             List<List<TelegramButton>> buttons =
             [
@@ -120,14 +125,14 @@ public class CrawlTelegramService(
             sb.AppendLine();
         }
 
-        var meta = new List<string> { $"<code>{ShortId(a.Id)}</code>" };
+        var meta = new List<string> { $"<code>#{ShortId(a)}</code>" };
         if (a.QualityScore is int score) meta.Add($"{ScoreIcon(score)} {score} điểm");
         if (!string.IsNullOrWhiteSpace(a.ScreenTopic)) meta.Add(Esc(a.ScreenTopic));
         sb.AppendLine(string.Join(" · ", meta));
         if (!string.IsNullOrWhiteSpace(a.SourceUrl)) sb.AppendLine(Esc(a.SourceUrl));
         sb.AppendLine();
         sb.AppendLine(string.IsNullOrWhiteSpace(defaultPages)
-            ? "⚠️ Nguồn chưa đặt page mặc định — phải gõ <code>/dang " + ShortId(a.Id) + " &lt;page&gt;</code>"
+            ? "⚠️ Nguồn chưa đặt page mặc định — phải gõ <code>/dang " + ShortId(a) + " &lt;page&gt;</code>"
             : $"Bấm nút = đăng lên: <b>{Esc(defaultPages)}</b>");
         return sb.ToString().TrimEnd();
     }
@@ -401,7 +406,7 @@ public class CrawlTelegramService(
             // Gõ thêm vài ký tự rẻ hơn nhiều so với đăng nhầm bài lên fanpage.
             _ => (null, $"Mã <code>{Esc(key)}</code> khớp {found.Count} tin, gõ dài thêm:\n"
                         + string.Join("\n", found.Take(5).Select(
-                            x => $"<code>{ShortId(x.Id)}</code> {Esc(Cut(x.Title, 40))}"))),
+                            x => $"<code>#{ShortId(x)}</code> {Esc(Cut(x.Title, 40))}"))),
         };
     }
 
@@ -456,18 +461,19 @@ public class CrawlTelegramService(
 
         var sb = new StringBuilder($"<b>{channels.Count} page đang bật</b>\n");
         foreach (var name in channels) sb.AppendLine($"· {Esc(name)}");
-        sb.AppendLine("\nGõ một phần tên là đủ: <code>/dang a3f9c1 toefl, su pham</code>");
+        sb.AppendLine("\nGõ một phần tên là đủ: <code>/dang 3 toefl, su pham</code>");
         return sb.ToString().TrimEnd();
     }
 
     private async Task<string> ListPendingAsync(CancellationToken ct)
     {
+        await repository.EnsureShortCodesAsync(ct);
         var pending = await repository.GetPendingAsync(30, ct);
         if (pending.Count == 0) return "Không có tin nào chờ duyệt.";
 
         var sb = new StringBuilder($"<b>{pending.Count} tin chờ duyệt</b>\n");
         foreach (var a in pending.Take(10))
-            sb.AppendLine($"<code>{ShortId(a.Id)}</code> {(a.QualityScore is int q ? $"{ScoreIcon(q)}{q} " : "")}"
+            sb.AppendLine($"<code>#{ShortId(a)}</code> {(a.QualityScore is int q ? $"{ScoreIcon(q)}{q} " : "")}"
                           + Esc(Cut(a.Title, 46)));
         sb.AppendLine("\nDuyệt: <code>/dang &lt;mã&gt;</code> · Bỏ: <code>/bo &lt;mã&gt;</code>");
         return sb.ToString().TrimEnd();
@@ -558,7 +564,7 @@ public class CrawlTelegramService(
         <code>/ds</code> — danh sách tin đang chờ duyệt kèm mã
         <code>/dang &lt;mã&gt;</code> — mở ô chọn page rồi đăng
         <code>/dang &lt;mã&gt; &lt;page&gt;</code> — đăng thẳng, bỏ qua ô chọn
-            ví dụ: <code>/dang a3f9c1 toefl, su pham</code>
+            ví dụ: <code>/dang 3 toefl, su pham</code>
             gõ một phần tên là đủ, không cần dấu
         <code>/bo &lt;mã&gt; [lý do]</code> — bỏ tin, không đăng
         <code>/page</code> — các page đang bật
@@ -566,7 +572,9 @@ public class CrawlTelegramService(
         <code>/tt</code> — tình trạng hệ thống
 
         <b>Lưu ý</b>
-        · Mã tin là 6 ký tự đầu, lấy ở <code>/ds</code> hoặc ngay trên thẻ tin.
+        · Mã tin là số nhỏ (1, 2, 3…) lấy ở <code>/ds</code> hoặc ngay trên thẻ tin.
+        · Số được cấp lại cho tin mới sau khi tin cũ đã duyệt hoặc bỏ, nên cứ xem
+          <code>/ds</code> trước khi gõ.
         · Cùng một tin đăng lên nhiều page sẽ được viết lại theo góc khác nhau,
           không phải copy cùng một bài.
         · Bài cào đăng dạng nền màu, link bài gốc nằm ở bình luận đầu tiên.

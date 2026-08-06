@@ -227,6 +227,36 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
             .Take(Math.Clamp(take, 1, 100))
             .ToListAsync(ct);
 
+    /// <summary>
+    /// Cấp số thứ tự nhỏ nhất còn trống cho những tin đang chờ duyệt mà chưa có số.
+    ///
+    /// Chỉ worker (một luồng) và luồng Telegram gọi hàm này, nên không khoá: hai lượt cùng
+    /// cấp một số là chuyện gần như không xảy ra, mà nếu có thì tra ra 2 tin và người dùng
+    /// bị bắt gõ rõ hơn — chứ không đăng nhầm.
+    /// </summary>
+    public async Task<int> EnsureShortCodesAsync(CancellationToken ct = default)
+    {
+        var pending = await QueryActive()
+            .Where(x => x.Status == CrawledArticleStatus.Pending)
+            .OrderBy(x => x.FetchedAt)
+            .ToListAsync(ct);
+
+        var taken = pending.Where(x => x.ShortCode.HasValue).Select(x => x.ShortCode!.Value).ToHashSet();
+        var next = 1;
+        var assigned = 0;
+
+        foreach (var a in pending.Where(x => !x.ShortCode.HasValue))
+        {
+            while (taken.Contains(next)) next++;
+            a.ShortCode = next;
+            taken.Add(next);
+            assigned++;
+        }
+
+        if (assigned > 0) await context.SaveChangesAsync(ct);
+        return assigned;
+    }
+
     /// <summary>Tin đang chờ người duyệt, mới nhất trước.</summary>
     public async Task<List<CrawledArticleModel>> GetPendingAsync(int take, CancellationToken ct = default)
         => await QueryActive()
@@ -255,7 +285,20 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
     /// </summary>
     public async Task<List<CrawledArticleModel>> FindByShortIdAsync(string shortId, CancellationToken ct = default)
     {
-        var key = new string(shortId.Where(Uri.IsHexDigit).ToArray()).ToUpperInvariant();
+        var trimmed = (shortId ?? "").Trim().TrimStart('#');
+
+        // Số thuần → tra theo ShortCode. Đây là đường đi thường ngày; nhánh hex bên dưới chỉ
+        // để tin nhắn Telegram cũ (đang còn trên màn hình của sếp) vẫn bấm được.
+        if (int.TryParse(trimmed, out var code) && code > 0)
+        {
+            return await QueryActive()
+                .Where(x => x.ShortCode == code
+                            && (x.Status == CrawledArticleStatus.Pending
+                                || x.Status == CrawledArticleStatus.Duplicate))
+                .ToListAsync(ct);
+        }
+
+        var key = new string(trimmed.Where(Uri.IsHexDigit).ToArray()).ToUpperInvariant();
         if (key.Length < 3) return [];
 
         var candidates = await QueryActive()
@@ -399,6 +442,7 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
         DuplicateOfId = e.DuplicateOfId,
         DuplicateScore = e.DuplicateScore,
         DuplicateReason = e.DuplicateReason,
+        ShortCode = e.ShortCode,
         QualityScore = e.QualityScore,
         ScreenTopic = e.ScreenTopic,
         ScreenReason = e.ScreenReason,

@@ -44,6 +44,8 @@ export default function CrawlArticleCard({
         )}
         <div className="crawl-card-title">
           <div className="crawl-badges">
+            {/* Cùng số với Telegram — người trên web đọc số này rồi nhắn cho sếp "duyệt số 3". */}
+            {article.shortCode != null && <span className="crawl-code">#{article.shortCode}</span>}
             <StatusBadge label={meta.label} tone={meta.tone} />
             {article.sourceName && <span className="crawl-source">{article.sourceName}</span>}
             {article.publishedAt && (

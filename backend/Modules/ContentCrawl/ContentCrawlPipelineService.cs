@@ -283,6 +283,12 @@ public class ContentCrawlPipelineService(
                 // Vân tay ghi SAU khi sạch, để bài trùng không tự làm mồi cho lần chấm sau.
                 await UpsertArticleFingerprintAsync(article, ct);
                 await context.SaveChangesAsync(ct);
+
+                // Cấp số thứ tự nhỏ để gõ trên Telegram. Làm ở đây thay vì đợi lúc gửi tin
+                // nhắn: web và Telegram phải thấy CÙNG một số, không thì hai bên nói chuyện
+                // bằng hai hệ mã khác nhau.
+                if (article.Status == CrawledArticleStatus.Pending)
+                    await repository.EnsureShortCodesAsync(ct);
                 processed++;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
