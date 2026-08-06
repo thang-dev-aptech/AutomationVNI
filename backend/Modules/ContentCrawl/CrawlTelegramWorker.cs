@@ -44,6 +44,22 @@ public class CrawlTelegramWorker(
             _chatId == 0 ? "chưa biết — chờ tin nhắn đầu tiên" : _chatId.ToString(),
             opt.AllowedChatIds.Count);
 
+        await telegram.SetupBotProfileAsync(
+            [
+                ("ds", "Tin đang chờ duyệt"),
+                ("dang", "Duyệt và đăng một tin"),
+                ("bo", "Bỏ một tin"),
+                ("page", "Các page đang bật"),
+                ("cao", "Cào tin ngay"),
+                ("tt", "Tình trạng hệ thống"),
+                ("help", "Hướng dẫn đầy đủ"),
+            ],
+            "Duyệt và đăng tin giáo dục lên fanpage VNI",
+            "Tự cào tin giáo dục từ báo, lọc trùng rồi đẩy về đây. "
+            + "Bấm một nút là bài được viết riêng cho từng page và đăng thẳng lên Facebook, "
+            + "xong bot gửi lại link để kiểm tra. Gõ /ds để bắt đầu.",
+            stoppingToken);
+
         try { await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken); }
         catch (OperationCanceledException) { return; }
 

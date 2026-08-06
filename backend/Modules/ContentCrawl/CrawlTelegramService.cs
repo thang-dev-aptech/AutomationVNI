@@ -156,7 +156,8 @@ public class CrawlTelegramService(
                 "tt" or "status" => new BotReply(await StatusAsync(ct)),
                 "cao" or "crawl" => new BotReply(await CrawlNowAsync(ct)),
                 "page" or "pages" => new BotReply(await ListPagesAsync(ct)),
-                "start" or "help" => new BotReply(Help()),
+                "start" => new BotReply(await StartAsync(ct)),
+                "help" => new BotReply(Help()),
                 _ => new BotReply($"Không hiểu lệnh <code>/{Esc(cmd)}</code>.\n\n{Help()}"),
             };
         }
@@ -496,17 +497,60 @@ public class CrawlTelegramService(
 
     private static string Cut(string s, int n) => s.Length <= n ? s : s[..n] + "…";
 
+    /// <summary>
+    /// Lời chào /start. Khác /help ở chỗ nói VIỆC BOT LÀM trước, danh sách lệnh sau — người
+    /// gõ /start là người chưa biết bot này để làm gì, đưa ngay bảng lệnh thì đọc xong vẫn
+    /// không hiểu bấm vào sẽ xảy ra chuyện gì.
+    ///
+    /// Có số liệu thật (bao nhiêu tin đang chờ, mấy nguồn đang bật) vì đó là câu đầu tiên
+    /// ai cũng muốn biết, và nó chứng minh luôn bot đang nối được với hệ thống.
+    /// </summary>
+    private async Task<string> StartAsync(CancellationToken ct)
+    {
+        var counts = await repository.CountByStatusAsync(ct);
+        var pending = counts.GetValueOrDefault(CrawledArticleStatus.Pending);
+        var sources = await repository.GetSourcesAsync(true, ct);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("👋 <b>Bot duyệt tin VNI</b>");
+        sb.AppendLine();
+        sb.AppendLine("Hệ thống tự cào tin giáo dục từ báo, lọc trùng, rồi đẩy về đây để duyệt.");
+        sb.AppendLine("Duyệt một cái là bài tự viết riêng cho từng page rồi đăng thẳng lên Facebook.");
+        sb.AppendLine();
+        sb.AppendLine("<b>Cách dùng</b>");
+        sb.AppendLine("1. Tin mới cào xong sẽ tự hiện ở đây, kèm ảnh và 3 nút.");
+        sb.AppendLine("2. Bấm <b>🚀 Đăng ngay</b> để đăng lên page mặc định,");
+        sb.AppendLine("   hoặc <b>📋 Chọn page</b> nếu muốn đổi.");
+        sb.AppendLine("3. Bot báo lại link bài ngay tại tin nhắn đó để bấm vào xem.");
+        sb.AppendLine();
+        sb.AppendLine("⚠️ <b>Bấm là đăng thật</b>, không phải bản nháp. Muốn xem lại trước khi đăng,");
+        sb.AppendLine("hoặc cần đổi template / sinh ảnh, thì duyệt trên web.");
+        sb.AppendLine();
+        sb.AppendLine($"Hiện có <b>{pending}</b> tin chờ duyệt · {sources.Count} nguồn đang bật.");
+        sb.AppendLine();
+        sb.AppendLine("Gõ <code>/ds</code> để xem danh sách, <code>/help</code> để xem đủ lệnh.");
+        return sb.ToString().TrimEnd();
+    }
+
     private static string Help() =>
         """
         <b>Lệnh</b>
-        <code>/ds</code> — tin đang chờ duyệt
-        <code>/dang &lt;mã&gt;</code> — duyệt, viết bài rồi ĐĂNG LUÔN lên page mặc định của nguồn
-        <code>/dang &lt;mã&gt; &lt;page&gt;</code> — đăng lên page tự chọn: <code>/dang a3f9c1 toefl, su pham</code>
-        <code>/page</code> — danh sách page đang bật
-        <code>/bo &lt;mã&gt; [lý do]</code> — bỏ tin
-        <code>/cao</code> — cào ngay, không đợi lịch
+
+        <code>/ds</code> — danh sách tin đang chờ duyệt kèm mã
+        <code>/dang &lt;mã&gt;</code> — mở ô chọn page rồi đăng
+        <code>/dang &lt;mã&gt; &lt;page&gt;</code> — đăng thẳng, bỏ qua ô chọn
+            ví dụ: <code>/dang a3f9c1 toefl, su pham</code>
+            gõ một phần tên là đủ, không cần dấu
+        <code>/bo &lt;mã&gt; [lý do]</code> — bỏ tin, không đăng
+        <code>/page</code> — các page đang bật
+        <code>/cao</code> — cào ngay, không đợi tới giờ
         <code>/tt</code> — tình trạng hệ thống
 
-        Muốn đổi page, template, sinh ảnh hay xem lại trước khi đăng thì duyệt trên web.
+        <b>Lưu ý</b>
+        · Mã tin là 6 ký tự đầu, lấy ở <code>/ds</code> hoặc ngay trên thẻ tin.
+        · Cùng một tin đăng lên nhiều page sẽ được viết lại theo góc khác nhau,
+          không phải copy cùng một bài.
+        · Bài cào đăng dạng nền màu, link bài gốc nằm ở bình luận đầu tiên.
+        · Muốn xem lại trước khi đăng, đổi template hay sinh ảnh: duyệt trên web.
         """;
 }

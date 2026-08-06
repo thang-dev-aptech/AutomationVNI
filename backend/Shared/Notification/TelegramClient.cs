@@ -149,6 +149,39 @@ public class TelegramClient(
     };
 
     /// <summary>
+    /// Đăng ký menu lệnh + mô tả bot với Telegram. Gọi một lần lúc khởi động.
+    ///
+    /// Không làm bước này thì gõ "/" trong khung chat không hiện gợi ý gì, và trang bot lúc
+    /// chưa bấm Start hiện trống trơn — người mới vào không biết bot dùng để làm gì.
+    /// Đặt bằng API chứ không bằng tay trong BotFather để mô tả luôn khớp với code.
+    /// </summary>
+    public async Task SetupBotProfileAsync(
+        IReadOnlyList<(string Command, string Description)> commands,
+        string shortDescription, string description, CancellationToken ct = default)
+    {
+        if (!IsConfigured) return;
+
+        await PostRawAsync("setMyCommands", new Dictionary<string, object?>
+        {
+            ["commands"] = commands.Select(c => new { command = c.Command, description = c.Description }).ToArray(),
+        }, ct);
+
+        // short_description hiện trên trang bot lúc chưa Start; description hiện trong khung
+        // chat rỗng. Trần lần lượt là 120 và 512 ký tự — dài hơn thì API từ chối cả lệnh.
+        await PostRawAsync("setMyShortDescription", new Dictionary<string, object?>
+        {
+            ["short_description"] = Cut(shortDescription, 120),
+        }, ct);
+
+        await PostRawAsync("setMyDescription", new Dictionary<string, object?>
+        {
+            ["description"] = Cut(description, 512),
+        }, ct);
+    }
+
+    private static string Cut(string s, int n) => s.Length <= n ? s : s[..(n - 1)] + "…";
+
+    /// <summary>
     /// Bắt buộc gọi sau mỗi callback_query, kể cả khi không hiện gì. Không gọi thì nút cứ
     /// quay vòng tròn trên máy người dùng cho tới lúc Telegram tự bỏ cuộc.
     /// </summary>
