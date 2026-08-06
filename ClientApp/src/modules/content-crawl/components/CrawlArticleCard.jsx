@@ -19,7 +19,6 @@ export default function CrawlArticleCard({
   const meta = getArticleStatusMeta(article.status)
   const isDuplicate = Number(article.status) === CRAWLED_ARTICLE_STATUS.DUPLICATE
   const isPending = Number(article.status) === CRAWLED_ARTICLE_STATUS.PENDING
-  const warnings = article.factWarnings ?? []
 
   return (
     <article className="crawl-card card">
@@ -59,20 +58,6 @@ export default function CrawlArticleCard({
           {DUPLICATE_TARGET_LABEL[article.duplicateTarget]
             && ` · so với ${DUPLICATE_TARGET_LABEL[article.duplicateTarget]}`}
           {article.duplicateReason && <div>{article.duplicateReason}</div>}
-        </div>
-      )}
-
-      {article.draftContent && (
-        <details className="crawl-draft">
-          <summary>Bản nháp AI</summary>
-          <pre>{article.draftContent}</pre>
-        </details>
-      )}
-
-      {warnings.length > 0 && (
-        <div className="crawl-note crawl-note-warning">
-          <strong>⚠ Có thể AI đã tự thêm dữ kiện:</strong>
-          <ul>{warnings.map((w) => <li key={w}>{w}</li>)}</ul>
         </div>
       )}
 

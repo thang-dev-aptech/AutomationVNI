@@ -356,8 +356,6 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
         DuplicateOfId = e.DuplicateOfId,
         DuplicateScore = e.DuplicateScore,
         DuplicateReason = e.DuplicateReason,
-        DraftContent = e.DraftContent,
-        FactWarnings = ReadFactWarnings(e.DraftExtraJson),
         RejectReason = e.RejectReason,
         ErrorMessage = e.ErrorMessage,
         ReviewedBy = e.ReviewedBy,
@@ -365,20 +363,4 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
         ResultBatchId = e.ResultBatchId,
         ResultPostCount = e.ResultPostCount,
     };
-
-    private static List<string> ReadFactWarnings(string? draftExtraJson)
-    {
-        if (string.IsNullOrWhiteSpace(draftExtraJson)) return [];
-        try
-        {
-            using var doc = JsonDocument.Parse(draftExtraJson);
-            if (!doc.RootElement.TryGetProperty("factWarnings", out var el)
-                || el.ValueKind != JsonValueKind.Array) return [];
-            return el.EnumerateArray()
-                .Where(x => x.ValueKind == JsonValueKind.String)
-                .Select(x => x.GetString()!)
-                .ToList();
-        }
-        catch (JsonException) { return []; }
-    }
 }

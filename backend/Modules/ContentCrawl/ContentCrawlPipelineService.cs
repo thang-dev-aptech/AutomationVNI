@@ -214,21 +214,10 @@ public class ContentCrawlPipelineService(
                     if (article.Status == CrawledArticleStatus.Duplicate) { processed++; continue; }
                 }
 
-                if (article.Status is CrawledArticleStatus.Rewriting or CrawledArticleStatus.Pending
-                    && !string.IsNullOrWhiteSpace(article.DraftContent))
-                {
-                    processed++;
-                    continue;
-                }
-
-                if (opt.DraftRewriteEnabled)
-                {
-                    article.Status = CrawledArticleStatus.Rewriting;
-                    article.RewriteAttemptCount++;
-                    await context.SaveChangesAsync(ct);
-                    await WriteDraftAsync(article, ct);
-                }
-
+                // Chấm trùng xong là sang thẳng Pending. Không xào nháp ở đây: bản nháp
+                // KHÔNG chảy xuống bài đăng — lúc duyệt, mỗi page tự sinh nội dung riêng
+                // theo góc được giao, nên nháp chỉ là một lượt gọi AI để người duyệt liếc
+                // qua rồi bỏ. Người duyệt đọc tiêu đề + toàn văn gốc là đủ quyết định.
                 article.Status = CrawledArticleStatus.Pending;
                 article.UpdatedAt = DateTime.UtcNow;
 
@@ -276,7 +265,7 @@ public class ContentCrawlPipelineService(
         article.ErrorMessage = Truncate(error, 900);
         article.UpdatedAt = DateTime.UtcNow;
 
-        if (article.DedupAttemptCount >= max || article.RewriteAttemptCount >= max)
+        if (article.DedupAttemptCount >= max)
         {
             article.Status = CrawledArticleStatus.Pending;
             article.DuplicateReason ??= $"Xử lý lỗi {max} lần — cần người kiểm tra";
@@ -289,62 +278,6 @@ public class ContentCrawlPipelineService(
 
         try { await context.SaveChangesAsync(ct); }
         catch (Exception ex) { logger.LogError(ex, "Không ghi được trạng thái lỗi cho tin {Id}", article.Id); }
-    }
-
-    /// <summary>Một lượt gọi AI viết bản nháp cho người duyệt đọc. Lỗi thì bỏ qua, không chặn luồng.</summary>
-    private async Task WriteDraftAsync(CrawledArticleModel article, CancellationToken ct)
-    {
-        if (!aiTextService.IsAvailable())
-        {
-            logger.LogDebug("Bỏ qua xào nháp cho tin {Id}: AI chưa cấu hình", article.Id);
-            return;
-        }
-
-        var brief = new SourceArticleBrief(
-            article.Title, article.Summary, null, article.SourceUrl, article.PublishedAt, article.Content);
-
-        try
-        {
-            var result = await aiTextService.GenerateAsync(new AiTextGenerationRequest
-            {
-                Title = article.Title,
-                Objective = options.Value.DefaultObjective,
-                Category = article.SourceCategory,
-                PromptOverride = SourceArticleHelper.BuildPromptBlock(brief),
-            }, ct);
-
-            article.DraftContent = result.Caption;
-
-            var warnings = options.Value.FactGuardEnabled
-                // Đối chiếu với TOÀN VĂN, không chỉ tóm tắt — nếu không thì mọi con số có thật
-                // trong bài đều bị báo nhầm là bịa, cảnh báo nhiễu tới mức người dùng bỏ qua hết.
-                ? CrawlContentGuard.FindUnsupportedFacts(
-                    result.Caption, $"{article.Title}\n{article.Summary}\n{article.Content}")
-                : [];
-            if (warnings.Count > 0)
-                logger.LogWarning("Bản nháp tin {Id} có {N} dữ kiện không có trong tư liệu gốc", article.Id, warnings.Count);
-
-            article.DraftExtraJson = JsonSerializer.Serialize(new
-            {
-                hashtags = result.Hashtags,
-                cta = result.Cta,
-                imagePrompt = result.ImagePrompt,
-                provider = result.Provider,
-                model = result.Model,
-                factWarnings = warnings,
-            });
-        }
-        catch (AiProviderUnavailableException)
-        {
-            logger.LogDebug("Bỏ qua xào nháp cho tin {Id}: provider chưa sẵn sàng", article.Id);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // Bản nháp chỉ để người duyệt đọc — hỏng thì vẫn cho tin sang Pending, đừng
-            // chặn cả luồng chỉ vì AI trục trặc.
-            logger.LogWarning(ex, "Xào nháp tin {Id} thất bại, vẫn cho qua Pending", article.Id);
-            article.ErrorMessage = Truncate($"Xào nháp lỗi: {ex.Message}", 900);
-        }
     }
 
     // ── Duyệt → fan-out ─────────────────────────────────────────────────────

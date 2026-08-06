@@ -422,8 +422,6 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.DuplicateReason).HasColumnType("TEXT");
             e.Property(x => x.ErrorMessage).HasColumnType("TEXT");
             e.Property(x => x.RejectReason).HasColumnType("TEXT");
-            e.Property(x => x.DraftContent).HasColumnType("TEXT");
-            e.Property(x => x.DraftExtraJson).HasColumnType("TEXT");
         });
 
         modelBuilder.Entity<ShortLinkModel>(e =>

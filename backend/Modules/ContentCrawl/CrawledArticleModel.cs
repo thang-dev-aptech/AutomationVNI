@@ -42,7 +42,6 @@ public class CrawledArticleModel : BaseEntity
     // ── Trạng thái ──────────────────────────────────────────────────────────
     public CrawledArticleStatus Status { get; set; } = CrawledArticleStatus.New;
     public int DedupAttemptCount { get; set; }                    // chốt chặn lặp vô hạn
-    public int RewriteAttemptCount { get; set; }
     public string? ErrorMessage { get; set; }
     public string? RejectReason { get; set; }
     public string? ReviewedBy { get; set; }
@@ -51,8 +50,6 @@ public class CrawledArticleModel : BaseEntity
     public int ResultPostCount { get; set; }
 
     // ── Bản nháp AI (để người duyệt đọc, KHÔNG phải bài đăng cuối) ──────────
-    public string? DraftContent { get; set; }
-    public string? DraftExtraJson { get; set; }                   // hashtags / cta / imagePrompt
 
     // ── Telegram (Phase 2) ──────────────────────────────────────────────────
     public long? TelegramChatId { get; set; }

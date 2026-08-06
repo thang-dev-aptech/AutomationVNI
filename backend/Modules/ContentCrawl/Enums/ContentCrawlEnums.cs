@@ -16,15 +16,16 @@ public enum CrawlRunStatus
 }
 
 /// <summary>
-/// Vòng đời một tin đã cào. Deduping/Rewriting là trạng thái đang xử lý — worker phải có
-/// chốt chặn đếm số lần thử, kẻo một bài lỗi lặp vô hạn (xem PostGenerationWorker).
+/// Vòng đời một tin đã cào. Deduping là trạng thái đang xử lý — worker phải có chốt chặn
+/// đếm số lần thử, kẻo một bài lỗi lặp vô hạn (xem PostGenerationWorker).
 /// </summary>
 public enum CrawledArticleStatus
 {
     New = 1,          // vừa cào về, chưa chấm trùng
     Deduping = 2,     // worker đang chấm trùng
-    Rewriting = 3,    // worker đang cho AI xào bản nháp
-    Pending = 4,      // sạch, có nháp, chờ người duyệt
+    Rewriting = 3,    // KHÔNG dùng nữa (đã bỏ xào nháp). Giữ giá trị để dòng cũ trong DB
+                      // không thành số lạ; worker quét nốt chúng sang Pending.
+    Pending = 4,      // sạch, chờ người duyệt
     Duplicate = 5,    // bị loại vì trùng
     Filtered = 6,     // bị loại bởi từ khoá chặn hoặc quá cũ
     Approved = 7,     // đã duyệt, đã fan-out ra post

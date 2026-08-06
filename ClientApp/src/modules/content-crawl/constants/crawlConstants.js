@@ -15,7 +15,8 @@ export const CRAWLED_ARTICLE_STATUS = {
 const STATUS_META = {
   [CRAWLED_ARTICLE_STATUS.NEW]: { label: 'Mới cào', tone: 'neutral' },
   [CRAWLED_ARTICLE_STATUS.DEDUPING]: { label: 'Đang chấm trùng', tone: 'info' },
-  [CRAWLED_ARTICLE_STATUS.REWRITING]: { label: 'Đang xào nháp', tone: 'info' },
+  // REWRITING không còn được gán từ khi bỏ xào nháp — giữ nhãn cho dòng cũ trong DB.
+  [CRAWLED_ARTICLE_STATUS.REWRITING]: { label: 'Đang xử lý', tone: 'info' },
   [CRAWLED_ARTICLE_STATUS.PENDING]: { label: 'Chờ duyệt', tone: 'warning' },
   [CRAWLED_ARTICLE_STATUS.DUPLICATE]: { label: 'Trùng', tone: 'muted' },
   [CRAWLED_ARTICLE_STATUS.FILTERED]: { label: 'Bị lọc', tone: 'muted' },

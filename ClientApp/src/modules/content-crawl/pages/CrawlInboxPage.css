@@ -121,26 +121,6 @@
 
 .crawl-note ul { margin: 4px 0 0; padding-left: 18px; }
 
-.crawl-draft { margin-top: 12px; }
-
-.crawl-draft summary {
-  cursor: pointer;
-  font-size: 0.87rem;
-  color: var(--color-primary, #2d6cb6);
-}
-
-.crawl-draft pre {
-  white-space: pre-wrap;
-  word-break: break-word;
-  background: var(--color-surface-muted, #f3f4f6);
-  padding: 12px;
-  border-radius: var(--radius-sm, 6px);
-  margin-top: 8px;
-  font-family: inherit;
-  font-size: 0.9rem;
-  line-height: 1.55;
-}
-
 .crawl-actions {
   display: flex;
   gap: 8px;

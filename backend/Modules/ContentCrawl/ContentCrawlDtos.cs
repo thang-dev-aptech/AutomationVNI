@@ -116,9 +116,6 @@ public class CrawledArticleResponse
     public double? DuplicateScore { get; set; }
     public string? DuplicateReason { get; set; }
 
-    public string? DraftContent { get; set; }
-    /// <summary>Cảnh báo từ CrawlContentGuard: số/tên trong bản nháp không có trong tư liệu gốc.</summary>
-    public List<string> FactWarnings { get; set; } = [];
 
     public string? RejectReason { get; set; }
     public string? ErrorMessage { get; set; }

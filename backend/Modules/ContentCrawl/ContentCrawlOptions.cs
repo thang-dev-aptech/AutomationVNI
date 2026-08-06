@@ -33,9 +33,6 @@ public class ContentCrawlOptions
     /// không tải về và không đăng lại.
     /// </summary>
     public bool ImportThumbnails { get; set; }
-    /// <summary>Cho AI viết bản nháp lúc cào để người duyệt có cái mà đọc.</summary>
-    public bool DraftRewriteEnabled { get; set; } = true;
-
     /// <summary>
     /// Đăng dạng bài NỀN MÀU của Facebook (text_format_preset_id) thay vì bài chữ thường.
     /// Đánh đổi đã cân nhắc: nền màu chỉ cho 130 KÝ TỰ và không đính được ảnh, đổi lại bài nổi
@@ -67,8 +64,6 @@ public class ContentCrawlOptions
     public string DefaultObjective { get; set; } = "Chia sẻ tin giáo dục mới tới phụ huynh và học sinh";
 
     public int ArticleRetentionDays { get; set; } = 60;
-    /// <summary>Soi caption AI sinh ra xem có con số/tên nào không có trong tư liệu gốc.</summary>
-    public bool FactGuardEnabled { get; set; } = true;
 
     public DedupOptions Dedup { get; set; } = new();
 }
