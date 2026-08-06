@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Tin tức VNI Education — Tin giáo dục, tuyển sinh và hướng nghiệp</title>
+<meta name="description" content="Tin giáo dục, tuyển sinh, thi cử và hướng nghiệp dành cho phụ huynh và học sinh. Cập nhật mốc tuyển sinh 2026.">
+<link rel="canonical" href="https://tintuc.vni.edu.vn/">
+
+<!-- og:* là lý do trang này phải render sẵn HTML từ server chứ không dùng SPA:
+     trình thu thập của Facebook KHÔNG chạy JavaScript. Thiếu khối này thì bài
+     share lên fanpage ra thẻ xám, không tiêu đề, không ảnh — mà share lên
+     fanpage chính là lý do tồn tại của cả trang. -->
+<meta property="og:site_name" content="Tin tức VNI Education">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Tin tức VNI Education">
+<meta property="og:description" content="Tin giáo dục, tuyển sinh và hướng nghiệp dành cho phụ huynh và học sinh.">
+<meta property="og:url" content="https://tintuc.vni.edu.vn/">
+<meta property="og:image" content="https://tintuc.vni.edu.vn/assets/og-default.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Bỏ qua tới nội dung</a>
+
+<header class="site-head">
+  <div class="site-head-in">
+    <img class="mark" src="assets/mark.svg" alt="" width="34" height="34">
+    <a class="wordmark" href="/" style="text-decoration:none">
+      <b>Tin tức VNI Education</b>
+      <span>tintuc.vni.edu.vn</span>
+    </a>
+    <nav aria-label="Chuyên mục">
+      <a href="/" aria-current="page">Mới nhất</a>
+      <a href="/chuyen-muc/tuyen-sinh">Tuyển sinh</a>
+      <a href="/chuyen-muc/chinh-sach">Chính sách</a>
+      <a href="/chuyen-muc/huong-nghiep">Hướng nghiệp</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+<div class="frame">
+  <div class="col">
+
+    <!-- ══ Mốc tuyển sinh ═══════════════════════════════════════════════════
+         Backend sinh khối này từ một bảng mốc thời gian riêng, KHÔNG bóc từ thân
+         bài: mốc phải đúng tuyệt đối, mà bóc tự động thì sai một con số là phụ
+         huynh lỡ hạn thật.
+         Quy tắc class: .done = đã qua · .next = mốc gần nhất chưa qua (chỉ MỘT) -->
+    <section class="deadline" aria-label="Mốc tuyển sinh sắp tới">
+      <div class="deadline-top">
+        <span class="eyebrow">Mốc tuyển sinh 2026</span>
+        <span class="src">Theo lịch của Bộ GD&amp;ĐT</span>
+      </div>
+      <div class="rail">
+        <div class="slot done">
+          <time datetime="2026-08-05">05/08</time>
+          <small>Bắt đầu lọc ảo vòng 1</small>
+        </div>
+        <div class="slot next">
+          <span class="flag">Sắp tới</span>
+          <time datetime="2026-08-09T13:30">09/08 · 13:30</time>
+          <small>Trả kết quả lọc ảo cuối</small>
+        </div>
+        <div class="slot">
+          <time datetime="2026-08-09T17:00">09/08 · 17:00</time>
+          <small>Trường nhập điểm chuẩn</small>
+        </div>
+        <div class="slot">
+          <time datetime="2026-08-13T17:00">13/08 · 17:00</time>
+          <small>Hạn công bố trúng tuyển đợt 1</small>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ Tin chính ═══════════════════════════════════════════════════════ -->
+    <article class="lead">
+      <a href="tin.html" class="cover cover--policy" aria-hidden="true" tabindex="-1">
+        <span class="cover-label">Chính sách giáo dục</span>
+      </a>
+      <div class="lead-body">
+        <h2><a href="tin.html">Thủ tướng: Cắt giảm các kỳ thi không cần thiết, giảm áp lực cho học sinh</a></h2>
+        <p>
+          Chỉ thị số 31 yêu cầu cắt giảm các kỳ thi không cần thiết, bảo đảm đánh giá
+          thực chất và tăng cường phòng chống gian lận trong năm học 2026&ndash;2027.
+        </p>
+        <div class="meta">
+          <span class="chip">Chính sách giáo dục</span>
+          <time datetime="2026-08-06T07:45">06/08/2026 · 07:45</time>
+        </div>
+      </div>
+    </article>
+
+    <!-- ══ Danh sách ═══════════════════════════════════════════════════════ -->
+    <div class="section-head">
+      <h2>Tin mới</h2>
+      <span class="rule"></span>
+    </div>
+
+    <div class="list">
+      <article class="row">
+        <a href="tin.html" class="cover cover--admission" aria-hidden="true" tabindex="-1"></a>
+        <div>
+          <h3><a href="tin.html">Bắt đầu lọc ảo xét tuyển đại học 2026: Xu hướng điểm chuẩn ra sao?</a></h3>
+          <p>
+            Bộ GD&amp;ĐT tổ chức 6 vòng lọc ảo, dự kiến trả kết quả cuối lúc 13h30 ngày 9/8.
+            Các trường nhập điểm chuẩn lúc 17h cùng ngày.
+          </p>
+          <div class="meta">
+            <span class="chip">Lọc ảo tuyển sinh</span>
+            <time datetime="2026-08-05">05/08/2026</time>
+          </div>
+        </div>
+      </article>
+
+      <article class="row">
+        <a href="tin.html" class="cover cover--score" aria-hidden="true" tabindex="-1"></a>
+        <div>
+          <h3><a href="tin.html">Sau lần đầu lọc ảo, một trường ĐH ở TPHCM dự báo điểm chuẩn tối đa 23</a></h3>
+          <p>
+            Trường Đại học Công Thương TPHCM dự báo điểm chuẩn theo kết quả thi tốt nghiệp
+            THPT năm 2026 vào khoảng 18&ndash;23 điểm, giảm 0,5&ndash;3,5 điểm so với năm trước.
+          </p>
+          <div class="meta">
+            <span class="chip">Dự báo điểm chuẩn</span>
+            <time datetime="2026-08-05">05/08/2026</time>
+          </div>
+        </div>
+      </article>
+
+      <article class="row">
+        <a href="tin.html" class="cover cover--research" aria-hidden="true" tabindex="-1"></a>
+        <div>
+          <h3><a href="tin.html">Từ bản đồ gen người Việt đến sứ mệnh &ldquo;cấp tốc&rdquo; trả lại tên cho các liệt sĩ</a></h3>
+          <p>
+            Dự án VN1K giải mã hệ gen của 1.011 người Việt, ghi nhận hơn 42 triệu biến thể,
+            trong đó gần 8,5 triệu biến thể mới với cơ sở dữ liệu quốc tế.
+          </p>
+          <div class="meta">
+            <span class="chip">Nghiên cứu hệ gen</span>
+            <time datetime="2026-08-05">05/08/2026</time>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <nav class="pager" aria-label="Phân trang">
+      <span>&larr; Trang trước</span>
+      <span class="page">1/1</span>
+      <span>Trang sau &rarr;</span>
+    </nav>
+
+  </div>
+</div>
+</main>
+
+<footer class="site-foot">
+  <div class="site-foot-in">
+    <span>&copy; 2026 VNI Education</span>
+    <span class="sep"></span>
+    <span>Nội dung được biên tập lại từ các nguồn báo chí, có dẫn nguồn ở cuối mỗi bài.</span>
+  </div>
+</footer>
+
+</body>
+</html>

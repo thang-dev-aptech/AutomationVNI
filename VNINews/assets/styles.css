@@ -1,0 +1,344 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   Tin tức VNI Education — tintuc.vni.edu.vn
+
+   Màu lấy NGUYÊN từ bộ nhận diện đang dùng ở app quản trị (ClientApp/src/index.css):
+   xanh #2d6cb6, cam #f08a22, lục #33a457. Không phát minh nhận diện mới.
+
+   Trung tính không dùng xám thuần mà lệch nhẹ về phía xanh thương hiệu, để cả
+   trang trông như được chọn màu chứ không phải bỏ mặc mặc định của trình duyệt.
+
+   Không dùng webfont: mọi hệ đều có sẵn font phủ đủ dấu tiếng Việt, còn tải một
+   webfont chỉ để đẹp hơn chút thì trả giá bằng lần mở đầu tiên — thứ duy nhất mà
+   người bấm từ Facebook trải nghiệm.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --vni-blue: #2d6cb6;
+  --vni-blue-deep: #1e4e82;
+  --vni-orange: #f08a22;
+  --vni-green: #33a457;
+
+  --paper: #f2f5f9;
+  --surface: #ffffff;
+  --surface-2: #f7f9fc;
+  --ink: #10233b;
+  --ink-2: #35485f;
+  --muted: #6b7d94;
+  --line: #dfe6ef;
+  --line-soft: #eaeff5;
+
+  --tint-blue: #e9f1fa;
+  --tint-blue-text: #1e4e82;
+  --tint-orange: #fdf1e3;
+  --tint-orange-text: #b4610f;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", "Noto Sans", Arial, sans-serif;
+  /* Mono cho MỌI con số ngày giờ. Ghép sans nhân văn với mono cho dữ liệu là lựa
+     chọn có chủ đích: nó khiến dải mốc tuyển sinh đọc như một cái lịch, không như
+     một hàng thẻ trang trí. */
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Mono",
+    "Roboto Mono", "Liberation Mono", Menlo, Consolas, monospace;
+
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --shadow: 0 1px 2px rgba(16, 35, 59, .05), 0 8px 24px -12px rgba(16, 35, 59, .18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0c141f;
+    --surface: #131d2b;
+    --surface-2: #182435;
+    --ink: #e7edf5;
+    --ink-2: #b8c6d8;
+    --muted: #8598ae;
+    --line: #26344a;
+    --line-soft: #1e2b3d;
+    --tint-blue: #16283f;
+    --tint-blue-text: #9ec6f0;
+    --tint-orange: #2e2114;
+    --tint-orange-text: #f5a94f;
+    --vni-blue: #6ba3e0;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px -14px rgba(0, 0, 0, .6);
+  }
+}
+
+/* ── Reset ─────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+img { max-width: 100%; height: auto; display: block; }
+
+a { color: var(--vni-blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--vni-orange);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Bỏ qua tới nội dung — chỉ hiện khi dùng bàn phím. */
+.skip {
+  position: absolute; left: -9999px;
+  background: var(--ink); color: #fff;
+  padding: 10px 16px; border-radius: 0 0 var(--r-sm) 0; z-index: 20;
+}
+.skip:focus { left: 0; top: 0; }
+
+/* ── Bố cục ────────────────────────────────────────────────────────────── */
+.frame { max-width: 1000px; margin: 0 auto; padding: 0 20px 64px; }
+.col { max-width: 680px; margin: 0 auto; }
+
+/* ── Đầu trang ─────────────────────────────────────────────────────────── */
+.site-head {
+  position: sticky; top: 0; z-index: 4;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+/* Dải ba màu là chữ ký thương hiệu VNI, không phải trang trí ngẫu nhiên. */
+.site-head::before {
+  content: ""; display: block; height: 3px;
+  background: linear-gradient(90deg, var(--vni-blue) 0%, var(--vni-orange) 50%, var(--vni-green) 100%);
+}
+.site-head-in {
+  max-width: 1000px; margin: 0 auto; padding: 0 20px;
+  height: 62px; display: flex; align-items: center; gap: 12px;
+}
+.mark { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; }
+.wordmark { display: flex; flex-direction: column; line-height: 1.15; }
+.wordmark b { font-size: 1rem; letter-spacing: -.015em; color: var(--ink); }
+.wordmark span { font-size: .72rem; color: var(--muted); }
+.site-head nav { margin-left: auto; display: flex; gap: 18px; font-size: .86rem; font-weight: 500; }
+.site-head nav a { color: var(--ink-2); }
+.site-head nav a[aria-current] { color: var(--vni-blue); font-weight: 700; }
+
+/* ── Dải mốc tuyển sinh ────────────────────────────────────────────────────
+   Thứ lặp lại ở MỌI bài trong nhóm này là mốc thời gian. Phụ huynh vào trang là
+   đang đếm ngược, nên lịch đứng trên cùng chứ không chôn trong thân bài.
+   Cam trong cả trang CHỈ dùng cho việc gấp — thấy cam là biết có hạn chót. */
+.deadline {
+  margin: 22px 0 26px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+}
+.deadline-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.deadline-top .src { font-size: .74rem; color: var(--muted); margin-left: auto; }
+
+.eyebrow {
+  font-size: .7rem; font-weight: 700; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--muted);
+}
+
+.rail { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+.rail::-webkit-scrollbar { height: 6px; }
+.rail::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+
+.slot {
+  flex: 0 0 auto; min-width: 132px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  background: var(--surface-2);
+}
+.slot time {
+  display: block;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: .94rem; font-weight: 600; letter-spacing: -.02em;
+  color: var(--ink);
+}
+.slot small { display: block; font-size: .76rem; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+.slot.done { opacity: .5; }
+.slot.done time { text-decoration: line-through; text-decoration-thickness: 1px; }
+.slot.next { border-color: var(--vni-orange); background: var(--tint-orange); }
+.slot.next time { color: var(--tint-orange-text); }
+.slot .flag {
+  display: inline-block; font-size: .66rem; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--vni-orange); margin-bottom: 2px;
+}
+
+/* ── Ảnh bìa ───────────────────────────────────────────────────────────────
+   Mặc định là khối màu theo chủ đề, KHÔNG phải ảnh của toà soạn: ảnh gốc thuộc
+   bản quyền báo, đăng lại lên trang mình là rủi ro rõ ràng hơn cả phần chữ.
+   Backend chỉ cần đổi class chủ đề, hoặc đặt style nền riêng cho từng bài. */
+.cover { aspect-ratio: 1200 / 630; position: relative; display: grid; place-items: center; overflow: hidden; }
+.cover-label {
+  position: relative;
+  font-size: .74rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: rgba(255, 255, 255, .92);
+  padding: 7px 16px; border-radius: 999px;
+  background: rgba(11, 26, 45, .34);
+  backdrop-filter: blur(3px);
+}
+.cover--policy    { background: linear-gradient(135deg, #2d6cb6, #1e4e82 62%, #33a457); }
+.cover--admission { background: linear-gradient(140deg, #f08a22, #d97706); }
+.cover--score     { background: linear-gradient(140deg, #33a457, #0f766e); }
+.cover--research  { background: linear-gradient(140deg, #1e4e82, #6b21a8); }
+.cover--default   { background: linear-gradient(140deg, #475569, #1e293b); }
+
+/* ── Thẻ tin chính ─────────────────────────────────────────────────────── */
+.lead {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  margin-bottom: 26px;
+}
+.lead-body { padding: 20px 22px 22px; }
+.lead h2 {
+  margin: 0 0 10px;
+  font-size: 1.5rem; line-height: 1.28; letter-spacing: -.022em;
+  text-wrap: balance;
+}
+.lead h2 a { color: var(--ink); }
+.lead p { margin: 0 0 14px; color: var(--ink-2); font-size: 1rem; }
+
+/* ── Danh sách tin ─────────────────────────────────────────────────────── */
+.list {
+  display: flex; flex-direction: column; gap: 1px;
+  background: var(--line-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.row { display: grid; grid-template-columns: 108px 1fr; gap: 14px; background: var(--surface); padding: 14px 16px; }
+.row:hover { background: var(--surface-2); }
+.row .cover { border-radius: var(--r-sm); aspect-ratio: 4 / 3; }
+.row .cover-label { display: none; }
+.row h3 { margin: 0 0 6px; font-size: 1rem; line-height: 1.4; letter-spacing: -.012em; text-wrap: balance; }
+.row h3 a { color: var(--ink); }
+.row p {
+  margin: 0 0 8px; font-size: .87rem; color: var(--ink-2);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+.meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: .78rem; color: var(--muted); }
+.meta time { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.chip {
+  font-size: .72rem; font-weight: 700; letter-spacing: .02em;
+  padding: 3px 10px; border-radius: 999px;
+  background: var(--tint-blue); color: var(--tint-blue-text);
+}
+
+.section-head { display: flex; align-items: baseline; gap: 10px; margin: 30px 0 12px; }
+.section-head h2 { margin: 0; font-size: 1.06rem; letter-spacing: -.015em; }
+.section-head .rule { flex: 1; height: 1px; background: var(--line); }
+
+.pager { display: flex; gap: 10px; justify-content: center; margin-top: 24px; }
+.pager a, .pager span {
+  padding: 8px 16px; border-radius: var(--r-sm);
+  border: 1px solid var(--line); background: var(--surface);
+  font-size: .86rem;
+}
+.pager span { color: var(--muted); }
+.pager span.page { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.empty {
+  text-align: center; color: var(--muted); padding: 56px 20px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+}
+
+/* ── Trang bài viết ────────────────────────────────────────────────────── */
+.back { display: inline-block; margin: 22px 0 14px; font-size: .86rem; font-weight: 600; }
+
+.post {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 30px 30px 34px;
+  box-shadow: var(--shadow);
+}
+.post h1 { margin: 12px 0 14px; font-size: 2rem; line-height: 1.2; letter-spacing: -.028em; text-wrap: balance; }
+.sapo {
+  margin: 0 0 22px;
+  font-size: 1.08rem; line-height: 1.55; font-weight: 500;
+  color: var(--ink-2);
+  padding-left: 16px;
+  border-left: 3px solid var(--vni-blue);
+}
+.post .cover { border-radius: var(--r-md); margin-bottom: 8px; }
+.caption { font-size: .78rem; color: var(--muted); margin: 0 0 24px; }
+
+/* Giữ quanh 62 ký tự một dòng. Đọc trên điện thoại từ Facebook là ca chính,
+   nhưng trên máy để bàn dòng dài quá thì mắt lạc hàng khi xuống dòng. */
+.prose { max-width: 62ch; }
+.prose p { margin: 0 0 16px; }
+.prose h2 { margin: 30px 0 10px; font-size: 1.18rem; letter-spacing: -.016em; }
+.prose ul { margin: 0 0 16px; padding-left: 20px; }
+.prose li { margin-bottom: 8px; }
+.prose strong { color: var(--ink); }
+
+/* Khối mốc thời gian chèn giữa bài — cùng ngôn ngữ thị giác với dải ở trang chủ,
+   nên độc giả nhận ra ngay đây là "việc cần nhớ", không phải một đoạn trích. */
+.callout {
+  margin: 24px 0;
+  border: 1px solid var(--vni-orange);
+  background: var(--tint-orange);
+  border-radius: var(--r-md);
+  padding: 16px 18px;
+}
+.callout .eyebrow { color: var(--vni-orange); }
+.callout ul { margin: 10px 0 0; padding-left: 0; list-style: none; }
+.callout li {
+  display: grid; grid-template-columns: 104px 1fr; gap: 12px;
+  padding: 7px 0; border-top: 1px solid rgba(240, 138, 34, .28);
+  font-size: .92rem;
+}
+.callout li:first-child { border-top: 0; }
+.callout li b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; letter-spacing: -.02em; }
+
+/* Dẫn nguồn là ranh giới giữa điểm tin có trách nhiệm và lấy bài của người khác.
+   Vì vậy nó có khối riêng, đặt cuối bài — không giấu xuống chân trang. */
+.source {
+  margin-top: 30px; padding: 16px 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  font-size: .87rem; color: var(--ink-2);
+}
+.source .eyebrow { display: block; margin-bottom: 6px; }
+
+.more { margin-top: 30px; }
+
+/* ── Chân trang ────────────────────────────────────────────────────────── */
+.site-foot { border-top: 1px solid var(--line); background: var(--surface); margin-top: 40px; }
+.site-foot-in {
+  max-width: 1000px; margin: 0 auto; padding: 24px 20px 32px;
+  font-size: .82rem; color: var(--muted);
+  display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center;
+}
+.site-foot-in .sep { flex: 1; }
+
+/* ── Màn hẹp ───────────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .frame { padding: 0 14px 48px; }
+  .post { padding: 22px 18px 26px; border-radius: var(--r-md); }
+  .post h1 { font-size: 1.55rem; }
+  .lead h2 { font-size: 1.25rem; }
+  .row { grid-template-columns: 88px 1fr; gap: 12px; }
+  .site-head nav { display: none; }
+  .callout li { grid-template-columns: 1fr; gap: 2px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
