@@ -7,6 +7,14 @@ import {
   getArticleStatusMeta,
 } from '../constants/crawlConstants'
 
+/// Ngưỡng khớp với MinQualityScore=60 ở backend: dưới mức đó tin đã bị lọc, nên tin hiện
+/// trên trang gần như luôn từ 60 trở lên — màu chỉ để phân biệt "chắc chắn đăng" với "tạm được".
+function scoreClass(score) {
+  if (score >= 85) return 'crawl-score crawl-score-high'
+  if (score >= 70) return 'crawl-score crawl-score-mid'
+  return 'crawl-score crawl-score-low'
+}
+
 export default function CrawlArticleCard({
   article,
   canApprove,
@@ -52,12 +60,16 @@ export default function CrawlArticleCard({
       </div>
 
       {article.qualityScore != null && (
-        <div className="crawl-note crawl-note-muted">
-          <strong>{article.qualityScore} điểm</strong>
-          {article.screenTopic && ` · ${article.screenTopic}`}
-          {article.screenSummary && <div>{article.screenSummary}</div>}
-          {article.screenReason && <div><em>{article.screenReason}</em></div>}
-        </div>
+        // Gập lại: điểm và chủ đề đủ để lướt cả trang, phần tóm tắt/lý do chỉ mở khi cần soi
+        // một tin cụ thể. Trải hết ra thì mỗi thẻ cao thêm 4-5 dòng, xem 20 tin là cuộn mỏi.
+        <details className="crawl-screen">
+          <summary>
+            <span className={scoreClass(article.qualityScore)}>{article.qualityScore} điểm</span>
+            {article.screenTopic && <span className="crawl-screen-topic">{article.screenTopic}</span>}
+          </summary>
+          {article.screenSummary && <p>{article.screenSummary}</p>}
+          {article.screenReason && <p className="crawl-screen-reason">{article.screenReason}</p>}
+        </details>
       )}
 
       {isDuplicate && (

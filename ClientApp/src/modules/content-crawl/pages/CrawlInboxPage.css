@@ -121,6 +121,53 @@
 
 .crawl-note ul { margin: 4px 0 0; padding-left: 18px; }
 
+.crawl-screen { margin-top: 12px; }
+
+.crawl-screen summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #6b7280);
+}
+
+.crawl-screen p {
+  margin: 8px 0 0;
+  font-size: 0.87rem;
+  line-height: 1.55;
+  color: var(--color-text, #111827);
+}
+
+.crawl-screen-reason {
+  font-style: italic;
+  color: var(--color-text-muted, #6b7280);
+}
+
+.crawl-screen-topic { color: var(--color-text-muted, #6b7280); }
+
+.crawl-score {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.crawl-score-high {
+  background: var(--color-success-soft, rgba(16, 185, 129, 0.12));
+  color: var(--color-success-text, #065f46);
+}
+
+.crawl-score-mid {
+  background: var(--color-warning-soft, rgba(245, 158, 11, 0.12));
+  color: var(--color-warning-text, #92400e);
+}
+
+.crawl-score-low {
+  background: var(--color-surface-muted, #f3f4f6);
+  color: var(--color-text-muted, #6b7280);
+}
+
 .crawl-actions {
   display: flex;
   gap: 8px;
