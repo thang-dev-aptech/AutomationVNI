@@ -40,6 +40,8 @@
 
   --sidebar-bg: #0f172a; /* Slate 900 for a dark, sleek, premium look */
   --sidebar-width: 260px;
+  /* Vừa đủ cho icon 18px + vùng bấm thoải mái, không rộng tới mức thành cột trống. */
+  --sidebar-width-collapsed: 76px;
 
   --radius: 16px;
   --radius-md: 12px;

@@ -148,16 +148,27 @@ const NAV_ITEMS = [
   },
 ]
 
+const COLLAPSE_KEY = 'vni.sidebar.collapsed'
+
 export default function MainLayout() {
   const permissions = usePermissions()
   const visibleNavItems = NAV_ITEMS.filter((item) => item.visible(permissions))
   const [isSidebarOpen, setSidebarOpen] = useState(false)
+  // Đọc ngay trong khởi tạo state chứ không qua useEffect: đặt sau lượt vẽ đầu thì sidebar
+  // bung ra rồi mới co lại, thấy rõ một cú giật mỗi lần tải trang.
+  const [isCollapsed, setCollapsed] = useState(
+    () => localStorage.getItem(COLLAPSE_KEY) === '1',
+  )
   const { pathname } = useLocation()
 
   // Đóng drawer mỗi khi đổi route
   useEffect(() => {
     setSidebarOpen(false)
   }, [pathname])
+
+  useEffect(() => {
+    localStorage.setItem(COLLAPSE_KEY, isCollapsed ? '1' : '0')
+  }, [isCollapsed])
 
   // Đóng bằng Esc + khoá scroll body khi drawer mở
   useEffect(() => {
@@ -174,16 +185,31 @@ export default function MainLayout() {
   }, [isSidebarOpen])
 
   return (
-    <div className="main-layout">
+    <div className={`main-layout${isCollapsed ? ' main-layout--collapsed' : ''}`}>
       <div
         className={`sidebar-backdrop${isSidebarOpen ? ' sidebar-backdrop--visible' : ''}`}
         onClick={() => setSidebarOpen(false)}
         aria-hidden="true"
       />
-      <aside className={`sidebar${isSidebarOpen ? ' sidebar--open' : ''}`}>
+      <aside
+        className={`sidebar${isSidebarOpen ? ' sidebar--open' : ''}`
+          + `${isCollapsed ? ' sidebar--collapsed' : ''}`}
+      >
         <div className="sidebar-brand">
           <img className="sidebar-logo" src="/app-mark.svg" alt="" />
           <span className="sidebar-title">Automation</span>
+          <button
+            type="button"
+            className="sidebar-collapse"
+            onClick={() => setCollapsed((v) => !v)}
+            aria-label={isCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
+            aria-expanded={!isCollapsed}
+            title={isCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points={isCollapsed ? '9 18 15 12 9 6' : '15 18 9 12 15 6'} />
+            </svg>
+          </button>
         </div>
         <nav className="sidebar-nav">
           {visibleNavItems.map((item) => (
@@ -193,6 +219,8 @@ export default function MainLayout() {
               className={({ isActive }) =>
                 `sidebar-link${isActive ? ' sidebar-link--active' : ''}`
               }
+              // Lúc thu gọn chỉ còn icon, không có title thì không cách nào biết nút nào là gì.
+              title={isCollapsed ? item.label : undefined}
             >
               {item.icon}
               <span className="sidebar-link-label">{item.label}</span>

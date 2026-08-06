@@ -2,6 +2,11 @@
   display: grid;
   grid-template-columns: var(--sidebar-width) 1fr;
   min-height: 100dvh;
+  transition: grid-template-columns var(--ease);
+}
+
+.main-layout--collapsed {
+  grid-template-columns: var(--sidebar-width-collapsed) 1fr;
 }
 
 .sidebar {
@@ -31,6 +36,54 @@
   padding: 0 6px 20px;
   margin-bottom: 18px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.sidebar-collapse {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: background var(--ease-smooth), color var(--ease-smooth);
+}
+
+.sidebar-collapse:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+/* ── Trạng thái thu gọn: chỉ còn icon ── */
+.sidebar--collapsed {
+  padding-inline: 12px;
+}
+
+.sidebar--collapsed .sidebar-brand {
+  flex-direction: column;
+  gap: 10px;
+  padding-inline: 0;
+}
+
+.sidebar--collapsed .sidebar-title,
+.sidebar--collapsed .sidebar-link-label {
+  /* display:none chứ không phải opacity:0 — chữ ẩn mà vẫn chiếm chỗ thì link tràn
+     khỏi cột 76px, icon bị đẩy lệch sang trái và mất căn giữa. */
+  display: none;
+}
+
+.sidebar--collapsed .sidebar-collapse {
+  margin-left: 0;
+}
+
+.sidebar--collapsed .sidebar-link {
+  justify-content: center;
+  padding-inline: 0;
+  gap: 0;
 }
 
 .sidebar-logo {
@@ -127,8 +180,22 @@
 
 /* ── Tablet & mobile: sidebar trở thành off-canvas drawer ── */
 @media (max-width: 1023px) {
-  .main-layout {
+  .main-layout,
+  .main-layout--collapsed {
     grid-template-columns: 1fr;
+  }
+
+  /* Drawer đã là off-canvas, thu gọn thành icon ở đây chỉ làm khó bấm. Ghi đè hết
+     trạng thái collapsed để mở drawer trên điện thoại luôn có nhãn đầy đủ. */
+  .sidebar--collapsed { padding-inline: 16px; }
+  .sidebar--collapsed .sidebar-brand { flex-direction: row; }
+  .sidebar--collapsed .sidebar-title,
+  .sidebar--collapsed .sidebar-link-label { display: inline; }
+  .sidebar--collapsed .sidebar-collapse { display: none; }
+  .sidebar--collapsed .sidebar-link {
+    justify-content: flex-start;
+    padding-inline: 16px;
+    gap: 12px;
   }
 
   .sidebar {
@@ -171,6 +238,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .main-layout,
   .sidebar,
   .sidebar-backdrop {
     transition: none;
