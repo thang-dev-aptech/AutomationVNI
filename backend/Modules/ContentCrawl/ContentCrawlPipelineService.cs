@@ -28,6 +28,7 @@ public class ContentCrawlPipelineService(
     PageContextRepository pageContextRepository,
     ContentDedupService dedupService,
     OpenClawWebCrawler webCrawler,
+    CrawlScreenService screenService,
     IUserContext userContext,
     IOptions<ContentCrawlOptions> options,
     ILogger<ContentCrawlPipelineService> logger)
@@ -213,11 +214,22 @@ public class ContentCrawlPipelineService(
                     if (article.Status == CrawledArticleStatus.Duplicate) { processed++; continue; }
                 }
 
-                // Chấm trùng xong là sang thẳng Pending. Không xào nháp ở đây: bản nháp
-                // KHÔNG chảy xuống bài đăng — lúc duyệt, mỗi page tự sinh nội dung riêng
-                // theo góc được giao, nên nháp chỉ là một lượt gọi AI để người duyệt liếc
-                // qua rồi bỏ. Người duyệt đọc tiêu đề + toàn văn gốc là đủ quyết định.
-                article.Status = CrawledArticleStatus.Pending;
+                // Chấm điểm: chuyên mục giáo dục của báo lẫn cả câu đố vui và tin vụ việc,
+                // lọc từ khoá không tách được ("Rắn bò vào lớp mầm non" có đúng chữ mầm non).
+                // AI hỏng thì verdict = null → vẫn cho vào hàng chờ duyệt. Lỗi thì MỞ, không
+                // đóng: lọc nhầm là mất tin trong im lặng, cho qua nhầm chỉ tốn một cú bấm Bỏ.
+                var screen = await screenService.ScreenAsync(article, ct);
+                if (screen is not null)
+                {
+                    article.QualityScore = screen.Score;
+                    article.ScreenTopic = Truncate(screen.Topic, 100);
+                    article.ScreenReason = Truncate(screen.Reason, 400);
+                    article.ScreenSummary = Truncate(screen.Summary, 900);
+                }
+
+                article.Status = screen is not null && screen.Score < opt.MinQualityScore
+                    ? CrawledArticleStatus.Filtered
+                    : CrawledArticleStatus.Pending;
                 article.UpdatedAt = DateTime.UtcNow;
 
                 // Vân tay ghi SAU khi sạch, để bài trùng không tự làm mồi cho lần chấm sau.

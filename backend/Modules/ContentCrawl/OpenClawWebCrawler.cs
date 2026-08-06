@@ -63,7 +63,12 @@ public class OpenClawWebCrawler(
           const BLOCK_TAGS = ['nav','aside','footer','header','form','figcaption','figure'];
           const BLOCK_WORDS = ['comment','binh-luan','binhluan','reply','related','lien-quan',
             'tin-lien-quan','advert','quang-cao','newsletter','subscribe','most-read',
-            'trending-news','box-tinlienquan','author-info','tag-list'];
+            'trending-news','box-tinlienquan','author-info','tag-list',
+            // Khối "bài liên quan" dantri chèn GIỮA thân bài, id=desktop-in-article. Nó gồm
+            // một tít đậm + một đoạn tóm tắt cụt đuôi bằng "…", và vì nằm trong thân bài nên
+            // lọt hết mọi bộ lọc trước. Hậu quả: dòng ĐẦU TIÊN của bài bóc ra là tít của bài
+            // KHÁC, AI đọc vào tưởng đó là tít chính rồi viết lệch hẳn.
+            'in-article','box-embed','news-relate','sponsor'];
           const hay = (n) => `${n.id || ''} ${typeof n.className === 'string' ? n.className : ''}`.toLowerCase();
           const isNoise = (el) => {
             for (let n = el, i = 0; n && n !== document.body && i < 12; n = n.parentElement, i++) {

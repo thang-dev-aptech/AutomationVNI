@@ -63,6 +63,17 @@ public class ContentCrawlOptions
     public Guid? CrawlPromptTemplateId { get; set; }
     public string DefaultObjective { get; set; } = "Chia sẻ tin giáo dục mới tới phụ huynh và học sinh";
 
+    /// <summary>Cho AI đọc và chấm điểm tin trước khi đưa vào hàng chờ duyệt.</summary>
+    public bool ScreenEnabled { get; set; } = true;
+    /// <summary>
+    /// Dưới mức này thì đánh Filtered, không đưa cho người duyệt.
+    /// 60 là mức đo được: câu đố và tin vụ việc rơi vào 10–35, tin chính sách 75–95,
+    /// vùng 45–65 là tin giáo dục nhưng mỏng — để 60 nghĩa là thà bỏ sót hơn làm phiền.
+    /// </summary>
+    public int MinQualityScore { get; set; } = 60;
+    /// <summary>Đo thật: gateway vietai chấm một bài mất ~28s, để 30s là hụt gần hết.</summary>
+    public int ScreenTimeoutSeconds { get; set; } = 120;
+
     public int ArticleRetentionDays { get; set; } = 60;
 
     public DedupOptions Dedup { get; set; } = new();

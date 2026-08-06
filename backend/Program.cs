@@ -142,9 +142,13 @@ builder.Services.AddScoped<Backend.Modules.ShortLink.ShortLinkService>();
 builder.Services.Configure<ContentCrawlOptions>(builder.Configuration.GetSection("ContentCrawl"));
 builder.Services.AddScoped<ContentCrawlRepository>();
 builder.Services.AddScoped<ContentDedupService>();
+builder.Services.AddScoped<CrawlScreenService>();
 builder.Services.AddScoped<ContentCrawlPipelineService>();
 builder.Services.AddHttpClient<IAiJudgeService, AiJudgeService>(client =>
-    client.Timeout = TimeSpan.FromSeconds(30));
+    // Trần 30s là quá chặt: đo thật trên gateway vietai, chấm điểm một bài mất ~28s nên 6/9
+    // bài bị cắt ngang rồi coi như AI hỏng. Mỗi lượt gọi tự đặt hạn riêng bằng CTS, để rộng
+    // ở đây chỉ là chặn treo vĩnh viễn.
+    client.Timeout = TimeSpan.FromSeconds(150));
 // Cào bằng trình duyệt OpenClaw (thay hẳn RSS): lấy được TOÀN VĂN bài báo thay vì ~50 từ tóm tắt.
 builder.Services.Configure<Backend.Shared.OpenClaw.OpenClawOptions>(
     builder.Configuration.GetSection("OpenClaw"));

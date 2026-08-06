@@ -51,6 +51,15 @@ export default function CrawlArticleCard({
         </div>
       </div>
 
+      {article.qualityScore != null && (
+        <div className="crawl-note crawl-note-muted">
+          <strong>{article.qualityScore} điểm</strong>
+          {article.screenTopic && ` · ${article.screenTopic}`}
+          {article.screenSummary && <div>{article.screenSummary}</div>}
+          {article.screenReason && <div><em>{article.screenReason}</em></div>}
+        </div>
+      )}
+
       {isDuplicate && (
         <div className="crawl-note crawl-note-muted">
           <strong>{DEDUP_METHOD_LABEL[article.duplicateMethod] ?? 'Trùng'}</strong>

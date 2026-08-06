@@ -117,6 +117,10 @@ public class CrawledArticleResponse
     public string? DuplicateReason { get; set; }
 
 
+    public int? QualityScore { get; set; }
+    public string? ScreenTopic { get; set; }
+    public string? ScreenReason { get; set; }
+    public string? ScreenSummary { get; set; }
     public string? RejectReason { get; set; }
     public string? ErrorMessage { get; set; }
     public string? ReviewedBy { get; set; }

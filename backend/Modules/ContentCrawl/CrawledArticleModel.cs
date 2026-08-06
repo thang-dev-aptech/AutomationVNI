@@ -51,6 +51,14 @@ public class CrawledArticleModel : BaseEntity
 
     // ── Bản nháp AI (để người duyệt đọc, KHÔNG phải bài đăng cuối) ──────────
 
+    // ── Chấm điểm bằng AI ───────────────────────────────────────────────────
+    /// <summary>0–100. null = chưa chấm được (AI hỏng) — KHÁC với chấm ra điểm thấp.</summary>
+    public int? QualityScore { get; set; }
+    public string? ScreenTopic { get; set; }
+    public string? ScreenReason { get; set; }
+    /// <summary>Tóm tắt 2-3 câu do AI viết, để người duyệt liếc trên Telegram là quyết được.</summary>
+    public string? ScreenSummary { get; set; }
+
     // ── Telegram (Phase 2) ──────────────────────────────────────────────────
     public long? TelegramChatId { get; set; }
     public int? TelegramMessageId { get; set; }

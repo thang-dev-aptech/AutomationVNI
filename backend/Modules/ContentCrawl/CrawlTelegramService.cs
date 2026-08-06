@@ -111,9 +111,17 @@ public class CrawlTelegramService(
         var sb = new StringBuilder();
         sb.AppendLine($"<b>{Esc(a.Title)}</b>");
         sb.AppendLine();
+        // Tóm tắt do AI viết đứng ngay dưới tít: đây mới là thứ đọc lướt trên điện thoại là
+        // quyết được. Số ký tự của bài gốc thì chẳng nói lên điều gì.
+        if (!string.IsNullOrWhiteSpace(a.ScreenSummary))
+        {
+            sb.AppendLine(Esc(a.ScreenSummary));
+            sb.AppendLine();
+        }
+
         var meta = new List<string> { $"<code>{ShortId(a.Id)}</code>" };
-        if (!string.IsNullOrWhiteSpace(a.SourceCategory)) meta.Add(Esc(a.SourceCategory));
-        if (!string.IsNullOrWhiteSpace(a.Content)) meta.Add($"{a.Content.Length:N0} chữ");
+        if (a.QualityScore is int score) meta.Add($"{ScoreIcon(score)} {score} điểm");
+        if (!string.IsNullOrWhiteSpace(a.ScreenTopic)) meta.Add(Esc(a.ScreenTopic));
         sb.AppendLine(string.Join(" · ", meta));
         if (!string.IsNullOrWhiteSpace(a.SourceUrl)) sb.AppendLine(Esc(a.SourceUrl));
         sb.AppendLine();
@@ -124,6 +132,8 @@ public class CrawlTelegramService(
     }
 
     private static string Esc(string? s) => WebUtility.HtmlEncode(s ?? "");
+
+    private static string ScoreIcon(int score) => score >= 85 ? "🟢" : score >= 70 ? "🟡" : "🟠";
 
     // ── Xử lý lệnh ──────────────────────────────────────────────────────────
 
@@ -449,7 +459,8 @@ public class CrawlTelegramService(
 
         var sb = new StringBuilder($"<b>{pending.Count} tin chờ duyệt</b>\n");
         foreach (var a in pending.Take(10))
-            sb.AppendLine($"<code>{ShortId(a.Id)}</code> {Esc(Cut(a.Title, 52))}");
+            sb.AppendLine($"<code>{ShortId(a.Id)}</code> {(a.QualityScore is int q ? $"{ScoreIcon(q)}{q} " : "")}"
+                          + Esc(Cut(a.Title, 46)));
         sb.AppendLine("\nDuyệt: <code>/dang &lt;mã&gt;</code> · Bỏ: <code>/bo &lt;mã&gt;</code>");
         return sb.ToString().TrimEnd();
     }
