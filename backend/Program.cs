@@ -162,6 +162,7 @@ builder.Services.AddHttpClient<Backend.Shared.Notification.TelegramClient>(clien
     // PHẢI lớn hơn Telegram:PollTimeoutSeconds. Long-polling giữ kết nối tới hết timeout của
     // Telegram; để bằng nhau là chắc chắn ăn TaskCanceledException mỗi lượt không có update.
     client.Timeout = TimeSpan.FromSeconds(90));
+builder.Services.AddSingleton<CrawlTelegramSelectionStore>();
 builder.Services.AddScoped<CrawlTelegramService>();
 builder.Services.AddScoped<CrawlAutoPublishService>();
 builder.Services.AddHostedService<CrawlTelegramWorker>();

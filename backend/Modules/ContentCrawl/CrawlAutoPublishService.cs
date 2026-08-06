@@ -135,7 +135,20 @@ public class CrawlAutoPublishService(
         if (timedOut)
             sb.AppendLine($"\n<i>Đã đợi quá {MaxWait.TotalMinutes:0} phút, báo tạm những gì đang có.</i>");
 
-        var messageId = await telegram.SendMessageAsync(article.TelegramChatId!.Value, sb.ToString().TrimEnd(), null, ct);
+        var text = sb.ToString().TrimEnd();
+
+        // Sửa chính tin nhắn đã dùng để duyệt (ô chọn page hoặc tin báo tin mới) thành kết
+        // quả, thay vì gửi tin mới: sếp bấm ở đâu thì thấy kết quả ở đó, khỏi cuộn đi tìm.
+        // EditMessage cũng gỡ luôn nút "Đăng" nên không bấm lại được lần hai.
+        if (article.TelegramMessageId is int existing)
+        {
+            await telegram.EditMessageAsync(article.TelegramChatId!.Value, existing, text, null, ct);
+            article.TelegramResultAt = DateTime.UtcNow;
+            await repository.UpdateAsync(article, ct);
+            return true;
+        }
+
+        var messageId = await telegram.SendMessageAsync(article.TelegramChatId!.Value, text, null, ct);
         if (messageId is null)
         {
             // Không gửi được thì ĐỪNG đánh dấu đã báo — để lượt sau thử lại.

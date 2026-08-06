@@ -34,8 +34,18 @@ public class TelegramClient(
     private string Url(string method) => $"{Opt.BaseUrl.TrimEnd('/')}/bot{Opt.BotToken}/{method}";
 
     /// <summary>Gửi tin. Trả message_id để sau này sửa/gỡ nút, null nếu hỏng.</summary>
-    public async Task<int?> SendMessageAsync(
+    public Task<int?> SendMessageAsync(
         long chatId, string text, IReadOnlyList<TelegramButton>? buttons = null,
+        CancellationToken ct = default)
+        => SendKeyboardAsync(chatId, text, buttons is null ? null : [buttons], ct);
+
+    /// <summary>
+    /// Bàn phím nhiều hàng — 15 page mà xếp một hàng thì trượt ngang không đọc nổi.
+    /// Tên khác hẳn SendMessageAsync là cố ý: hai overload chỉ khác nhau ở độ lồng của
+    /// IReadOnlyList thì gọi với null là trình biên dịch bó tay, không phân giải được.
+    /// </summary>
+    public async Task<int?> SendKeyboardAsync(
+        long chatId, string text, IReadOnlyList<IReadOnlyList<TelegramButton>>? rows,
         CancellationToken ct = default)
     {
         if (!IsConfigured) return null;
@@ -49,16 +59,7 @@ public class TelegramClient(
             // thẻ ảnh to đùng, cuộn 5 bài là hết màn hình điện thoại.
             ["link_preview_options"] = new { is_disabled = true },
         };
-        if (buttons is { Count: > 0 })
-        {
-            payload["reply_markup"] = new
-            {
-                inline_keyboard = new[]
-                {
-                    buttons.Select(b => new { text = b.Text, callback_data = b.Data }).ToArray(),
-                },
-            };
-        }
+        if (rows is { Count: > 0 }) payload["reply_markup"] = Keyboard(rows);
 
         return await PostAsync(
             "sendMessage", payload,
@@ -66,18 +67,34 @@ public class TelegramClient(
     }
 
     /// <summary>Sửa lại nội dung tin đã gửi — dùng để xoá nút sau khi người dùng bấm.</summary>
-    public async Task EditMessageAsync(long chatId, int messageId, string text, CancellationToken ct = default)
+    public async Task EditMessageAsync(
+        long chatId, int messageId, string text,
+        IReadOnlyList<IReadOnlyList<TelegramButton>>? rows = null, CancellationToken ct = default)
     {
         if (!IsConfigured) return;
-        await PostAsync("editMessageText", new Dictionary<string, object?>
+        var payload = new Dictionary<string, object?>
         {
             ["chat_id"] = chatId,
             ["message_id"] = messageId,
             ["text"] = text,
             ["parse_mode"] = "HTML",
             ["link_preview_options"] = new { is_disabled = true },
-        }, _ => 0, ct);
+        };
+        // Không gửi reply_markup thì Telegram GIỮ NGUYÊN bàn phím cũ. Muốn gỡ nút phải gửi
+        // mảng rỗng — bỏ qua chỗ này là nút "Đăng" còn nguyên sau khi đã đăng xong.
+        payload["reply_markup"] = rows is { Count: > 0 }
+            ? Keyboard(rows)
+            : new { inline_keyboard = Array.Empty<object[]>() };
+
+        await PostAsync("editMessageText", payload, _ => 0, ct);
     }
+
+    private static object Keyboard(IReadOnlyList<IReadOnlyList<TelegramButton>> rows) => new
+    {
+        inline_keyboard = rows
+            .Select(r => r.Select(b => new { text = b.Text, callback_data = b.Data }).ToArray())
+            .ToArray(),
+    };
 
     /// <summary>
     /// Bắt buộc gọi sau mỗi callback_query, kể cả khi không hiện gì. Không gọi thì nút cứ

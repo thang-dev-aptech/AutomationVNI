@@ -91,10 +91,25 @@ public class CrawlTelegramWorker(
             {
                 // Trả lời callback TRƯỚC khi làm việc nặng: duyệt một tin có thể mất vài giây,
                 // để lâu thì nút cứ quay trên máy người dùng rồi Telegram báo timeout.
-                await telegram.AnswerCallbackAsync(u.CallbackQueryId, "Đang xử lý…", ct);
+                await telegram.AnswerCallbackAsync(u.CallbackQueryId, null, ct);
+
+                // Nút của ô chọn page sửa tại chỗ tin nhắn đang mở; gửi tin mới sau mỗi lần
+                // tick thì chọn 5 page là 5 tin nhắn rác.
+                if (u.Text.StartsWith("sel:") || u.Text.StartsWith("tg:")
+                    || u.Text.StartsWith("go:") || u.Text.StartsWith("x:"))
+                {
+                    var (text, keyboard) = await service.HandleSelectionAsync(
+                        u.ChatId, u.Text, u.MessageId, ct);
+                    if (u.MessageId is int selMid)
+                        await telegram.EditMessageAsync(u.ChatId, selMid, text, keyboard, ct);
+                    else
+                        await telegram.SendKeyboardAsync(u.ChatId, text, keyboard, ct);
+                    continue;
+                }
+
                 var reply = await service.HandleCallbackAsync(u.ChatId, u.Text, ct);
                 if (u.MessageId is int mid)
-                    await telegram.EditMessageAsync(u.ChatId, mid, reply, ct);
+                    await telegram.EditMessageAsync(u.ChatId, mid, reply, null, ct);
                 else
                     await telegram.SendMessageAsync(u.ChatId, reply, null, ct);
                 continue;
@@ -102,7 +117,12 @@ public class CrawlTelegramWorker(
 
             if (!u.Text.StartsWith('/')) continue;
             var answer = await service.HandleCommandAsync(u.ChatId, u.Text, ct);
-            await telegram.SendMessageAsync(u.ChatId, answer, null, ct);
+            var sentId = await telegram.SendKeyboardAsync(u.ChatId, answer.Text, answer.Keyboard, ct);
+
+            // Ô chọn mở bằng lệnh gõ tay là tin nhắn MỚI — nhớ id để lát nữa sửa chính nó
+            // thành "Đang đăng…" rồi thành kết quả, thay vì đẻ thêm tin.
+            if (answer.Keyboard is not null && sentId is not null)
+                await service.RememberPickerMessageAsync(u.ChatId, u.Text, sentId.Value, ct);
         }
     }
 

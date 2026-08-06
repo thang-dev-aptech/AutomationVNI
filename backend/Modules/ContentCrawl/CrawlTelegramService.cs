@@ -17,8 +17,12 @@ namespace Backend.Modules.ContentCrawl;
 /// ApproveCrawledArticleRequest, nên /dang không cần tham số nào. Ai muốn đổi thì mở web —
 /// nhồi 4 ô cấu hình vào khung chat chỉ tổ gõ nhầm rồi đăng sai page.
 /// </summary>
+/// <summary>Câu trả lời của bot: chữ, kèm bàn phím nếu có.</summary>
+public sealed record BotReply(string Text, List<List<TelegramButton>>? Keyboard = null);
+
 public class CrawlTelegramService(
     AppDbContext context,
+    CrawlTelegramSelectionStore selections,
     ContentCrawlRepository repository,
     ContentCrawlPipelineService pipeline,
     TelegramClient telegram,
@@ -49,9 +53,13 @@ public class CrawlTelegramService(
         {
             ct.ThrowIfCancellationRequested();
             var code = ShortId(a.Id);
-            var messageId = await telegram.SendMessageAsync(
+            var messageId = await telegram.SendKeyboardAsync(
                 chatId, FormatArticle(a, pagesBySource.GetValueOrDefault(a.CrawlSourceId)),
-                [new TelegramButton("🚀 Duyệt & đăng", $"ok:{code}"), new TelegramButton("🗑 Bỏ", $"no:{code}")],
+                [
+                    [new TelegramButton("🚀 Đăng ngay", $"ok:{code}")],
+                    [new TelegramButton("📋 Chọn page", $"sel:{code}"),
+                     new TelegramButton("🗑 Bỏ", $"no:{code}")],
+                ],
                 ct);
 
             if (messageId is null)
@@ -113,10 +121,10 @@ public class CrawlTelegramService(
     // ── Xử lý lệnh ──────────────────────────────────────────────────────────
 
     /// <summary>Trả về câu trả lời để bot gửi lại. Không bao giờ ném — lỗi thành lời nhắn.</summary>
-    public async Task<string> HandleCommandAsync(long chatId, string text, CancellationToken ct = default)
+    public async Task<BotReply> HandleCommandAsync(long chatId, string text, CancellationToken ct = default)
     {
         var parts = text.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 0) return Help();
+        if (parts.Length == 0) return new BotReply(Help());
 
         // "/dang@vni_auto_bot" trong group — Telegram tự gắn tên bot vào lệnh.
         var cmd = parts[0].ToLowerInvariant().TrimStart('/').Split('@')[0];
@@ -124,22 +132,31 @@ public class CrawlTelegramService(
 
         try
         {
+            // "/dang <mã>" trần trụi thì MỞ Ô CHỌN PAGE thay vì đăng luôn. Gõ kèm tên page
+            // ("/dang a3f9c1 toefl") mới đi thẳng — người đã gõ tên page là người biết mình
+            // muốn gì, bắt bấm thêm một màn nữa chỉ tổ chậm.
+            if (cmd is "dang" or "duyet" && !arg.Contains(' '))
+            {
+                var (text2, kb) = await HandleSelectionAsync(chatId, $"sel:{arg.Trim()}", null, ct);
+                return new BotReply(text2, kb);
+            }
+
             return cmd switch
             {
-                "dang" or "duyet" => await ApproveAsync(chatId, arg, ct),
-                "bo" or "loai" => await RejectAsync(arg, ct),
-                "ds" or "list" => await ListPendingAsync(ct),
-                "tt" or "status" => await StatusAsync(ct),
-                "cao" or "crawl" => await CrawlNowAsync(ct),
-                "page" or "pages" => await ListPagesAsync(ct),
-                "start" or "help" => Help(),
-                _ => $"Không hiểu lệnh <code>/{Esc(cmd)}</code>.\n\n{Help()}",
+                "dang" or "duyet" => new BotReply(await ApproveAsync(chatId, arg, ct)),
+                "bo" or "loai" => new BotReply(await RejectAsync(arg, ct)),
+                "ds" or "list" => new BotReply(await ListPendingAsync(ct)),
+                "tt" or "status" => new BotReply(await StatusAsync(ct)),
+                "cao" or "crawl" => new BotReply(await CrawlNowAsync(ct)),
+                "page" or "pages" => new BotReply(await ListPagesAsync(ct)),
+                "start" or "help" => new BotReply(Help()),
+                _ => new BotReply($"Không hiểu lệnh <code>/{Esc(cmd)}</code>.\n\n{Help()}"),
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Lệnh Telegram '{Text}' lỗi", text);
-            return $"⚠️ Lỗi: {Esc(ex.Message)}";
+            return new BotReply($"⚠️ Lỗi: {Esc(ex.Message)}");
         }
     }
 
@@ -154,6 +171,145 @@ public class CrawlTelegramService(
             "no" => await RejectAsync(bits[1], ct),
             _ => "Nút không hợp lệ",
         };
+    }
+
+    // ── Ô chọn page ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Callback của ô chọn page. Trả về (nội dung, bàn phím) để worker SỬA TẠI CHỖ tin nhắn
+    /// đang mở — gửi tin mới sau mỗi lần tick thì 5 lần tick là 5 tin nhắn rác.
+    /// Bàn phím null nghĩa là gỡ hết nút.
+    /// </summary>
+    public async Task<(string Text, List<List<TelegramButton>>? Keyboard)> HandleSelectionAsync(
+        long chatId, string data, int? messageId, CancellationToken ct = default)
+    {
+        var bits = data.Split(':');
+        var verb = bits[0];
+        var code = bits.Length > 1 ? bits[1] : "";
+
+        if (verb == "sel")
+        {
+            var (article, error) = await ResolveAsync(code, ct);
+            if (article is null) return (error!, null);
+
+            var source = await repository.GetSourceAsync(article.CrawlSourceId, ct);
+            var preset = ContentCrawlRepository.DeserializeGuidList(source?.DefaultChannelIds);
+            selections.Start(chatId, code, article.Id, preset);
+            return await RenderPickerAsync(chatId, code, article.Title, ct);
+        }
+
+        var sel = selections.Get(chatId, code);
+        if (sel is null)
+            return ("Ô chọn đã hết hạn. Gõ <code>/dang " + Esc(code) + "</code> để mở lại.", null);
+
+        var article2 = await repository.GetByIdAsync(sel.ArticleId, ct);
+        if (article2 is null) return ("Không tìm thấy tin.", null);
+
+        switch (verb)
+        {
+            case "tg":
+            {
+                var channels = await ActiveChannelsAsync(ct);
+                if (!int.TryParse(bits.ElementAtOrDefault(2), out var idx)
+                    || idx < 0 || idx >= channels.Count)
+                    return ("Nút không hợp lệ", null);
+
+                var id = channels[idx].Id;
+                if (!sel.ChannelIds.Add(id)) sel.ChannelIds.Remove(id);
+                return await RenderPickerAsync(chatId, code, article2.Title, ct);
+            }
+
+            case "x":
+                selections.Drop(chatId, code);
+                return ($"Đã huỷ. Tin <code>{Esc(code)}</code> vẫn nằm chờ duyệt.", null);
+
+            case "go":
+            {
+                if (sel.ChannelIds.Count == 0)
+                    return await RenderPickerAsync(chatId, code, article2.Title, ct, "⚠️ Chưa chọn page nào");
+
+                var ids = sel.ChannelIds.ToList();
+                selections.Drop(chatId, code);
+
+                article2.TelegramChatId = chatId;
+                // Ghi luôn tin nhắn đang mở để CrawlAutoPublishService SỬA CHÍNH NÓ thành kết
+                // quả, thay vì gửi tin mới. Tin đã sang Approved nên không sợ đụng vai trò
+                // "đã báo" của cột này ở NotifyPendingAsync (chỉ lọc Status == Pending).
+                if (messageId is not null) article2.TelegramMessageId = messageId;
+                await repository.UpdateAsync(article2, ct);
+
+                var result = await pipeline.ApproveAsync(
+                    article2.Id,
+                    new ApproveCrawledArticleRequest { AutoPublish = true, ChannelIds = ids },
+                    ct);
+
+                return ($"⏳ <b>Đang đăng…</b>\n{Esc(article2.Title)}\n\n"
+                        + $"Đang viết {result.Created} bài cho: {Esc(string.Join(", ", result.Channels))}\n"
+                        + "<i>Xong sẽ báo lại ngay tại tin nhắn này.</i>", null);
+            }
+        }
+
+        return ("Nút không hợp lệ", null);
+    }
+
+    /// <summary>
+    /// Ô chọn mở bằng lệnh gõ tay nằm ở một tin nhắn MỚI. Ghi id của nó vào tin để lát nữa
+    /// kết quả đăng sửa đúng tin nhắn đó — không ghi thì bot đẻ ra tin thứ hai và sếp phải
+    /// cuộn ngược tìm xem bài nào ứng với ô chọn nào.
+    /// </summary>
+    public async Task RememberPickerMessageAsync(
+        long chatId, string commandText, int messageId, CancellationToken ct = default)
+    {
+        var parts = commandText.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2) return;
+
+        var found = await repository.FindByShortIdAsync(parts[1], ct);
+        if (found.Count != 1) return;
+
+        found[0].TelegramChatId = chatId;
+        found[0].TelegramMessageId = messageId;
+        await repository.UpdateAsync(found[0], ct);
+    }
+
+    private async Task<(string, List<List<TelegramButton>>?)> RenderPickerAsync(
+        long chatId, string code, string title, CancellationToken ct, string? note = null)
+    {
+        var sel = selections.Get(chatId, code);
+        var channels = await ActiveChannelsAsync(ct);
+
+        var sb = new StringBuilder($"<b>{Esc(title)}</b>\n\n");
+        sb.AppendLine("Chọn page rồi bấm <b>Đăng</b>:");
+        if (note is not null) sb.AppendLine(note);
+
+        var rows = new List<List<TelegramButton>>();
+        for (var i = 0; i < channels.Count; i += 2)
+        {
+            var row = new List<TelegramButton>();
+            for (var j = i; j < Math.Min(i + 2, channels.Count); j++)
+            {
+                var picked = sel?.ChannelIds.Contains(channels[j].Id) == true;
+                // Nhãn nút bị Telegram cắt khi dài; 24 ký tự vừa đủ đọc trên máy hẹp.
+                row.Add(new TelegramButton(
+                    (picked ? "☑ " : "☐ ") + Cut(channels[j].PageName, 24), $"tg:{code}:{j}"));
+            }
+            rows.Add(row);
+        }
+        rows.Add([new TelegramButton("🚀 Đăng", $"go:{code}"), new TelegramButton("✖️ Huỷ", $"x:{code}")]);
+
+        return (sb.ToString().TrimEnd(), rows);
+    }
+
+    private async Task<List<(Guid Id, string PageName)>> ActiveChannelsAsync(CancellationToken ct)
+    {
+        // Thứ tự PHẢI ổn định giữa lúc dựng bàn phím và lúc bấm nút: callback chỉ mang chỉ số.
+        // Sắp theo tên là ổn định; sắp theo ngày tạo hay không sắp thì thêm một page là lệch
+        // hết chỉ số, người dùng tick "Toefl" mà đăng lên "Y Dược".
+        var rows = await context.SocialChannels
+            .Where(c => !c.IsDeleted && c.IsActive)
+            .OrderBy(c => c.PageName)
+            .Select(c => new { c.Id, c.PageName })
+            .ToListAsync(ct);
+        return rows.Select(r => (r.Id, r.PageName)).ToList();
     }
 
     private async Task<string> ApproveAsync(long chatId, string arg, CancellationToken ct)
