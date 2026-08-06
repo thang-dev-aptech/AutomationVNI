@@ -1,6 +1,9 @@
 using System.Net;
 using System.Text;
+using Backend.Data;
 using Backend.Modules.ContentCrawl.Enums;
+using Backend.Shared.Text;
+using Microsoft.EntityFrameworkCore;
 using Backend.Shared.Notification;
 using Microsoft.Extensions.Options;
 
@@ -15,6 +18,7 @@ namespace Backend.Modules.ContentCrawl;
 /// nhồi 4 ô cấu hình vào khung chat chỉ tổ gõ nhầm rồi đăng sai page.
 /// </summary>
 public class CrawlTelegramService(
+    AppDbContext context,
     ContentCrawlRepository repository,
     ContentCrawlPipelineService pipeline,
     TelegramClient telegram,
@@ -35,13 +39,18 @@ public class CrawlTelegramService(
         var articles = await repository.GetUnnotifiedPendingAsync(options.Value.MaxNotifyPerTick, ct);
         if (articles.Count == 0) return 0;
 
+        // Nạp trước tên page mặc định của từng nguồn: tin nhắn phải nói rõ bấm nút là đăng
+        // đi ĐÂU. Không có dòng đó thì nút "Duyệt & đăng" là một cú nhảy vào bóng tối.
+        var pagesBySource = await ResolveDefaultPageNamesAsync(
+            articles.Select(a => a.CrawlSourceId).Distinct().ToList(), ct);
+
         var sent = 0;
         foreach (var a in articles)
         {
             ct.ThrowIfCancellationRequested();
             var code = ShortId(a.Id);
             var messageId = await telegram.SendMessageAsync(
-                chatId, FormatArticle(a),
+                chatId, FormatArticle(a, pagesBySource.GetValueOrDefault(a.CrawlSourceId)),
                 [new TelegramButton("🚀 Duyệt & đăng", $"ok:{code}"), new TelegramButton("🗑 Bỏ", $"no:{code}")],
                 ct);
 
@@ -62,7 +71,27 @@ public class CrawlTelegramService(
         return sent;
     }
 
-    private static string FormatArticle(CrawledArticleModel a)
+    /// <summary>Nguồn → tên các page mặc định của nguồn đó.</summary>
+    private async Task<Dictionary<Guid, string>> ResolveDefaultPageNamesAsync(
+        List<Guid> sourceIds, CancellationToken ct)
+    {
+        var sources = await context.Set<CrawlSourceModel>()
+            .Where(s => sourceIds.Contains(s.Id))
+            .Select(s => new { s.Id, s.DefaultChannelIds })
+            .ToListAsync(ct);
+
+        var names = await context.SocialChannels
+            .Where(c => !c.IsDeleted)
+            .ToDictionaryAsync(c => c.Id, c => c.PageName, ct);
+
+        return sources.ToDictionary(
+            s => s.Id,
+            s => string.Join(", ", ContentCrawlRepository.DeserializeGuidList(s.DefaultChannelIds)
+                .Select(id => names.GetValueOrDefault(id))
+                .Where(n => !string.IsNullOrWhiteSpace(n))));
+    }
+
+    private static string FormatArticle(CrawledArticleModel a, string? defaultPages)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"<b>{Esc(a.Title)}</b>");
@@ -72,6 +101,10 @@ public class CrawlTelegramService(
         if (!string.IsNullOrWhiteSpace(a.Content)) meta.Add($"{a.Content.Length:N0} chữ");
         sb.AppendLine(string.Join(" · ", meta));
         if (!string.IsNullOrWhiteSpace(a.SourceUrl)) sb.AppendLine(Esc(a.SourceUrl));
+        sb.AppendLine();
+        sb.AppendLine(string.IsNullOrWhiteSpace(defaultPages)
+            ? "⚠️ Nguồn chưa đặt page mặc định — phải gõ <code>/dang " + ShortId(a.Id) + " &lt;page&gt;</code>"
+            : $"Bấm nút = đăng lên: <b>{Esc(defaultPages)}</b>");
         return sb.ToString().TrimEnd();
     }
 
@@ -98,6 +131,7 @@ public class CrawlTelegramService(
                 "ds" or "list" => await ListPendingAsync(ct),
                 "tt" or "status" => await StatusAsync(ct),
                 "cao" or "crawl" => await CrawlNowAsync(ct),
+                "page" or "pages" => await ListPagesAsync(ct),
                 "start" or "help" => Help(),
                 _ => $"Không hiểu lệnh <code>/{Esc(cmd)}</code>.\n\n{Help()}",
             };
@@ -124,8 +158,18 @@ public class CrawlTelegramService(
 
     private async Task<string> ApproveAsync(long chatId, string arg, CancellationToken ct)
     {
-        var (article, error) = await ResolveAsync(arg, ct);
+        var bits = arg.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var (article, error) = await ResolveAsync(bits.Length > 0 ? bits[0] : "", ct);
         if (article is null) return error!;
+
+        // Phần sau mã tin là danh sách page. Bỏ trống thì dùng page mặc định của nguồn cào.
+        List<Guid>? channelIds = null;
+        if (bits.Length > 1)
+        {
+            var (ids, pageError) = await ResolvePagesAsync(bits[1], ct);
+            if (ids is null) return pageError!;
+            channelIds = ids;
+        }
 
         // Ghi chat NGAY, trước khi duyệt. CrawlAutoPublishService lọc theo TelegramChatId để
         // biết báo kết quả về đâu — tin duyệt bằng /dang mà chưa từng được bot báo thì cột này
@@ -139,7 +183,9 @@ public class CrawlTelegramService(
         // Chỉ đặt AutoPublish. Các tham số còn lại để mặc định: page mặc định của nguồn,
         // TextOnly (không sinh ảnh), template mặc định của từng page.
         var result = await pipeline.ApproveAsync(
-            article.Id, new ApproveCrawledArticleRequest { AutoPublish = true }, ct);
+            article.Id,
+            new ApproveCrawledArticleRequest { AutoPublish = true, ChannelIds = channelIds },
+            ct);
 
         // Không hứa "đã đăng" ở đây: sinh nội dung chạy bất đồng bộ, mỗi page vài chục giây.
         // CrawlAutoPublishService sẽ đăng rồi nhắn link về trong một tin nhắn riêng.
@@ -175,6 +221,61 @@ public class CrawlTelegramService(
                         + string.Join("\n", found.Take(5).Select(
                             x => $"<code>{ShortId(x.Id)}</code> {Esc(Cut(x.Title, 40))}"))),
         };
+    }
+
+    /// <summary>
+    /// Tra page theo mảnh tên, ngăn bằng dấu phẩy: "/dang a3f9c1 toefl, sư phạm".
+    ///
+    /// So không dấu và không phân biệt hoa thường vì gõ tiếng Việt có dấu trên điện thoại
+    /// giữa lúc vội là điều không nên bắt ai làm. Mảnh nào khớp nhiều page thì BÁO LỖI chứ
+    /// không chọn bừa — đăng nhầm fanpage rồi gỡ vẫn còn người kịp đọc.
+    /// </summary>
+    private async Task<(List<Guid>?, string?)> ResolvePagesAsync(string spec, CancellationToken ct)
+    {
+        var channels = await context.SocialChannels
+            .Where(c => !c.IsDeleted && c.IsActive)
+            .Select(c => new { c.Id, c.PageName })
+            .ToListAsync(ct);
+
+        var ids = new List<Guid>();
+        foreach (var raw in spec.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var needle = VietnameseTextHelper.StripDiacritics(raw).ToLowerInvariant();
+            if (needle.Length < 2) continue;
+
+            var hits = channels
+                .Where(c => VietnameseTextHelper.StripDiacritics(c.PageName)
+                    .Contains(needle, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (hits.Count == 0)
+                return (null, $"Không có page nào khớp <b>{Esc(raw)}</b>. Gõ <code>/page</code> để xem danh sách.");
+            if (hits.Count > 1)
+                return (null, $"<b>{Esc(raw)}</b> khớp {hits.Count} page, gõ rõ hơn:\n"
+                              + string.Join("\n", hits.Take(6).Select(h => $"· {Esc(h.PageName)}")));
+
+            if (!ids.Contains(hits[0].Id)) ids.Add(hits[0].Id);
+        }
+
+        return ids.Count == 0
+            ? (null, "Không đọc được tên page nào. Gõ <code>/page</code> để xem danh sách.")
+            : (ids, null);
+    }
+
+    private async Task<string> ListPagesAsync(CancellationToken ct)
+    {
+        var channels = await context.SocialChannels
+            .Where(c => !c.IsDeleted && c.IsActive)
+            .OrderBy(c => c.PageName)
+            .Select(c => c.PageName)
+            .ToListAsync(ct);
+
+        if (channels.Count == 0) return "Chưa kết nối page nào.";
+
+        var sb = new StringBuilder($"<b>{channels.Count} page đang bật</b>\n");
+        foreach (var name in channels) sb.AppendLine($"· {Esc(name)}");
+        sb.AppendLine("\nGõ một phần tên là đủ: <code>/dang a3f9c1 toefl, su pham</code>");
+        return sb.ToString().TrimEnd();
     }
 
     private async Task<string> ListPendingAsync(CancellationToken ct)
@@ -236,7 +337,9 @@ public class CrawlTelegramService(
         """
         <b>Lệnh</b>
         <code>/ds</code> — tin đang chờ duyệt
-        <code>/dang &lt;mã&gt;</code> — duyệt, viết bài rồi ĐĂNG LUÔN, xong gửi link về
+        <code>/dang &lt;mã&gt;</code> — duyệt, viết bài rồi ĐĂNG LUÔN lên page mặc định của nguồn
+        <code>/dang &lt;mã&gt; &lt;page&gt;</code> — đăng lên page tự chọn: <code>/dang a3f9c1 toefl, su pham</code>
+        <code>/page</code> — danh sách page đang bật
         <code>/bo &lt;mã&gt; [lý do]</code> — bỏ tin
         <code>/cao</code> — cào ngay, không đợi lịch
         <code>/tt</code> — tình trạng hệ thống
