@@ -53,14 +53,21 @@ public class CrawlTelegramService(
         {
             ct.ThrowIfCancellationRequested();
             var code = ShortId(a.Id);
-            var messageId = await telegram.SendKeyboardAsync(
-                chatId, FormatArticle(a, pagesBySource.GetValueOrDefault(a.CrawlSourceId)),
-                [
-                    [new TelegramButton("🚀 Đăng ngay", $"ok:{code}")],
-                    [new TelegramButton("📋 Chọn page", $"sel:{code}"),
-                     new TelegramButton("🗑 Bỏ", $"no:{code}")],
-                ],
-                ct);
+            var caption = FormatArticle(a, pagesBySource.GetValueOrDefault(a.CrawlSourceId));
+            List<List<TelegramButton>> buttons =
+            [
+                [new TelegramButton("🚀 Đăng ngay", $"ok:{code}")],
+                [new TelegramButton("📋 Chọn page", $"sel:{code}"),
+                 new TelegramButton("🗑 Bỏ", $"no:{code}")],
+            ];
+
+            // Ảnh minh hoạ chỉ để NHÌN cho dễ trong lúc duyệt — không bao giờ đăng lại lên
+            // fanpage (bản quyền toà soạn), đó cũng là lý do ImportThumbnails mặc định false.
+            // CDN chặn hotlink hoặc ảnh quá nặng thì rơi về tin chữ, mất ảnh chứ không mất tin.
+            var messageId = string.IsNullOrWhiteSpace(a.ThumbnailUrl)
+                ? await telegram.SendKeyboardAsync(chatId, caption, buttons, ct)
+                : await telegram.SendPhotoAsync(chatId, a.ThumbnailUrl!, caption, buttons, ct)
+                  ?? await telegram.SendKeyboardAsync(chatId, caption, buttons, ct);
 
             if (messageId is null)
             {

@@ -66,6 +66,33 @@ public class TelegramClient(
             el => el.TryGetProperty("message_id", out var m) ? m.GetInt32() : (int?)null, ct);
     }
 
+    /// <summary>
+    /// Gửi tin kèm ẢNH (Telegram tự tải từ URL). Hỏng thì trả null để nơi gọi rơi về tin chữ —
+    /// CDN báo có thể chặn hotlink hoặc ảnh quá 5MB, mất ảnh thì thôi chứ không được mất tin.
+    ///
+    /// Chú thích ảnh trần 1024 ký tự (tin chữ là 4096). Tin báo bài cào ngắn hơn nhiều nên
+    /// không đụng trần, nhưng cắt sẵn cho chắc.
+    /// </summary>
+    public async Task<int?> SendPhotoAsync(
+        long chatId, string photoUrl, string caption,
+        IReadOnlyList<IReadOnlyList<TelegramButton>>? rows, CancellationToken ct = default)
+    {
+        if (!IsConfigured) return null;
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["chat_id"] = chatId,
+            ["photo"] = photoUrl,
+            ["caption"] = caption.Length > 1000 ? caption[..1000] + "…" : caption,
+            ["parse_mode"] = "HTML",
+        };
+        if (rows is { Count: > 0 }) payload["reply_markup"] = Keyboard(rows);
+
+        return await PostAsync(
+            "sendPhoto", payload,
+            el => el.TryGetProperty("message_id", out var m) ? m.GetInt32() : (int?)null, ct);
+    }
+
     /// <summary>Sửa lại nội dung tin đã gửi — dùng để xoá nút sau khi người dùng bấm.</summary>
     public async Task EditMessageAsync(
         long chatId, int messageId, string text,
@@ -86,7 +113,32 @@ public class TelegramClient(
             ? Keyboard(rows)
             : new { inline_keyboard = Array.Empty<object[]>() };
 
-        await PostAsync("editMessageText", payload, _ => 0, ct);
+        if (await PostRawAsync("editMessageText", payload, ct)) return;
+
+        // Tin có ẢNH thì không có "text" để sửa — Telegram trả "there is no text in the
+        // message to edit" và phải dùng editMessageCaption. Thử rồi rơi thay vì mang theo
+        // một cờ isPhoto qua bốn tầng gọi chỉ để biết dùng method nào.
+        payload.Remove("text");
+        payload.Remove("link_preview_options");
+        payload["caption"] = text.Length > 1000 ? text[..1000] + "…" : text;
+        await PostRawAsync("editMessageCaption", payload, ct);
+    }
+
+    /// <summary>Gọi API, chỉ quan tâm thành công hay không. Không log ầm ĩ vì nơi gọi có thể thử tiếp.</summary>
+    private async Task<bool> PostRawAsync(
+        string method, Dictionary<string, object?> payload, CancellationToken ct)
+    {
+        try
+        {
+            using var res = await http.PostAsJsonAsync(Url(method), payload, Json, ct);
+            var doc = await res.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
+            return doc.TryGetProperty("ok", out var ok) && ok.GetBoolean();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogDebug(ex, "Telegram {Method} lỗi mạng", method);
+            return false;
+        }
     }
 
     private static object Keyboard(IReadOnlyList<IReadOnlyList<TelegramButton>> rows) => new
