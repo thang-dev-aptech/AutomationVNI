@@ -53,6 +53,7 @@ public class CrawlTelegramWorker(
             {
                 await PumpUpdatesAsync(stoppingToken);
                 await PushNotificationsAsync(stoppingToken);
+                await PublishApprovedAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -91,7 +92,7 @@ public class CrawlTelegramWorker(
                 // Trả lời callback TRƯỚC khi làm việc nặng: duyệt một tin có thể mất vài giây,
                 // để lâu thì nút cứ quay trên máy người dùng rồi Telegram báo timeout.
                 await telegram.AnswerCallbackAsync(u.CallbackQueryId, "Đang xử lý…", ct);
-                var reply = await service.HandleCallbackAsync(u.Text, ct);
+                var reply = await service.HandleCallbackAsync(u.ChatId, u.Text, ct);
                 if (u.MessageId is int mid)
                     await telegram.EditMessageAsync(u.ChatId, mid, reply, ct);
                 else
@@ -100,7 +101,7 @@ public class CrawlTelegramWorker(
             }
 
             if (!u.Text.StartsWith('/')) continue;
-            var answer = await service.HandleCommandAsync(u.Text, ct);
+            var answer = await service.HandleCommandAsync(u.ChatId, u.Text, ct);
             await telegram.SendMessageAsync(u.ChatId, answer, null, ct);
         }
     }
@@ -113,6 +114,15 @@ public class CrawlTelegramWorker(
         var service = scope.ServiceProvider.GetRequiredService<CrawlTelegramService>();
         var sent = await service.NotifyPendingAsync(_chatId, ct);
         if (sent > 0) logger.LogInformation("Đã báo {N} tin mới qua Telegram", sent);
+    }
+
+    /// <summary>Đưa tin đã duyệt từ Telegram đi đăng rồi báo link về.</summary>
+    private async Task PublishApprovedAsync(CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<CrawlAutoPublishService>();
+        var done = await service.TickAsync(ct);
+        if (done > 0) logger.LogInformation("Đã đăng xong và báo kết quả {N} tin", done);
     }
 
     /// <summary>Rỗng = cho tất cả (chỉ hợp lúc dev). Có danh sách thì chặn hết phần còn lại.</summary>

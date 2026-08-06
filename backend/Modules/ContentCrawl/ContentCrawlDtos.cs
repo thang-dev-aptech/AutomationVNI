@@ -140,6 +140,12 @@ public class ApproveCrawledArticleRequest
     public DateTime? StartAtUtc { get; set; }
     /// <summary>Ghi đè AutoScheduleOnApprove trong config cho riêng lần duyệt này.</summary>
     public bool? AutoSchedule { get; set; }
+
+    /// <summary>
+    /// Đăng thẳng lên Facebook ngay khi sinh nội dung xong, không qua bước lên lịch.
+    /// Dành cho lệnh /dang trên Telegram: sếp gõ một câu là bài lên, rồi bot báo link về.
+    /// </summary>
+    public bool AutoPublish { get; set; }
 }
 
 public class ApproveCrawledArticleResult

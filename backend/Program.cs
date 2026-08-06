@@ -163,6 +163,7 @@ builder.Services.AddHttpClient<Backend.Shared.Notification.TelegramClient>(clien
     // Telegram; để bằng nhau là chắc chắn ăn TaskCanceledException mỗi lượt không có update.
     client.Timeout = TimeSpan.FromSeconds(90));
 builder.Services.AddScoped<CrawlTelegramService>();
+builder.Services.AddScoped<CrawlAutoPublishService>();
 builder.Services.AddHostedService<CrawlTelegramWorker>();
 builder.Services.AddScoped<MediaEmbeddingRepository>();
 builder.Services.AddScoped<ApiLogRepository>();

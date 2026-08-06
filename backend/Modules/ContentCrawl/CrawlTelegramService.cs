@@ -42,7 +42,7 @@ public class CrawlTelegramService(
             var code = ShortId(a.Id);
             var messageId = await telegram.SendMessageAsync(
                 chatId, FormatArticle(a),
-                [new TelegramButton("✅ Duyệt", $"ok:{code}"), new TelegramButton("🗑 Bỏ", $"no:{code}")],
+                [new TelegramButton("🚀 Duyệt & đăng", $"ok:{code}"), new TelegramButton("🗑 Bỏ", $"no:{code}")],
                 ct);
 
             if (messageId is null)
@@ -80,7 +80,7 @@ public class CrawlTelegramService(
     // ── Xử lý lệnh ──────────────────────────────────────────────────────────
 
     /// <summary>Trả về câu trả lời để bot gửi lại. Không bao giờ ném — lỗi thành lời nhắn.</summary>
-    public async Task<string> HandleCommandAsync(string text, CancellationToken ct = default)
+    public async Task<string> HandleCommandAsync(long chatId, string text, CancellationToken ct = default)
     {
         var parts = text.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0) return Help();
@@ -93,7 +93,7 @@ public class CrawlTelegramService(
         {
             return cmd switch
             {
-                "dang" or "duyet" => await ApproveAsync(arg, ct),
+                "dang" or "duyet" => await ApproveAsync(chatId, arg, ct),
                 "bo" or "loai" => await RejectAsync(arg, ct),
                 "ds" or "list" => await ListPendingAsync(ct),
                 "tt" or "status" => await StatusAsync(ct),
@@ -110,34 +110,43 @@ public class CrawlTelegramService(
     }
 
     /// <summary>Nút bấm dưới tin nhắn: <c>ok:abc123</c> / <c>no:abc123</c>.</summary>
-    public async Task<string> HandleCallbackAsync(string data, CancellationToken ct = default)
+    public async Task<string> HandleCallbackAsync(long chatId, string data, CancellationToken ct = default)
     {
         var bits = data.Split(':', 2);
         if (bits.Length != 2) return "Nút không hợp lệ";
         return bits[0] switch
         {
-            "ok" => await ApproveAsync(bits[1], ct),
+            "ok" => await ApproveAsync(chatId, bits[1], ct),
             "no" => await RejectAsync(bits[1], ct),
             _ => "Nút không hợp lệ",
         };
     }
 
-    private async Task<string> ApproveAsync(string arg, CancellationToken ct)
+    private async Task<string> ApproveAsync(long chatId, string arg, CancellationToken ct)
     {
         var (article, error) = await ResolveAsync(arg, ct);
         if (article is null) return error!;
 
-        // Body rỗng: lấy page mặc định của nguồn, TextOnly (không sinh ảnh), template mặc
-        // định của từng page, lịch theo AutoScheduleOnApprove.
-        var result = await pipeline.ApproveAsync(article.Id, new ApproveCrawledArticleRequest(), ct);
+        // Ghi chat NGAY, trước khi duyệt. CrawlAutoPublishService lọc theo TelegramChatId để
+        // biết báo kết quả về đâu — tin duyệt bằng /dang mà chưa từng được bot báo thì cột này
+        // rỗng, vòng quét bỏ qua và bài nằm im mãi ở Approved, không ai biết.
+        if (article.TelegramChatId is null)
+        {
+            article.TelegramChatId = chatId;
+            await repository.UpdateAsync(article, ct);
+        }
 
-        // Nói rõ CHƯA lên Facebook. Nút tên "Duyệt" chứ không phải "Đăng" là có lý do:
-        // AutoScheduleOnApprove=false nên bài dừng ở Approved, phải vào /bulk bấm lên lịch.
-        // Để người dùng tưởng đã đăng rồi là kiểu hỏng tệ nhất — im lặng và phát hiện muộn.
+        // Chỉ đặt AutoPublish. Các tham số còn lại để mặc định: page mặc định của nguồn,
+        // TextOnly (không sinh ảnh), template mặc định của từng page.
+        var result = await pipeline.ApproveAsync(
+            article.Id, new ApproveCrawledArticleRequest { AutoPublish = true }, ct);
+
+        // Không hứa "đã đăng" ở đây: sinh nội dung chạy bất đồng bộ, mỗi page vài chục giây.
+        // CrawlAutoPublishService sẽ đăng rồi nhắn link về trong một tin nhắn riêng.
         var pages = string.Join(", ", result.Channels);
         return $"✅ Đã duyệt <b>{Esc(article.Title)}</b>\n"
-             + $"Tạo {result.Created} bài cho: {Esc(pages)}\n"
-             + $"<i>Chưa lên Facebook</i> — vào web mở batch <code>{result.BatchId}</code> để lên lịch đăng.";
+             + $"Đang viết {result.Created} bài cho: {Esc(pages)}\n"
+             + "<i>Viết xong sẽ đăng luôn và gửi link về đây.</i>";
     }
 
     private async Task<string> RejectAsync(string arg, CancellationToken ct)
@@ -227,11 +236,11 @@ public class CrawlTelegramService(
         """
         <b>Lệnh</b>
         <code>/ds</code> — tin đang chờ duyệt
-        <code>/dang &lt;mã&gt;</code> — duyệt và tạo bài cho các page mặc định
+        <code>/dang &lt;mã&gt;</code> — duyệt, viết bài rồi ĐĂNG LUÔN, xong gửi link về
         <code>/bo &lt;mã&gt; [lý do]</code> — bỏ tin
         <code>/cao</code> — cào ngay, không đợi lịch
         <code>/tt</code> — tình trạng hệ thống
 
-        Muốn đổi page, template hay sinh ảnh thì duyệt trên web.
+        Muốn đổi page, template, sinh ảnh hay xem lại trước khi đăng thì duyệt trên web.
         """;
 }

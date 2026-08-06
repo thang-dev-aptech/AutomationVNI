@@ -325,6 +325,7 @@ public class ContentCrawlPipelineService(
             scheduledTimes = await ApplyPendingScheduleAsync(bulk.PostIds, request.StartAtUtc, ct);
 
         article.Status = CrawledArticleStatus.Approved;
+        if (request.AutoPublish) article.AutoPublishRequested = true;
         article.ResultBatchId = bulk.BatchId;
         article.ResultPostCount = bulk.Created;
         article.ReviewedBy = userContext.GetCurrentUserName();

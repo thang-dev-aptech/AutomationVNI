@@ -54,6 +54,18 @@ public class CrawledArticleModel : BaseEntity
     // ── Telegram (Phase 2) ──────────────────────────────────────────────────
     public long? TelegramChatId { get; set; }
     public int? TelegramMessageId { get; set; }
+
+    /// <summary>
+    /// Duyệt từ Telegram thì đăng luôn, không dừng ở Approved chờ người vào web bấm lịch.
+    /// Duyệt trên web KHÔNG bật cờ này — ở đó người dùng còn muốn xem lại bài trước khi đăng.
+    /// </summary>
+    public bool AutoPublishRequested { get; set; }
+
+    /// <summary>
+    /// Đã báo kết quả đăng về Telegram lúc nào. Đây là toàn bộ cơ chế chống báo trùng —
+    /// worker quét lại mỗi vòng, không có cột này thì cứ mỗi 30 giây lại nhắn một lần.
+    /// </summary>
+    public DateTime? TelegramResultAt { get; set; }
 }
 
 /// <summary>
