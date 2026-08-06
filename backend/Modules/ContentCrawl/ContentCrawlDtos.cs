@@ -148,6 +148,8 @@ public class ApproveCrawledArticleResult
     public Guid BatchId { get; set; }
     public int Created { get; set; }
     public List<Guid> PostIds { get; set; } = [];
+    /// <summary>Tên page thực sự nhận bài — để Telegram nói rõ đăng lên đâu, không bắt đoán.</summary>
+    public List<string> Channels { get; set; } = [];
     public List<DateTime> ScheduledTimesUtc { get; set; } = [];
     public string Message { get; set; } = string.Empty;
 }

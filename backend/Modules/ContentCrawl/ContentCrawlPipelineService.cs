@@ -337,12 +337,18 @@ public class ContentCrawlPipelineService(
             "Duyệt tin {Id} → {Count} bài trên {Channels} kênh (batch {BatchId}, rải lịch: {Sched})",
             article.Id, bulk.Created, channelIds.Count, bulk.BatchId, autoSchedule);
 
+        var channelNames = await context.SocialChannels
+            .Where(c => channelIds.Contains(c.Id))
+            .Select(c => c.PageName)
+            .ToListAsync(ct);
+
         return new ApproveCrawledArticleResult
         {
             ArticleId = article.Id,
             BatchId = bulk.BatchId,
             Created = bulk.Created,
             PostIds = bulk.PostIds,
+            Channels = channelNames,
             ScheduledTimesUtc = scheduledTimes,
             Message = autoSchedule
                 ? $"Đã tạo {bulk.Created} bài và rải lịch theo khung giờ vàng"

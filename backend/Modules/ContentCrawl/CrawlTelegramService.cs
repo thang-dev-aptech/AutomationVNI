@@ -42,7 +42,7 @@ public class CrawlTelegramService(
             var code = ShortId(a.Id);
             var messageId = await telegram.SendMessageAsync(
                 chatId, FormatArticle(a),
-                [new TelegramButton("✅ Đăng", $"ok:{code}"), new TelegramButton("🗑 Bỏ", $"no:{code}")],
+                [new TelegramButton("✅ Duyệt", $"ok:{code}"), new TelegramButton("🗑 Bỏ", $"no:{code}")],
                 ct);
 
             if (messageId is null)
@@ -131,8 +131,13 @@ public class CrawlTelegramService(
         // định của từng page, lịch theo AutoScheduleOnApprove.
         var result = await pipeline.ApproveAsync(article.Id, new ApproveCrawledArticleRequest(), ct);
 
+        // Nói rõ CHƯA lên Facebook. Nút tên "Duyệt" chứ không phải "Đăng" là có lý do:
+        // AutoScheduleOnApprove=false nên bài dừng ở Approved, phải vào /bulk bấm lên lịch.
+        // Để người dùng tưởng đã đăng rồi là kiểu hỏng tệ nhất — im lặng và phát hiện muộn.
+        var pages = string.Join(", ", result.Channels);
         return $"✅ Đã duyệt <b>{Esc(article.Title)}</b>\n"
-             + $"Tạo {result.Created} bài, đang sinh nội dung riêng cho từng page.";
+             + $"Tạo {result.Created} bài cho: {Esc(pages)}\n"
+             + $"<i>Chưa lên Facebook</i> — vào web mở batch <code>{result.BatchId}</code> để lên lịch đăng.";
     }
 
     private async Task<string> RejectAsync(string arg, CancellationToken ct)
