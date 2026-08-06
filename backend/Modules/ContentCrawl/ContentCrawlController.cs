@@ -188,6 +188,13 @@ public class ContentCrawlController(
         {
             return NotFound(ApiResponse.Fail("NOT_FOUND", ex.Message));
         }
+        catch (InvalidOperationException ex)
+        {
+            // Nguồn đang được cào bởi người khác (hoặc bởi bot Telegram). Đây là chuyện bình
+            // thường, không phải sự cố — trả 409 kèm câu giải thích thay vì 500 INTERNAL_ERROR
+            // khiến người dùng tưởng hệ thống hỏng rồi bấm lại lần nữa.
+            return Conflict(ApiResponse.Fail("CRAWL_IN_PROGRESS", ex.Message));
+        }
     }
 
     // ── Lượt cào ────────────────────────────────────────────────────────────

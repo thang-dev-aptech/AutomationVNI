@@ -142,6 +142,7 @@ builder.Services.AddScoped<Backend.Modules.ShortLink.ShortLinkService>();
 builder.Services.Configure<ContentCrawlOptions>(builder.Configuration.GetSection("ContentCrawl"));
 builder.Services.AddScoped<ContentCrawlRepository>();
 builder.Services.AddScoped<ContentDedupService>();
+builder.Services.AddScoped<Backend.Modules.Notification.NotificationService>();
 builder.Services.AddScoped<CrawlScreenService>();
 builder.Services.AddScoped<ContentCrawlPipelineService>();
 builder.Services.AddHttpClient<IAiJudgeService, AiJudgeService>(client =>

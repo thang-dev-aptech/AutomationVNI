@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/modules/auth/stores/authStore'
 import { useLogout } from '@/modules/auth/hooks/useAuth'
+import NotificationBell from '@/modules/notification/components/NotificationBell'
 import './Topbar.css'
 
 const PAGE_TITLES = {
@@ -49,6 +50,7 @@ export default function Topbar({ onMenuToggle, isSidebarOpen = false }) {
         <h1 className="topbar-title">{resolveTitle(pathname)}</h1>
       </div>
       <div className="topbar-actions">
+        <NotificationBell />
         <span className="topbar-user">{currentUser?.email}</span>
         <button
           type="button"

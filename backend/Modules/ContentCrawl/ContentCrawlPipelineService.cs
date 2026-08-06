@@ -29,6 +29,7 @@ public class ContentCrawlPipelineService(
     ContentDedupService dedupService,
     OpenClawWebCrawler webCrawler,
     CrawlScreenService screenService,
+    Backend.Modules.Notification.NotificationService notifications,
     IUserContext userContext,
     IOptions<ContentCrawlOptions> options,
     ILogger<ContentCrawlPipelineService> logger)
@@ -40,6 +41,20 @@ public class ContentCrawlPipelineService(
     {
         var source = await repository.GetSourceAsync(sourceId, ct)
             ?? throw new KeyNotFoundException($"Không tìm thấy nguồn cào {sourceId}");
+
+        // Chặn cào chồng lên nhau. Tình huống thật: sếp gõ /cao trên Telegram, người ngồi web
+        // thấy lâu quá cũng bấm "Cào ngay" — hai lượt cùng giành MỘT tab trình duyệt OpenClaw,
+        // cái này huỷ điều hướng của cái kia và cả hai về tay không.
+        // Mốc 15 phút là van xả: tiến trình chết giữa chừng để lại dòng Running vĩnh viễn,
+        // không có mốc thì nguồn đó khoá cứng cho tới khi ai đó sửa tay trong DB.
+        var runningSince = DateTime.UtcNow.AddMinutes(-15);
+        var inFlight = await context.Set<CrawlRunModel>().AnyAsync(
+            r => r.CrawlSourceId == sourceId
+                 && r.Status == CrawlRunStatus.Running
+                 && r.StartedAt > runningSince, ct);
+        if (inFlight)
+            throw new InvalidOperationException(
+                $"Nguồn \"{source.Name}\" đang được cào, chờ lượt này xong đã.");
 
         var stopwatch = Stopwatch.StartNew();
         var run = new CrawlRunModel
@@ -87,6 +102,15 @@ public class ContentCrawlPipelineService(
             logger.LogInformation(
                 "Cào {Source}: {Fetched} bài, {New} mới, {Dup} trùng guid, {Filtered} bị lọc ({Ms}ms)",
                 source.Name, items.Count, added, duplicate, filtered, run.DurationMs);
+
+            await notifications.AddAsync(
+                Backend.Modules.Notification.NotificationKind.CrawlFinished,
+                SourceOf(triggerSource), ActorOf(triggerSource),
+                $"Cào xong {source.Name}: {added} tin mới",
+                added > 0
+                    ? $"Lấy về {items.Count} bài · {duplicate} trùng · {filtered} bị lọc. Đang chấm điểm."
+                    : $"Lấy về {items.Count} bài, không có tin nào mới.",
+                "/crawl", source.Id, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -102,10 +126,34 @@ public class ContentCrawlPipelineService(
 
             await context.SaveChangesAsync(CancellationToken.None);
             logger.LogError(ex, "Cào {Source} thất bại (lần lỗi thứ {N})", source.Name, source.ConsecutiveFailures);
+
+            await notifications.AddAsync(
+                Backend.Modules.Notification.NotificationKind.CrawlFinished,
+                SourceOf(triggerSource), ActorOf(triggerSource),
+                $"Cào {source.Name} thất bại", Truncate(ex.Message, 300), "/crawl", source.Id,
+                CancellationToken.None);
         }
 
         return run;
     }
+
+    /// <summary>
+    /// TriggerSource là chuỗi tự do đã có sẵn ("worker"/"manual"/"telegram"). Ánh xạ sang enum
+    /// ở đây thay vì đổi kiểu cột — cột đó đã có dữ liệu và đang hiện trên trang lịch sử cào.
+    /// </summary>
+    private static Backend.Modules.Notification.NotificationSource SourceOf(string trigger) => trigger switch
+    {
+        "telegram" => Backend.Modules.Notification.NotificationSource.Telegram,
+        "manual" => Backend.Modules.Notification.NotificationSource.Web,
+        _ => Backend.Modules.Notification.NotificationSource.System,
+    };
+
+    private static string ActorOf(string trigger) => trigger switch
+    {
+        "telegram" => "Telegram",
+        "manual" => "Giao diện web",
+        _ => "Tự động theo lịch",
+    };
 
     /// <summary>Lưu tin mới. Chặn trùng guid ngay tại đây để khỏi tạo bản ghi rác.</summary>
     private async Task<(int Added, int Duplicate, int Filtered)> IngestAsync(
@@ -346,14 +394,26 @@ public class ContentCrawlPipelineService(
         await UpsertArticleFingerprintAsync(article, ct);
         await context.SaveChangesAsync(ct);
 
-        logger.LogInformation(
-            "Duyệt tin {Id} → {Count} bài trên {Channels} kênh (batch {BatchId}, rải lịch: {Sched})",
-            article.Id, bulk.Created, channelIds.Count, bulk.BatchId, autoSchedule);
-
         var channelNames = await context.SocialChannels
             .Where(c => channelIds.Contains(c.Id))
             .Select(c => c.PageName)
             .ToListAsync(ct);
+
+        logger.LogInformation(
+            "Duyệt tin {Id} → {Count} bài trên {Channels} kênh (batch {BatchId}, rải lịch: {Sched})",
+            article.Id, bulk.Created, channelIds.Count, bulk.BatchId, autoSchedule);
+
+        // Nguồn = Telegram khi duyệt bằng lệnh bot (lúc đó AutoPublish luôn bật), còn lại là web.
+        await notifications.AddAsync(
+            Backend.Modules.Notification.NotificationKind.ArticleApproved,
+            request.AutoPublish
+                ? Backend.Modules.Notification.NotificationSource.Telegram
+                : Backend.Modules.Notification.NotificationSource.Web,
+            request.AutoPublish ? "Telegram" : userContext.GetCurrentUserName() ?? "Người dùng",
+            $"Duyệt tin: {Truncate(article.Title, 120)}",
+            $"Tạo {bulk.Created} bài cho: {string.Join(", ", channelNames)}"
+            + (request.AutoPublish ? " · đang đăng luôn" : ""),
+            $"/bulk/{bulk.BatchId}", article.Id, ct);
 
         return new ApproveCrawledArticleResult
         {

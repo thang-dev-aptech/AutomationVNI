@@ -49,6 +49,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<CrawledArticleModel> CrawledArticles => Set<CrawledArticleModel>();
     public DbSet<ContentFingerprintModel> ContentFingerprints => Set<ContentFingerprintModel>();
     public DbSet<ShortLinkModel> ShortLinks => Set<ShortLinkModel>();
+    public DbSet<Backend.Modules.Notification.AppNotificationModel> AppNotifications
+        => Set<Backend.Modules.Notification.AppNotificationModel>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -422,6 +424,20 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.DuplicateReason).HasColumnType("TEXT");
             e.Property(x => x.ErrorMessage).HasColumnType("TEXT");
             e.Property(x => x.RejectReason).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<Backend.Modules.Notification.AppNotificationModel>(e =>
+        {
+            e.ToTable("AppNotifications");
+            e.HasKey(x => x.Id);
+            // Chuông chỉ hỏi hai câu: 30 dòng mới nhất, và đếm số chưa đọc. Hai index này
+            // phục vụ đúng hai câu đó, không thêm gì.
+            e.HasIndex(x => x.CreatedAt);
+            e.HasIndex(x => x.ReadAt);
+            e.Property(x => x.Actor).HasMaxLength(100);
+            e.Property(x => x.Title).HasMaxLength(200);
+            e.Property(x => x.Message).HasColumnType("TEXT");
+            e.Property(x => x.LinkUrl).HasMaxLength(500);
         });
 
         modelBuilder.Entity<ShortLinkModel>(e =>

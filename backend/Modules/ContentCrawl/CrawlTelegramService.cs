@@ -25,6 +25,7 @@ public class CrawlTelegramService(
     CrawlTelegramSelectionStore selections,
     ContentCrawlRepository repository,
     ContentCrawlPipelineService pipeline,
+    Backend.Modules.Notification.NotificationService notifications,
     TelegramClient telegram,
     IOptions<TelegramOptions> options,
     ILogger<CrawlTelegramService> logger)
@@ -376,6 +377,13 @@ public class CrawlTelegramService(
         if (article is null) return error!;
 
         await pipeline.RejectAsync(article.Id, bits.Length > 1 ? bits[1] : "Bỏ qua từ Telegram", ct);
+
+        await notifications.AddAsync(
+            Backend.Modules.Notification.NotificationKind.ArticleRejected,
+            Backend.Modules.Notification.NotificationSource.Telegram, "Telegram",
+            $"Bỏ tin: {Cut(article.Title, 120)}",
+            bits.Length > 1 ? bits[1] : null, "/crawl", article.Id, ct);
+
         return $"🗑 Đã bỏ <b>{Esc(article.Title)}</b>";
     }
 

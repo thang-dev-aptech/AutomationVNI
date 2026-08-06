@@ -30,6 +30,7 @@ public class CrawlAutoPublishService(
     PostWorkflowService workflow,
     IPublishPipelineService publishPipeline,
     TelegramClient telegram,
+    Backend.Modules.Notification.NotificationService notifications,
     ILogger<CrawlAutoPublishService> logger)
 {
     /// <summary>
@@ -137,6 +138,21 @@ public class CrawlAutoPublishService(
 
         var text = sb.ToString().TrimEnd();
 
+        // Người ngồi web cần biết bài vừa lên page nào, kèm link để mở kiểm tra — không thì
+        // họ mở lại /bulk rồi tưởng còn dở, đăng chồng lên.
+        await notifications.AddAsync(
+            ok == posts.Count
+                ? Backend.Modules.Notification.NotificationKind.PostPublished
+                : Backend.Modules.Notification.NotificationKind.PostFailed,
+            Backend.Modules.Notification.NotificationSource.Telegram, "Telegram",
+            ok == posts.Count
+                ? $"Đã đăng: {Cut(article.Title, 110)}"
+                : $"Đăng {ok}/{posts.Count} bài: {Cut(article.Title, 90)}",
+            string.Join(" · ", posts.Select(p =>
+                $"{channels.GetValueOrDefault(p.SocialChannelId, "?")}: {(p.Status == PostStatus.Published ? "OK" : p.Status.ToString())}")),
+            posts.FirstOrDefault()?.BatchId is Guid b ? $"/bulk/{b}" : "/crawl",
+            article.Id, ct);
+
         // Sửa chính tin nhắn đã dùng để duyệt (ô chọn page hoặc tin báo tin mới) thành kết
         // quả, thay vì gửi tin mới: sếp bấm ở đâu thì thấy kết quả ở đó, khỏi cuộn đi tìm.
         // EditMessage cũng gỡ luôn nút "Đăng" nên không bấm lại được lần hai.
@@ -177,4 +193,6 @@ public class CrawlAutoPublishService(
     }
 
     private static string Esc(string? s) => WebUtility.HtmlEncode(s ?? "");
+
+    private static string Cut(string s, int n) => s.Length <= n ? s : s[..n] + "…";
 }
