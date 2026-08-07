@@ -117,6 +117,7 @@ public class CrawledArticleResponse
     public string? DuplicateReason { get; set; }
 
 
+    public string? CategorySlug { get; set; }
     public int? ShortCode { get; set; }
     public int? QualityScore { get; set; }
     public string? ScreenTopic { get; set; }

@@ -442,6 +442,7 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
         DuplicateOfId = e.DuplicateOfId,
         DuplicateScore = e.DuplicateScore,
         DuplicateReason = e.DuplicateReason,
+        CategorySlug = e.CategorySlug,
         ShortCode = e.ShortCode,
         QualityScore = e.QualityScore,
         ScreenTopic = e.ScreenTopic,

@@ -280,6 +280,7 @@ if (devSeedOptions?.Enabled == true && !app.Environment.IsDevelopment())
     app.Logger.LogWarning("DevSeed is enabled outside Development — disable for production deployments");
 
 await IdentitySeeder.SeedAsync(app.Services);
+await Backend.Modules.ContentCrawl.NewsCategorySeeder.SeedAsync(app.Services);
 
 using (var seedScope = app.Services.CreateScope())
 {

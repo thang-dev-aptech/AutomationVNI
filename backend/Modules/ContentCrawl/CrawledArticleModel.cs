@@ -61,6 +61,15 @@ public class CrawledArticleModel : BaseEntity
     /// </summary>
     public int? ShortCode { get; set; }
 
+    // ── Chuyên mục ──────────────────────────────────────────────────────────
+    /// <summary>
+    /// Slug chuyên mục AI chọn từ danh sách ĐÓNG (xem NewsTaxonomy). Lưu cả slug lẫn CategoryId:
+    /// slug là thứ dựng đường dẫn trang tĩnh, CategoryId là khoá để join. Chỉ lưu Id thì đổi
+    /// slug làm chết URL bài cũ; chỉ lưu slug thì không join được với bảng Categories.
+    /// </summary>
+    public string? CategorySlug { get; set; }
+    public Guid? CategoryId { get; set; }
+
     // ── Chấm điểm bằng AI ───────────────────────────────────────────────────
     /// <summary>0–100. null = chưa chấm được (AI hỏng) — KHÁC với chấm ra điểm thấp.</summary>
     public int? QualityScore { get; set; }

@@ -5,7 +5,8 @@ using Microsoft.Extensions.Options;
 namespace Backend.Modules.ContentCrawl;
 
 /// <summary>Kết quả chấm một tin.</summary>
-public sealed record ScreenVerdict(int Score, string Topic, string Reason, string Summary);
+public sealed record ScreenVerdict(
+    int Score, string Topic, string Reason, string Summary, string CategorySlug);
 
 /// <summary>
 /// Chấm điểm tin cào về: có đáng đăng lên fanpage giáo dục của mình không.
@@ -45,10 +46,22 @@ public class CrawlScreenService(
         phần đuôi để tiết kiệm, chuyện đó là bình thường — cứ chấm theo phần đọc được.
 
         CHỈ trả về JSON, không thêm chữ nào ngoài JSON:
-        {"score": 0-100, "topic": "chủ đề ngắn gọn 2-4 từ",
+        {"score": 0-100, "category": "slug chuyên mục",
+         "topic": "chủ đề ngắn gọn 2-4 từ",
          "reason": "một câu ngắn vì sao chấm điểm đó",
          "summary": "2-3 câu tóm tắt tin, nêu đúng dữ kiện trong bài"}
         """;
+
+    /// <summary>
+    /// Khối chuyên mục chèn vào prompt. Danh sách ĐÓNG — trước đây trường "topic" để AI tự đặt
+    /// tên nên mỗi bài một kiểu, không nhóm được, không dựng nổi trang chuyên mục.
+    /// Vẫn giữ "topic" tự do làm nhãn hiển thị phụ, nhưng nó không còn quyết định gì.
+    /// </summary>
+    private static string CategoryRules =>
+        "### CHỌN CHUYÊN MỤC\n"
+        + "Trường \"category\" CHỈ được nhận một trong các slug sau:\n"
+        + NewsTaxonomy.PromptBlock()
+        + "\nTUYỆT ĐỐI KHÔNG đặt slug mới. Không thuộc ba mục đầu thì trả \"" + NewsTaxonomy.OtherSlug + "\".";
 
     public bool IsAvailable() => options.Value.ScreenEnabled && ai.IsAvailable();
 
@@ -77,7 +90,7 @@ public class CrawlScreenService(
              """;
 
         var raw = await ai.AskAsync(
-            SystemPrompt, user, maxTokens: 700, temperature: 0,
+            SystemPrompt + "\n\n" + CategoryRules, user, maxTokens: 700, temperature: 0,
             timeout: TimeSpan.FromSeconds(options.Value.ScreenTimeoutSeconds), ct: ct);
 
         if (string.IsNullOrWhiteSpace(raw))
@@ -120,11 +133,20 @@ public class CrawlScreenService(
                 : -1;
             if (score < 0) return null;
 
+            // Slug lạ thì về "khac" nhưng PHẢI log — im lặng nuốt là cách "topic" biến thành
+            // chuỗi tự do như trước đây mà không ai nhận ra.
+            var rawSlug = Str(root, "category");
+            var cat = NewsTaxonomy.Resolve(rawSlug);
+            if (!string.IsNullOrWhiteSpace(rawSlug) && cat.Slug != rawSlug.Trim().ToLowerInvariant())
+                logger.LogWarning(
+                    "AI trả chuyên mục lạ '{Raw}' cho tin {Id}, xếp vào {Slug}", rawSlug, articleId, cat.Slug);
+
             return new ScreenVerdict(
                 score,
                 Str(root, "topic"),
                 Str(root, "reason"),
-                Str(root, "summary"));
+                Str(root, "summary"),
+                cat.Slug);
         }
         catch (JsonException ex)
         {

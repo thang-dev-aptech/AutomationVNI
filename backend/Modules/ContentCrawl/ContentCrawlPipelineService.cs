@@ -298,6 +298,8 @@ public class ContentCrawlPipelineService(
     {
         var opt = options.Value;
         var articles = await repository.GetPendingProcessAsync(opt.ProcessBatchSize, ct);
+        // Nạp một lần cho cả lô — 4 chuyên mục, truy vấn theo từng bài là phí.
+        var categoryMap = await NewsCategorySeeder.MapAsync(context, ct);
         if (articles.Count == 0) return 0;
 
         var window = await dedupService.LoadWindowAsync(ct);
@@ -328,6 +330,8 @@ public class ContentCrawlPipelineService(
                 var screen = await screenService.ScreenAsync(article, ct);
                 if (screen is not null)
                 {
+                    article.CategorySlug = screen.CategorySlug;
+                    article.CategoryId = categoryMap.GetValueOrDefault(screen.CategorySlug);
                     article.QualityScore = screen.Score;
                     article.ScreenTopic = Truncate(screen.Topic, 100);
                     article.ScreenReason = Truncate(screen.Reason, 400);
@@ -440,7 +444,7 @@ public class ContentCrawlPipelineService(
             promptTemplateId: null,
             pageContextByChannel: pageMap,
             objective: request.Objective ?? options.Value.DefaultObjective,
-            categoryId: source?.CategoryId,
+            categoryId: article.CategoryId ?? source?.CategoryId,
             sourceArticle: brief,
             ct: ct);
 
