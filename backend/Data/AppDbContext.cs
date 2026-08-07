@@ -49,6 +49,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<CrawledArticleModel> CrawledArticles => Set<CrawledArticleModel>();
     public DbSet<ContentFingerprintModel> ContentFingerprints => Set<ContentFingerprintModel>();
     public DbSet<ShortLinkModel> ShortLinks => Set<ShortLinkModel>();
+    public DbSet<Backend.Modules.NewsSite.NewsArticleModel> NewsArticles
+        => Set<Backend.Modules.NewsSite.NewsArticleModel>();
     public DbSet<Backend.Modules.Notification.AppNotificationModel> AppNotifications
         => Set<Backend.Modules.Notification.AppNotificationModel>();
 
@@ -424,6 +426,28 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.DuplicateReason).HasColumnType("TEXT");
             e.Property(x => x.ErrorMessage).HasColumnType("TEXT");
             e.Property(x => x.RejectReason).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<Backend.Modules.NewsSite.NewsArticleModel>(e =>
+        {
+            e.ToTable("NewsArticles");
+            e.HasKey(x => x.Id);
+            // Slug là khoá tra cứu duy nhất và là một phần của URL công khai.
+            e.HasIndex(x => x.Slug).IsUnique();
+            e.HasIndex(x => x.Status);
+            e.HasIndex(x => x.PublishedAt);
+            e.HasIndex(x => x.CategorySlug);
+            e.HasIndex(x => x.CrawledArticleId);
+            e.Property(x => x.Slug).HasMaxLength(120);
+            e.Property(x => x.Title).HasMaxLength(300);
+            e.Property(x => x.CategorySlug).HasMaxLength(50);
+            e.Property(x => x.SourceName).HasMaxLength(200);
+            e.Property(x => x.SourceUrl).HasMaxLength(1000);
+            e.Property(x => x.Sapo).HasColumnType("TEXT");
+            e.Property(x => x.BodyHtml).HasColumnType("TEXT");
+            e.Property(x => x.KeyPointsJson).HasColumnType("TEXT");
+            e.Property(x => x.TimelineJson).HasColumnType("TEXT");
+            e.Property(x => x.ErrorMessage).HasColumnType("TEXT");
         });
 
         modelBuilder.Entity<Backend.Modules.Notification.AppNotificationModel>(e =>
