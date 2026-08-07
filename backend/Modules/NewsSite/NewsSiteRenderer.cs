@@ -72,9 +72,27 @@ public class NewsSiteRenderer(NewsSiteOptions options)
         sb.AppendLine("<img src=\"/assets/logo-vni.png\" alt=\"VNI Education\" width=\"382\" height=\"238\">");
         sb.AppendLine("<span class=\"brand-text\"><b>Tin tức &amp; Tri thức</b><span>vni.edu.vn</span></span>");
         sb.AppendLine("</a>");
+
+        // Ô tìm kiếm để disabled kèm placeholder nói rõ. Trang tĩnh chưa có backend tìm kiếm;
+        // gõ vào mà không ra gì thì tệ hơn là không có ô — nhưng bỏ hẳn thì thanh trên lệch
+        // hẳn so với bản thiết kế.
+        sb.AppendLine("<form class=\"search\" role=\"search\" onsubmit=\"return false\">");
+        sb.AppendLine("<label class=\"skip\" for=\"q\">Tìm kiếm</label>");
+        sb.AppendLine("<input id=\"q\" type=\"search\" placeholder=\"Tìm kiếm — sắp mở\" disabled>");
+        sb.AppendLine("<svg class=\"icon\" width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" "
+                      + "stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\">"
+                      + "<circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"m20 20-3.5-3.5\"/></svg>");
+        sb.AppendLine("</form>");
+
         sb.AppendLine("<div class=\"topbar-right\">");
+        sb.AppendLine("<a class=\"btn-outline\" href=\"/#newsletter\">"
+                      + "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" "
+                      + "stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">"
+                      + "<rect x=\"2\" y=\"4\" width=\"20\" height=\"16\" rx=\"2\"/><path d=\"m2 7 10 6 10-6\"/></svg>"
+                      + "<span>Đăng ký nhận tin</span></a>");
         sb.AppendLine("<div class=\"socials\">");
         sb.AppendLine(Social("Facebook", "M14 9h3V6h-3c-2.2 0-4 1.8-4 4v2H8v3h2v7h3v-7h3l1-3h-4v-2c0-.6.4-1 1-1z"));
+        sb.AppendLine(Social("YouTube", "M22 12s0-3.5-.4-5.2a2.7 2.7 0 0 0-1.9-1.9C18 4.5 12 4.5 12 4.5s-6 0-7.7.4A2.7 2.7 0 0 0 2.4 6.8 28 28 0 0 0 2 12c0 1.7.4 5.2.4 5.2a2.7 2.7 0 0 0 1.9 1.9c1.7.4 7.7.4 7.7.4s6 0 7.7-.4a2.7 2.7 0 0 0 1.9-1.9C22 15.5 22 12 22 12zM10 15V9l5.2 3z"));
         sb.AppendLine(Social("Telegram", "M21.9 4.3 18.7 19c-.2 1-.9 1.3-1.8.8l-4.9-3.6-2.4 2.3c-.3.3-.5.5-1 .5l.4-5 9.2-8.3c.4-.4-.1-.6-.6-.2L6.3 12.8 1.9 11.4c-1-.3-1-1 .2-1.4l18.5-7.1c.8-.3 1.5.2 1.3 1.4z"));
         sb.AppendLine("</div></div></div></header>");
         return sb.ToString();
@@ -94,6 +112,9 @@ public class NewsSiteRenderer(NewsSiteOptions options)
     {
         var sb = new StringBuilder();
         sb.AppendLine("<nav class=\"mainnav\" aria-label=\"Chuyên mục\"><div class=\"wrap mainnav-in\">");
+        sb.AppendLine("<button class=\"burger\" type=\"button\" aria-label=\"Mở menu\">"
+                      + "<svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" "
+                      + "stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M3 6h18M3 12h18M3 18h18\"/></svg></button>");
         sb.AppendLine($"<a href=\"/\"{(activeSlug is null ? " aria-current=\"page\"" : "")}>Mới nhất</a>");
         foreach (var c in NewsTaxonomy.Navigable())
         {
@@ -192,18 +213,52 @@ public class NewsSiteRenderer(NewsSiteOptions options)
         return sb.ToString();
     }
 
+    /// <summary>Icon riêng từng chuyên mục — dùng chung một icon thì hàng ô nhìn như lỗi lặp.</summary>
+    private static string CategoryIcon(string slug) => slug switch
+    {
+        "cong-nghe-ai" => "<rect x=\"7\" y=\"7\" width=\"10\" height=\"10\" rx=\"2\"/>"
+                          + "<path d=\"M10 2v3M14 2v3M10 19v3M14 19v3M2 10h3M2 14h3M19 10h3M19 14h3\"/>",
+        "ky-nang" => "<path d=\"M12 2 9.6 8.6 3 9.9l4.8 4.6L6.6 21 12 17.8 17.4 21l-1.2-6.5L21 9.9l-6.6-1.3L12 2Z\"/>",
+        _ => "<path d=\"M22 9 12 4 2 9l10 5 10-5Z\"/><path d=\"M6 11v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5\"/>",
+    };
+
+    private static string Tile(string href, string icon, string label)
+        => $"<a class=\"cat\" href=\"{href}\">"
+           + "<svg width=\"26\" height=\"26\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" "
+           + $"stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{icon}</svg>"
+           + $"<span>{NewsHtml.Esc(label)}</span></a>";
+
     private static string CategoryTiles()
     {
         var sb = new StringBuilder("<h2 class=\"section-title\">Chuyên mục</h2><div class=\"cats\">");
         foreach (var c in NewsTaxonomy.Navigable())
-            sb.Append($"<a class=\"cat\" href=\"/chuyen-muc/{c.Slug}/\">"
-                      + "<svg width=\"26\" height=\"26\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" "
-                      + "stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\">"
-                      + "<path d=\"M22 9 12 4 2 9l10 5 10-5Z\"/><path d=\"M6 11v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5\"/></svg>"
-                      + $"<span>{NewsHtml.Esc(c.Name)}</span></a>");
+            sb.Append(Tile($"/chuyen-muc/{c.Slug}/", CategoryIcon(c.Slug), c.Name));
+
+        sb.Append(Tile("/", "<rect x=\"3\" y=\"3\" width=\"7\" height=\"7\" rx=\"1.5\"/>"
+                            + "<rect x=\"14\" y=\"3\" width=\"7\" height=\"7\" rx=\"1.5\"/>"
+                            + "<rect x=\"3\" y=\"14\" width=\"7\" height=\"7\" rx=\"1.5\"/>"
+                            + "<rect x=\"14\" y=\"14\" width=\"7\" height=\"7\" rx=\"1.5\"/>", "Xem tất cả"));
         sb.Append("</div>");
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Băng đăng ký bản tin. Ô nhập để DISABLED kèm ghi chú "Sắp mở": dự án chưa có SMTP nên
+    /// nút bấm chưa gửi được mail nào — dựng ô trông như dùng được là hứa suông.
+    /// </summary>
+    private static string Newsletter()
+        => "<section class=\"newsletter\" id=\"newsletter\">"
+           + "<div class=\"art\" aria-hidden=\"true\"><svg width=\"56\" height=\"56\" viewBox=\"0 0 24 24\" "
+           + "fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.3\" stroke-linecap=\"round\" "
+           + "stroke-linejoin=\"round\"><rect x=\"2\" y=\"5\" width=\"20\" height=\"14\" rx=\"2\"/>"
+           + "<path d=\"m2 8 10 6 10-6\"/></svg></div>"
+           + "<div><h2>Đăng ký nhận bản tin VNi</h2>"
+           + "<p>Nhận tin giáo dục, tuyển sinh và kỹ năng nghề mới nhất, gửi hằng tuần.</p></div>"
+           + "<div><form onsubmit=\"return false\">"
+           + "<label class=\"skip\" for=\"email\">Email của bạn</label>"
+           + "<input id=\"email\" type=\"email\" placeholder=\"Nhập email của bạn…\" disabled>"
+           + "<button class=\"btn-primary\" type=\"submit\" disabled>Đăng ký ngay</button></form>"
+           + "<small>Sắp mở — chưa nhận đăng ký.</small></div></section>";
 
     // ── Trang chủ ──────────────────────────────────────────────────────────
 
@@ -235,7 +290,8 @@ public class NewsSiteRenderer(NewsSiteOptions options)
             sb.AppendLine(Byline(lead));
             sb.AppendLine("</div></article>");
 
-            sb.AppendLine("<section class=\"panel\"><div class=\"panel-head\"><h2>Tin mới nhất</h2></div>");
+            sb.AppendLine("<section class=\"panel\"><div class=\"panel-head\"><h2>Tin mới nhất</h2>"
+                          + "<a href=\"/chuyen-muc/giao-duc/\">Xem tất cả ›</a></div>");
             foreach (var a in articles.Skip(1).Take(4)) sb.AppendLine(Mini(a));
             sb.AppendLine("</section></div>");
 
@@ -249,9 +305,13 @@ public class NewsSiteRenderer(NewsSiteOptions options)
                 sb.AppendLine($"<a href=\"/chuyen-muc/{c.Slug}/\">{NewsHtml.Esc(c.Name)}</a>");
             sb.AppendLine("</nav><div class=\"cards\">");
             foreach (var a in articles.Skip(1)) sb.AppendLine(Card(a));
-            sb.AppendLine("</div></div>");
+            sb.AppendLine("</div>");
+            sb.AppendLine("<div class=\"more-wrap\">"
+                          + "<a class=\"btn-outline\" href=\"/chuyen-muc/giao-duc/\">Xem thêm bài viết</a></div>");
+            sb.AppendLine("</div>");
             sb.AppendLine($"<aside class=\"aside\">{TopReadPanel(topRead)}</aside>");
             sb.AppendLine("</div>");
+            sb.AppendLine(Newsletter());
         }
 
         sb.AppendLine("</div></main>");
