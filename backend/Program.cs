@@ -158,6 +158,23 @@ builder.Services.AddHttpClient<Backend.Shared.OpenClaw.IOpenClawBrowserClient,
     // Mỗi lượt gọi tự đặt hạn riêng bằng CTS; để rộng ở đây cho khỏi cắt ngang trang tải chậm.
     client.Timeout = TimeSpan.FromSeconds(120));
 builder.Services.AddScoped<OpenClawWebCrawler>();
+// Đường lấy tin CHÍNH: HTTP thuần. Đo thật 12 bài/6 báo — 0,021s mỗi bài, lấy được 100-105%
+// số ký tự so với OpenClaw (41s mỗi bài). Báo Việt render sẵn ở server.
+builder.Services.AddHttpClient<HttpArticleFetcher>(client =>
+    {
+        // Trang chuyên mục của báo Việt nặng 250-520KB. 20s là rộng rãi; để mặc định 100s thì
+        // một trang chết treo cả lượt cào.
+        client.Timeout = TimeSpan.FromSeconds(20);
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        // giaoduc.net.vn LUÔN trả gzip kể cả khi không xin. Không bật giải nén ở đây thì đọc
+        // ra nhị phân và bộ bóc trả về rỗng — hỏng câm, không có lỗi nào.
+        AutomaticDecompression = System.Net.DecompressionMethods.GZip
+                                 | System.Net.DecompressionMethods.Deflate
+                                 | System.Net.DecompressionMethods.Brotli,
+        AllowAutoRedirect = true,
+    });
 builder.Services.AddHostedService<ContentCrawlWorker>();
 
 // ── Bot Telegram duyệt tin ────────────────────────────────────────────────────

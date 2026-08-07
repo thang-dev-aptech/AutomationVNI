@@ -5,6 +5,9 @@ using Microsoft.Extensions.Options;
 namespace Backend.Modules.ContentCrawl;
 
 /// <summary>Một bài đã cào kèm TOÀN VĂN.</summary>
+/// <summary>Một link bài tìm thấy trên trang chuyên mục, dùng chung cho cả hai bộ lấy tin.</summary>
+public sealed record DiscoveredLink(string Title, string Url);
+
 public sealed record CrawledPageItem(
     string Title,
     string? Summary,
@@ -251,5 +254,4 @@ public class OpenClawWebCrawler(
                 System.Globalization.DateTimeStyles.AllowWhiteSpaces, out var dto)
                 ? dto.UtcDateTime : null;
 
-    private sealed record DiscoveredLink(string Title, string Url);
 }
