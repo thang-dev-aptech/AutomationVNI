@@ -7,6 +7,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Modules.NewsSite;
 
+public class PublishFanpageRequest
+{
+    public List<Guid>? ChannelIds { get; set; }
+    /// <summary>Đăng ngay thay vì dừng ở Approved chờ lên lịch tay.</summary>
+    public bool AutoPublish { get; set; } = true;
+}
+
 /// <summary>
 /// Quản lý trang tin: xem bài đã lên web, viết bài từ tin đã cào, dựng lại trang.
 /// </summary>
@@ -17,6 +24,7 @@ public class NewsSiteController(
     AppDbContext context,
     NewsSiteRepository repository,
     NewsPublisher publisher,
+    NewsFanpageService fanpage,
     NewsSiteBuilder builder) : ControllerBase
 {
     [HttpGet]
@@ -53,6 +61,28 @@ public class NewsSiteController(
         }
 
         return Ok(ApiResponse.Ok(ToResponse(news), "Đã lên web"));
+    }
+
+    /// <summary>CỬA 2 — đăng bài đã lên web sang fanpage.</summary>
+    [HttpPost("{id:guid}/fanpage")]
+    [Authorize(Roles = "Admin,Reviewer,ContentManager")]
+    public async Task<IActionResult> ToFanpage(
+        Guid id, [FromBody] PublishFanpageRequest request, CancellationToken ct)
+    {
+        var news = await repository.GetAsync(id, ct);
+        if (news is null) return NotFound(ApiResponse.Fail("NOT_FOUND", "Không tìm thấy bài"));
+
+        try
+        {
+            var result = await fanpage.PublishAsync(
+                news, request.ChannelIds ?? [], request.AutoPublish, ct);
+            return Ok(ApiResponse.Ok(result,
+                $"Đã tạo {result.Created} bài cho: {string.Join(", ", result.Channels)}"));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", ex.Message));
+        }
     }
 
     [HttpPost("build")]

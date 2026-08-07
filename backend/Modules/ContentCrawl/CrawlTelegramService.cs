@@ -25,6 +25,8 @@ public class CrawlTelegramService(
     CrawlTelegramSelectionStore selections,
     ContentCrawlRepository repository,
     ContentCrawlPipelineService pipeline,
+    Backend.Modules.NewsSite.NewsSiteRepository newsRepository,
+    Backend.Modules.NewsSite.NewsFanpageService fanpage,
     Backend.Modules.Notification.NotificationService notifications,
     TelegramClient telegram,
     IOptions<TelegramOptions> options,
@@ -167,6 +169,7 @@ public class CrawlTelegramService(
             return cmd switch
             {
                 "dang" or "duyet" => new BotReply(await ApproveAsync(chatId, arg, ct)),
+                "fb" or "dangfb" => new BotReply(await ToFanpageAsync(arg, ct)),
                 "bo" or "loai" => new BotReply(await RejectAsync(arg, ct)),
                 "ds" or "list" => new BotReply(await ListPendingAsync(ct)),
                 "tt" or "status" => new BotReply(await StatusAsync(ct)),
@@ -385,6 +388,72 @@ public class CrawlTelegramService(
         return $"✅ Đã duyệt <b>{Esc(article.Title)}</b>\n"
              + $"Đang viết {result.Created} bài cho: {Esc(pages)}\n"
              + "<i>Viết xong sẽ đăng luôn và gửi link về đây.</i>";
+    }
+
+    /// <summary>
+    /// CỬA 2 — đăng bài đã lên web sang fanpage.
+    ///
+    /// Tra theo mã của TIN ĐÃ CÀO chứ không phải mã riêng: sếp vừa nhận tin nhắn "đã lên web"
+    /// kèm mã đó, bắt nhớ thêm một dãy số thứ hai là thừa.
+    /// </summary>
+    private async Task<string> ToFanpageAsync(string arg, CancellationToken ct)
+    {
+        var bits = arg.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var (article, error) = await ResolveAnyAsync(bits.Length > 0 ? bits[0] : "", ct);
+        if (article is null) return error!;
+
+        var news = await newsRepository.GetByCrawledAsync(article.Id, ct);
+        if (news is null)
+            return $"Tin <code>{Esc(bits[0])}</code> chưa lên web. Gõ <code>/dang {Esc(bits[0])}</code> trước.";
+        if (news.Status != Backend.Modules.NewsSite.NewsArticleStatus.Published)
+            return $"Bài chưa xuất bản được: {Esc(news.ErrorMessage ?? "chưa rõ lý do")}";
+
+        List<Guid>? channelIds = null;
+        if (bits.Length > 1)
+        {
+            var (ids, pageError) = await ResolvePagesAsync(bits[1], ct);
+            if (ids is null) return pageError!;
+            channelIds = ids;
+        }
+        else
+        {
+            var source = await repository.GetSourceAsync(article.CrawlSourceId, ct);
+            channelIds = ContentCrawlRepository.DeserializeGuidList(source?.DefaultChannelIds);
+            if (channelIds.Count == 0)
+                return "Nguồn chưa đặt page mặc định. Gõ <code>/fb " + Esc(bits[0]) + " &lt;page&gt;</code>.";
+        }
+
+        var result = await fanpage.PublishAsync(news, channelIds, autoPublish: true, ct);
+
+        return $"📢 <b>Đang đăng fanpage</b>\n{Esc(news.Title)}\n\n"
+             + $"{result.Created} bài cho: {Esc(string.Join(", ", result.Channels))}\n"
+             + $"Bình luận sẽ dẫn về: {Esc(result.NewsUrl ?? news.SourceUrl)}\n\n"
+             + "<i>Xong sẽ báo lại kèm link bài Facebook.</i>";
+    }
+
+    /// <summary>
+    /// Tra tin theo mã, KHÔNG giới hạn trạng thái — khác ResolveAsync vốn chỉ nhận tin chờ
+    /// duyệt. Lệnh /fb làm việc với tin ĐÃ duyệt nên phải tra rộng hơn.
+    /// </summary>
+    private async Task<(CrawledArticleModel?, string?)> ResolveAnyAsync(string arg, CancellationToken ct)
+    {
+        var key = (arg ?? "").Split(' ')[0].TrimStart('#');
+        if (string.IsNullOrWhiteSpace(key))
+            return (null, "Thiếu mã tin.");
+
+        if (int.TryParse(key, out var code) && code > 0)
+        {
+            var byCode = await context.Set<CrawledArticleModel>()
+                .Where(x => !x.IsDeleted && x.ShortCode == code)
+                .OrderByDescending(x => x.FetchedAt)
+                .FirstOrDefaultAsync(ct);
+            if (byCode is not null) return (byCode, null);
+        }
+
+        var found = await repository.FindByShortIdAsync(key, ct);
+        return found.Count == 1
+            ? (found[0], null)
+            : (null, $"Không thấy tin <code>{Esc(key)}</code>.");
     }
 
     private async Task<string> RejectAsync(string arg, CancellationToken ct)

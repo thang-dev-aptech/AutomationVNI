@@ -15,7 +15,19 @@ public sealed record SourceArticleBrief(
     /// Đo thực tế: để AI tự do với tiêu đề 60 ký tự thì hai page ra "…được cập nhật sát giờ
     /// lọc ảo" và "…biến động sát giờ lọc ảo" — khác đúng một cụm từ.
     /// </summary>
-    string? Angle = null);
+    string? Angle = null,
+
+    /// <summary>
+    /// Các ý chính của BÀI TRÊN WEB của mình. Có giá trị nghĩa là caption Facebook được rút
+    /// từ bài đã viết, KHÔNG phải viết lại từ toàn văn báo gốc.
+    ///
+    /// Đây là chỗ tiết kiệm lớn nhất: trước đây mỗi page sinh lại từ toàn văn 4.000 ký tự,
+    /// prompt trung bình 12.726 ký tự ≈ 9.000 token, NHÂN cho mỗi page. Rút từ ý chính thì
+    /// prompt còn ~800 token — 12 page giảm từ 108.000 xuống 18.600 token.
+    ///
+    /// Đặt CUỐI record là cố ý: chèn vào giữa sẽ làm lệch mọi lời gọi theo vị trí đang có.
+    /// </summary>
+    List<string>? KeyPoints = null);
 
 /// <summary>Các góc nhìn chia luân phiên cho từng page trong cùng một lượt duyệt.</summary>
 public static class HeadlineAngles
@@ -116,10 +128,22 @@ public static class SourceArticleHelper
             var title = Read("title");
             if (string.IsNullOrWhiteSpace(title)) return null;
 
+            List<string>? keyPoints = null;
+            foreach (var prop in block.EnumerateObject())
+            {
+                if (!prop.Name.Equals("keyPoints", StringComparison.OrdinalIgnoreCase)) continue;
+                if (prop.Value.ValueKind != JsonValueKind.Array) break;
+                keyPoints = prop.Value.EnumerateArray()
+                    .Where(x => x.ValueKind == JsonValueKind.String)
+                    .Select(x => x.GetString()!)
+                    .ToList();
+                break;
+            }
+
             DateTime? published = DateTime.TryParse(Read("publishedAt"), out var p) ? p : null;
             return new SourceArticleBrief(
                 title, Read("summary"), Read("sourceName"), Read("sourceUrl"), published,
-                Read("content"), Read("angle"));
+                Read("content"), Read("angle"), keyPoints);
         }
         catch (JsonException)
         {
@@ -141,6 +165,7 @@ public static class SourceArticleHelper
             ? brief.Content[..MaxStoredContent]
             : brief.Content,
         ["angle"] = brief.Angle,
+        ["keyPoints"] = brief.KeyPoints,
     };
 
     /// <summary>Toàn văn đưa vào prompt — đủ dày để viết đúng, không quá dài để tốn token.</summary>
@@ -185,6 +210,13 @@ public static class SourceArticleHelper
     /// </summary>
     public static string BuildPromptBlock(SourceArticleBrief brief)
     {
+        // ── Nhánh 1: rút caption TỪ BÀI ĐÃ VIẾT trên web ───────────────────────
+        // Đặt trước hai nhánh kia vì nó rẻ nhất và chính xác nhất: bài web đã qua bộ soi dữ
+        // kiện nên mọi con số trong đó đều truy được về nguồn. Không cần đưa lại toàn văn báo
+        // gốc — đó là 4.000 ký tự × mỗi page bị đốt vô ích.
+        if (brief.KeyPoints is { Count: > 0 })
+            return BuildFromSiteArticle(brief);
+
         var hasFullText = !string.IsNullOrWhiteSpace(brief.Content) && brief.Content!.Trim().Length >= 400;
 
         var sb = new StringBuilder();
@@ -221,6 +253,33 @@ public static class SourceArticleHelper
             AppendAngle(sb, brief);
         }
 
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// Prompt rút caption từ bài đã đăng trên website của mình.
+    ///
+    /// Ngắn hơn hẳn nhánh toàn văn, và AN TOÀN HƠN: bài web đã qua bộ soi dữ kiện nên không
+    /// còn số bịa; caption chỉ được dùng lại ý trong đó nên cũng sạch theo.
+    /// </summary>
+    private static string BuildFromSiteArticle(SourceArticleBrief brief)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("## BÀI ĐÃ ĐĂNG TRÊN WEBSITE CỦA CHÚNG TÔI");
+        sb.AppendLine($"Tiêu đề: {brief.Title.Trim()}");
+        if (!string.IsNullOrWhiteSpace(brief.Summary))
+            sb.AppendLine($"Sapo: {brief.Summary.Trim()}");
+        sb.AppendLine();
+        sb.AppendLine("Ý chính:");
+        foreach (var k in brief.KeyPoints!) sb.AppendLine($"- {k}");
+        sb.AppendLine();
+        sb.AppendLine(NewsRules);
+        sb.AppendLine();
+        sb.AppendLine("### VIẾT GÌ");
+        sb.AppendLine("- CHỈ dùng ý trong bài trên. Không thêm dữ kiện nào khác.");
+        sb.AppendLine("- Không nhắc tên báo gốc — đây là bài của chúng tôi.");
+        sb.AppendLine("- Không tự chèn link; hệ thống tự gắn link bài xuống bình luận.");
+        AppendAngle(sb, brief);
         return sb.ToString().TrimEnd();
     }
 

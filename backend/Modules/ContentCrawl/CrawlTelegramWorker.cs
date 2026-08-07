@@ -47,7 +47,8 @@ public class CrawlTelegramWorker(
         await telegram.SetupBotProfileAsync(
             [
                 ("ds", "Tin đang chờ duyệt"),
-                ("dang", "Duyệt và đăng một tin"),
+                ("dang", "Duyệt tin và đưa lên web"),
+                ("fb", "Đăng bài đã lên web sang fanpage"),
                 ("bo", "Bỏ một tin"),
                 ("page", "Các page đang bật"),
                 ("cao", "Cào tin ngay"),
