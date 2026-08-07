@@ -186,9 +186,11 @@ public class NewsComposeService(
             return null;
         }
 
+        var json = raw[start..(end + 1)];
+
         try
         {
-            using var doc = JsonDocument.Parse(raw[start..(end + 1)]);
+            using var doc = ParseLenient(json);
             var root = doc.RootElement;
 
             var title = Str(root, "title");
@@ -215,6 +217,52 @@ public class NewsComposeService(
             logger.LogWarning(ex, "JSON bài viết cho tin {Id} hỏng", articleId);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Parse JSON, hỏng thì sửa rồi thử lại một lần.
+    ///
+    /// Model rất hay xuất XUỐNG DÒNG THẬT bên trong chuỗi thay vì "\n" — thân bài 600 từ chia
+    /// 4 mục thì gần như chắc chắn dính. JSON chuẩn cấm ký tự điều khiển thô trong chuỗi nên
+    /// Parse ném, và ta mất trắng một lượt gọi ~30 giây chỉ vì chuyện định dạng.
+    ///
+    /// Chỉ escape ký tự điều khiển NẰM TRONG chuỗi (theo dõi trạng thái trong/ngoài dấu nháy),
+    /// không đụng cấu trúc — sửa mù bằng thay chuỗi toàn cục sẽ phá luôn dấu nháy phân cách.
+    /// </summary>
+    private static JsonDocument ParseLenient(string json)
+    {
+        try { return JsonDocument.Parse(json); }
+        catch (JsonException) { return JsonDocument.Parse(EscapeControlCharsInStrings(json)); }
+    }
+
+    private static string EscapeControlCharsInStrings(string json)
+    {
+        var sb = new StringBuilder(json.Length + 64);
+        var inString = false;
+        var escaped = false;
+
+        foreach (var c in json)
+        {
+            if (escaped) { sb.Append(c); escaped = false; continue; }
+
+            if (c == '\\' && inString) { sb.Append(c); escaped = true; continue; }
+            if (c == '"') { inString = !inString; sb.Append(c); continue; }
+
+            if (inString && c < ' ')
+            {
+                sb.Append(c switch
+                {
+                    '\n' => "\\n",
+                    '\r' => "\\r",
+                    '\t' => "\\t",
+                    _ => "",
+                });
+                continue;
+            }
+
+            sb.Append(c);
+        }
+        return sb.ToString();
     }
 
     private static string Str(JsonElement root, string name)

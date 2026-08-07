@@ -14,6 +14,7 @@ public sealed record BuildResult(int Articles, int Pages, string OutputPath, str
 /// </summary>
 public class NewsSiteBuilder(
     NewsSiteRepository repository,
+    NewsOgImageService ogImages,
     IOptions<NewsSiteOptions> options,
     IWebHostEnvironment env,
     ILogger<NewsSiteBuilder> logger)
@@ -80,6 +81,12 @@ public class NewsSiteBuilder(
                 Path.Combine(OutputRoot, "tin", a.Slug + ".html"),
                 renderer.RenderArticle(a, related, topRead), ct);
             pages++;
+
+            // Chỉ dựng ảnh khi CHƯA có. Ảnh không đổi theo tiêu đề đã đóng băng, mà dựng lại
+            // mỗi lượt build thì tốn vô ích — và tệ hơn: Facebook thấy file đổi thời gian sẽ
+            // tải lại, trong khi nội dung y hệt.
+            var ogPath = Path.Combine(OutputRoot, "assets", "og", a.Slug + ".jpg");
+            if (!File.Exists(ogPath)) ogImages.TryRender(a.Title, a.CategorySlug, ogPath);
 
             a.LastBuiltAt = DateTime.UtcNow;
         }
