@@ -61,4 +61,24 @@ public class NewsSiteOptions
     /// 25 giây theo đúng khuôn đã chỉnh cho AiJudge ở luồng cào.
     /// </summary>
     public int PublishDedupTimeoutSeconds { get; set; } = 25;
+
+    /// <summary>
+    /// Tối đa bao nhiêu bài mỗi page mỗi ngày.
+    ///
+    /// Hiện có 15 page và 6 bài web: bấm đăng tất cho tất là 90 bài fanpage trong một buổi.
+    /// Facebook không báo lỗi gì — nó chỉ giảm phân phối, và người theo dõi bỏ theo dõi. Cả
+    /// hai đều không hiện ra ở bất cứ đâu trong hệ thống này.
+    ///
+    /// 2 bài/ngày khớp nhịp thật: 19/37 tin đạt trên 80 điểm, tức khoảng 1–2 bài đáng đăng mỗi
+    /// ngày. Đặt 0 để bỏ hạn mức.
+    /// </summary>
+    public int MaxFanpagePostsPerChannelPerDay { get; set; } = 2;
+
+    /// <summary>
+    /// Từ điểm này trở lên thì giao diện gắn nhãn "nên đăng fanpage".
+    ///
+    /// Chỉ GỢI Ý, không chặn — người duyệt vẫn đăng được bài điểm thấp hơn nếu muốn. Lấy 85 vì
+    /// phân bố điểm tách đôi rõ rệt: 19 tin ở vùng 80–100, trung bình 90,5.
+    /// </summary>
+    public int FanpageSuggestMinScore { get; set; } = 85;
 }

@@ -38,6 +38,7 @@ public class ContentCrawlWorker(
             {
                 await FetchDueSourcesAsync(settings, stoppingToken);
                 await ProcessArticlesAsync(stoppingToken);
+                await ComposeQueuedArticlesAsync(stoppingToken);
                 await SyncPublishedFingerprintsAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -97,6 +98,44 @@ public class ContentCrawlWorker(
         var pipeline = scope.ServiceProvider.GetRequiredService<ContentCrawlPipelineService>();
         var processed = await pipeline.ProcessPendingAsync(ct);
         if (processed > 0) logger.LogInformation("Đã xử lý {Count} tin (chấm trùng + xào nháp)", processed);
+    }
+
+    /// <summary>
+    /// Viết những bài đang xếp hàng ở CỬA 1.
+    ///
+    /// TUẦN TỰ, MỘT scope mỗi bài. Không chạy song song vì mỗi bài là một lượt gọi AI 38 giây;
+    /// bắn năm lượt cùng lúc là ăn giới hạn tốc độ của nhà cung cấp, và cả năm cùng hỏng thay
+    /// vì hỏng một.
+    ///
+    /// Mỗi nhịp làm tối đa 3 bài để một hàng đợi dài không chặn hai việc kia của worker.
+    /// </summary>
+    private async Task ComposeQueuedArticlesAsync(CancellationToken ct)
+    {
+        List<Guid> queued;
+        using (var scope = scopeFactory.CreateScope())
+        {
+            var publisher = scope.ServiceProvider
+                .GetRequiredService<Backend.Modules.NewsSite.NewsPublisher>();
+            queued = (await publisher.GetQueuedAsync(3, ct)).Select(x => x.Id).ToList();
+        }
+        if (queued.Count == 0) return;
+
+        logger.LogInformation("Có {N} bài đang chờ viết", queued.Count);
+
+        foreach (var newsId in queued)
+        {
+            if (ct.IsCancellationRequested) return;
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                var pipeline = scope.ServiceProvider.GetRequiredService<ContentCrawlPipelineService>();
+                await pipeline.ComposeQueuedAsync(newsId, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Viết bài {Id} lỗi", newsId);
+            }
+        }
     }
 
     private async Task SyncPublishedFingerprintsAsync(CancellationToken ct)

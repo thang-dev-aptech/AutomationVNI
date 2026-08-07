@@ -123,3 +123,65 @@
   .news-site-card { flex-direction: column; }
   .news-site-card-actions { width: 100%; }
 }
+
+/* ── Bài đang viết ở nền ──────────────────────────────────────────────── */
+
+.news-site-composing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--color-primary-soft, #eaf2fb);
+  color: var(--color-primary-strong, #1e4f8a);
+  border: 1px solid var(--color-primary, #2d6cb6);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+}
+
+.news-site-composing-list {
+  width: 100%;
+  font-size: 0.82rem;
+  opacity: 0.8;
+}
+
+.news-site-spin {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: news-site-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes news-site-spin { to { transform: rotate(360deg); } }
+
+/* Máy đặt chế độ giảm chuyển động thì đứng yên — vòng xoay vẫn hiện, chỉ không quay. */
+@media (prefers-reduced-motion: reduce) {
+  .news-site-spin { animation: none; }
+}
+
+/* ── Nhãn trên thẻ ────────────────────────────────────────────────────── */
+
+.news-site-pick {
+  margin-left: 8px;
+  background: var(--color-success-soft, #dcfce7);
+  color: var(--color-success-text, #166534);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.news-site-score {
+  margin-left: 6px;
+  font-style: normal;
+  font-weight: 500;
+  font-size: 0.7rem;
+  color: var(--color-text-muted, #6b7280);
+  text-transform: none;
+}
+
+.news-site-remove { color: var(--color-danger-text, #991b1b); }

@@ -26,14 +26,39 @@ public class NewsSiteController(
     NewsPublisher publisher,
     NewsFanpageService fanpage,
     NewsDedupService dedup,
+    Microsoft.Extensions.Options.IOptions<NewsSiteOptions> newsOptions,
     NewsSiteBuilder builder) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] string? category, [FromQuery] int size = 50,
         CancellationToken ct = default)
     {
-        var items = await repository.GetPublishedAsync(category, size, ct);
-        return Ok(ApiResponse.Ok(items.Select(ToResponse).ToList()));
+        var items = await repository.GetForAdminAsync(category, size, ct);
+
+        // Điểm chất lượng nằm ở tin GỐC, không ở bài web. Nạp một lượt cho cả danh sách thay
+        // vì mỗi bài một truy vấn.
+        var crawledIds = items.Where(x => x.CrawledArticleId.HasValue)
+            .Select(x => x.CrawledArticleId!.Value).ToList();
+        var scores = await context.Set<CrawledArticleModel>()
+            .Where(x => crawledIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.QualityScore })
+            .ToDictionaryAsync(x => x.Id, x => x.QualityScore, ct);
+
+        var suggestMin = newsOptions.Value.FanpageSuggestMinScore;
+        return Ok(ApiResponse.Ok(items.Select(a =>
+        {
+            var score = a.CrawledArticleId is Guid cid && scores.TryGetValue(cid, out var s) ? s : null;
+            return (object)new
+            {
+                a.Id, a.Slug, a.Title, a.Sapo, a.CategorySlug, a.ReadMinutes,
+                a.SourceName, a.SourceUrl, status = a.Status.ToString(),
+                a.PublishedAt, a.ViewCount, a.ErrorMessage, a.EventKey,
+                url = repository.PublicUrlOf(a.Slug),
+                qualityScore = score,
+                // Gợi ý, không phải luật. Người duyệt vẫn đăng được bài điểm thấp hơn.
+                suggestFanpage = score >= suggestMin,
+            };
+        }).ToList()));
     }
 
     /// <summary>Trạng thái thư mục xuất bản — kiểm trước khi tìm lỗi ở chỗ khác.</summary>

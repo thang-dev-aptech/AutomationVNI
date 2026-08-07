@@ -36,6 +36,7 @@ public class ContentCrawlPipelineService(
     Backend.Modules.Notification.NotificationService notifications,
     IUserContext userContext,
     IOptions<ContentCrawlOptions> options,
+    IOptions<Backend.Modules.NewsSite.NewsSiteOptions> newsOptions,
     ILogger<ContentCrawlPipelineService> logger)
 {
     // ── Cào một nguồn ───────────────────────────────────────────────────────
@@ -529,35 +530,26 @@ public class ContentCrawlPipelineService(
         await UpsertArticleFingerprintAsync(article, ct);
         await context.SaveChangesAsync(ct);
 
-        var news = await newsPublisher.PublishAsync(article, ct);
+        // XẾP HÀNG chứ không viết ngay.
+        //
+        // Đo thật: viết một bài mất 38 giây, trong đó 37,5 giây là một lượt gọi AI. Chạy đồng
+        // bộ trong request thì người duyệt ngồi nhìn vòng xoay 38 giây MỖI BÀI — 18 tin đang
+        // chờ là 11 phút. Và request dài như vậy sẽ đứt khi ra sau nginx với timeout mặc định
+        // 60 giây, để lại bài viết dở dang mà giao diện báo lỗi mạng.
+        //
+        // ContentCrawlWorker nhặt lên viết ở nền rồi tự bắn thông báo khi xong.
+        var news = await newsPublisher.QueueAsync(article, ct);
 
-        var url = news is null ? null : newsRepository.PublicUrlOf(news.Slug);
-        var message = news is null
-            ? "Đã duyệt nhưng CHƯA lên web được — xem lý do trong nhật ký"
-            : "Đã lên web. Đăng fanpage là bước riêng.";
-
-        await notifications.AddAsync(
-            Backend.Modules.Notification.NotificationKind.ArticleApproved,
-            Backend.Modules.Notification.NotificationSource.Web,
-            userContext.GetCurrentUserName() ?? "Người dùng",
-            news is null
-                ? $"Chưa lên web được: {Truncate(article.Title, 110)}"
-                : $"Đã lên web: {Truncate(news.Title, 110)}",
-            news?.ErrorMessage ?? url,
-            url is null ? "/crawl" : "/news-site",
-            article.Id, ct);
-
-        logger.LogInformation(
-            "CỬA 1 — tin {Id} {Result}", article.Id, news is null ? "chưa lên web được" : $"đã lên {url}");
+        logger.LogInformation("CỬA 1 — tin {Id} đã vào hàng đợi viết bài", article.Id);
 
         return new ApproveCrawledArticleResult
         {
             ArticleId = article.Id,
             BatchId = Guid.Empty,
             Created = 0,
-            Message = message,
-            NewsUrl = url,
-            NewsArticleId = news?.Id,
+            Message = "Đã duyệt — AI đang viết bài, khoảng 40 giây nữa lên web. Chưa đăng fanpage.",
+            NewsUrl = null,
+            NewsArticleId = news.Id,
         };
     }
 
@@ -652,6 +644,62 @@ public class ContentCrawlPipelineService(
     }
 
     // ── Vân tay ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Viết một bài đang xếp hàng. Worker gọi ở nền, KHÔNG nằm trong request nào.
+    ///
+    /// Thông báo bắn từ đây chứ không từ lúc bấm Duyệt: lúc bấm chưa biết bài có lên được hay
+    /// không — có thể bị bộ soi dữ kiện hoặc chống trùng chặn. Báo "đã lên web" ngay lúc bấm
+    /// là nói sai với người duyệt.
+    /// </summary>
+    public async Task ComposeQueuedAsync(Guid newsArticleId, CancellationToken ct = default)
+    {
+        var news = await newsRepository.GetAsync(newsArticleId, ct);
+        // Nhận cả Failed vì worker cố tình đưa bài hỏng quay lại thử. Chốt số lần nằm ở
+        // ComposeAttemptCount trong PublishAsync, không cần chặn thêm ở đây.
+        if (news is null
+            || (news.Status != Backend.Modules.NewsSite.NewsArticleStatus.Composing
+                && news.Status != Backend.Modules.NewsSite.NewsArticleStatus.Failed))
+            return;
+
+        var crawled = news.CrawledArticleId is Guid cid
+            ? await context.Set<CrawledArticleModel>().FirstOrDefaultAsync(x => x.Id == cid, ct)
+            : null;
+
+        if (crawled is null)
+        {
+            news.Status = Backend.Modules.NewsSite.NewsArticleStatus.Failed;
+            news.ErrorMessage = "Không còn tin gốc để viết";
+            await newsRepository.SaveAsync(news, ct);
+            return;
+        }
+
+        var result = await newsPublisher.PublishAsync(crawled, ct);
+        var url = result is null ? null : newsRepository.PublicUrlOf(result.Slug);
+
+        // Đọc lại để lấy ErrorMessage mà PublishAsync vừa ghi — biến news ở đây là bản cũ.
+        var final = await newsRepository.GetAsync(newsArticleId, ct);
+
+        // Chỉ báo khi LÊN ĐƯỢC, hoặc khi hỏng lần cuối. Báo mỗi lượt thử hỏng là ba thông
+        // báo cho một tin, mà hai cái đầu chưa phải kết luận.
+        var lastTry = final is not null
+            && final.ComposeAttemptCount >= newsOptions.Value.MaxComposeAttempts;
+        if (result is null && !lastTry && final?.DuplicateOfNewsId is null) return;
+
+        await notifications.AddAsync(
+            Backend.Modules.Notification.NotificationKind.ArticleApproved,
+            Backend.Modules.Notification.NotificationSource.Web,
+            crawled.ReviewedBy ?? "Hệ thống",
+            result is null
+                ? $"Chưa lên web được: {Truncate(crawled.Title, 110)}"
+                : $"Đã lên web: {Truncate(result.Title, 110)}",
+            result is null ? final?.ErrorMessage : url,
+            result is null ? "/crawl" : "/news-site",
+            crawled.Id, ct);
+
+        logger.LogInformation("CỬA 1 — tin {Id} {Result}",
+            crawled.Id, result is null ? $"chưa lên web: {final?.ErrorMessage}" : $"đã lên {url}");
+    }
 
     private async Task UpsertArticleFingerprintAsync(CrawledArticleModel article, CancellationToken ct)
     {

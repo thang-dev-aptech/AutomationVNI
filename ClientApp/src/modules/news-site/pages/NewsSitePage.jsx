@@ -7,7 +7,7 @@ import { usePermissions } from '@/shared/hooks/usePermissions'
 import { toast } from '@/shared/stores/toastStore'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
 import FanpageModal from '../components/FanpageModal'
-import { useNewsArticles, useNewsSiteStatus, usePublishToFanpage, useRebuildSite } from '../hooks/useNewsSite'
+import { useNewsArticles, useNewsSiteStatus, usePublishToFanpage, useRebuildSite, useUnpublish } from '../hooks/useNewsSite'
 import './NewsSitePage.css'
 
 const CATEGORIES = [
@@ -36,16 +36,26 @@ export default function NewsSitePage() {
   const { data: status } = useNewsSiteStatus()
   const publish = usePublishToFanpage()
   const rebuild = useRebuildSite()
+  const unpublish = useUnpublish()
 
   const articles = useMemo(() => data?.items ?? data ?? [], [data])
   const published = articles.filter((a) => a.status === 'Published')
-  const failed = articles.filter((a) => a.status !== 'Published')
+  const composing = articles.filter((a) => a.status === 'Composing')
+  const failed = articles.filter((a) => a.status === 'Failed')
 
   const handlePublish = async ({ channelIds, autoPublish }) => {
     try {
       const result = await publish.mutateAsync({ id: posting.id, payload: { channelIds, autoPublish } })
       toast.success(`Đã tạo ${result.created} bài cho: ${result.channels.join(', ')}`)
       setPosting(null)
+    } catch (e) { toast.error(getErrorMessage(e)) }
+  }
+
+  const handleUnpublish = async (a) => {
+    if (!window.confirm(`Gỡ "${a.title}" khỏi web?\n\nLink cũ vẫn mở được, bài chỉ biến khỏi trang chủ.`)) return
+    try {
+      await unpublish.mutateAsync(a.id)
+      toast.success('Đã gỡ khỏi web')
     } catch (e) { toast.error(getErrorMessage(e)) }
   }
 
@@ -89,11 +99,23 @@ export default function NewsSitePage() {
         ))}
       </div>
 
+      {/* AI viết ở nền ~40 giây. Không hiện khối này thì người duyệt bấm Duyệt xong nhìn
+          danh sách thấy y như cũ, và tưởng vừa bấm hụt. */}
+      {composing.length > 0 && (
+        <div className="news-site-composing">
+          <span className="news-site-spin" aria-hidden />
+          AI đang viết {composing.length} bài — khoảng 40 giây mỗi bài, danh sách tự cập nhật.
+          <span className="news-site-composing-list">
+            {composing.map((a) => a.title).join(' · ')}
+          </span>
+        </div>
+      )}
+
       {isLoading && <LoadingState />}
       {isError && <ErrorState message={getErrorMessage(error)} onRetry={refetch} />}
 
-      {!isLoading && !isError && published.length === 0 && (
-        <EmptyState message="Chưa có bài nào trên web. Sang mục Tin đã cào, bấm Duyệt để đưa tin lên website trước." />
+      {!isLoading && !isError && published.length === 0 && composing.length === 0 && (
+        <EmptyState message="Chưa có bài nào. Sang mục Tin đã cào, bấm Duyệt để đưa tin lên website." />
       )}
 
       {published.length > 0 && (
@@ -101,7 +123,13 @@ export default function NewsSitePage() {
           {published.map((a) => (
             <article key={a.id} className="news-site-card">
               <div className="news-site-card-main">
-                <span className="news-site-kicker">{CATEGORY_LABEL[a.categorySlug] ?? a.categorySlug}</span>
+                <span className="news-site-kicker">
+                  {CATEGORY_LABEL[a.categorySlug] ?? a.categorySlug}
+                  {a.suggestFanpage && <b className="news-site-pick">nên đăng fanpage</b>}
+                  {typeof a.qualityScore === 'number' && (
+                    <em className="news-site-score">{a.qualityScore} điểm</em>
+                  )}
+                </span>
                 <h3>{a.title}</h3>
                 <p className="news-site-sapo">{a.sapo}</p>
                 <p className="news-site-meta">
@@ -117,6 +145,16 @@ export default function NewsSitePage() {
                 {canApproveCrawl && (
                   <button type="button" className="btn btn-primary" onClick={() => setPosting(a)}>
                     Đăng fanpage
+                  </button>
+                )}
+                {canManageCrawlSources && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost news-site-remove"
+                    onClick={() => handleUnpublish(a)}
+                    disabled={unpublish.isPending}
+                  >
+                    Gỡ
                   </button>
                 )}
               </div>

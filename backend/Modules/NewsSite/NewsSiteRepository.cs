@@ -27,6 +27,34 @@ public partial class NewsSiteRepository(
     public async Task<NewsArticleModel?> GetBySlugAsync(string slug, CancellationToken ct = default)
         => await context.Set<NewsArticleModel>().FirstOrDefaultAsync(x => x.Slug == slug && !x.IsDeleted, ct);
 
+    /// <summary>
+    /// Danh sách cho MÀN QUẢN TRỊ — mọi trạng thái, mới trước.
+    ///
+    /// Khác GetPublishedAsync vốn chỉ trả bài đã lên web (dùng để dựng trang tĩnh). Màn quản
+    /// trị cần thấy cả bài ĐANG VIẾT và bài HỎNG: chỉ trả bài đã lên thì người duyệt bấm
+    /// Duyệt xong nhìn vào danh sách thấy không có gì, tưởng mất tin.
+    /// </summary>
+    public async Task<List<NewsArticleModel>> GetForAdminAsync(
+        string? categorySlug, int take, CancellationToken ct = default)
+    {
+        var q = context.Set<NewsArticleModel>().Where(x => !x.IsDeleted);
+        if (!string.IsNullOrWhiteSpace(categorySlug))
+            q = q.Where(x => x.CategorySlug == categorySlug);
+
+        return await q.OrderByDescending(x => x.PublishedAt ?? x.CreatedAt)
+            .Take(Math.Clamp(take, 1, 200))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>Bài đang ở một trạng thái, cũ trước — hàng đợi phải theo thứ tự vào.</summary>
+    public async Task<List<NewsArticleModel>> GetByStatusAsync(
+        NewsArticleStatus status, int take, CancellationToken ct = default)
+        => await context.Set<NewsArticleModel>()
+            .Where(x => !x.IsDeleted && x.Status == status)
+            .OrderBy(x => x.CreatedAt)
+            .Take(Math.Clamp(take, 1, 50))
+            .ToListAsync(ct);
+
     public async Task<NewsArticleModel?> GetByCrawledAsync(Guid crawledId, CancellationToken ct = default)
         => await context.Set<NewsArticleModel>()
             .FirstOrDefaultAsync(x => x.CrawledArticleId == crawledId && !x.IsDeleted, ct);

@@ -7,6 +7,9 @@ export function useNewsArticles(params) {
   return useQuery({
     queryKey: newsSiteQueryKeys.list(params),
     queryFn: async () => unwrapApiData(await newsSiteApi.list(params)),
+    // AI viết mất ~40 giây ở nền. Không hỏi lại thì bài viết xong vẫn không hiện, người dùng
+    // phải tự bấm F5 mà không biết là phải bấm.
+    refetchInterval: 15_000,
   })
 }
 
@@ -28,6 +31,14 @@ export function usePublishToFanpage() {
       // thấy danh sách cũ và tưởng chưa tạo được gì.
       queryClient.invalidateQueries({ queryKey: postQueryKeys.all })
     },
+  })
+}
+
+export function useUnpublish() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id) => unwrapApiData(await newsSiteApi.unpublish(id)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: newsSiteQueryKeys.all }),
   })
 }
 

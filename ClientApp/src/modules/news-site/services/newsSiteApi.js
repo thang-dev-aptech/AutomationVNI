@@ -10,6 +10,9 @@ export const newsSiteApi = {
   /** CỬA 2 — đăng một bài đã lên web sang các fanpage đã chọn. */
   toFanpage: (id, payload) => axiosInstance.post(`/api/NewsSite/${id}/fanpage`, payload),
 
+  /** Gỡ bài khỏi web. Giữ file trên đĩa nên link đã chia sẻ không chết. */
+  unpublish: (id) => axiosInstance.delete(`/api/NewsSite/${id}`),
+
   /** Dựng lại toàn bộ HTML tĩnh. Dùng sau khi sửa giao diện hoặc khi nghi trang lệch. */
   build: () => axiosInstance.post('/api/NewsSite/build', {}),
 }
