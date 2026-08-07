@@ -38,4 +38,27 @@ public class NewsSiteOptions
 
     /// <summary>Số bài trên trang chủ.</summary>
     public int HomePageSize { get; set; } = 12;
+
+    /// <summary>
+    /// Chống trùng ở khâu xuất bản. Tắt thì mọi bài đều lên, kể cả bài y hệt bài đã có —
+    /// để lùi nhanh nếu bộ này chặn nhầm quá nhiều.
+    /// </summary>
+    public bool PublishDedupEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Chồng lấp tít+sapo từ mức này trở lên là chặn thẳng, không hỏi AI.
+    ///
+    /// 0,70 chứ không phải 0,80: hai bài đang nằm trên trang chủ đo được 0,688 — sát dưới
+    /// 0,70 — nên đây đã là mức chặt. Hạ tiếp thì bắt đầu chặn nhầm tin tiếp diễn thật.
+    /// </summary>
+    public double PublishDuplicateMin { get; set; } = 0.70;
+
+    /// <summary>Dưới mức này thì cho đăng luôn, khỏi tốn lượt gọi AI.</summary>
+    public double PublishBorderlineMin { get; set; } = 0.45;
+
+    /// <summary>
+    /// Hết giờ thì CHO ĐĂNG chứ không chặn — xem lý do trong NewsDedupService.
+    /// 25 giây theo đúng khuôn đã chỉnh cho AiJudge ở luồng cào.
+    /// </summary>
+    public int PublishDedupTimeoutSeconds { get; set; } = 25;
 }

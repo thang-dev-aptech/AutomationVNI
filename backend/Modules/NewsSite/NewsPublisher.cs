@@ -17,6 +17,7 @@ namespace Backend.Modules.NewsSite;
 public class NewsPublisher(
     NewsSiteRepository repository,
     NewsComposeService compose,
+    NewsDedupService dedup,
     NewsSiteBuilder builder,
     IOptions<NewsSiteOptions> options,
     ILogger<NewsPublisher> logger)
@@ -68,6 +69,26 @@ public class NewsPublisher(
             return null;
         }
 
+        // Chống trùng chạy SAU khi AI viết xong, TRƯỚC khi ghi và build.
+        //
+        // Phải sau khi viết vì thứ cần đem so là tít và sapo AI viết ra — đó mới là chữ độc
+        // giả đọc trên trang chủ. So tít gốc của báo là so nhầm văn bản: đo trên hai bài đang
+        // nằm trên trang được 0,688, trong khi tít gốc của chúng chồng lấp thấp hơn nhiều.
+        //
+        // Phải trước khi ghi vì ghi rồi mới phát hiện thì bài đã có slug, đã vào sitemap, và
+        // lượt build kế tiếp đẩy nó lên trang thật.
+        var dup = await dedup.CheckAsync(composed, article.Id, ct);
+        if (dup.IsDuplicate)
+        {
+            article.DuplicateOfNewsId = dup.OfNewsId;
+            article.EventKey = composed.EventKey;
+            await FailAsync(article, dup.Reason ?? "Trùng bài đã có trên web", ct);
+            logger.LogInformation(
+                "Không xuất bản tin {Id} — {Reason} (bắt bởi tầng {Method})",
+                crawled.Id, dup.Reason, dup.Method);
+            return null;
+        }
+
         // Slug sinh ĐÚNG MỘT LẦN rồi đóng băng. Sửa tiêu đề mà slug đổi theo là URL cũ chết,
         // trong khi Facebook vẫn giữ thẻ og trỏ vào URL đó nhiều ngày.
         if (string.IsNullOrWhiteSpace(article.Slug) || article.Slug.StartsWith("loi-"))
@@ -86,6 +107,8 @@ public class NewsPublisher(
         article.SourceName = Uri.TryCreate(crawled.SourceUrl, UriKind.Absolute, out var uri)
             ? uri.Host.Replace("www.", "")
             : null;
+        article.EventKey = composed.EventKey;
+        article.DuplicateOfNewsId = null;
         article.Status = NewsArticleStatus.Published;
         article.PublishedAt ??= DateTime.UtcNow;
         article.ErrorMessage = null;

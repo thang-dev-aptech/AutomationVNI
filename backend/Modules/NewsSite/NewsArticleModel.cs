@@ -67,4 +67,22 @@ public class NewsArticleModel : BaseEntity
     public int ComposeAttemptCount { get; set; }
 
     public string? ErrorMessage { get; set; }
+
+    /// <summary>
+    /// Định danh SỰ VIỆC cụ thể bài này tường thuật, do AI sinh lúc viết bài.
+    /// Ví dụ <c>to-chuc-thi-lai-thpt-chuyen-tuyen-quang</c>.
+    ///
+    /// Để CỘT riêng có đánh chỉ mục chứ không nhét vào ExtraJson: đây là trường được so khớp
+    /// ở MỌI lượt xuất bản. Chôn trong JSON thì mỗi lần kiểm phải đọc và parse toàn bộ bài
+    /// đã có, và không đánh chỉ mục được.
+    /// </summary>
+    public string? EventKey { get; set; }
+
+    /// <summary>
+    /// Bài đã lên web mà bài này trùng với. Có giá trị nghĩa là KHÔNG xuất bản.
+    ///
+    /// Giữ lại thay vì xoá: người duyệt cần biết vì sao tin không lên, và cần đối chiếu với
+    /// bài đã có để tự quyết nếu máy chặn nhầm.
+    /// </summary>
+    public Guid? DuplicateOfNewsId { get; set; }
 }

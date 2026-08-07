@@ -438,6 +438,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasIndex(x => x.PublishedAt);
             e.HasIndex(x => x.CategorySlug);
             e.HasIndex(x => x.CrawledArticleId);
+            // Khoá sự việc được tra ở MỌI lượt xuất bản để bắt "cùng việc, khác chữ".
+            e.HasIndex(x => x.EventKey);
+            e.Property(x => x.EventKey).HasMaxLength(120);
             e.Property(x => x.Slug).HasMaxLength(120);
             e.Property(x => x.Title).HasMaxLength(300);
             e.Property(x => x.CategorySlug).HasMaxLength(50);

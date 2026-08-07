@@ -152,6 +152,7 @@ builder.Services.AddScoped<Backend.Modules.NewsSite.NewsSiteRepository>();
 builder.Services.AddScoped<Backend.Modules.NewsSite.NewsComposeService>();
 builder.Services.AddScoped<Backend.Modules.NewsSite.NewsOgImageService>();
 builder.Services.AddScoped<Backend.Modules.NewsSite.NewsSiteBuilder>();
+builder.Services.AddScoped<Backend.Modules.NewsSite.NewsDedupService>();
 builder.Services.AddScoped<Backend.Modules.NewsSite.NewsPublisher>();
 builder.Services.AddScoped<Backend.Modules.NewsSite.NewsFanpageService>();
 builder.Services.AddScoped<ContentCrawlPipelineService>();

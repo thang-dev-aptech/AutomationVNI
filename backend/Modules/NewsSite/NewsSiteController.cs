@@ -25,6 +25,7 @@ public class NewsSiteController(
     NewsSiteRepository repository,
     NewsPublisher publisher,
     NewsFanpageService fanpage,
+    NewsDedupService dedup,
     NewsSiteBuilder builder) : ControllerBase
 {
     [HttpGet]
@@ -83,6 +84,41 @@ public class NewsSiteController(
         {
             return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", ex.Message));
         }
+    }
+
+    /// <summary>
+    /// Bù khoá sự việc cho bài đã lên web từ trước khi có chống trùng ở khâu xuất bản.
+    /// Chạy được nhiều lần, chỉ đụng bài còn thiếu.
+    /// </summary>
+    [HttpPost("backfill-event-keys")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> BackfillEventKeys(CancellationToken ct)
+    {
+        var n = await dedup.BackfillEventKeysAsync(ct);
+        return Ok(ApiResponse.Ok(new { filled = n }, $"Đã bù khoá sự việc cho {n} bài"));
+    }
+
+    /// <summary>
+    /// Gỡ một bài khỏi website. Không xoá dữ liệu — chỉ chuyển trạng thái rồi dựng lại trang.
+    ///
+    /// Giữ bản ghi thay vì xoá vì slug phải ở lại: URL đã ra ngoài, Facebook đã cache thẻ og.
+    /// Xoá hẳn thì slug đó có thể bị bài khác chiếm, và link cũ dẫn sang bài không liên quan.
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> Unpublish(Guid id, CancellationToken ct)
+    {
+        var news = await repository.GetAsync(id, ct);
+        if (news is null) return NotFound(ApiResponse.Fail("NOT_FOUND", "Không tìm thấy bài"));
+
+        // Hidden chứ không xoá: file HTML ở lại trên đĩa nên URL cũ vẫn mở được, chỉ biến
+        // khỏi trang chủ, trang chuyên mục và sitemap. Link đã chia sẻ lên Facebook không chết.
+        news.Status = NewsArticleStatus.Hidden;
+        news.ErrorMessage = "Đã gỡ khỏi web bằng tay";
+        await repository.SaveAsync(news, ct);
+        await builder.BuildAsync(ct);
+
+        return Ok(ApiResponse.Ok(new { id }, "Đã gỡ khỏi web"));
     }
 
     [HttpPost("build")]

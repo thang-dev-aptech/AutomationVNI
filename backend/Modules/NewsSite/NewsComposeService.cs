@@ -16,7 +16,15 @@ public sealed record ComposedArticle(
     List<string> KeyPoints,
     List<TimelineEntry> Timeline,
     /// <summary>Dữ kiện AI tự thêm, không có trong tư liệu. Rỗng thì mới được xuất bản.</summary>
-    List<string> FactWarnings);
+    List<string> FactWarnings,
+    /// <summary>
+    /// Khoá SỰ VIỆC — định danh ngắn của việc cụ thể bài này nói tới, không phải chủ đề.
+    ///
+    /// Sinh ra để trả lời câu hỏi mà chống trùng theo từ ngữ KHÔNG trả lời được: "hai bài này
+    /// có nói về cùng một việc không". Đo trên cụm 16 tin Tuyên Quang: 117/120 cặp có độ chồng
+    /// lấp từ dưới 0,40 vì mỗi báo dùng chữ khác nhau cho cùng một việc.
+    /// </summary>
+    string? EventKey = null);
 
 /// <summary>
 /// AI viết BÀI HOÀN CHỈNH cho website từ tư liệu gốc.
@@ -73,9 +81,17 @@ public class NewsComposeService(
         - keyPoints: 3–5 ý ngắn "điều cần nhớ", mỗi ý một câu.
         - timeline: các mốc thời gian CÓ TRONG BÀI, dạng [{"time":"09/08 · 17:00","what":"..."}].
           Bài không có mốc nào thì trả mảng RỖNG — đừng bịa mốc cho đủ.
+        - eventKey: định danh SỰ VIỆC CỤ THỂ mà bài này tường thuật, viết thường không dấu,
+          nối bằng gạch ngang, 3–6 từ. Dùng để nhận ra hai bài của hai báo khác nhau đang nói
+          về cùng một việc.
+          Ghi việc CỤ THỂ, không ghi chủ đề chung:
+            ĐÚNG  "to-chuc-thi-lai-thpt-chuyen-tuyen-quang"
+            SAI   "giao-duc" · "thi-cu" (quá rộng, bài nào cũng khớp)
+          Cùng vụ nhưng KHÁC việc thì PHẢI khác khoá — "khoi-to-gian-lan-diem-thi-tuyen-quang"
+          là việc khác với "to-chuc-thi-lai-thpt-chuyen-tuyen-quang", dù cùng một vụ.
 
         CHỈ trả về JSON, không rào ```, không thêm chữ nào ngoài JSON:
-        {"title":"...","sapo":"...","body":"...","keyPoints":["..."],"timeline":[]}
+        {"title":"...","sapo":"...","body":"...","keyPoints":["..."],"timeline":[],"eventKey":"..."}
         """;
 
     private static int MinWords => 500;
@@ -210,7 +226,8 @@ public class NewsComposeService(
                 title, Str(root, "sapo"), body,
                 StrList(root, "keyPoints"),
                 TimelineList(root),
-                []);
+                [],
+                NormalizeEventKey(Str(root, "eventKey")));
         }
         catch (JsonException ex)
         {
@@ -269,6 +286,27 @@ public class NewsComposeService(
         => root.TryGetProperty(name, out var el) && el.ValueKind == JsonValueKind.String
             ? (el.GetString() ?? "").Trim()
             : "";
+
+    /// <summary>
+    /// Chuẩn hoá khoá sự việc để hai lượt gọi AI khác nhau ra CÙNG một chuỗi.
+    ///
+    /// Model trả về khi thì có dấu, khi thì viết hoa, khi thì dùng gạch dưới. Không chuẩn hoá
+    /// thì "Thi-Lại-Tuyên-Quang" và "thi-lai-tuyen-quang" là hai khoá khác nhau, và cơ chế
+    /// khớp chính xác trở nên vô dụng đúng lúc cần nhất.
+    ///
+    /// Khoá quá ngắn (dưới 3 đoạn) bị loại: "giao-duc" khớp với gần như mọi bài, chặn nhầm
+    /// còn tệ hơn không chặn — người duyệt mất tin thật mà không hiểu vì sao.
+    /// </summary>
+    private static string? NormalizeEventKey(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+
+        var slug = NewsSiteRepository.Slugify(raw);
+        if (string.IsNullOrWhiteSpace(slug)) return null;
+
+        var parts = slug.Split('-', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length < 3 ? null : string.Join('-', parts.Take(8));
+    }
 
     private static List<string> StrList(JsonElement root, string name)
     {
