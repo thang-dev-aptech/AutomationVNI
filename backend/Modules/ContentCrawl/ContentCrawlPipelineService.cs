@@ -31,6 +31,8 @@ public class ContentCrawlPipelineService(
     HttpArticleFetcher httpFetcher,
     FeedSourceFetcher feedFetcher,
     CrawlScreenService screenService,
+    Backend.Modules.NewsSite.NewsPublisher newsPublisher,
+    Backend.Modules.NewsSite.NewsSiteRepository newsRepository,
     Backend.Modules.Notification.NotificationService notifications,
     IUserContext userContext,
     IOptions<ContentCrawlOptions> options,
@@ -421,6 +423,14 @@ public class ContentCrawlPipelineService(
             throw new ArgumentException($"Tin đang ở trạng thái {article.Status}, không duyệt được");
 
         var source = await repository.GetSourceAsync(article.CrawlSourceId, ct);
+
+        // ── CỬA 1: duyệt tin = đưa lên website, KHÔNG tạo post nào ────────────
+        // Phải tách đôi thì bước đăng fanpage mới có link của mình để dán. Gộp một bước như
+        // trước thì lúc đăng Facebook chưa tồn tại URL nào trên tintuc.vni.edu.vn để trỏ về,
+        // nên bình luận buộc phải dùng link báo gốc.
+        if (options.Value.TwoGateFlow)
+            return await PublishToWebsiteAsync(article, source, ct);
+
         var channelIds = request.ChannelIds is { Count: > 0 }
             ? request.ChannelIds
             : ContentCrawlRepository.DeserializeGuidList(source?.DefaultChannelIds);
@@ -495,6 +505,59 @@ public class ContentCrawlPipelineService(
             Message = autoSchedule
                 ? $"Đã tạo {bulk.Created} bài và rải lịch theo khung giờ vàng"
                 : $"Đã tạo {bulk.Created} bài, chờ sinh nội dung rồi lên lịch thủ công",
+        };
+    }
+
+    /// <summary>
+    /// CỬA 1 — đưa tin lên website. Không đụng tới Post hay Facebook.
+    ///
+    /// Trả về ApproveCrawledArticleResult để mọi nơi gọi (web, Telegram) không phải đổi kiểu.
+    /// BatchId để rỗng và Created = 0 chính là tín hiệu "chưa có bài fanpage nào" — nơi gọi
+    /// dựa vào đó để nói đúng với người dùng rằng bài mới lên web.
+    /// </summary>
+    private async Task<ApproveCrawledArticleResult> PublishToWebsiteAsync(
+        CrawledArticleModel article, CrawlSourceModel? source, CancellationToken ct)
+    {
+        // Dẫn nguồn là điều kiện xuất bản, không phải tuỳ chọn.
+        if (string.IsNullOrWhiteSpace(article.SourceUrl))
+            throw new ArgumentException("Tin không có link nguồn — không đưa lên web được");
+
+        article.Status = CrawledArticleStatus.Approved;
+        article.ReviewedBy = userContext.GetCurrentUserName();
+        article.ReviewedAt = DateTime.UtcNow;
+        article.UpdatedAt = DateTime.UtcNow;
+        await UpsertArticleFingerprintAsync(article, ct);
+        await context.SaveChangesAsync(ct);
+
+        var news = await newsPublisher.PublishAsync(article, ct);
+
+        var url = news is null ? null : newsRepository.PublicUrlOf(news.Slug);
+        var message = news is null
+            ? "Đã duyệt nhưng CHƯA lên web được — xem lý do trong nhật ký"
+            : "Đã lên web. Đăng fanpage là bước riêng.";
+
+        await notifications.AddAsync(
+            Backend.Modules.Notification.NotificationKind.ArticleApproved,
+            Backend.Modules.Notification.NotificationSource.Web,
+            userContext.GetCurrentUserName() ?? "Người dùng",
+            news is null
+                ? $"Chưa lên web được: {Truncate(article.Title, 110)}"
+                : $"Đã lên web: {Truncate(news.Title, 110)}",
+            news?.ErrorMessage ?? url,
+            url is null ? "/crawl" : "/news-site",
+            article.Id, ct);
+
+        logger.LogInformation(
+            "CỬA 1 — tin {Id} {Result}", article.Id, news is null ? "chưa lên web được" : $"đã lên {url}");
+
+        return new ApproveCrawledArticleResult
+        {
+            ArticleId = article.Id,
+            BatchId = Guid.Empty,
+            Created = 0,
+            Message = message,
+            NewsUrl = url,
+            NewsArticleId = news?.Id,
         };
     }
 

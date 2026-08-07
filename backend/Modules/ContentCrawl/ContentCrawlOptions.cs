@@ -71,6 +71,16 @@ public class ContentCrawlOptions
     public string DefaultObjective { get; set; } = "Chia sẻ tin giáo dục mới tới phụ huynh và học sinh";
 
     /// <summary>Cho AI đọc và chấm điểm tin trước khi đưa vào hàng chờ duyệt.</summary>
+    /// <summary>
+    /// Luồng HAI CỬA: duyệt tin = đưa lên website (CỬA 1), đăng fanpage là bước riêng (CỬA 2).
+    ///
+    /// Tắt thì ApproveAsync chạy y như cũ — fan-out post rồi đăng thẳng Facebook. Cờ này bắt
+    /// buộc phải có vì ApproveAsync là đường mà CẢ web lẫn Telegram đều đi: một lỗi ở bước
+    /// viết bài web mà không có đường lui sẽ chặn toàn bộ việc duyệt tin, kể cả lệnh /dang
+    /// trên điện thoại.
+    /// </summary>
+    public bool TwoGateFlow { get; set; } = true;
+
     public bool ScreenEnabled { get; set; } = true;
     /// <summary>
     /// Dưới mức này thì đánh Filtered, không đưa cho người duyệt.

@@ -164,6 +164,10 @@ public class ApproveCrawledArticleResult
     public List<string> Channels { get; set; } = [];
     public List<DateTime> ScheduledTimesUtc { get; set; } = [];
     public string Message { get; set; } = string.Empty;
+
+    /// <summary>CỬA 1: đường dẫn bài trên tintuc.vni.edu.vn. Null nghĩa là chưa lên web được.</summary>
+    public string? NewsUrl { get; set; }
+    public Guid? NewsArticleId { get; set; }
 }
 
 public class RejectCrawledArticleRequest

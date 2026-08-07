@@ -62,7 +62,7 @@ public class CrawlTelegramService(
             var caption = FormatArticle(a, pagesBySource.GetValueOrDefault(a.CrawlSourceId));
             List<List<TelegramButton>> buttons =
             [
-                [new TelegramButton("🚀 Đăng ngay", $"ok:{code}")],
+                [new TelegramButton("✅ Đưa lên web", $"ok:{code}")],
                 [new TelegramButton("📋 Chọn page", $"sel:{code}"),
                  new TelegramButton("🗑 Bỏ", $"no:{code}")],
             ];
@@ -132,8 +132,8 @@ public class CrawlTelegramService(
         if (!string.IsNullOrWhiteSpace(a.SourceUrl)) sb.AppendLine(Esc(a.SourceUrl));
         sb.AppendLine();
         sb.AppendLine(string.IsNullOrWhiteSpace(defaultPages)
-            ? "⚠️ Nguồn chưa đặt page mặc định — phải gõ <code>/dang " + ShortId(a) + " &lt;page&gt;</code>"
-            : $"Bấm nút = đăng lên: <b>{Esc(defaultPages)}</b>");
+            ? "Bấm nút = đưa lên web (chưa đăng fanpage)"
+            : $"Bấm nút = đưa lên web. Fanpage mặc định sau đó: <b>{Esc(defaultPages)}</b>");
         return sb.ToString().TrimEnd();
     }
 
@@ -367,8 +367,20 @@ public class CrawlTelegramService(
             new ApproveCrawledArticleRequest { AutoPublish = true, ChannelIds = channelIds },
             ct);
 
-        // Không hứa "đã đăng" ở đây: sinh nội dung chạy bất đồng bộ, mỗi page vài chục giây.
-        // CrawlAutoPublishService sẽ đăng rồi nhắn link về trong một tin nhắn riêng.
+        // CỬA 1 — chỉ lên web. PHẢI nói thẳng "chưa đăng fanpage": đổi nghĩa lệnh mà giữ lời
+        // thoại cũ thì sếp bấm xong tưởng đã lên fanpage, và chỉ phát hiện khi khách hỏi sao
+        // chưa thấy bài. Đúng bài học từ lần đổi nhãn nút "Đăng" thành "Duyệt".
+        if (result.Created == 0)
+        {
+            if (string.IsNullOrWhiteSpace(result.NewsUrl))
+                return $"⚠️ Đã duyệt <b>{Esc(article.Title)}</b>\n"
+                     + "Nhưng CHƯA lên web được — xem lý do trên giao diện.";
+
+            return $"✅ <b>Đã lên web</b>\n{Esc(article.Title)}\n\n"
+                 + $"{Esc(result.NewsUrl)}\n\n"
+                 + "<i>Chưa đăng fanpage.</i> Gõ <code>/fb " + ShortId(article) + "</code> để đăng.";
+        }
+
         var pages = string.Join(", ", result.Channels);
         return $"✅ Đã duyệt <b>{Esc(article.Title)}</b>\n"
              + $"Đang viết {result.Created} bài cho: {Esc(pages)}\n"
@@ -544,12 +556,12 @@ public class CrawlTelegramService(
         sb.AppendLine();
         sb.AppendLine("<b>Cách dùng</b>");
         sb.AppendLine("1. Tin mới cào xong sẽ tự hiện ở đây, kèm ảnh và 3 nút.");
-        sb.AppendLine("2. Bấm <b>🚀 Đăng ngay</b> để đăng lên page mặc định,");
-        sb.AppendLine("   hoặc <b>📋 Chọn page</b> nếu muốn đổi.");
+        sb.AppendLine("2. Bấm <b>✅ Đưa lên web</b> — AI viết bài rồi đăng lên tintuc.vni.edu.vn.");
         sb.AppendLine("3. Bot báo lại link bài ngay tại tin nhắn đó để bấm vào xem.");
         sb.AppendLine();
-        sb.AppendLine("⚠️ <b>Bấm là đăng thật</b>, không phải bản nháp. Muốn xem lại trước khi đăng,");
-        sb.AppendLine("hoặc cần đổi template / sinh ảnh, thì duyệt trên web.");
+        sb.AppendLine("Đăng lên fanpage là bước RIÊNG — xem bài trên web ưng rồi mới gõ");
+        sb.AppendLine("<code>/fb &lt;mã&gt;</code>. Nhờ vậy bài Facebook dẫn về web của mình,");
+        sb.AppendLine("không phải link báo gốc.");
         sb.AppendLine();
         sb.AppendLine($"Hiện có <b>{pending}</b> tin chờ duyệt · {sources.Count} nguồn đang bật.");
         sb.AppendLine();
