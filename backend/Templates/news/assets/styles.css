@@ -49,23 +49,13 @@
   --shadow-lg: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #12161d;
-    --surface: #12161d;
-    --surface-2: #1a1f28;
-    --ink: #e9eef5;
-    --ink-2: #b3c0d0;
-    --muted: #8798ab;
-    --line: #263140;
-    --tint-blue: #17293f;
-    --tint-blue-text: #8cb8ea;
-    --blue: #5e9ce0;
-    --shadow-sm: none;
-    --shadow: none;
-    --shadow-lg: none;
-  }
-}
+/* KHÔNG có giao diện tối. Trang tin cam kết MỘT diện mạo trắng, giống dantri và
+   vnexpress — hai trang đó trắng bất kể máy người đọc đặt chế độ gì.
+
+   Trước đây có khối @media (prefers-color-scheme: dark) nên máy để chế độ tối là
+   trang tự chuyển sang nền đen, trong khi khách yêu cầu nền trắng. Người dùng mở
+   ra thấy nền đen và tưởng chưa sửa gì — đó chính là lý do bỏ hẳn khối đó thay vì
+   chỉnh lại màu trong nó. */
 
 *, *::before, *::after { box-sizing: border-box; }
 
