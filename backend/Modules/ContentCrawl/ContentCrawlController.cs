@@ -14,6 +14,7 @@ public class ContentCrawlController(
     ContentCrawlPipelineService pipeline,
     OpenClawWebCrawler webCrawler,
     IOpenClawBrowserClient browser,
+    Microsoft.Extensions.Options.IOptions<ContentCrawlOptions> crawlOptions,
     ILogger<ContentCrawlController> logger) : ControllerBase
 {
     // ── Nguồn cào ───────────────────────────────────────────────────────────
@@ -265,6 +266,7 @@ public class ContentCrawlController(
             PendingCount = byStatus.GetValueOrDefault(CrawledArticleStatus.Pending),
             TotalActiveSources = sources.Count,
             LastRunAt = sources.Max(s => s.LastRunAt),
+            TwoGateFlow = crawlOptions.Value.TwoGateFlow,
         }));
     }
 

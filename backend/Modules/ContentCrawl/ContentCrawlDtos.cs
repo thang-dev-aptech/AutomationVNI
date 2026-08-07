@@ -208,4 +208,15 @@ public class CrawlInboxSummaryResponse
     public int PendingCount { get; set; }
     public int TotalActiveSources { get; set; }
     public DateTime? LastRunAt { get; set; }
+
+    /// <summary>
+    /// Bấm Duyệt nghĩa là gì: true = đưa lên website (fanpage là bước riêng sau đó),
+    /// false = fan-out post rồi đăng fanpage ngay như luồng cũ.
+    ///
+    /// Giao diện PHẢI đọc cờ này. Cờ ContentCrawl:TwoGateFlow sinh ra để lùi về luồng cũ khi
+    /// khâu sinh bài web trục trặc; lùi được ở backend mà ô duyệt vẫn hỏi chọn page thì cú lùi
+    /// đó nửa vời — và ngược lại, bật cờ mà ô duyệt vẫn bắt chọn page rồi vứt đi là đánh lừa
+    /// người duyệt: họ chọn 3 page, bấm xong tưởng đã hẹn đăng, thực ra chưa page nào biết.
+    /// </summary>
+    public bool TwoGateFlow { get; set; }
 }

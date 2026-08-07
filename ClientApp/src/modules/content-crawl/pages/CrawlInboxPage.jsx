@@ -45,7 +45,9 @@ export default function CrawlInboxPage() {
   const handleApprove = async (payload) => {
     try {
       const result = await approve.mutateAsync({ id: approving.id, payload })
-      toast.success(result.message)
+      // Kèm link web để bấm kiểm ngay. Thiếu link thì người duyệt phải tự đoán bài nằm ở đâu,
+      // mà "đã lên web" không kiểm được thì cũng như chưa biết có lên thật hay không.
+      toast.success(result.newsUrl ? `${result.message}\n${result.newsUrl}` : result.message)
       setApproving(null)
     } catch (e) { toast.error(getErrorMessage(e)) }
   }
@@ -149,6 +151,7 @@ export default function CrawlInboxPage() {
         onClose={() => setApproving(null)}
         onSubmit={handleApprove}
         submitting={approve.isPending}
+        twoGateFlow={summary?.twoGateFlow}
       />
       <CrawlSourceModal
         open={sourcesOpen}
