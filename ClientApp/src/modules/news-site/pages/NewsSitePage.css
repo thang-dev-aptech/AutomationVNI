@@ -1,0 +1,125 @@
+/* Theo quy ước các module khác: px trực tiếp + var(--x, fallback). */
+
+.news-site-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.news-site-warn {
+  background: var(--color-danger-soft, #fee2e2);
+  color: var(--color-danger-text, #991b1b);
+  border: 1px solid var(--color-danger, #dc2626);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+}
+
+.news-site-warn code { font-size: 0.85rem; }
+
+.news-site-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.news-site-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  cursor: pointer;
+  color: var(--color-text-muted, #6b7280);
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
+.news-site-tab:hover { color: var(--color-text, #111827); }
+
+.news-site-tab.is-active {
+  color: var(--color-primary, #2d6cb6);
+  border-bottom-color: var(--color-primary, #2d6cb6);
+  font-weight: 600;
+}
+
+.news-site-section {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text, #111827);
+  margin: 8px 0 0;
+}
+
+.news-site-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.news-site-card {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.news-site-card.is-failed { border-color: var(--color-danger, #dc2626); }
+
+/* min-width: 0 bắt buộc — thiếu nó thì tiêu đề dài đẩy cụm nút tràn ra ngoài thẻ thay vì
+   xuống dòng. Đã dính đúng lỗi này ở lưới trang tin. */
+.news-site-card-main { min-width: 0; flex: 1; }
+
+.news-site-card-main h3 {
+  margin: 2px 0 4px;
+  font-size: 1rem;
+  line-height: 1.4;
+  color: var(--color-text, #111827);
+}
+
+.news-site-kicker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-primary, #2d6cb6);
+}
+
+.news-site-sapo {
+  margin: 0 0 6px;
+  color: var(--color-text-muted, #6b7280);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.news-site-meta {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #6b7280);
+}
+
+.news-site-error {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--color-danger-text, #991b1b);
+}
+
+.news-site-card-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.news-site-nourl {
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #6b7280);
+}
+
+@media (max-width: 640px) {
+  .news-site-card { flex-direction: column; }
+  .news-site-card-actions { width: 100%; }
+}

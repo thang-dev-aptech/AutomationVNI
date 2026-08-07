@@ -19,6 +19,7 @@ import BatchProgressPage from '@/modules/bulk/pages/BatchProgressPage'
 import CommentsInboxPage from '@/modules/comments/pages/CommentsInboxPage'
 import PageMessagesInboxPage from '@/modules/messages/pages/PageMessagesInboxPage'
 import CrawlInboxPage from '@/modules/content-crawl/pages/CrawlInboxPage'
+import NewsSitePage from '@/modules/news-site/pages/NewsSitePage'
 import LoginPage from '@/modules/auth/pages/LoginPage'
 import ForbiddenPage from '@/shared/pages/ForbiddenPage'
 import NotFoundPage from '@/shared/pages/NotFoundPage'
@@ -71,6 +72,7 @@ export default function AppRouter() {
           </Route>
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.crawl} />}>
             <Route path="/crawl" element={<CrawlInboxPage />} />
+            <Route path="/news-site" element={<NewsSitePage />} />
           </Route>
           <Route path="*" element={<NotFoundPage />} />
         </Route>
