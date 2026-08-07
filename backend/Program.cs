@@ -158,6 +158,16 @@ builder.Services.AddHttpClient<Backend.Shared.OpenClaw.IOpenClawBrowserClient,
     // Mỗi lượt gọi tự đặt hạn riêng bằng CTS; để rộng ở đây cho khỏi cắt ngang trang tải chậm.
     client.Timeout = TimeSpan.FromSeconds(120));
 builder.Services.AddScoped<OpenClawWebCrawler>();
+builder.Services.AddScoped<FeedSourceFetcher>();
+// Cùng handler giải nén như HttpArticleFetcher — giaoduc.net.vn trả gzip kể cả khi không xin.
+builder.Services.AddHttpClient<RssFeedReader>(client => client.Timeout = TimeSpan.FromSeconds(25))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        AutomaticDecompression = System.Net.DecompressionMethods.GZip
+                                 | System.Net.DecompressionMethods.Deflate
+                                 | System.Net.DecompressionMethods.Brotli,
+        AllowAutoRedirect = true,
+    });
 // Đường lấy tin CHÍNH: HTTP thuần. Đo thật 12 bài/6 báo — 0,021s mỗi bài, lấy được 100-105%
 // số ký tự so với OpenClaw (41s mỗi bài). Báo Việt render sẵn ở server.
 builder.Services.AddHttpClient<HttpArticleFetcher>(client =>

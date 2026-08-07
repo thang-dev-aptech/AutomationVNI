@@ -29,6 +29,7 @@ public class ContentCrawlPipelineService(
     ContentDedupService dedupService,
     OpenClawWebCrawler webCrawler,
     HttpArticleFetcher httpFetcher,
+    FeedSourceFetcher feedFetcher,
     CrawlScreenService screenService,
     Backend.Modules.Notification.NotificationService notifications,
     IUserContext userContext,
@@ -79,6 +80,8 @@ public class ContentCrawlPipelineService(
             var items = source.SourceType switch
             {
                 CrawlSourceType.WebPage => await FetchWebPageAsync(source, knownUrls, ct),
+                CrawlSourceType.Rss or CrawlSourceType.GoogleNews
+                    => await feedFetcher.FetchAsync(source, knownUrls, ct),
                 _ => throw new NotSupportedException(
                     $"Loại nguồn '{source.SourceType}' chưa hỗ trợ. Cào fanpage Facebook thuộc Phase 3.")
             };
@@ -89,6 +92,15 @@ public class ContentCrawlPipelineService(
             run.ItemsNew = added;
             run.ItemsDuplicate = duplicate;
             run.ItemsFiltered = filtered;
+
+            // Lọc sạch toàn bộ LUÔN là dấu hiệu cấu hình sai, không phải chuyện bình thường.
+            // Không cảnh báo ở đây thì lượt cào vẫn hiện "thành công" trên trang lịch sử.
+            if (items.Count > 0 && added == 0 && filtered == items.Count)
+            {
+                var warn = $"Lấy về {items.Count} bài nhưng lọc sạch toàn bộ — nhiều khả năng cấu hình sai";
+                run.ErrorMessage = warn;
+                logger.LogWarning("{Source}: {Warn}", source.Name, warn);
+            }
             run.Status = CrawlRunStatus.Completed;
             run.FinishedAt = DateTime.UtcNow;
             run.DurationMs = (int)stopwatch.ElapsedMilliseconds;
@@ -225,7 +237,14 @@ public class ContentCrawlPipelineService(
             var haystack = $"{item.Title} {item.Summary}";
             var blocked = MatchesAny(haystack, exclude);
             var missesInclude = include.Count > 0 && !MatchesAny(haystack, include);
-            var tooShort = (item.Content?.Trim().Length ?? 0) < options.Value.MinContentLength;
+            // Đo theo LOẠI NGUỒN. Nguồn feed có thể chưa lấy được toàn văn (trang chặn, lỗi
+            // mạng) — đo bằng MinContentLength thì 0 < 300 và TOÀN BỘ tin feed bị đánh Filtered
+            // trong khi lượt cào vẫn báo "thành công, 60 bài". Hỏng câm điển hình: không
+            // exception, không log lỗi, tin nằm im ở tab "Bị lọc" mà không ai mở.
+            var bodyLen = item.Content?.Trim().Length ?? 0;
+            var tooShort = bodyLen > 0
+                ? bodyLen < options.Value.MinContentLength
+                : $"{item.Title} {item.Summary}".Trim().Length < options.Value.MinSummaryLength;
             var isFiltered = tooOld || blocked || missesInclude || tooShort;
 
             // Chấm trùng trên tiêu đề + tóm tắt, KHÔNG trên toàn văn: hai báo đưa cùng một tin

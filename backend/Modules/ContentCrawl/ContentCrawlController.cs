@@ -31,6 +31,17 @@ public class ContentCrawlController(
     {
         if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Url))
             return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Tên và URL không được để trống"));
+
+        // Nguồn Google News nhận TỪ KHOÁ chứ không phải địa chỉ — bắt nó qua Uri.TryCreate
+        // thì không bao giờ tạo được nguồn loại này.
+        if (request.SourceType == CrawlSourceType.GoogleNews)
+        {
+            if (request.Url.Trim().Length < 3)
+                return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Từ khoá quá ngắn"));
+            var gnews = await repository.CreateSourceAsync(request, ct);
+            return Ok(ApiResponse.Ok(ContentCrawlRepository.ToResponse(gnews), "Đã thêm nguồn cào"));
+        }
+
         if (!Uri.TryCreate(request.Url.Trim(), UriKind.Absolute, out var uri))
             return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "URL không hợp lệ"));
 

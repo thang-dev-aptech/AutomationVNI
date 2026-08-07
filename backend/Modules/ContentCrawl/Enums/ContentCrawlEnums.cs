@@ -2,10 +2,30 @@ namespace Backend.Modules.ContentCrawl.Enums;
 
 public enum CrawlSourceType
 {
-    /// <summary>Trang chuyên mục của báo — mở bằng trình duyệt OpenClaw, bóc TOÀN VĂN từng bài.</summary>
+    /// <summary>
+    /// Trang chuyên mục của báo — nhặt link bài rồi tải toàn văn bằng HTTP thuần
+    /// (OpenClaw chỉ là dự phòng khi HTTP về tay không).
+    /// </summary>
     WebPage = 1,
     /// <summary>Phase 3 — fanpage Facebook, dùng profile trình duyệt giữ phiên đăng nhập.</summary>
-    FacebookPage = 2
+    FacebookPage = 2,
+
+    /// <summary>
+    /// Feed RSS/Atom của một báo. Feed cho tiêu đề + link + tóm tắt + ảnh; toàn văn lấy
+    /// tiếp bằng HTTP thuần như nguồn WebPage.
+    ///
+    /// Giá trị 3 chứ KHÔNG phải 1: bản trước từng có Rss = 1, sau đổi thành WebPage = 1.
+    /// Tái dùng số 1 sẽ khiến mọi nguồn WebPage đang có trong DB tự đổi nghĩa thành RSS,
+    /// rồi pipeline nhét URL trang HTML vào bộ đọc XML và ăn lỗi ở từng nguồn một.
+    /// </summary>
+    Rss = 3,
+
+    /// <summary>
+    /// Google News RSS theo từ khoá — một endpoint gom nhiều báo.
+    /// Đo thật: "giáo dục tuyển sinh" trả 100 bài từ 38 báo, "trí tuệ nhân tạo" 100 bài từ
+    /// 61 báo. Url của nguồn loại này là TỪ KHOÁ, không phải địa chỉ feed.
+    /// </summary>
+    GoogleNews = 4
 }
 
 public enum CrawlRunStatus

@@ -23,6 +23,13 @@ public class ContentCrawlOptions
     /// </summary>
     public int MinContentLength { get; set; } = 300;
 
+    /// <summary>
+    /// Dùng cho tin CHƯA lấy được toàn văn (nguồn feed, trang chặn). Đo trên tiêu đề + tóm tắt.
+    /// 80 ký tự: tóm tắt RSS đo trên 1.480 bài dài trung bình 171 ký tự, nên 80 chỉ loại những
+    /// mục thật sự rỗng chứ không loại oan tin có tóm tắt ngắn.
+    /// </summary>
+    public int MinSummaryLength { get; set; } = 80;
+
     /// <summary>Số bài chấm trùng / xào nháp mỗi tick.</summary>
     public int ProcessBatchSize { get; set; } = 10;
     /// <summary>Quá số lần này mà vẫn lỗi thì đẩy sang Pending kèm ghi chú, không lặp nữa.</summary>

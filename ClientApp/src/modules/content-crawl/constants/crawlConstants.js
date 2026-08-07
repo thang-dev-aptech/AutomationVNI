@@ -62,6 +62,8 @@ export const STATUS_TABS = [
 export const CRAWL_SOURCE_TYPE = {
   WEB_PAGE: 1,
   FACEBOOK_PAGE: 2,
+  RSS: 3,
+  GOOGLE_NEWS: 4,
 }
 
 export const CRAWL_SOURCE_TYPE_OPTIONS = [
@@ -74,6 +76,22 @@ export const CRAWL_SOURCE_TYPE_OPTIONS = [
       + 'Trình duyệt sẽ mở trang này lấy danh sách bài rồi vào từng bài bóc toàn văn.',
   },
   {
+    value: CRAWL_SOURCE_TYPE.RSS,
+    label: 'Feed RSS',
+    urlLabel: 'Địa chỉ feed',
+    placeholder: 'https://dantri.com.vn/rss/giao-duc.rss',
+    hint: 'Feed cho nhiều bài hơn trang chuyên mục (60–100 thay vì 20–30), toàn văn vẫn '
+      + 'được tải riêng cho từng bài. Lưu ý đường của Dân trí là /rss/… — bỏ chữ rss là 404.',
+  },
+  {
+    value: CRAWL_SOURCE_TYPE.GOOGLE_NEWS,
+    label: 'Google News (theo từ khoá)',
+    urlLabel: 'Từ khoá tìm tin',
+    placeholder: 'giáo dục tuyển sinh',
+    hint: 'Gõ TỪ KHOÁ, không phải địa chỉ. Một truy vấn gom tin từ hàng chục báo — đo thật: '
+      + '"giáo dục tuyển sinh" ra 100 bài từ 38 báo, "trí tuệ nhân tạo" ra 100 bài từ 61 báo.',
+  },
+  {
     value: CRAWL_SOURCE_TYPE.FACEBOOK_PAGE,
     label: 'Fanpage Facebook',
     urlLabel: 'URL fanpage',
@@ -84,16 +102,25 @@ export const CRAWL_SOURCE_TYPE_OPTIONS = [
 ]
 
 /**
- * Trang CHUYÊN MỤC của báo (không phải feed RSS) — trình duyệt sẽ mở trang này để lấy
- * danh sách bài, rồi mở từng bài bóc toàn văn.
+ * Gợi ý nguồn, đã kiểm bằng request thật ngày lập kế hoạch.
+ * Số bài là số đo được trong một lượt gọi.
  */
 export const SUGGESTED_FEEDS = [
-  { name: 'Dân trí — Giáo dục', url: 'https://dantri.com.vn/giao-duc.htm' },
-  { name: 'VnExpress — Giáo dục', url: 'https://vnexpress.net/giao-duc' },
-  { name: 'Thanh Niên — Giáo dục', url: 'https://thanhnien.vn/giao-duc.htm' },
-  { name: 'Tuổi Trẻ — Giáo dục', url: 'https://tuoitre.vn/giao-duc.htm' },
-  { name: 'Giáo dục Việt Nam', url: 'https://giaoduc.net.vn/giao-duc-24h' },
-  { name: 'VietnamNet — Giáo dục', url: 'https://vietnamnet.vn/giao-duc' },
+  // Feed RSS — nhiều bài hơn trang chuyên mục
+  { name: 'Dân trí — Giáo dục', url: 'https://dantri.com.vn/rss/giao-duc.rss', type: 3, note: '100 bài' },
+  { name: 'VnExpress — Giáo dục', url: 'https://vnexpress.net/rss/giao-duc.rss', type: 3, note: '60 bài' },
+  { name: 'VnExpress — Công nghệ', url: 'https://vnexpress.net/rss/so-hoa.rss', type: 3, note: '60 bài' },
+  { name: 'Thanh Niên — Giáo dục', url: 'https://thanhnien.vn/rss/giao-duc.rss', type: 3, note: '50 bài' },
+  { name: 'Tuổi Trẻ — Giáo dục', url: 'https://tuoitre.vn/rss/giao-duc.rss', type: 3, note: '50 bài' },
+  { name: 'VietnamNet — Giáo dục', url: 'https://vietnamnet.vn/rss/giao-duc.rss', type: 3, note: '1.000 bài' },
+
+  // Google News — gõ từ khoá, gom nhiều báo trong một lượt
+  { name: 'Google News — Giáo dục', url: 'giáo dục tuyển sinh', type: 4, note: '100 bài / 38 báo' },
+  { name: 'Google News — AI & Công nghệ', url: 'trí tuệ nhân tạo', type: 4, note: '100 bài / 61 báo' },
+  { name: 'Google News — Kỹ năng', url: 'kỹ năng nghề nghiệp', type: 4, note: '100 bài / 56 báo' },
+
+  // Trang chuyên mục — dự phòng khi báo không có feed
+  { name: 'Giáo dục Việt Nam', url: 'https://giaoduc.net.vn/giao-duc-24h', type: 1, note: 'trang chuyên mục' },
 ]
 
 /** Từ khoá nên chặn với fanpage trường học — tin đúng chủ đề nhưng không hợp đăng. */
