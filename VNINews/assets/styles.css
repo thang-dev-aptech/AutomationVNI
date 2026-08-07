@@ -1,55 +1,66 @@
 /* ════════════════════════════════════════════════════════════════════════════
    Tin tức VNI Education — tintuc.vni.edu.vn
+   Dựng theo template khách gửi: cổng tin hiện đại, KHÔNG phải báo giấy.
 
-   Đối chiếu trực tiếp với dantri.com.vn/giao-duc và vnexpress.net/giao-duc.
-   Bốn đặc điểm chung của báo Việt, và cả bốn đều NGƯỢC với lối blog hiện đại:
+   Khác biệt so với bản trước (bản đó đối chiếu dantri/vnexpress):
+     bản trước         template khách
+     phẳng, kẻ chỉ  →  thẻ bo góc + đổ bóng nhẹ
+     chữ có chân    →  không chân toàn bộ, đậm ở tít
+     dày đặc        →  thoáng, có nhịp thở giữa các khối
+     nền trắng      →  nền xám rất nhạt, thẻ nổi lên trên
 
-     1. PHẲNG. Không thẻ bo tròn, không đổ bóng, không nền thẻ. Nội dung nằm
-        thẳng trên nền trắng, phân cách bằng đường kẻ mảnh.
-     2. DÀY. Nhiều tin trên một màn. Khoảng trắng dùng để phân nhóm, không dùng
-        để cho thoáng.
-     3. TÍT CÓ CHÂN (VnExpress). Đây là thứ làm trang "ra báo" ngay từ cái nhìn
-        đầu tiên; thân bài vẫn không chân cho dễ đọc.
-     4. TIÊU ĐỀ MỤC GẠCH CHÂN MÀU, không phải thẻ bo tròn.
-
-   Màu lấy nguyên từ bộ nhận diện ở ClientApp/src/index.css.
+   Màu lấy từ LOGO thật (assets/logo-vni.png): xanh #2d6cb6 · cam #f08a22 ·
+   lục #33a457 — trùng đúng bộ đã có trong ClientApp/src/index.css.
    ════════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  --vni-blue: #2d6cb6;
-  --vni-blue-deep: #1e4e82;
-  --vni-orange: #f08a22;
-  --vni-green: #33a457;
+  --blue: #2d6cb6;
+  --blue-dark: #1e4e82;
+  --blue-darker: #14375c;
+  --orange: #f08a22;
+  --green: #33a457;
 
-  --bg: #ffffff;
-  --bg-alt: #f7f8fa;
-  --ink: #1a1a1a;
-  --ink-2: #444a52;
-  --muted: #757d87;
-  --rule: #e2e5e9;
-  --rule-strong: #cbd1d8;
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --ink: #16202e;
+  --ink-2: #4a5768;
+  --muted: #77869a;
+  --line: #e4e9f0;
 
-  /* Tít dùng chữ có chân. Xếp Charter trước (macOS), Georgia (Windows),
-     Noto Serif (Linux/Android) — đã đo trên trình duyệt: cả ba đều có đủ glyph
-     dấu tiếng Việt, không bị rơi từng ký tự sang font khác. */
-  --font-serif: Charter, "Bitstream Charter", Georgia, "Noto Serif",
-    "Times New Roman", serif;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+  --tint-blue: #eaf2fb;
+  --tint-blue-text: #1b4f8a;
+
+  /* Không webfont: mọi hệ đều có font phủ đủ dấu tiếng Việt. Tải webfont chỉ để
+     đẹp hơn chút thì trả giá bằng lần mở đầu — thứ duy nhất người bấm từ
+     Facebook trải nghiệm. */
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", "Noto Sans", Arial, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Mono",
-    "Roboto Mono", Menlo, Consolas, monospace;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "Roboto Mono", Menlo, monospace;
+
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --shadow-sm: 0 1px 2px rgba(22, 32, 46, .05);
+  --shadow: 0 1px 3px rgba(22, 32, 46, .06), 0 8px 24px -14px rgba(22, 32, 46, .18);
+  --shadow-lg: 0 2px 6px rgba(22, 32, 46, .07), 0 18px 40px -20px rgba(22, 32, 46, .28);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14161a;
-    --bg-alt: #1b1e23;
-    --ink: #e8eaed;
-    --ink-2: #b6bcc4;
-    --muted: #8b939d;
-    --rule: #2a2e35;
-    --rule-strong: #3a4048;
-    --vni-blue: #6ba3e0;
+    --bg: #0d131c;
+    --surface: #151d29;
+    --surface-2: #1b2532;
+    --ink: #e9eef5;
+    --ink-2: #b3c0d0;
+    --muted: #8798ab;
+    --line: #263140;
+    --tint-blue: #17293f;
+    --tint-blue-text: #8cb8ea;
+    --blue: #5e9ce0;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .35);
+    --shadow: 0 1px 3px rgba(0, 0, 0, .4), 0 10px 28px -16px rgba(0, 0, 0, .7);
+    --shadow-lg: 0 2px 8px rgba(0, 0, 0, .45), 0 20px 46px -22px rgba(0, 0, 0, .8);
   }
 }
 
@@ -59,245 +70,335 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--font-sans);
+  font-family: var(--font);
   font-size: 15px;
-  line-height: 1.55;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
 
 img { max-width: 100%; height: auto; display: block; }
 a { color: inherit; text-decoration: none; }
-a:hover { color: var(--vni-blue); }
-a:focus-visible {
-  outline: 2px solid var(--vni-orange);
+a:hover { color: var(--blue); }
+a:focus-visible, button:focus-visible, input:focus-visible {
+  outline: 2px solid var(--orange);
   outline-offset: 2px;
 }
 
-.skip { position: absolute; left: -9999px; background: var(--ink); color: #fff; padding: 10px 16px; z-index: 30; }
+.skip { position: absolute; left: -9999px; background: var(--ink); color: #fff; padding: 10px 16px; z-index: 40; }
 .skip:focus { left: 0; top: 0; }
 
-.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
 
-/* ── Đầu trang ─────────────────────────────────────────────────────────────
-   Hai tầng như dantri/vnexpress: tầng trên là nhận diện + ngày, tầng dưới là
-   thanh chuyên mục. Không dính (sticky) — báo không dính, và dính thì mất
-   khoảng 60px chiều cao trên điện thoại, chỗ đó đáng giá hơn. */
-.masthead { border-bottom: 1px solid var(--rule); }
-.masthead-in { display: flex; align-items: center; gap: 16px; height: 66px; }
-.logo { display: flex; align-items: center; gap: 10px; }
-.logo img { width: 34px; height: 34px; }
-.logo-text { display: flex; flex-direction: column; line-height: 1.1; }
-.logo-text b {
-  font-family: var(--font-serif);
-  font-size: 1.24rem; font-weight: 700; letter-spacing: -.01em; color: var(--ink);
-}
-.logo-text span { font-size: .68rem; color: var(--muted); letter-spacing: .01em; }
-.masthead .today {
-  margin-left: auto; font-size: .78rem; color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
+/* ── 1. Thanh trên ─────────────────────────────────────────────────────── */
+.topbar { background: var(--surface); border-bottom: 1px solid var(--line); }
+.topbar-in { display: flex; align-items: center; gap: 20px; height: 76px; }
 
-.topnav { border-bottom: 2px solid var(--ink); background: var(--bg); }
-.topnav-in { display: flex; gap: 2px; overflow-x: auto; }
-.topnav-in::-webkit-scrollbar { display: none; }
-.topnav a {
-  padding: 10px 14px; font-size: .86rem; font-weight: 600;
+.brand { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.brand img { height: 42px; width: auto; }
+.brand-text { display: flex; flex-direction: column; line-height: 1.2; padding-left: 12px; border-left: 1px solid var(--line); }
+.brand-text b { font-size: .82rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); }
+.brand-text span { font-size: .74rem; color: var(--muted); }
+
+.search { flex: 1; max-width: 420px; position: relative; }
+.search input {
+  width: 100%; height: 42px; padding: 0 42px 0 16px;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--ink);
+  font: inherit; font-size: .9rem;
+}
+.search input::placeholder { color: var(--muted); }
+.search .icon { position: absolute; right: 14px; top: 11px; color: var(--muted); pointer-events: none; }
+
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+
+.btn-outline {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 40px; padding: 0 16px;
+  border: 1px solid var(--blue); border-radius: var(--r-sm);
+  color: var(--blue); background: transparent;
+  font: inherit; font-size: .86rem; font-weight: 600; cursor: pointer;
+  white-space: nowrap;
+}
+.btn-outline:hover { background: var(--tint-blue); color: var(--blue); text-decoration: none; }
+
+.socials { display: flex; gap: 8px; }
+.socials a {
+  display: grid; place-items: center; width: 32px; height: 32px;
+  border-radius: 50%; background: var(--surface-2); color: var(--muted);
+}
+.socials a:hover { background: var(--tint-blue); color: var(--blue); }
+
+/* ── 2. Thanh chuyên mục ───────────────────────────────────────────────── */
+.mainnav { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+.mainnav-in { display: flex; align-items: center; gap: 4px; height: 52px; overflow-x: auto; }
+.mainnav-in::-webkit-scrollbar { display: none; }
+.burger {
+  display: grid; place-items: center; width: 38px; height: 38px; flex-shrink: 0;
+  border: 0; background: transparent; color: var(--ink); cursor: pointer; border-radius: var(--r-sm);
+}
+.burger:hover { background: var(--surface-2); }
+.mainnav a {
+  padding: 8px 14px; border-radius: var(--r-sm);
+  font-size: .84rem; font-weight: 600; letter-spacing: .02em; text-transform: uppercase;
   color: var(--ink-2); white-space: nowrap;
 }
-.topnav a:hover { color: var(--vni-blue); }
-.topnav a[aria-current] { color: var(--vni-orange); }
-
-/* ── Đầu chuyên mục ────────────────────────────────────────────────────── */
-.section-bar { display: flex; align-items: baseline; gap: 18px; padding: 18px 0 12px; flex-wrap: wrap; }
-.section-bar h1 {
-  margin: 0; font-family: var(--font-serif);
-  font-size: 1.62rem; font-weight: 700; letter-spacing: -.015em;
-}
-.subnav { display: flex; gap: 14px; font-size: .84rem; flex-wrap: wrap; }
-.subnav a { color: var(--ink-2); }
-.subnav a:hover { color: var(--vni-blue); }
+.mainnav a:hover { background: var(--tint-blue); color: var(--blue); text-decoration: none; }
+.mainnav a[aria-current] { color: var(--blue); background: var(--tint-blue); }
 
 /* ── Lưới chính ────────────────────────────────────────────────────────── */
-.layout { display: grid; grid-template-columns: 1fr 300px; gap: 34px; padding-bottom: 44px; }
+main { padding: 26px 0 60px; }
+.grid-hero { display: grid; grid-template-columns: 1.62fr 1fr; gap: 22px; margin-bottom: 34px; }
+.grid-main { display: grid; grid-template-columns: 1fr 330px; gap: 26px; }
 
-/* ── Khối tin đầu ──────────────────────────────────────────────────────────
-   Ảnh lớn bên trái, hai tin phụ xếp dọc bên phải — bố cục dùng ở cả dantri lẫn
-   vnexpress. Ảnh KHÔNG bo góc: bo góc là dấu hiệu rõ nhất của giao diện ứng
-   dụng, không phải của báo. */
-.hero { display: grid; grid-template-columns: 1.55fr 1fr; gap: 22px; padding-bottom: 20px; border-bottom: 1px solid var(--rule); }
-.hero-main h2 {
-  margin: 12px 0 8px; font-family: var(--font-serif);
-  font-size: 1.6rem; line-height: 1.26; font-weight: 700; letter-spacing: -.018em;
-  text-wrap: balance;
-}
-.hero-main p { margin: 0; color: var(--ink-2); font-size: .95rem; }
-.hero-side { display: flex; flex-direction: column; gap: 16px; }
-.hero-side article + article { border-top: 1px solid var(--rule); padding-top: 16px; }
-.hero-side h3 {
-  margin: 10px 0 0; font-family: var(--font-serif);
-  font-size: 1.04rem; line-height: 1.35; font-weight: 700; letter-spacing: -.01em;
-}
+/* Ô lưới mặc định là min-width:auto nên KHÔNG co xuống dưới kích thước nội dung.
+   Thanh .tabs cuộn ngang bên trong làm ô phình ra 404px trong khung 362px và cả
+   TRANG tràn ngang 28px. Đo thật ở 390px trước khi thêm dòng này. */
+.grid-hero > *, .grid-main > * { min-width: 0; }
 
-/* ── Hàng bốn tin ──────────────────────────────────────────────────────── */
-.quad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; padding: 20px 0; border-bottom: 1px solid var(--rule); }
-.quad h3 {
-  margin: 9px 0 0; font-family: var(--font-serif);
-  font-size: .96rem; line-height: 1.38; font-weight: 700;
+/* ── 3. Tin nổi bật ────────────────────────────────────────────────────── */
+.feature {
+  position: relative; border-radius: var(--r-lg); overflow: hidden;
+  min-height: 380px; display: flex; align-items: flex-end;
+  box-shadow: var(--shadow-lg);
 }
+.feature-shade {
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(11,26,45,.12) 0%, rgba(11,26,45,.55) 45%, rgba(11,26,45,.93) 100%);
+}
+.feature-body { position: relative; padding: 26px 28px 24px; color: #fff; }
+.badge-hot {
+  display: inline-block; margin-bottom: 12px;
+  padding: 5px 12px; border-radius: var(--r-sm);
+  background: var(--blue); color: #fff;
+  font-size: .68rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+}
+.feature h2 { margin: 0 0 10px; font-size: 1.72rem; line-height: 1.24; letter-spacing: -.022em; text-wrap: balance; }
+.feature h2 a { color: #fff; }
+.feature h2 a:hover { color: #fff; text-decoration: underline; }
+.feature p { margin: 0 0 16px; font-size: .95rem; color: rgba(255,255,255,.86); max-width: 46em; }
 
-/* ── Danh sách tin ─────────────────────────────────────────────────────────
-   Ảnh nhỏ bên trái, chữ bên phải, cách nhau bằng một đường kẻ. Không nền thẻ,
-   không đổ bóng — đúng khuôn cột giữa của vnexpress. */
-.feed article { display: grid; grid-template-columns: 210px 1fr; gap: 16px; padding: 18px 0; border-bottom: 1px solid var(--rule); }
-.feed h3 {
-  margin: 0 0 7px; font-family: var(--font-serif);
-  font-size: 1.14rem; line-height: 1.34; font-weight: 700; letter-spacing: -.012em;
+/* ── Dòng tác giả ──────────────────────────────────────────────────────────
+   Bài do AI viết nên KHÔNG bịa tên người — ghi tổ chức. Template mẫu để
+   "Bởi Minh Anh"; đặt tên một người không có thật là gán danh tính giả. */
+.byline { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 9px; font-size: .78rem; color: var(--muted); }
+/* Không cho gãy giữa cụm: "VNI Education" và "4 phút đọc" bị xuống dòng giữa
+   chừng thì dòng tác giả đọc như ba mẩu rời. */
+.byline > span:not(.avatar):not(.sep), .byline time { white-space: nowrap; }
+.feature .byline { color: rgba(255,255,255,.8); }
+.avatar {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--blue), var(--green));
+  color: #fff; font-size: .58rem; font-weight: 800; letter-spacing: -.02em;
 }
-.feed p {
-  margin: 0 0 8px; font-size: .9rem; color: var(--ink-2);
+.byline .sep { opacity: .5; }
+.byline time { font-variant-numeric: tabular-nums; }
+
+/* ── 4. Tin mới nhất ───────────────────────────────────────────────────── */
+.panel {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden;
+}
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 15px 18px 13px; border-bottom: 1px solid var(--line);
+}
+.panel-head h2 { margin: 0; font-size: .84rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.panel-head a { font-size: .78rem; font-weight: 600; color: var(--blue); }
+.panel-foot { padding: 12px 18px; border-top: 1px solid var(--line); text-align: center; }
+.panel-foot a { font-size: .8rem; font-weight: 600; color: var(--blue); }
+
+.mini { display: grid; grid-template-columns: 92px 1fr; gap: 12px; padding: 13px 18px; }
+.mini + .mini { border-top: 1px solid var(--line); }
+.mini:hover { background: var(--surface-2); }
+.mini .thumb { border-radius: var(--r-sm); aspect-ratio: 4 / 3; }
+.mini h3 { margin: 0 0 5px; font-size: .87rem; line-height: 1.42; font-weight: 600; }
+.mini time { font-size: .74rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ── 5. Chuyên mục nổi bật ─────────────────────────────────────────────── */
+.section-title { margin: 0 0 14px; font-size: 1rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.cats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 14px; margin-bottom: 34px; }
+.cat {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 20px 12px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); box-shadow: var(--shadow-sm); text-align: center;
+}
+.cat:hover { border-color: var(--blue); box-shadow: var(--shadow); color: var(--ink); text-decoration: none; }
+.cat svg { color: var(--blue); }
+.cat span { font-size: .82rem; font-weight: 600; line-height: 1.35; }
+
+/* ── 6. Bài viết mới nhất ──────────────────────────────────────────────── */
+.tabs { display: flex; align-items: center; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs a {
+  padding: 9px 14px; font-size: .85rem; font-weight: 600; white-space: nowrap;
+  color: var(--ink-2); border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tabs a:hover { color: var(--blue); text-decoration: none; }
+.tabs a[aria-current] { color: var(--blue); border-bottom-color: var(--blue); }
+
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.card {
+  display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); overflow: hidden; box-shadow: var(--shadow-sm);
+}
+.card:hover { box-shadow: var(--shadow); }
+.card .thumb { aspect-ratio: 16 / 10; }
+.card-body { padding: 15px 16px 16px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.kicker { font-size: .68rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--blue); }
+.card h3 { margin: 0; font-size: 1rem; line-height: 1.42; font-weight: 700; letter-spacing: -.01em; }
+.card p {
+  margin: 0; font-size: .86rem; color: var(--ink-2); flex: 1;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
 
-/* ── Nhãn và siêu dữ liệu ──────────────────────────────────────────────────
-   Chuyên mục là chữ hoa nhỏ có màu, KHÔNG phải thẻ bo tròn — thẻ bo tròn là
-   ngôn ngữ của bảng điều khiển, không phải của báo. */
-.kicker {
-  font-size: .7rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
-  color: var(--vni-blue);
-}
-.byline { display: flex; align-items: center; gap: 10px; font-size: .76rem; color: var(--muted); }
-.byline time { font-variant-numeric: tabular-nums; }
-.byline .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--rule-strong); }
+.more-wrap { display: flex; justify-content: center; margin-top: 26px; }
 
-/* Ảnh mặc định là khối màu theo chủ đề, KHÔNG phải ảnh toà soạn — ảnh gốc
-   thuộc bản quyền báo, đăng lại lên trang mình rủi ro rõ hơn cả phần chữ. */
-.thumb { aspect-ratio: 16 / 10; display: grid; place-items: center; overflow: hidden; }
-.thumb--wide { aspect-ratio: 16 / 9; }
-.thumb-label {
-  font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-  color: rgba(255, 255, 255, .92); padding: 5px 12px;
-  background: rgba(10, 22, 38, .32);
-}
-.t-policy    { background: linear-gradient(135deg, #2d6cb6, #1e4e82 60%, #33a457); }
-.t-admission { background: linear-gradient(140deg, #f08a22, #c2610a); }
-.t-score     { background: linear-gradient(140deg, #33a457, #0f766e); }
-.t-research  { background: linear-gradient(140deg, #1e4e82, #5b21b6); }
-.t-default   { background: linear-gradient(140deg, #556274, #2b3441); }
+/* ── Ảnh: khối màu theo chuyên mục ─────────────────────────────────────────
+   KHÔNG dùng ảnh của toà soạn — ảnh gốc thuộc bản quyền báo, đăng lại lên
+   trang mình là rủi ro rõ hơn cả phần chữ. Class trùng slug chuyên mục để
+   backend chỉ việc ghép "t-" + slug. */
+.thumb { display: grid; place-items: center; overflow: hidden; background: var(--surface-2); }
+.t-giao-duc     { background: linear-gradient(135deg, #2d6cb6, #1e4e82 60%, #33a457); }
+.t-cong-nghe-ai { background: linear-gradient(140deg, #1e4e82, #5b21b6); }
+.t-ky-nang      { background: linear-gradient(140deg, #f08a22, #c2610a); }
+.t-khac         { background: linear-gradient(140deg, #556274, #2b3441); }
 
-/* ── Cột phải ──────────────────────────────────────────────────────────── */
-.aside { display: flex; flex-direction: column; gap: 26px; }
-
-/* Tiêu đề mục gạch chân màu — khuôn của vnexpress, thay cho thẻ bo tròn. */
-.aside-head, .block-head {
-  font-family: var(--font-serif);
-  font-size: 1.08rem; font-weight: 700; letter-spacing: -.01em;
-  margin: 0 0 12px; padding-bottom: 7px;
-  border-bottom: 1px solid var(--rule);
-  position: relative;
-}
-.aside-head::after, .block-head::after {
-  content: ""; position: absolute; left: 0; bottom: -1px;
-  width: 46px; height: 2px; background: var(--vni-orange);
-}
-
-/* Mốc tuyển sinh: đây là "hộp tra cứu" của trang này — vnexpress đặt ô tra cứu
-   điểm thi đúng vị trí đó, vì mùa tuyển sinh ai vào cũng tìm một con số. */
-.deadline { border: 1px solid var(--rule); }
-.deadline ul { list-style: none; margin: 0; padding: 0; }
-.deadline li { display: grid; grid-template-columns: auto 1fr; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--rule); font-size: .82rem; }
-.deadline li:first-child { border-top: 0; }
-/* nowrap + cột auto: "09/08 · 13:30" gãy dòng thì hộp lịch đọc như bảng hỏng.
-   Đo thật ở 300px cột phải: cột cứng 92px không đủ, phải để auto. */
-.deadline time { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; font-size: .8rem; white-space: nowrap; }
-.deadline small { color: var(--muted); line-height: 1.4; }
-.deadline li.done { color: var(--muted); }
-.deadline li.done time { text-decoration: line-through; }
-.deadline li.next { background: #fdf4e8; }
-.deadline li.next time { color: #b4610f; }
-@media (prefers-color-scheme: dark) {
-  .deadline li.next { background: #2a2013; }
-  .deadline li.next time { color: #f0a955; }
-}
-.deadline .src { padding: 8px 12px; border-top: 1px solid var(--rule); font-size: .72rem; color: var(--muted); }
-
-/* Danh sách "đọc nhiều" đánh số — khuôn quen của mọi báo, và ở đây con số có
-   nghĩa thật (thứ hạng lượt đọc), không phải đánh số cho đẹp. */
+/* ── 7. Cột phải ───────────────────────────────────────────────────────── */
+.aside { display: flex; flex-direction: column; gap: 22px; }
 .ranked { list-style: none; margin: 0; padding: 0; counter-reset: r; }
-.ranked li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; padding: 11px 0; border-top: 1px solid var(--rule); }
-.ranked li:first-child { border-top: 0; padding-top: 0; }
+.ranked li { display: grid; grid-template-columns: 30px 1fr auto; gap: 12px; align-items: start; padding: 13px 18px; }
+.ranked li + li { border-top: 1px solid var(--line); }
 .ranked li::before {
-  counter-increment: r; content: counter(r);
-  font-family: var(--font-mono); font-size: 1.05rem; font-weight: 700;
-  color: var(--rule-strong); line-height: 1.2;
+  counter-increment: r; content: "0" counter(r);
+  font-family: var(--font-mono); font-size: .88rem; font-weight: 700;
+  color: var(--blue); opacity: .55; line-height: 1.5;
 }
-.ranked h4 { margin: 0; font-family: var(--font-serif); font-size: .93rem; font-weight: 700; line-height: 1.36; }
+.ranked h4 { margin: 0; font-size: .87rem; font-weight: 600; line-height: 1.42; }
+.ranked .views { font-size: .74rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ── 9. Đăng ký bản tin ────────────────────────────────────────────────── */
+.newsletter {
+  margin-top: 40px; padding: 28px;
+  background: var(--tint-blue); border: 1px solid var(--line); border-radius: var(--r-lg);
+  display: grid; grid-template-columns: auto 1fr auto; gap: 24px; align-items: center;
+}
+.newsletter .art { color: var(--blue); opacity: .85; }
+.newsletter h2 { margin: 0 0 5px; font-size: 1.08rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.newsletter p { margin: 0; font-size: .87rem; color: var(--ink-2); }
+.newsletter form { display: flex; gap: 10px; }
+.newsletter input {
+  height: 44px; width: 260px; padding: 0 14px;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--ink); font: inherit; font-size: .9rem;
+}
+.btn-primary {
+  height: 44px; padding: 0 22px; border: 0; border-radius: var(--r-sm);
+  background: var(--blue); color: #fff;
+  font: inherit; font-size: .9rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.btn-primary:hover { background: var(--blue-dark); }
+.newsletter small { display: block; margin-top: 8px; font-size: .74rem; color: var(--muted); }
+
+/* ── 10. Chân trang ────────────────────────────────────────────────────── */
+.site-foot { background: var(--blue-darker); color: rgba(255,255,255,.72); margin-top: 48px; }
+.site-foot .wrap { padding: 38px 20px 26px; }
+.foot-grid { display: grid; grid-template-columns: 1.5fr repeat(3, 1fr); gap: 32px; }
+.foot-brand img { height: 44px; width: auto; margin-bottom: 14px; filter: brightness(0) invert(1); opacity: .95; }
+.foot-brand p { margin: 0 0 16px; font-size: .84rem; line-height: 1.65; }
+.foot-grid h3 { margin: 0 0 14px; font-size: .8rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #fff; }
+.foot-grid ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.foot-grid a { font-size: .85rem; color: rgba(255,255,255,.72); }
+.foot-grid a:hover { color: #fff; text-decoration: none; }
+.foot-contact li { display: flex; gap: 9px; font-size: .85rem; line-height: 1.5; }
+.foot-contact svg { flex-shrink: 0; margin-top: 3px; opacity: .7; }
+.site-foot .socials a { background: rgba(255,255,255,.1); color: rgba(255,255,255,.8); }
+.site-foot .socials a:hover { background: rgba(255,255,255,.2); color: #fff; }
+.foot-bottom { border-top: 1px solid rgba(255,255,255,.12); margin-top: 30px; padding-top: 18px; text-align: center; font-size: .8rem; }
 
 /* ── Trang bài viết ────────────────────────────────────────────────────── */
-.article-head { padding: 20px 0 0; }
-.article-head h1 {
-  margin: 10px 0 12px; font-family: var(--font-serif);
-  font-size: 2.05rem; line-height: 1.22; font-weight: 700; letter-spacing: -.022em;
-  text-wrap: balance;
+.crumb { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: .82rem; color: var(--muted); }
+.crumb a { color: var(--blue); }
+
+.article {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-sm);
+  padding: 30px 34px 34px;
 }
-.sapo { margin: 14px 0 20px; font-size: 1.06rem; line-height: 1.6; font-weight: 700; color: var(--ink); }
+.article h1 { margin: 12px 0 14px; font-size: 2rem; line-height: 1.24; font-weight: 800; letter-spacing: -.026em; text-wrap: balance; }
+.sapo {
+  margin: 16px 0 22px; padding: 14px 18px;
+  background: var(--surface-2); border-left: 3px solid var(--blue); border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: 1.02rem; line-height: 1.62; font-weight: 600; color: var(--ink);
+}
+.article figure { margin: 0 0 24px; }
+.article figure .thumb { border-radius: var(--r-md); aspect-ratio: 16 / 9; }
+.article figcaption { margin-top: 8px; font-size: .78rem; color: var(--muted); }
 
-.figure { margin: 0 0 22px; }
-.figure figcaption { margin-top: 7px; font-size: .8rem; color: var(--muted); font-style: italic; }
+/* Thân bài ~62 ký tự/dòng. Đọc trên điện thoại từ Facebook là ca chính, nhưng
+   trên máy để bàn dòng dài quá thì mắt lạc hàng khi xuống dòng. */
+.prose { max-width: 62ch; font-size: 1.02rem; line-height: 1.78; color: var(--ink-2); }
+.prose p { margin: 0 0 17px; }
+.prose h2 { margin: 30px 0 11px; font-size: 1.2rem; font-weight: 700; color: var(--ink); letter-spacing: -.012em; }
+.prose ul { margin: 0 0 17px; padding-left: 20px; }
+.prose li { margin-bottom: 8px; }
+.prose strong { color: var(--ink); }
 
-/* Thân bài rộng hơn thường một chút và giãn dòng cao: bài báo tiếng Việt nhiều
-   dấu, dòng chật thì các dấu chồng lên nhau khi đọc nhanh. */
-.body { font-size: 1.02rem; line-height: 1.78; color: var(--ink-2); }
-.body p { margin: 0 0 17px; }
-.body strong { color: var(--ink); }
-.body h2 { font-family: var(--font-serif); font-size: 1.22rem; color: var(--ink); margin: 28px 0 10px; letter-spacing: -.012em; }
-.body ul { margin: 0 0 17px; padding-left: 20px; }
-.body li { margin-bottom: 7px; }
+/* Khối "điều cần nhớ" — chính là keyPoints AI sinh ra, hiện ngay đầu bài. */
+.keypoints { margin: 0 0 24px; padding: 18px 20px; background: var(--tint-blue); border-radius: var(--r-md); }
+.keypoints h2 { margin: 0 0 10px; font-size: .78rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--tint-blue-text); }
+.keypoints ul { margin: 0; padding-left: 18px; }
+.keypoints li { margin-bottom: 7px; font-size: .93rem; color: var(--ink); }
 
-/* Khối mốc chèn giữa bài: viền trái cam, phẳng — cùng ngôn ngữ với hộp mốc ở
-   cột phải nên độc giả nhận ra ngay đây là "việc cần nhớ". */
-.callout { margin: 22px 0; border-left: 3px solid var(--vni-orange); background: var(--bg-alt); padding: 14px 16px; }
-.callout .block-head { font-size: .96rem; margin-bottom: 8px; padding-bottom: 6px; }
-.callout ul { list-style: none; margin: 0; padding: 0; }
-.callout li { display: grid; grid-template-columns: 108px 1fr; gap: 12px; padding: 6px 0; font-size: .93rem; }
-.callout b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+/* Mốc thời gian — cam vì cam trong cả trang CHỈ dùng cho việc gấp. */
+.timeline { margin: 24px 0; border-left: 3px solid var(--orange); background: var(--surface-2); border-radius: 0 var(--r-md) var(--r-md) 0; padding: 16px 20px; }
+.timeline h2 { margin: 0 0 10px; font-size: .78rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--orange); }
+.timeline ul { list-style: none; margin: 0; padding: 0; }
+.timeline li { display: grid; grid-template-columns: 116px 1fr; gap: 14px; padding: 7px 0; font-size: .93rem; }
+.timeline b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; color: var(--ink); }
 
-/* Dẫn nguồn: ranh giới giữa điểm tin có trách nhiệm và lấy bài của người khác.
-   Luôn hiện, luôn ở cuối bài, không giấu xuống chân trang. */
-.source { margin-top: 26px; padding-top: 14px; border-top: 2px solid var(--ink); font-size: .87rem; color: var(--ink-2); }
-.source a { color: var(--vni-blue); text-decoration: underline; }
+/* Dẫn nguồn — ranh giới giữa điểm tin có trách nhiệm và lấy bài người khác.
+   Luôn hiện, luôn cuối bài, không giấu xuống chân trang. */
+.source {
+  margin-top: 28px; padding: 16px 18px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md);
+  font-size: .87rem; color: var(--ink-2);
+}
+.source b { display: block; margin-bottom: 5px; font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.source a { color: var(--blue); text-decoration: underline; }
 
-.related { margin-top: 30px; }
-
-/* ── Chân trang ────────────────────────────────────────────────────────── */
-.site-foot { border-top: 1px solid var(--rule); background: var(--bg-alt); margin-top: 20px; }
-.site-foot .wrap { padding-top: 22px; padding-bottom: 28px; font-size: .8rem; color: var(--muted); }
-.site-foot b { display: block; font-family: var(--font-serif); font-size: 1rem; color: var(--ink); margin-bottom: 5px; }
+.empty { padding: 60px 20px; text-align: center; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
 
 /* ── Màn hẹp ───────────────────────────────────────────────────────────── */
 @media (max-width: 1023px) {
-  .layout { grid-template-columns: 1fr; gap: 30px; }
-  .quad { grid-template-columns: repeat(2, 1fr); }
+  .grid-hero, .grid-main { grid-template-columns: 1fr; }
+  .cards { grid-template-columns: repeat(2, 1fr); }
+  .search { display: none; }
+  .newsletter { grid-template-columns: 1fr; text-align: center; }
+  .newsletter .art { display: none; }
+  .newsletter form { justify-content: center; }
+  .foot-grid { grid-template-columns: 1fr 1fr; gap: 26px; }
 }
 
 @media (max-width: 719px) {
-  .hero { grid-template-columns: 1fr; gap: 18px; }
-  .hero-main h2 { font-size: 1.32rem; }
-
-  /* Tin phụ thu thành hàng ảnh nhỏ + chữ. Để nguyên ảnh chiếm hết chiều ngang
-     thì mỗi tin cao 224px — ba tin đã hết một màn điện thoại, phải cuộn mãi mới
-     thấy được tin thứ tư. Báo thật đều thu như vậy ở màn hẹp. */
-  .hero-side article { display: grid; grid-template-columns: 118px 1fr; gap: 12px; align-items: start; }
-  .hero-side h3 { margin: 0; font-size: .97rem; }
-  .quad { grid-template-columns: 1fr; }
-  .quad article { display: grid; grid-template-columns: 118px 1fr; gap: 12px; }
-  .quad h3 { margin: 0; font-size: .95rem; }
-  .feed article { grid-template-columns: 118px 1fr; gap: 12px; }
-  .feed h3 { font-size: 1rem; }
-  .feed p { display: none; }
-  .article-head h1 { font-size: 1.52rem; }
-  .callout li { grid-template-columns: 1fr; gap: 1px; }
-  .masthead-in { height: 58px; }
-  .masthead .today { display: none; }
+  .wrap { padding: 0 14px; }
+  .topbar-in { height: 62px; gap: 12px; }
+  .brand img { height: 34px; }
+  .brand-text { display: none; }
+  .btn-outline span { display: none; }
+  .btn-outline { padding: 0 12px; }
+  .cards { grid-template-columns: 1fr; }
+  .feature { min-height: 300px; }
+  .feature h2 { font-size: 1.3rem; }
+  .article { padding: 22px 18px 26px; border-radius: var(--r-md); }
+  .byline { font-size: .74rem; gap: 3px 7px; }
+  .article h1 { font-size: 1.5rem; }
+  .newsletter input { width: 100%; }
+  .newsletter form { flex-direction: column; }
+  .foot-grid { grid-template-columns: 1fr; }
+  .timeline li { grid-template-columns: 1fr; gap: 2px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
