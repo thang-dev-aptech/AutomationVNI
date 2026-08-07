@@ -18,7 +18,7 @@ public partial class NewsSiteRepository(
     {
         var baseUrl = options.Value.PublicBaseUrl?.TrimEnd('/');
         if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(slug)) return null;
-        return $"{baseUrl}/tin/{slug}";
+        return baseUrl + NewsHtml.ArticlePath(slug);
     }
 
     public async Task<NewsArticleModel?> GetAsync(Guid id, CancellationToken ct = default)

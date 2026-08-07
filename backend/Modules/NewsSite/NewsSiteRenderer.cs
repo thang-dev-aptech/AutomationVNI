@@ -180,10 +180,10 @@ public class NewsSiteRenderer(NewsSiteOptions options)
     {
         var cat = NewsTaxonomy.Resolve(a.CategorySlug);
         var sb = new StringBuilder("<article class=\"card\">");
-        sb.Append($"<a href=\"/tin/{a.Slug}\" class=\"thumb {ThumbClass(a.CategorySlug)}\" aria-hidden=\"true\" tabindex=\"-1\"></a>");
+        sb.Append($"<a href=\"{NewsHtml.ArticlePath(a.Slug)}\" class=\"thumb {ThumbClass(a.CategorySlug)}\" aria-hidden=\"true\" tabindex=\"-1\"></a>");
         sb.Append("<div class=\"card-body\">");
         sb.Append($"<span class=\"kicker\">{NewsHtml.Esc(cat.Name)}</span>");
-        sb.Append($"<h3><a href=\"/tin/{a.Slug}\">{NewsHtml.Esc(a.Title)}</a></h3>");
+        sb.Append($"<h3><a href=\"{NewsHtml.ArticlePath(a.Slug)}\">{NewsHtml.Esc(a.Title)}</a></h3>");
         if (!string.IsNullOrWhiteSpace(a.Sapo)) sb.Append($"<p>{NewsHtml.Esc(a.Sapo)}</p>");
         sb.Append(Byline(a, withDate: false));
         sb.Append("</div></article>");
@@ -192,7 +192,7 @@ public class NewsSiteRenderer(NewsSiteOptions options)
 
     private static string Mini(NewsArticleModel a)
     {
-        var sb = new StringBuilder($"<a class=\"mini\" href=\"/tin/{a.Slug}\">");
+        var sb = new StringBuilder($"<a class=\"mini\" href=\"{NewsHtml.ArticlePath(a.Slug)}\">");
         sb.Append($"<span class=\"thumb {ThumbClass(a.CategorySlug)}\"></span><span>");
         sb.Append($"<h3>{NewsHtml.Esc(a.Title)}</h3>");
         if (a.PublishedAt.HasValue)
@@ -207,7 +207,7 @@ public class NewsSiteRenderer(NewsSiteOptions options)
         if (top.Count == 0) return "";
         var sb = new StringBuilder("<section class=\"panel\"><div class=\"panel-head\"><h2>Bài đọc nhiều</h2></div><ol class=\"ranked\">");
         foreach (var a in top)
-            sb.Append($"<li><h4><a href=\"/tin/{a.Slug}\">{NewsHtml.Esc(a.Title)}</a></h4>"
+            sb.Append($"<li><h4><a href=\"{NewsHtml.ArticlePath(a.Slug)}\">{NewsHtml.Esc(a.Title)}</a></h4>"
                       + $"<span class=\"views\">{NewsHtml.Views(a.ViewCount)}</span></li>");
         sb.Append("</ol></section>");
         return sb.ToString();
@@ -285,7 +285,7 @@ public class NewsSiteRenderer(NewsSiteOptions options)
             sb.AppendLine($"<article class=\"feature {ThumbClass(lead.CategorySlug)}\">");
             sb.AppendLine("<span class=\"feature-shade\"></span><div class=\"feature-body\">");
             sb.AppendLine("<span class=\"badge-hot\">Tin nổi bật</span>");
-            sb.AppendLine($"<h2><a href=\"/tin/{lead.Slug}\">{NewsHtml.Esc(lead.Title)}</a></h2>");
+            sb.AppendLine($"<h2><a href=\"{NewsHtml.ArticlePath(lead.Slug)}\">{NewsHtml.Esc(lead.Title)}</a></h2>");
             if (!string.IsNullOrWhiteSpace(lead.Sapo)) sb.AppendLine($"<p>{NewsHtml.Esc(lead.Sapo)}</p>");
             sb.AppendLine(Byline(lead));
             sb.AppendLine("</div></article>");
@@ -358,7 +358,7 @@ public class NewsSiteRenderer(NewsSiteOptions options)
         var ogImage = string.IsNullOrWhiteSpace(BaseUrl) ? null : $"{BaseUrl}/assets/og/{a.Slug}.jpg";
 
         var sb = new StringBuilder();
-        sb.Append(Head($"{a.Title} — {SiteName}", a.Sapo, ogImage, $"/tin/{a.Slug}", "article"));
+        sb.Append(Head($"{a.Title} — {SiteName}", a.Sapo, ogImage, NewsHtml.ArticlePath(a.Slug), "article"));
         if (a.PublishedAt.HasValue)
             sb.AppendLine($"<meta property=\"article:published_time\" content=\"{NewsHtml.IsoDate(a.PublishedAt.Value)}\">");
         sb.AppendLine($"<meta property=\"article:section\" content=\"{NewsHtml.Esc(cat.Name)}\">");
@@ -436,7 +436,7 @@ public class NewsSiteRenderer(NewsSiteOptions options)
             sb.AppendLine($"<url><loc>{NewsHtml.Esc(BaseUrl)}/chuyen-muc/{c.Slug}/</loc></url>");
         foreach (var a in articles)
         {
-            sb.Append($"<url><loc>{NewsHtml.Esc(BaseUrl)}/tin/{a.Slug}</loc>");
+            sb.Append($"<url><loc>{NewsHtml.Esc(BaseUrl)}{NewsHtml.ArticlePath(a.Slug)}</loc>");
             if (a.PublishedAt.HasValue)
                 sb.Append($"<lastmod>{a.PublishedAt.Value:yyyy-MM-dd}</lastmod>");
             sb.AppendLine("</url>");

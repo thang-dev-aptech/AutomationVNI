@@ -97,9 +97,13 @@ public class NewsSiteBuilder(
             renderer.RenderHome(published.Take(Opt.HomePageSize).ToList(), topRead), ct);
         pages++;
 
-        // Trang chuyên mục — sinh cho MỌI mục, kể cả mục chưa có bài. Thanh điều hướng luôn
-        // liệt kê đủ, nên thiếu trang nào là link đó 404 trên toàn site.
-        foreach (var cat in NewsTaxonomy.Navigable())
+        // Trang chuyên mục — sinh cho MỌI mục trong taxonomy, kể cả mục chưa có bài và kể cả
+        // "Khác" vốn không nằm trên thanh điều hướng.
+        //
+        // Trước đây chỉ sinh cho Navigable() nên /chuyen-muc/khac/ là 404, trong khi nhãn
+        // chuyên mục trên trang bài vẫn trỏ vào đó — bài nào AI xếp vào "Khác" là có một link
+        // chết ngay đầu bài. Thanh điều hướng vẫn giữ 3 mục; "Khác" chỉ tới được từ nhãn.
+        foreach (var cat in NewsTaxonomy.All)
         {
             var items = published.Where(x => x.CategorySlug == cat.Slug).ToList();
             await WriteAtomicAsync(

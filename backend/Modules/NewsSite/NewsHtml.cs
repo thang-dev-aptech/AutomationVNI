@@ -13,6 +13,22 @@ namespace Backend.Modules.NewsSite;
 public static partial class NewsHtml
 {
     /// <summary>
+    /// Đường dẫn tương đối tới một bài. CÓ đuôi .html, đúng bằng tên file ghi ra đĩa.
+    ///
+    /// Trước đây sinh "/tin/{slug}" không đuôi cho URL đẹp, nhưng file ghi ra là "{slug}.html"
+    /// — chỉ khớp nếu máy chủ được cấu hình try_files $uri $uri.html. Trang chủ vẫn lên bình
+    /// thường nên không ai nghi ngờ, chỉ có MỌI link bài là 404. Đã dính thật khi mở bằng
+    /// python http.server, và sẽ dính y hệt trên nginx nếu quên dòng try_files.
+    ///
+    /// Đuôi .html không xấu: dantri.com.vn để .htm cho toàn bộ bài. Đổi lại thì chạy được trên
+    /// mọi máy chủ tĩnh mà không phải dặn ai cấu hình gì.
+    ///
+    /// MỘT nơi sinh đường dẫn cho cả link trong trang, sitemap, canonical, og:url và link dán ở
+    /// bình luận Facebook — lệch nhau giữa mấy chỗ đó là lỗi câm, không có gì báo.
+    /// </summary>
+    public static string ArticlePath(string? slug) => $"/tin/{slug}.html";
+
+    /// <summary>
     /// Thoát TỐI THIỂU: chỉ 5 ký tự có nghĩa trong HTML.
     ///
     /// KHÔNG dùng WebUtility.HtmlEncode vì nó mã hoá cả chữ có dấu thành thực thể số —
