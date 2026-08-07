@@ -37,8 +37,18 @@ public static partial class VietnameseTextHelper
     public static string StripDiacritics(string? input)
     {
         if (string.IsNullOrWhiteSpace(input)) return string.Empty;
-        var normalized = input.ToLowerInvariant().Normalize(NormalizationForm.FormD);
-        return string.Concat(normalized.Where(c =>
+
+        // Đ/đ PHẢI đổi tay trước khi chuẩn hoá. Trong Unicode nó là CHỮ CÁI RIÊNG (U+0111),
+        // không phải "d" cộng dấu, nên Normalize(FormD) không tách ra được và nó sống sót qua
+        // bộ lọc NonSpacingMark. Hậu quả đã gặp thật: slug của bài "điểm chuẩn đại học" ra
+        // "iem-chuan-ai-hoc" vì regex slug xoá luôn chữ lạ — mất hẳn phụ âm đầu, URL vô nghĩa
+        // và không sửa lại được sau khi Facebook đã cache thẻ og.
+        var prepared = input
+            .Replace('Đ', 'D').Replace('đ', 'd')
+            .ToLowerInvariant()
+            .Normalize(NormalizationForm.FormD);
+
+        return string.Concat(prepared.Where(c =>
             CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark));
     }
 

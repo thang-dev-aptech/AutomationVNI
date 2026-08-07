@@ -20,4 +20,10 @@
     <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.5" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Khuôn giao diện trang tin: CSS và logo sao nguyên từ VNINews/ sang thư mục xuất bản
+         lúc dựng trang. Không có thì trang ra không có CSS. -->
+    <Content Include="Templates\news\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

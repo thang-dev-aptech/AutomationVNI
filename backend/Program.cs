@@ -150,6 +150,7 @@ builder.Services.Configure<Backend.Modules.NewsSite.NewsSiteOptions>(
     builder.Configuration.GetSection("NewsSite"));
 builder.Services.AddScoped<Backend.Modules.NewsSite.NewsSiteRepository>();
 builder.Services.AddScoped<Backend.Modules.NewsSite.NewsComposeService>();
+builder.Services.AddScoped<Backend.Modules.NewsSite.NewsSiteBuilder>();
 builder.Services.AddScoped<ContentCrawlPipelineService>();
 builder.Services.AddHttpClient<IAiJudgeService, AiJudgeService>(client =>
     // Trần 30s là quá chặt: đo thật trên gateway vietai, chấm điểm một bài mất ~28s nên 6/9
