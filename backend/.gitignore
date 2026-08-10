@@ -14,3 +14,7 @@ secrets.json
 # IDE
 .vs/
 *.user
+
+# Bản sao CSDL — mỗi bản ~30MB. Luật "Data/*.db" ở trên KHÔNG phủ thư mục con,
+# nên thiếu dòng này là mỗi lượt sao lưu đẩy 30MB vào git.
+Data/backups/

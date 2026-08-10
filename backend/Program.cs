@@ -127,6 +127,12 @@ builder.Services.AddScoped<ISocialCommentProvider, FacebookCommentProvider>();
 builder.Services.AddScoped<ISocialCommentProvider, ThreadsCommentProvider>();
 builder.Services.AddHttpClient(nameof(FacebookCommentProvider));
 builder.Services.AddHttpClient(nameof(ThreadsCommentProvider));
+// Sao lưu CSDL. Đăng ký SỚM và luôn bật: đây là lớp bảo vệ cuối cho toàn bộ dữ liệu.
+builder.Services.Configure<Backend.Shared.Backup.DatabaseBackupOptions>(
+    builder.Configuration.GetSection("DatabaseBackup"));
+builder.Services.AddScoped<Backend.Shared.Backup.DatabaseBackupService>();
+builder.Services.AddHostedService<Backend.Shared.Backup.DatabaseBackupWorker>();
+
 builder.Services.AddHostedService<Backend.Shared.Scheduler.ScheduledPostPublisherService>();
 builder.Services.AddHostedService<Backend.Shared.Generation.PostGenerationWorker>();
 builder.Services.AddHostedService<CommentWebhookHydrationWorker>();
