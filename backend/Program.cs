@@ -297,6 +297,77 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// ── Xem thử trang tin ngay trên backend ──────────────────────────────────────
+//
+// Trang tin là HTML tĩnh sinh ra ở Storage/News. Trên VPS thật nginx phục vụ thư mục đó tại
+// tintuc.vni.edu.vn. Lúc chưa gắn tên miền, nút "Xem trên web" trỏ vào một địa chỉ không tồn
+// tại — bấm ra lỗi DNS, và người duyệt không có cách nào xem bài mình vừa duyệt.
+//
+// PHỤC VỤ Ở GỐC CỦA MỘT TÊN MIỀN PHỤ, không phải ở đường dẫn con.
+//
+// Đã thử /preview trước và HỎNG: HTML trỏ tài nguyên bằng đường dẫn tuyệt đối từ gốc
+// ("/assets/styles.css", "/chuyen-muc/giao-duc/"), nên đặt dưới /preview thì trình duyệt đi
+// tìm /assets/styles.css của ứng dụng quản trị. Trang hiện ra trần trụi không CSS — nội dung
+// vẫn đúng nên nhìn qua tưởng chỉ lỗi giao diện, thực ra MỌI link trong trang đều sai.
+//
+// preview.localhost trỏ về 127.0.0.1 sẵn trên mọi trình duyệt hiện đại, không phải sửa /etc/hosts.
+// Trang tin nằm ở gốc của tên miền đó nên đường dẫn tuyệt đối khớp y như trên VPS thật.
+//
+// Chỉ để XEM THỬ. Địa chỉ đi ra ngoài (canonical, og:url, sitemap, link dán ở bình luận
+// Facebook) vẫn lấy từ NewsSite:PublicBaseUrl.
+var newsRoot = Path.Combine(app.Environment.ContentRootPath, "Storage", "News");
+Directory.CreateDirectory(newsRoot);
+var newsFiles = new PhysicalFileProvider(newsRoot);
+
+app.MapWhen(
+    ctx => ctx.Request.Host.Host.StartsWith("preview.", StringComparison.OrdinalIgnoreCase),
+    branch =>
+    {
+        // Tự đổi "/" và "/chuyen-muc/giao-duc/" thành file index.html.
+        //
+        // UseDefaultFiles KHÔNG ăn bên trong nhánh MapWhen dù đã truyền FileProvider — tệp gọi
+        // thẳng tên thì 200, còn thư mục vẫn 404. Viết tay ba dòng thì chắc chắn và đọc là hiểu,
+        // hơn là đi dò xem middleware kia quyết định dựa vào cái gì.
+        branch.Use(async (ctx, next) =>
+        {
+            // GỠ endpoint đã được định tuyến chọn trước đó.
+            //
+            // .NET tự chèn UseRouting ở đầu pipeline, nên khi tới đây "/" đã khớp fallback của
+            // ứng dụng quản trị. StaticFileMiddleware CỐ Ý bỏ qua mọi yêu cầu đã có endpoint —
+            // để không giẫm lên route thật. Kết quả: /index.html gọi thẳng thì 200, còn "/" thì
+            // 404, dù đã đổi đường dẫn đúng. Mất khá lâu mới tìm ra vì hai đường dẫn cuối cùng
+            // giống hệt nhau, chỉ khác cái endpoint vô hình đi kèm.
+            ctx.SetEndpoint(null);
+
+            // Thư mục → file index.html. UseDefaultFiles không ăn trong nhánh MapWhen.
+            var path = ctx.Request.Path.Value ?? "/";
+            if (path.EndsWith('/'))
+                ctx.Request.Path = path + "index.html";
+
+            await next();
+        });
+
+        branch.UseStaticFiles(new StaticFileOptions
+        {
+            FileProvider = newsFiles,
+            // Trang dựng lại mỗi lượt duyệt. Cache lâu thì vừa duyệt xong mở ra vẫn thấy bài cũ
+            // và tưởng hệ thống hỏng.
+            OnPrepareResponse = ctx =>
+                ctx.Context.Response.Headers.CacheControl = "no-cache, must-revalidate",
+        });
+
+        // KẾT THÚC nhánh tại đây. Không có dòng này thì yêu cầu không khớp file nào sẽ đi tiếp
+        // xuống pipeline chính, gặp fallback của ứng dụng quản trị và ném lỗi 500 khó hiểu —
+        // đúng thứ vừa gặp khi đặt nhánh này sai chỗ.
+        branch.Run(async ctx =>
+        {
+            ctx.Response.StatusCode = 404;
+            ctx.Response.ContentType = "text/plain; charset=utf-8";
+            await ctx.Response.WriteAsync("Không có trang này trên bản xem thử.");
+        });
+    });
+
+
 using (var migrateScope = app.Services.CreateScope())
 {
     var db = migrateScope.ServiceProvider.GetRequiredService<AppDbContext>();

@@ -78,6 +78,17 @@ export default function NewsSitePage() {
         )}
       />
 
+      {/* Chưa gắn tên miền: nút "Xem trên web" mở bản XEM THỬ trên máy chủ nội bộ, còn link
+          dán vào bình luận Facebook vẫn là tên miền thật. Nói rõ, nếu không người duyệt xem
+          thấy bài chạy ngon rồi tưởng độc giả cũng mở được — trong khi tên miền chưa sống. */}
+      {status?.isPreviewOnly && (
+        <div className="news-site-preview-note">
+          Đang <b>xem thử tại máy</b> ({status.previewBaseUrl}). Tên miền thật
+          {' '}<b>{status.publicBaseUrl || 'chưa đặt'}</b> chưa trỏ về máy chủ, nên link trong bài
+          Facebook sẽ chưa mở được cho tới khi gắn xong.
+        </div>
+      )}
+
       {/* Thư mục không ghi được thì bài "lên web" vẫn báo thành công nhưng trang ngoài KHÔNG
           đổi — không lỗi nào hiện ra. Cảnh báo ngay đầu trang, đừng để phải đi tìm. */}
       {status && status.canWrite === false && (
@@ -141,7 +152,7 @@ export default function NewsSitePage() {
               <div className="news-site-card-actions">
                 {a.url
                   ? <a className="btn btn-ghost" href={a.url} target="_blank" rel="noreferrer">Xem trên web</a>
-                  : <span className="news-site-nourl" title="Chưa đặt NewsSite:PublicBaseUrl">chưa có link web</span>}
+                  : <span className="news-site-nourl" title="Bài chưa có file HTML">chưa có link</span>}
                 {canApproveCrawl && (
                   <button type="button" className="btn btn-primary" onClick={() => setPosting(a)}>
                     Đăng fanpage

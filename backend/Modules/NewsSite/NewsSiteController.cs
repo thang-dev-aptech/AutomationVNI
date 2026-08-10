@@ -53,7 +53,10 @@ public class NewsSiteController(
                 a.Id, a.Slug, a.Title, a.Sapo, a.CategorySlug, a.ReadMinutes,
                 a.SourceName, a.SourceUrl, status = a.Status.ToString(),
                 a.PublishedAt, a.ViewCount, a.ErrorMessage, a.EventKey,
-                url = repository.PublicUrlOf(a.Slug),
+                // Nút "Xem trên web" bấm vào ĐÂY — phải là địa chỉ mở được ngay. Trả địa chỉ
+                // công khai khi tên miền chưa sống thì bấm ra lỗi DNS.
+                url = repository.PreviewUrlOf(a.Slug),
+                publicUrl = repository.PublicUrlOf(a.Slug),
                 qualityScore = score,
                 // Gợi ý, không phải luật. Người duyệt vẫn đăng được bài điểm thấp hơn.
                 suggestFanpage = score >= suggestMin,
@@ -66,7 +69,18 @@ public class NewsSiteController(
     public IActionResult Status()
     {
         var ok = builder.CanWrite(out var reason);
-        return Ok(ApiResponse.Ok(new { canWrite = ok, path = reason }));
+        var opt = newsOptions.Value;
+        return Ok(ApiResponse.Ok(new
+        {
+            canWrite = ok,
+            path = reason,
+            publicBaseUrl = opt.PublicBaseUrl,
+            previewBaseUrl = opt.PreviewBaseUrl,
+            // Đang xem thử ở địa chỉ khác địa chỉ công khai — giao diện cần nói rõ, nếu không
+            // người duyệt tưởng bài đã sống trên tên miền thật.
+            isPreviewOnly = !string.IsNullOrWhiteSpace(opt.PreviewBaseUrl)
+                            && opt.PreviewBaseUrl != opt.PublicBaseUrl,
+        }));
     }
 
     /// <summary>Viết bài website từ một tin đã cào rồi dựng lại trang. CỬA 1.</summary>
@@ -165,6 +179,7 @@ public class NewsSiteController(
         a.PublishedAt,
         a.ViewCount,
         a.ErrorMessage,
-        url = repository.PublicUrlOf(a.Slug),
+        url = repository.PreviewUrlOf(a.Slug),
+        publicUrl = repository.PublicUrlOf(a.Slug),
     };
 }

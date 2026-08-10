@@ -24,8 +24,26 @@ public class NewsSiteOptions
     /// <summary>Quá số lần này mà vẫn không viết được thì bỏ, kèm ghi chú cho người kiểm tra.</summary>
     public int MaxComposeAttempts { get; set; } = 3;
 
-    /// <summary>Ví dụ https://tintuc.vni.edu.vn — KHÔNG kèm dấu / ở cuối.</summary>
+    /// <summary>
+    /// Địa chỉ CÔNG KHAI của trang tin, ví dụ https://tintuc.vni.edu.vn — KHÔNG kèm dấu / cuối.
+    ///
+    /// Đây là địa chỉ ĐI RA NGOÀI: canonical, og:url, sitemap, và link dán ở bình luận Facebook.
+    /// Giữ đúng tên miền thật kể cả khi chưa trỏ DNS — thẻ og trong HTML phải khớp địa chỉ mà
+    /// độc giả sẽ mở, không phải địa chỉ máy dev.
+    /// </summary>
     public string PublicBaseUrl { get; set; } = "";
+
+    /// <summary>
+    /// Địa chỉ XEM THỬ, chỉ dùng cho nút "Xem trên web" trong giao diện quản trị.
+    ///
+    /// Tách khỏi PublicBaseUrl vì hai thứ này khác nhau khi chưa gắn tên miền: người duyệt cần
+    /// mở được bài NGAY để kiểm, còn thẻ og và link Facebook thì phải mang tên miền thật.
+    /// Dùng chung một giá trị thì hoặc nút xem thử dẫn vào tên miền chết, hoặc bài Facebook
+    /// dẫn về localhost.
+    ///
+    /// Bỏ trống = dùng PublicBaseUrl. Gắn tên miền xong thì xoá dòng này trong cấu hình.
+    /// </summary>
+    public string PreviewBaseUrl { get; set; } = "";
 
     /// <summary>Thư mục nginx phục vụ. Trong Docker phải bind mount, xem README của VNINews.</summary>
     public string OutputPath { get; set; } = "Storage/News";

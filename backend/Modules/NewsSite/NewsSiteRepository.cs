@@ -14,12 +14,34 @@ public partial class NewsSiteRepository(
     /// Đường dẫn công khai của bài. Trả null khi chưa cấu hình PublicBaseUrl — thà không có
     /// link còn hơn dán một đường dẫn tương đối mà bấm từ Facebook là 404.
     /// </summary>
+    /// <summary>Địa chỉ CÔNG KHAI — dùng cho og:url, sitemap, và link dán ở bình luận Facebook.</summary>
     public string? PublicUrlOf(string? slug)
     {
         var baseUrl = options.Value.PublicBaseUrl?.TrimEnd('/');
-        if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(slug)) return null;
+        if (string.IsNullOrWhiteSpace(baseUrl) || IsTempSlug(slug)) return null;
         return baseUrl + NewsHtml.ArticlePath(slug);
     }
+
+    /// <summary>
+    /// Địa chỉ XEM THỬ cho nút trên giao diện quản trị. Chưa gắn tên miền thì đây là đường duy
+    /// nhất mở được bài vừa duyệt.
+    ///
+    /// Slug TẠM ("cho-…" của bài đang chờ viết, "loi-…" của bài hỏng) thì trả null: những bài
+    /// đó chưa có file HTML nào, dựng link cho chúng là mời người dùng bấm vào một trang 404.
+    /// </summary>
+    public string? PreviewUrlOf(string? slug)
+    {
+        if (IsTempSlug(slug)) return null;
+        var baseUrl = options.Value.PreviewBaseUrl?.TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(baseUrl)) return PublicUrlOf(slug);
+        return baseUrl + NewsHtml.ArticlePath(slug);
+    }
+
+    /// <summary>Slug máy tự đặt lúc chưa có tít thật — chưa ứng với file HTML nào.</summary>
+    private static bool IsTempSlug(string? slug)
+        => string.IsNullOrWhiteSpace(slug)
+           || slug.StartsWith("cho-", StringComparison.Ordinal)
+           || slug.StartsWith("loi-", StringComparison.Ordinal);
 
     public async Task<NewsArticleModel?> GetAsync(Guid id, CancellationToken ct = default)
         => await context.Set<NewsArticleModel>().FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, ct);

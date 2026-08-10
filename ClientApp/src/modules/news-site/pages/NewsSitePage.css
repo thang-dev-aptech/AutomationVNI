@@ -185,3 +185,15 @@
 }
 
 .news-site-remove { color: var(--color-danger-text, #991b1b); }
+
+/* Băng báo đang xem thử — vàng chứ không đỏ: đây là trạng thái BÌNH THƯỜNG khi chưa gắn
+   tên miền, không phải lỗi. Đỏ dùng cho thư mục không ghi được. */
+.news-site-preview-note {
+  background: var(--color-warning-soft, #fef3c7);
+  color: var(--color-warning-text, #92400e);
+  border: 1px solid var(--color-warning, #f59e0b);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: .9rem;
+  line-height: 1.55;
+}
