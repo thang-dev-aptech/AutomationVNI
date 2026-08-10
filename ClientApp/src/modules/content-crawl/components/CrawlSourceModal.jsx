@@ -74,10 +74,19 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
 
   const handleCreate = async () => {
     try {
-      await createSource.mutateAsync(form)
-      toast.success('Đã thêm nguồn')
+      const created = await createSource.mutateAsync(form)
+      // Nói rõ hệ thống ĐÃ ĐỔI địa chỉ thành feed — người dùng nhập trang chuyên mục nhưng
+      // trong bảng lại thấy một URL khác. Không nói thì họ tưởng mình gõ nhầm.
+      const savedUrl = created?.url ?? created?.data?.url
+      toast.success(savedUrl && savedUrl !== form.url.trim()
+        ? `Đã thêm nguồn — tự tìm ra feed: ${savedUrl}`
+        : 'Đã thêm nguồn')
+
       setForm(EMPTY)
       setPreview(null)
+      // Xoá kết quả dò cùng lúc với form. Để lại là dán một câu "đọc thử được 50 bài" bên
+      // cạnh ô địa chỉ đã trống — thông tin cũ mô tả một thứ không còn ở đó.
+      setDiscovery(null)
     } catch (e) { toast.error(getErrorMessage(e)) }
   }
 
@@ -161,16 +170,14 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
         {canManage && (
           <div className="crawl-source-form">
             <h4>Thêm nguồn cào</h4>
-            {!isFacebook && (
-              <div className="crawl-suggest">
-                {SUGGESTED_FEEDS.map((f) => (
-                  <button key={f.url} type="button" className="btn btn-ghost btn-sm"
-                    onClick={() => setForm((v) => ({ ...v, name: f.name, url: f.url }))}>
-                    {f.name}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="crawl-suggest">
+              {SUGGESTED_FEEDS.map((f) => (
+                <button key={f.url} type="button" className="btn btn-ghost btn-sm"
+                  onClick={() => { setForm((v) => ({ ...v, name: f.name, url: f.url })); setDiscovery(null) }}>
+                  {f.name}
+                </button>
+              ))}
+            </div>
             <input className="form-control" placeholder="Tên hiển thị, vd: Tuổi Trẻ — Giáo dục"
               value={form.name} onChange={setField('name')} />
 

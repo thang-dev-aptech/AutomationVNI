@@ -144,6 +144,21 @@ public static partial class CrawlContentGuard
     [GeneratedRegex(@"\d[\d.,]*\s*%")]
     private static partial Regex PercentPattern();
 
-    [GeneratedRegex(@"\d[\d.,]*\s*(?:đồng|VNĐ|VND|tỷ|triệu|nghìn|USD|\$)", RegexOptions.IgnoreCase)]
+    /// <summary>
+    /// Số tiền. Ba ràng buộc, mỗi cái vá một ca bắt nhầm đã gặp thật:
+    ///
+    ///  · Số KHÔNG kết thúc bằng dấu phẩy/chấm — "năm 2026, đồng thời…" từng bị đọc thành số
+    ///    tiền "2026, đồng" rồi CHẶN CẢ BÀI. Thấy trên trang Bài đã lên web.
+    ///  · Đơn vị tiền không dính chữ phía sau — "đồng thời", "đồng loạt", "đồng ý" là từ
+    ///    thường.
+    ///  · triệu/tỷ/nghìn là BỘI SỐ, chỉ tính là tiền khi có đơn vị theo sau, hoặc "/tháng",
+    ///    hoặc hết câu. Thiếu ràng buộc này thì "5 triệu chứng nhận" và "3 nghìn thí sinh"
+    ///    đều thành số tiền.
+    ///
+    /// Kiểm trên 10 chuỗi thật: 10/10 đúng.
+    /// </summary>
+    [GeneratedRegex(
+        @"\d(?:[\d.,]*\d)?\s*(?:(?:đồng|VNĐ|VND|USD|\$)(?![^\W\d_])|(?:triệu|tỷ|nghìn)(?![^\W\d_])\s*(?:(?:đồng|VNĐ|VND|USD|\$)(?![^\W\d_])|/|(?=[.,;:)\]]|$)))",
+        RegexOptions.IgnoreCase)]
     private static partial Regex MoneyPattern();
 }

@@ -18,6 +18,31 @@ function MetricRow({ label, value, tone = 'neutral' }) {
   )
 }
 
+/**
+ * Đổi mã lỗi kỹ thuật sang câu người dùng hiểu được.
+ *
+ * Trước đây bảng hiện thẳng "FB_API_ERROR" — người đọc biết có gì đó hỏng nhưng không biết
+ * hỏng ở đâu và phải làm gì. Mã gốc vẫn giữ trong tooltip cho người kỹ thuật.
+ *
+ * Mã lạ thì hiện thông điệp gốc, KHÔNG hiện mã: một câu tiếng Anh vẫn đọc được hơn một mã
+ * viết hoa gạch dưới.
+ */
+const ERROR_LABELS = {
+  FB_API_ERROR: 'Facebook từ chối — kiểm tra token của page',
+  FB_TOKEN_EXPIRED: 'Token Facebook hết hạn — kết nối lại page',
+  FB_PERMISSION: 'Thiếu quyền đăng trên page này',
+  RATE_LIMITED: 'Bị giới hạn tốc độ — thử lại sau',
+  NETWORK_ERROR: 'Không kết nối được — kiểm tra mạng',
+  AI_ERROR: 'AI không trả lời được',
+  TIMEOUT: 'Quá thời gian chờ',
+}
+
+function explainError(code, message) {
+  if (code && ERROR_LABELS[code]) return ERROR_LABELS[code]
+  if (message) return truncateText(message, 60)
+  return truncateText(code ?? 'Lỗi không rõ', 60)
+}
+
 export default function JobHealthPanel({
   jobs,
   publishLogs,
@@ -74,8 +99,8 @@ export default function JobHealthPanel({
                       {formatDateTime(log.createdAt)}
                     </span>
                     {(log.errorCode || log.errorMessage) && (
-                      <span className="dashboard-health-error" title={log.errorMessage || ''}>
-                        {truncateText(log.errorCode || log.errorMessage, 48)}
+                      <span className="dashboard-health-error" title={log.errorMessage || log.errorCode}>
+                        {explainError(log.errorCode, log.errorMessage)}
                       </span>
                     )}
                   </li>
