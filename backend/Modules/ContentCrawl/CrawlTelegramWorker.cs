@@ -18,6 +18,7 @@ public class CrawlTelegramWorker(
     IServiceScopeFactory scopeFactory,
     TelegramClient telegram,
     IOptions<TelegramOptions> options,
+    IWebHostEnvironment env,
     ILogger<CrawlTelegramWorker> logger) : BackgroundService
 {
     /// <summary>
@@ -91,10 +92,12 @@ public class CrawlTelegramWorker(
             _offset = u.UpdateId + 1;
             if (u.ChatId == 0) continue;
 
-            // Chat đầu tiên nhắn tới trở thành nơi nhận thông báo, khỏi phải đi tra chat_id
-            // bằng tay. Chỉ học một lần và không ghi xuống đâu cả — restart là học lại.
-            if (_chatId == 0) _chatId = u.ChatId;
-
+            // KIỂM QUYỀN TRƯỚC, học chat sau.
+            //
+            // Trước đây _chatId được gán ở ngay trên dòng kiểm quyền, nên người lạ nhắn bot
+            // trước sẽ CHIẾM luôn kênh nhận thông báo: lệnh của họ bị chặn, nhưng mọi tin cào
+            // được từ đó về sau lại gửi vào chat của họ. Rò rỉ nội dung mà không ai biết, vì
+            // phía mình chỉ thấy "bot im lặng".
             if (!IsAllowed(u.ChatId))
             {
                 logger.LogWarning("Bỏ qua lệnh từ chat lạ {ChatId}", u.ChatId);
@@ -102,6 +105,10 @@ public class CrawlTelegramWorker(
                     await telegram.AnswerCallbackAsync(u.CallbackQueryId, "Không có quyền", ct);
                 continue;
             }
+
+            // Chat đầu tiên ĐƯỢC PHÉP nhắn tới trở thành nơi nhận thông báo, khỏi phải đi tra
+            // chat_id bằng tay. Chỉ học một lần, không ghi xuống đâu — restart là học lại.
+            if (_chatId == 0) _chatId = u.ChatId;
 
             using var scope = scopeFactory.CreateScope();
             var service = scope.ServiceProvider.GetRequiredService<CrawlTelegramService>();
@@ -202,10 +209,27 @@ public class CrawlTelegramWorker(
         if (done > 0) logger.LogInformation("Đã đăng xong và báo kết quả {N} tin", done);
     }
 
-    /// <summary>Rỗng = cho tất cả (chỉ hợp lúc dev). Có danh sách thì chặn hết phần còn lại.</summary>
+    /// <summary>
+    /// Rỗng = cho tất cả, và CHỈ ở môi trường Development.
+    ///
+    /// Trên production, danh sách rỗng nghĩa là bất kỳ ai biết tên bot đều gõ được /dang, /fb
+    /// — tức đăng thẳng lên 15 fanpage của khách. Tên bot không phải bí mật: Telegram cho tìm
+    /// kiếm, và đã có 2 chat lạ từng nhắn bot này.
+    ///
+    /// Chặn hết khi rỗng ở production thì bot "không phản hồi" — khó chịu nhưng an toàn, và
+    /// log nói rõ phải làm gì. Mở toang thì không có gì báo cho tới lúc có bài lạ trên fanpage.
+    /// </summary>
     private bool IsAllowed(long chatId)
     {
         var allowed = options.Value.AllowedChatIds;
-        return allowed.Count == 0 || allowed.Contains(chatId.ToString());
+        if (allowed.Count > 0) return allowed.Contains(chatId.ToString());
+
+        if (env.IsDevelopment()) return true;
+
+        logger.LogError(
+            "Telegram:AllowedChatIds ĐANG RỖNG ở môi trường {Env} — chặn toàn bộ lệnh. "
+            + "Thêm chat id {ChatId} vào cấu hình để dùng bot.",
+            env.EnvironmentName, chatId);
+        return false;
     }
 }

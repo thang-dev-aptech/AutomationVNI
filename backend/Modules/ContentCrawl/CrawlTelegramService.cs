@@ -62,10 +62,16 @@ public class CrawlTelegramService(
             ct.ThrowIfCancellationRequested();
             var code = ShortId(a);
             var caption = FormatArticle(a, pagesBySource.GetValueOrDefault(a.CrawlSourceId));
+            // HAI nút, không phải ba.
+            //
+            // Nút "📋 Chọn page" đã bị gỡ: từ khi tách hai cửa, luồng duyệt bỏ qua hoàn toàn
+            // danh sách page. Bấm vào là tick được 5 page, bấm Đăng rồi nhận "Đang viết 0 bài
+            // cho: " — trông như đã hẹn đăng, thực ra không page nào biết.
+            //
+            // Chọn page nằm ở /fb, sau khi bài đã lên web và có URL riêng để dán vào bình luận.
             List<List<TelegramButton>> buttons =
             [
-                [new TelegramButton("✅ Đưa lên web", $"ok:{code}")],
-                [new TelegramButton("📋 Chọn page", $"sel:{code}"),
+                [new TelegramButton("✅ Đưa lên web", $"ok:{code}"),
                  new TelegramButton("🗑 Bỏ", $"no:{code}")],
             ];
 
@@ -139,6 +145,25 @@ public class CrawlTelegramService(
         return sb.ToString().TrimEnd();
     }
 
+    /// <summary>
+    /// Đổi giờ UTC trong CSDL sang giờ Việt Nam để hiển thị.
+    ///
+    /// Dùng Id IANA và có đường lui sang tên Windows: cùng một backend chạy trên máy Mac của
+    /// dev và VPS Linux, hai nơi đặt tên múi giờ khác nhau. Không tra được thì cộng thẳng 7
+    /// tiếng — Việt Nam không có giờ mùa hè nên đó luôn đúng.
+    /// </summary>
+    private static DateTime ToVnTime(DateTime utc)
+    {
+        foreach (var id in new[] { "Asia/Ho_Chi_Minh", "SE Asia Standard Time" })
+        {
+            try { return TimeZoneInfo.ConvertTimeFromUtc(
+                DateTime.SpecifyKind(utc, DateTimeKind.Utc), TimeZoneInfo.FindSystemTimeZoneById(id)); }
+            catch (TimeZoneNotFoundException) { }
+            catch (InvalidTimeZoneException) { }
+        }
+        return utc.AddHours(7);
+    }
+
     private static string Esc(string? s) => WebUtility.HtmlEncode(s ?? "");
 
     private static string ScoreIcon(int score) => score >= 85 ? "🟢" : score >= 70 ? "🟡" : "🟠";
@@ -157,13 +182,24 @@ public class CrawlTelegramService(
 
         try
         {
-            // "/dang <mã>" trần trụi thì MỞ Ô CHỌN PAGE thay vì đăng luôn. Gõ kèm tên page
-            // ("/dang a3f9c1 toefl") mới đi thẳng — người đã gõ tên page là người biết mình
-            // muốn gì, bắt bấm thêm một màn nữa chỉ tổ chậm.
-            if (cmd is "dang" or "duyet" && !arg.Contains(' '))
+            // Ô CHỌN PAGE ĐÃ BỊ GỠ KHỎI /dang.
+            //
+            // Từ khi tách hai cửa, /dang chỉ đưa bài LÊN WEB — PublishToWebsiteAsync bỏ qua
+            // hoàn toàn danh sách page. Ô chọn vẫn hiện ra, vẫn cho tick 5 page, bấm Đăng xong
+            // báo "Đang viết 0 bài cho: " (rỗng) rồi im lặng mãi mãi.
+            //
+            // Sếp tick page, thấy chữ "Đang đăng", và tin là bài sắp lên fanpage. Không có gì
+            // lên cả. Đây là kiểu nói dối tệ nhất của một công cụ: nó trông như đã làm việc.
+            //
+            // Chọn page thuộc về /fb — nơi bài đã có URL riêng để dán vào bình luận.
+            if (cmd is "dang" or "duyet" && arg.Contains(' '))
             {
-                var (text2, kb) = await HandleSelectionAsync(chatId, $"sel:{arg.Trim()}", null, ct);
-                return new BotReply(text2, kb);
+                var code = arg.Split(' ')[0];
+                return new BotReply(
+                    "Lệnh <code>/dang</code> chỉ đưa bài lên website, không chọn page.\n\n"
+                    + $"Đưa lên web:  <code>/dang {Esc(code)}</code>\n"
+                    + $"Rồi đăng page: <code>/fb {Esc(code)} &lt;tên page&gt;</code>\n\n"
+                    + "<i>Phải lên web trước thì bình luận mới dẫn về link của mình.</i>");
             }
 
             return cmd switch
@@ -183,7 +219,12 @@ public class CrawlTelegramService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Lệnh Telegram '{Text}' lỗi", text);
-            return new BotReply($"⚠️ Lỗi: {Esc(ex.Message)}");
+            // KHÔNG đưa ex.Message ra chat. Nó là câu tiếng Anh của .NET, đôi khi kèm cả tên
+            // bảng, tên cột, chuỗi kết nối. Sếp đọc không hiểu, mà người lạ đọc thì hiểu quá rõ.
+            // Chi tiết nằm ở log; chat chỉ cần biết phải làm gì tiếp.
+            return new BotReply(
+                "⚠️ Lệnh không chạy được. Hệ thống đã ghi lại lỗi.\n"
+                + "Thử lại sau ít phút, hoặc kiểm tra trên giao diện.");
         }
     }
 
@@ -375,13 +416,25 @@ public class CrawlTelegramService(
         // chưa thấy bài. Đúng bài học từ lần đổi nhãn nút "Đăng" thành "Duyệt".
         if (result.Created == 0)
         {
-            if (string.IsNullOrWhiteSpace(result.NewsUrl))
-                return $"⚠️ Đã duyệt <b>{Esc(article.Title)}</b>\n"
-                     + "Nhưng CHƯA lên web được — xem lý do trên giao diện.";
+            // Có link nghĩa là bài đã viết xong ngay trong lượt này (luồng đồng bộ cũ).
+            if (!string.IsNullOrWhiteSpace(result.NewsUrl))
+                return $"✅ <b>Đã lên web</b>\n{Esc(article.Title)}\n\n"
+                     + $"{Esc(result.NewsUrl)}\n\n"
+                     + "<i>Chưa đăng fanpage.</i> Gõ <code>/fb " + ShortId(article) + "</code> để đăng.";
 
-            return $"✅ <b>Đã lên web</b>\n{Esc(article.Title)}\n\n"
-                 + $"{Esc(result.NewsUrl)}\n\n"
-                 + "<i>Chưa đăng fanpage.</i> Gõ <code>/fb " + ShortId(article) + "</code> để đăng.";
+            // KHÔNG có link mà CÓ NewsArticleId nghĩa là bài ĐANG XẾP HÀNG, không phải hỏng.
+            //
+            // Từ lúc chuyển khâu viết bài sang chạy nền, PublishToWebsiteAsync trả về ngay với
+            // Created = 0 và NewsUrl = null. Nhánh cũ đọc hai giá trị đó rồi kết luận "CHƯA lên
+            // web được" — nên MỌI lượt /dang đều báo thất bại dù bài vào hàng đợi thành công.
+            // Bot nói sai với sếp mỗi lần dùng.
+            if (result.NewsArticleId is not null)
+                return $"⏳ <b>Đang viết bài</b>\n{Esc(article.Title)}\n\n"
+                     + "AI đang viết, khoảng 40 giây nữa xong.\n"
+                     + "<i>Xong sẽ báo lại ngay tại tin nhắn này kèm link.</i>";
+
+            return $"⚠️ Đã duyệt <b>{Esc(article.Title)}</b>\n"
+                 + "Nhưng CHƯA lên web được — xem lý do trên giao diện.";
         }
 
         var pages = string.Join(", ", result.Channels);
@@ -552,8 +605,13 @@ public class CrawlTelegramService(
         var pending = await repository.GetPendingAsync(30, ct);
         if (pending.Count == 0) return "Không có tin nào chờ duyệt.";
 
-        var sb = new StringBuilder($"<b>{pending.Count} tin chờ duyệt</b>\n");
-        foreach (var a in pending.Take(10))
+        // Đếm và liệt kê phải KHỚP nhau. Trước đây tiêu đề nói "30 tin chờ duyệt" trong khi
+        // chỉ in 10 dòng — sếp đếm tay rồi tưởng bot mất tin.
+        const int show = 10;
+        var sb = new StringBuilder(pending.Count > show
+            ? $"<b>{pending.Count} tin chờ duyệt</b> — {show} tin mới nhất:\n"
+            : $"<b>{pending.Count} tin chờ duyệt</b>\n");
+        foreach (var a in pending.Take(show))
             sb.AppendLine($"<code>#{ShortId(a)}</code> {(a.QualityScore is int q ? $"{ScoreIcon(q)}{q} " : "")}"
                           + Esc(Cut(a.Title, 46)));
         sb.AppendLine("\nDuyệt: <code>/dang &lt;mã&gt;</code> · Bỏ: <code>/bo &lt;mã&gt;</code>");
@@ -571,7 +629,10 @@ public class CrawlTelegramService(
             sb.AppendLine($"{Label(status)}: {n}");
         sb.AppendLine($"\nNguồn: {sources.Count(s => s.IsActive)} đang bật / {sources.Count}");
         if (runs.Count > 0)
-            sb.AppendLine($"Lượt cào gần nhất: {runs[0].StartedAt:dd/MM HH:mm} UTC · {runs[0].ItemsNew} bài mới");
+            // Giờ Việt Nam, không phải UTC. Lệch 7 tiếng: lượt cào 15:00 hiện thành 08:00,
+            // sếp nhìn tưởng hệ thống ngủ cả buổi chiều.
+            sb.AppendLine(
+                $"Lượt cào gần nhất: {ToVnTime(runs[0].StartedAt):dd/MM HH:mm} · {runs[0].ItemsNew} bài mới");
         return sb.ToString().TrimEnd();
     }
 

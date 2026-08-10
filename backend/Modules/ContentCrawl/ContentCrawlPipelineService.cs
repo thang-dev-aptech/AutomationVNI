@@ -34,6 +34,7 @@ public class ContentCrawlPipelineService(
     Backend.Modules.NewsSite.NewsPublisher newsPublisher,
     Backend.Modules.NewsSite.NewsSiteRepository newsRepository,
     Backend.Modules.Notification.NotificationService notifications,
+    Backend.Shared.Notification.TelegramClient telegram,
     IUserContext userContext,
     IOptions<ContentCrawlOptions> options,
     IOptions<Backend.Modules.NewsSite.NewsSiteOptions> newsOptions,
@@ -835,7 +836,50 @@ public class ContentCrawlPipelineService(
 
         logger.LogInformation("CỬA 1 — tin {Id} {Result}",
             crawled.Id, result is null ? $"chưa lên web: {final?.ErrorMessage}" : $"đã lên {url}");
+
+        await ReportToTelegramAsync(crawled, result, final, url, ct);
     }
+
+    /// <summary>
+    /// Sửa TẠI CHỖ tin nhắn Telegram đã hứa "xong sẽ báo lại".
+    ///
+    /// Trước đây chỉ luồng fanpage mới báo kết quả về Telegram (CrawlAutoPublishService). Lệnh
+    /// /dang hứa "xong sẽ báo lại ngay tại tin nhắn này" rồi im lặng mãi mãi — sếp phải tự mở
+    /// giao diện xem, mà lý do dùng bot chính là để khỏi phải mở giao diện.
+    ///
+    /// Sửa tại chỗ chứ không gửi tin mới: một tin duyệt là MỘT tin nhắn, đi từ "đang viết" sang
+    /// kết quả. Gửi thêm thì 20 tin duyệt là 40 tin nhắn.
+    /// </summary>
+    private async Task ReportToTelegramAsync(
+        CrawledArticleModel crawled,
+        Backend.Modules.NewsSite.NewsArticleModel? result,
+        Backend.Modules.NewsSite.NewsArticleModel? final,
+        string? url,
+        CancellationToken ct)
+    {
+        if (crawled.TelegramChatId is not long chatId || crawled.TelegramMessageId is not int messageId)
+            return;
+
+        var text = result is not null
+            ? $"✅ <b>Đã lên web</b>\n{TgEsc(result.Title)}\n\n"
+              + (url is null ? "" : $"{TgEsc(url)}\n\n")
+              + $"<i>Chưa đăng fanpage.</i> Gõ <code>/fb {crawled.ShortCode}</code> để đăng."
+            : $"⚠️ <b>Chưa lên web được</b>\n{TgEsc(crawled.Title)}\n\n"
+              + $"{TgEsc(final?.ErrorMessage ?? "chưa rõ lý do")}";
+
+        try
+        {
+            // Gỡ hết nút: tin nhắn này đã đi hết vòng đời, để nút lại là mời bấm nhầm lần nữa.
+            await telegram.EditMessageAsync(chatId, messageId, text, null, ct);
+        }
+        catch (Exception ex)
+        {
+            // Telegram hỏng KHÔNG được làm hỏng lượt viết bài — bài đã lên web rồi.
+            logger.LogWarning(ex, "Không báo được kết quả về Telegram cho tin {Id}", crawled.Id);
+        }
+    }
+
+    private static string TgEsc(string? s) => System.Net.WebUtility.HtmlEncode(s ?? "");
 
     private async Task UpsertArticleFingerprintAsync(CrawledArticleModel article, CancellationToken ct)
     {
