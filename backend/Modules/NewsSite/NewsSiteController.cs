@@ -160,6 +160,47 @@ public class NewsSiteController(
         return Ok(ApiResponse.Ok(new { id }, "Đã gỡ khỏi web"));
     }
 
+    /// <summary>
+    /// Bù ảnh cho bài lên web trước khi có tính năng ảnh.
+    ///
+    /// Lấy ThumbnailUrl của tin gốc. CHỈ nhận khi biết tên báo — đăng ảnh người ta mà không
+    /// ghi nguồn là chuyện khác hẳn với dẫn nguồn tử tế, đúng luật đã đặt ở NewsPublisher.
+    /// Chạy được nhiều lần, chỉ đụng bài còn thiếu.
+    /// </summary>
+    [HttpPost("backfill-images")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> BackfillImages(CancellationToken ct)
+    {
+        var articles = (await repository.GetPublishedAsync(null, 200, ct))
+            .Where(x => string.IsNullOrWhiteSpace(x.ImageUrl) && x.CrawledArticleId is not null)
+            .ToList();
+
+        var ids = articles.Select(x => x.CrawledArticleId!.Value).ToList();
+        var thumbs = await context.Set<CrawledArticleModel>()
+            .Where(x => ids.Contains(x.Id))
+            .Select(x => new { x.Id, x.ThumbnailUrl })
+            .ToDictionaryAsync(x => x.Id, x => x.ThumbnailUrl, ct);
+
+        var filled = 0;
+        var skipped = new List<string>();
+        foreach (var a in articles)
+        {
+            var thumb = thumbs.GetValueOrDefault(a.CrawledArticleId!.Value);
+            if (string.IsNullOrWhiteSpace(thumb)) { skipped.Add($"{a.Title}: tin gốc không có ảnh"); continue; }
+            if (string.IsNullOrWhiteSpace(a.SourceName)) { skipped.Add($"{a.Title}: không rõ báo nào"); continue; }
+
+            a.ImageUrl = thumb;
+            a.ImageCredit = $"Ảnh: {a.SourceName}";
+            await repository.SaveAsync(a, ct);
+            filled++;
+        }
+
+        if (filled > 0) await builder.BuildAsync(ct);
+
+        return Ok(ApiResponse.Ok(new { filled, skipped },
+            $"Đã bù ảnh cho {filled} bài" + (skipped.Count > 0 ? $", bỏ qua {skipped.Count}" : "")));
+    }
+
     [HttpPost("build")]
     [Authorize(Roles = "Admin,ContentManager")]
     public async Task<IActionResult> Build(CancellationToken ct)
