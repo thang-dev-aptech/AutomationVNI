@@ -325,6 +325,7 @@ public class ContentCrawlController(
             TotalActiveSources = sources.Count,
             LastRunAt = sources.Max(s => s.LastRunAt),
             TwoGateFlow = crawlOptions.Value.TwoGateFlow,
+            CrawlScheduleTimes = crawlOptions.Value.CrawlScheduleTimes,
         }));
     }
 

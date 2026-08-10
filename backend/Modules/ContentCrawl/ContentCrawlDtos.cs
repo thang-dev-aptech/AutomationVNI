@@ -218,6 +218,15 @@ public class CrawlInboxSummaryResponse
     public DateTime? LastRunAt { get; set; }
 
     /// <summary>
+    /// Giờ cào CHUNG áp cho mọi nguồn, ví dụ ["06:30","12:00","17:30"].
+    ///
+    /// Giao diện PHẢI hiện con số này, không hiện IntervalMinutes của từng nguồn nữa — cột đó
+    /// vẫn còn trong DB nhưng backend đã bỏ qua. Hiện nó là nói với người dùng một nhịp mà hệ
+    /// thống không chạy theo.
+    /// </summary>
+    public List<string> CrawlScheduleTimes { get; set; } = [];
+
+    /// <summary>
     /// Bấm Duyệt nghĩa là gì: true = đưa lên website (fanpage là bước riêng sau đó),
     /// false = fan-out post rồi đăng fanpage ngay như luồng cũ.
     ///

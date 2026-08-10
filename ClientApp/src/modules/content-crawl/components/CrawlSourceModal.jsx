@@ -5,15 +5,14 @@ import { toast } from '@/shared/stores/toastStore'
 import { getErrorMessage, formatDateTime } from '@/shared/utils/apiHelpers'
 import {
   CRAWL_SOURCE_TYPE,
-  CRAWL_SOURCE_TYPE_OPTIONS,
   SUGGESTED_FEEDS,
 } from '../constants/crawlConstants'
 import {
   useCrawlNow,
   useCrawlSources,
+  useCrawlSummary,
   useCreateCrawlSource,
   useDeleteCrawlSource,
-  useFacebookStatus,
   useTestCrawlSource,
   useUpdateCrawlSource,
 } from '../hooks/useCrawl'
@@ -22,8 +21,6 @@ const EMPTY = {
   name: '',
   url: '',
   sourceType: CRAWL_SOURCE_TYPE.WEB_PAGE,
-  crawlTimes: ['08:00', '14:00'],
-  intervalMinutes: 30,
   maxItemsPerRun: 4,
   lookbackHours: 48,
 }
@@ -41,6 +38,11 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
 
   // Kết quả dò feed, hiện ngay dưới ô địa chỉ. Xoá mỗi khi người dùng sửa địa chỉ — giữ lại
   // kết quả cũ bên cạnh địa chỉ mới là nói dối bằng dữ liệu cũ.
+  // Lịch cào chung, lấy từ backend. Không viết cứng ở đây — hiện một dãy giờ khác với thứ
+  // worker thật sự dùng là đúng lại lỗi vừa sửa, chỉ đổi chỗ.
+  const { data: summary } = useCrawlSummary()
+  const scheduleTimes = summary?.crawlScheduleTimes ?? []
+
   const [discovery, setDiscovery] = useState(null)
   const [discovering, setDiscovering] = useState(false)
 
@@ -57,24 +59,9 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
       setDiscovering(false)
     }
   }
-  const isFacebook = Number(form.sourceType) === CRAWL_SOURCE_TYPE.FACEBOOK_PAGE
-  const typeMeta = CRAWL_SOURCE_TYPE_OPTIONS.find((t) => t.value === Number(form.sourceType))
-    ?? CRAWL_SOURCE_TYPE_OPTIONS[0]
-  // Chỉ hỏi trạng thái đăng nhập khi thực sự chọn fanpage — mỗi lần hỏi là một lượt
-  // điều hướng trình duyệt sang facebook.com, đừng chạy vô cớ.
-  const { data: fbStatus, isFetching: fbChecking } = useFacebookStatus(open && isFacebook)
 
   const setField = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
 
-  const setTimeAt = (idx) => (e) => setForm((f) => {
-    const next = [...f.crawlTimes]
-    next[idx] = e.target.value
-    return { ...f, crawlTimes: next }
-  })
-  const addTime = () => setForm((f) => ({ ...f, crawlTimes: [...f.crawlTimes, '20:00'] }))
-  const removeTime = (idx) => setForm((f) => ({
-    ...f, crawlTimes: f.crawlTimes.filter((_, i) => i !== idx),
-  }))
 
   const handleTest = async () => {
     setPreview(null)
@@ -118,11 +105,19 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
   return (
     <Modal open={open} title="Nguồn cào tin" onClose={onClose}>
       <div className="crawl-sources">
+        {/* Lịch chung hiện MỘT LẦN ở đây thay vì một cột lặp lại ở mọi dòng.
+            Trước đây bảng hiện "mỗi 30 phút" / "mỗi 120 phút" của từng nguồn — những con số
+            backend đã bỏ qua từ khi có lịch chung. Bảng nói một nhịp, hệ thống chạy nhịp khác,
+            và không có gì cho thấy điều đó. */}
+        <div className="crawl-note">
+          Giờ cào chung: <b>{scheduleTimes.length ? scheduleTimes.join(' · ') : 'chưa đặt'}</b> (giờ Việt Nam)
+          — áp cho mọi nguồn. Đổi trong cấu hình <code>ContentCrawl:CrawlScheduleTimes</code>.
+        </div>
         {isLoading && <p>Đang tải...</p>}
         <div className="crawl-source-table-wrap">
         <table className="crawl-source-table">
           <thead>
-            <tr><th>Nguồn</th><th>Giờ cào</th><th>Lần cào gần nhất</th><th /></tr>
+            <tr><th>Nguồn</th><th>Lần cào gần nhất</th><th /></tr>
           </thead>
           <tbody>
             {sources.map((s) => (
@@ -131,11 +126,6 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
                   <strong>{s.name}</strong>
                   <div className="crawl-source-url">{s.siteDomain || s.url}</div>
                   {s.lastError && <div className="crawl-source-error">{s.lastError}</div>}
-                </td>
-                <td>
-                  {s.crawlTimes?.length
-                    ? s.crawlTimes.join(', ')
-                    : <span className="crawl-source-url">mỗi {s.intervalMinutes} phút</span>}
                 </td>
                 <td>
                   {s.lastRunAt ? formatDateTime(s.lastRunAt) : 'chưa cào'}

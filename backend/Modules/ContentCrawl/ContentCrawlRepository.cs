@@ -59,7 +59,11 @@ public class ContentCrawlRepository(
         CrawlSourceModel source, DateTime nowUtc,
         IReadOnlyList<string>? globalTimes = null, string timezone = "Asia/Ho_Chi_Minh")
     {
-        var shared = ParseCrawlTimes(globalTimes is null ? null : string.Join(',', globalTimes));
+        // ParseCrawlTimes nhận chuỗi JSON (cột CrawlTimes trong DB lưu dạng đó). Lịch chung là
+        // một List<string> từ appsettings, KHÔNG phải JSON — nối bằng dấu phẩy rồi ném vào đó
+        // thì DeserializeStringList trả rỗng, hàm này im lặng rơi về chu kỳ riêng của nguồn.
+        // Đã dính đúng lỗi đó: lịch chung "chạy" nhưng worker vẫn cào mỗi 30 phút.
+        var shared = ParseTimeList(globalTimes);
         if (shared.Count > 0) return IsDueBySlots(source, nowUtc, shared, timezone);
 
         var slots = ParseCrawlTimes(source.CrawlTimes);
@@ -107,6 +111,15 @@ public class ContentCrawlRepository(
     }
 
     /// <summary>Đọc JSON array "HH:mm". Mốc hỏng thì bỏ qua, không làm chết cả nguồn.</summary>
+    /// <summary>Đọc danh sách "HH:mm" đã có sẵn dạng list — dùng cho lịch chung trong cấu hình.</summary>
+    public static List<TimeSpan> ParseTimeList(IReadOnlyList<string>? times)
+        => (times ?? [])
+            .Select(x => TimeSpan.TryParse(x?.Trim(), out var ts)
+                         && ts >= TimeSpan.Zero && ts < TimeSpan.FromDays(1) ? ts : (TimeSpan?)null)
+            .Where(x => x.HasValue).Select(x => x!.Value)
+            .Distinct().OrderBy(x => x).ToList();
+
+    /// <summary>Đọc danh sách giờ từ chuỗi JSON — dùng cho cột CrawlTimes trong DB.</summary>
     public static List<TimeSpan> ParseCrawlTimes(string? json)
     {
         return DeserializeStringList(json)

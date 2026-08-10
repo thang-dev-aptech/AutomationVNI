@@ -25,7 +25,12 @@ public class ContentCrawlOptions
     /// Ba mốc mặc định bám nhịp ra tin của báo Việt: sáng sớm (tin đêm qua), giữa trưa (tin
     /// buổi sáng), chiều muộn (tin trong ngày).
     /// </summary>
-    public List<string> CrawlScheduleTimes { get; set; } = ["06:30", "12:00", "17:30"];
+    /// KHÔNG đặt giá trị mặc định ở đây. .NET bind mảng theo CHỈ SỐ và không xoá phần tử cũ,
+    /// nên mặc định trong C# + giá trị trong appsettings sẽ CỘNG DỒN: đã thấy thật, cấu hình
+    /// 3 mốc mà đọc ra 6 mốc lặp đôi. Ở đây Distinct() khử được, nhưng đặt lệch giờ giữa hai
+    /// nơi thì ra một lịch không ai chủ ý — và không có gì báo.
+    /// Mặc định thật nằm ở appsettings.json.
+    public List<string> CrawlScheduleTimes { get; set; } = [];
 
     // Múi giờ dùng chung với ScheduleTimezone bên dưới (lịch ĐĂNG BÀI) — cả hai đều là giờ
     // Việt Nam, tách thành hai núm chỉ tạo thêm chỗ để đặt lệch nhau.
