@@ -54,7 +54,11 @@ export default function ApproveArticleModal({ open, article, onClose, onSubmit, 
 
   const submitLabel = twoGate
     ? (submitting ? 'Đang viết bài…' : 'Đưa lên web')
-    : (submitting ? 'Đang tạo...' : `Tạo ${channelIds.length || ''} bài`)
+    // Cùng lỗi với FanpageModal: `Tạo ${n || ''} bài` cho ra "Tạo  bài" khi chưa chọn page.
+    // Nhánh này chỉ chạy khi TẮT luồng hai cửa, nhưng vẫn phải đúng.
+    : submitting ? 'Đang tạo...'
+      : channelIds.length === 0 ? 'Chọn page trước'
+        : `Tạo ${channelIds.length} bài`
 
   return (
     <Modal

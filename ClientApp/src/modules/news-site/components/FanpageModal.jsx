@@ -39,7 +39,14 @@ export default function FanpageModal({ open, article, onClose, onSubmit, submitt
             onClick={() => onSubmit({ channelIds, autoPublish })}
             disabled={submitting || channelIds.length === 0}
           >
-            {submitting ? 'Đang tạo…' : `Đăng ${channelIds.length || ''} page`}
+            {/* Chưa chọn page thì nói "Chọn page trước" — trước đây nhãn là `Đăng ${n || ''} page`
+                nên khi n = 0 nó ra "Đăng  page" với một khoảng trống ở giữa, trông như lỗi
+                dựng chữ chứ không như một nút đang chờ người dùng chọn. */}
+            {submitting
+              ? 'Đang tạo…'
+              : channelIds.length === 0
+                ? 'Chọn page trước'
+                : `Đăng ${channelIds.length} page`}
           </button>
         </>
       )}
