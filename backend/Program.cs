@@ -187,6 +187,7 @@ builder.Services.AddHttpClient<RssFeedReader>(client => client.Timeout = TimeSpa
     });
 // Đường lấy tin CHÍNH: HTTP thuần. Đo thật 12 bài/6 báo — 0,021s mỗi bài, lấy được 100-105%
 // số ký tự so với OpenClaw (41s mỗi bài). Báo Việt render sẵn ở server.
+builder.Services.AddScoped<ReadableArticleParser>();
 builder.Services.AddHttpClient<HttpArticleFetcher>(client =>
     {
         // Trang chuyên mục của báo Việt nặng 250-520KB. 20s là rộng rãi; để mặc định 100s thì

@@ -16,7 +16,25 @@ public class ContentCrawlOptions
     /// Gặp thật: trang chuyên mục video (dantri.com.vn/dt360/...) không có bài chữ nào, bóc ra
     /// đúng 54 ký tự là chuỗi trợ năng của trình phát video.
     /// </summary>
-    public int MinContentLength { get; set; } = 300;
+    /// <summary>
+    /// Sàn CHẤT LƯỢNG: dưới mức này thì đánh Filtered.
+    ///
+    /// 2.000 chứ không phải 300. Đo trên 53 tin có cả độ dài và điểm chấm:
+    ///   &lt; 2.000 ký tự     3 tin · điểm TB 16 · ĐẠT CHUẨN 0%
+    ///   2.000–5.000        8 tin · 62 ·  50%
+    ///   5.000–10.000      28 tin · 76 ·  79%   ← vùng tốt nhất
+    ///   &gt; 10.000         14 tin · 65 ·  57%
+    /// Nâng sàn loại 15 tin, KHÔNG tin nào trong đó từng đạt chuẩn — tiết kiệm 15 lượt gọi AI
+    /// chấm điểm mà không mất bài nào.
+    ///
+    /// KHÁC với ngưỡng bóc hụt trong HttpArticleFetcher (300): cái đó hỏi "có bóc được gì
+    /// không" để quyết định gọi dự phòng, cái này hỏi "bài có đủ dày để viết lại không".
+    /// Trước đây MỘT số lái cả hai quyết định, nên chỉnh cái này là vô tình đổi cả cái kia.
+    /// </summary>
+    public int MinContentLength { get; set; } = 2000;
+
+    /// <summary>Dưới mức này coi như bóc hụt và gọi đường dự phòng. Không phải sàn chất lượng.</summary>
+    public int MinExtractedLength { get; set; } = 300;
 
     /// <summary>
     /// Dùng cho tin CHƯA lấy được toàn văn (nguồn feed, trang chặn). Đo trên tiêu đề + tóm tắt.

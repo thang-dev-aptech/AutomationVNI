@@ -18,6 +18,7 @@ namespace Backend.Modules.ContentCrawl;
 /// </summary>
 public partial class HttpArticleFetcher(
     HttpClient http,
+    ReadableArticleParser parser,
     IOptions<ContentCrawlOptions> options,
     ILogger<HttpArticleFetcher> logger)
 {
@@ -81,24 +82,23 @@ public partial class HttpArticleFetcher(
             var html = await GetStringAsync(link.Url, ct);
             if (html is null) return null;
 
-            var body = HtmlArticleParser.ExtractBody(html);
-            var title = HtmlArticleParser.ExtractTitle(html) ?? link.Title;
+            var parsed = parser.Parse(html, link.Url);
 
-            if (body.Length < options.Value.MinContentLength)
+            if (parsed.Body.Length < options.Value.MinExtractedLength)
             {
                 logger.LogInformation(
-                    "Bóc bằng HTTP chỉ được {Len} ký tự ở {Url} — cần dự phòng", body.Length, link.Url);
+                    "Bóc bằng HTTP chỉ được {Len} ký tự ở {Url} — cần dự phòng", parsed.Body.Length, link.Url);
                 return null;
             }
 
             return new CrawledPageItem(
-                Title: title,
-                Summary: HtmlArticleParser.ExtractSummary(html),
-                Content: body,
+                Title: parsed.Title ?? link.Title,
+                Summary: parsed.Summary,
+                Content: parsed.Body,
                 Link: link.Url,
-                Author: HtmlArticleParser.ExtractAuthor(html),
-                ThumbnailUrl: HtmlArticleParser.ExtractImage(html),
-                PublishedAtUtc: HtmlArticleParser.ExtractPublishedUtc(html));
+                Author: parsed.Author,
+                ThumbnailUrl: parsed.ImageUrl,
+                PublishedAtUtc: parsed.PublishedUtc);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
