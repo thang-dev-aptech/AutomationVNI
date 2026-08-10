@@ -91,8 +91,6 @@ public class ContentDedupService(
         // Đo thật: 8/100 vân tay mồ côi, kéo theo 4/13 phán quyết trùng (31%) trỏ vào hư không.
         var articleIds = all.Where(r => r.OwnerType == FingerprintOwner.CrawledArticle)
             .Select(r => r.OwnerId).ToList();
-        var postIds = all.Where(r => r.OwnerType == FingerprintOwner.Post)
-            .Select(r => r.OwnerId).ToList();
 
         // Bài đã BỊ LOẠI không được làm mốc so trùng.
         //
@@ -113,12 +111,20 @@ public class ContentDedupService(
         var liveArticles = await context.Set<CrawledArticleModel>()
             .Where(x => articleIds.Contains(x.Id) && !x.IsDeleted && usable.Contains(x.Status))
             .Select(x => x.Id).ToListAsync(ct);
-        var livePosts = await context.Posts
-            .Where(x => postIds.Contains(x.Id) && !x.IsDeleted)
-            .Select(x => x.Id).ToListAsync(ct);
-
-        var live = liveArticles.Concat(livePosts).ToHashSet();
-        var rows = all.Where(r => live.Contains(r.OwnerId)).ToList();
+        // BỎ HẲN vân tay bài đã đăng (OwnerType = Post). Ba lý do, đo được cả ba:
+        //
+        //  1. Nó so SAI VĂN BẢN — vân tay Post lưu tít AI VIẾT LẠI, còn tin mới cào là tít gốc
+        //     của báo. Đúng lỗi mà NewsDedupService đã ghi chú.
+        //  2. Nó ĐẦU ĐỘC tầng AI — 28 dòng nhưng chỉ 10 tiêu đề khác nhau, một bài lặp 15 lần
+        //     (mỗi page một dòng), chiếm hết suất ứng viên của tầng đang bắt 80% ca trùng.
+        //  3. Nó chỉ từng bắt được ĐÚNG 1 ca.
+        //
+        // Việc "đừng đăng lại tin đã đưa" giờ do NewsArticles.EventKey lo — bảng đó mới là sổ
+        // ghi "mình đã đưa tin gì", và luồng hai cửa bắt mọi bài đi qua web trước.
+        var live = liveArticles.ToHashSet();
+        var rows = all
+            .Where(r => r.OwnerType == FingerprintOwner.CrawledArticle && live.Contains(r.OwnerId))
+            .ToList();
 
         var dropped = all.Count - rows.Count;
         if (dropped > 0)
@@ -148,24 +154,32 @@ public class ContentDedupService(
             return new DedupVerdict(true, DedupMethod.ExactHash, exact.OwnerId,
                 ToTarget(exact.OwnerType), 1.0, "Nội dung y hệt bài đã có");
 
-        // ── Bậc 2: SimHash + chồng lấp tiêu đề ────────────────────────────────
+        // ── Bậc 2: AI thẩm định các bài GẦN GIỐNG ─────────────────────────────
+        //
+        // Tầng SimHash + Jaccard đã BỊ XOÁ. Đo trên 103 tin:
+        //   guid/URL          0 ca   (đã lọc từ lúc lấy tin, tầng này thừa)
+        //   hash tuyệt đối    1 ca
+        //   SimHash+Jaccard   3 ca   ← đổi lại 8 núm cấu hình + 131 dòng tính toán
+        //   AI phán          16 ca   ← 80% công việc
+        //
+        // Và nó hỏi sai câu hỏi: đếm từ chung không biết hai bài có nói cùng một việc không.
+        // "Bộ GD&ĐT: Thi lại với thí sinh chuyên Tuyên Quang" với "Vụ gian lận điểm thi: Khởi
+        // tố thầy…" chồng lấp 0,12 — số học không bao giờ với tới.
+        //
+        // Việc đó giờ do KHOÁ SỰ VIỆC làm, sinh ngay trong lượt chấm điểm với 0 lượt gọi AI
+        // thêm (xem ContentCrawlPipelineService.FindSameEventAsync).
+        //
+        // Tầng này còn lại để bắt phần khoá sự việc bỏ sót: AI trả khoá quá rộng, hoặc chấm
+        // điểm hỏng nên không có khoá nào.
         var candidates = window.Rows
             .Where(r => r.OwnerId != article.Id)
             .Select(r => new SimilarityCandidate(
                 r.OwnerId, r.OwnerType, r.TitleSnippet, r.ContentAt,
-                SimHashCalculator.HammingDistance(article.SimHash, r.SimHash),
-                SimHashCalculator.TitleJaccard(article.Title, r.TitleSnippet)))
-            .Where(c => c.HammingDistance <= opt.BorderlineHammingMax
-                        || c.TitleJaccard >= opt.BorderlineJaccardMin)
-            .OrderByDescending(c => c.Score)
-            // GOM THEO TIÊU ĐỀ trước khi cắt lấy 3.
-            //
-            // Một bài đăng lên 15 page sinh 15 dòng vân tay CÙNG tiêu đề. Không gom thì cả 3
-            // suất ứng viên rơi vào đúng một bài, và tầng AI — thứ đang bắt 16/20 ca trùng —
-            // được cho ăn một danh sách chỉ có một lựa chọn lặp lại ba lần.
-            //
-            // Đo thật: 28 dòng vân tay loại Post nhưng chỉ 10 tiêu đề khác nhau; một tiêu đề
-            // lặp 15 lần.
+                0, SimHashCalculator.TitleJaccard(article.Title, r.TitleSnippet)))
+            .Where(c => c.TitleJaccard >= opt.BorderlineJaccardMin)
+            .OrderByDescending(c => c.TitleJaccard)
+            // GOM THEO TIÊU ĐỀ trước khi cắt lấy 3: một bài đăng 15 page sinh 15 dòng vân tay
+            // cùng tiêu đề, không gom thì cả 3 suất ứng viên rơi vào đúng một bài.
             .GroupBy(c => c.TitleSnippet ?? c.OwnerId.ToString(), StringComparer.OrdinalIgnoreCase)
             .Select(g => g.First())
             .Take(Math.Max(1, opt.AiJudgeMaxCandidates))
@@ -174,18 +188,10 @@ public class ContentDedupService(
         if (candidates.Count == 0)
             return new DedupVerdict(false, DedupMethod.None, null, DuplicateTarget.None, null, null);
 
-        var best = candidates[0];
-        if (best.TitleJaccard >= opt.DuplicateJaccardMin)
-            return new DedupVerdict(true, DedupMethod.SimHash, best.OwnerId,
-                ToTarget(best.OwnerType), best.Score,
-                $"Tiêu đề trùng {best.TitleJaccard:P0} với \"{Shorten(best.TitleSnippet)}\"");
-
-        // ── Bậc 3: AI thẩm định vùng chồng lấn ────────────────────────────────
-        // Đo trên feed thật: cặp trùng và cặp khác tin đều nằm ở d∈[13,21], j∈[0.50,0.60].
-        // Không ngưỡng số học nào tách được, nên để AI đọc và phán.
         if (!opt.AiJudgeEnabled || !aiJudge.IsAvailable())
-            return new DedupVerdict(false, DedupMethod.None, null, DuplicateTarget.None, best.Score,
-                "Điểm nằm vùng nghi ngờ nhưng AI thẩm định đang tắt — cần người kiểm tra");
+            return new DedupVerdict(false, DedupMethod.None, null, DuplicateTarget.None,
+                candidates[0].TitleJaccard,
+                "Tiêu đề gần giống nhưng AI thẩm định đang tắt — cần người kiểm tra");
 
         return await JudgeWithAiAsync(article, candidates, ct);
     }

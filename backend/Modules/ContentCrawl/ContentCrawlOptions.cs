@@ -116,11 +116,6 @@ public class DedupOptions
     /// ≈ 2.800 dòng — nạp một lần mỗi tick rồi so trong bộ nhớ là đủ nhanh và KHÔNG mất recall.
     /// </summary>
     public int MaxWindowRows { get; set; } = 5000;
-
-    /// <summary>Chồng lấp token tiêu đề ≥ ngưỡng này thì chốt trùng luôn, khỏi gọi AI.</summary>
-    public double DuplicateJaccardMin { get; set; } = 0.70;
-    /// <summary>Khoảng cách Hamming ≤ ngưỡng này thì đẩy sang AI thẩm định.</summary>
-    public int BorderlineHammingMax { get; set; } = 16;
     /// <summary>Hoặc chồng lấp tiêu đề ≥ ngưỡng này thì cũng đẩy sang AI.</summary>
     public double BorderlineJaccardMin { get; set; } = 0.40;
 

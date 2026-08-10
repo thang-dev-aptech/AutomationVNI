@@ -39,7 +39,6 @@ public class ContentCrawlWorker(
                 await FetchDueSourcesAsync(settings, stoppingToken);
                 await ProcessArticlesAsync(stoppingToken);
                 await ComposeQueuedArticlesAsync(stoppingToken);
-                await SyncPublishedFingerprintsAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -138,10 +137,4 @@ public class ContentCrawlWorker(
         }
     }
 
-    private async Task SyncPublishedFingerprintsAsync(CancellationToken ct)
-    {
-        using var scope = scopeFactory.CreateScope();
-        var pipeline = scope.ServiceProvider.GetRequiredService<ContentCrawlPipelineService>();
-        await pipeline.SyncPublishedPostFingerprintsAsync(200, ct);
-    }
 }
