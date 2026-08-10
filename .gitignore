@@ -51,3 +51,10 @@ coverage/
 
 # Cursor / local agent
 .cursor/
+
+# Gói bàn giao cho VPS — CHỨA BÍ MẬT, không bao giờ được vào git.
+#
+# vni_automation.db trong đó có 15 access token fanpage Facebook và tài khoản quản trị.
+# Luật "Data/*.db" ở backend/.gitignore KHÔNG phủ thư mục này, nên phải chặn riêng.
+# Gửi cho đồng đội qua kênh riêng tư, không qua git và không qua chat nhóm.
+ban-giao/
