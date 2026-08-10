@@ -42,6 +42,12 @@ backend/Data/*.db-wal
 backend/Storage/Files/
 backend/Storage/*.db
 
+# Mọi bản sao CSDL, dù đặt tên gì. Luật "*.db" ở trên KHÔNG phủ đuôi phía sau, nên
+# vni_automation.db.truoc-khi-gop hay .bak vẫn lọt vào git như thường — và mỗi bản như
+# vậy chứa 18 access token fanpage. Kho này đang CÔNG KHAI.
+backend/Data/*.db.*
+backend/Data/backups/
+
 # Trang tin là ĐẦU RA, không phải mã nguồn — mọi thứ trong đó do NewsSiteBuilder sinh ra
 # từ CSDL, assets thì chép từ khuôn VNINews/assets (khuôn đó VẪN theo git).
 #
