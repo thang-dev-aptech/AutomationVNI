@@ -135,6 +135,7 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
         if (entity is null) return null;
 
         if (request.Name is not null) entity.Name = request.Name.Trim();
+        if (request.SourceType.HasValue) entity.SourceType = request.SourceType.Value;
         if (request.Url is not null)
         {
             entity.Url = request.Url.Trim();

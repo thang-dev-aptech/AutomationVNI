@@ -17,21 +17,24 @@ public class ContentCrawlOptions
     /// đúng 54 ký tự là chuỗi trợ năng của trình phát video.
     /// </summary>
     /// <summary>
-    /// Sàn CHẤT LƯỢNG: dưới mức này thì đánh Filtered.
+    /// Sàn tối thiểu để một tin được đi tiếp. CỐ Ý ĐỂ THẤP — việc phán chất lượng là của AI.
     ///
-    /// 2.000 chứ không phải 300. Đo trên 53 tin có cả độ dài và điểm chấm:
-    ///   &lt; 2.000 ký tự     3 tin · điểm TB 16 · ĐẠT CHUẨN 0%
-    ///   2.000–5.000        8 tin · 62 ·  50%
-    ///   5.000–10.000      28 tin · 76 ·  79%   ← vùng tốt nhất
-    ///   &gt; 10.000         14 tin · 65 ·  57%
-    /// Nâng sàn loại 15 tin, KHÔNG tin nào trong đó từng đạt chuẩn — tiết kiệm 15 lượt gọi AI
-    /// chấm điểm mà không mất bài nào.
+    /// Từng đặt 2.000 dựa trên số đo "tin dưới 2.000 ký tự có 0% đạt chuẩn". Số đó SAI: mẫu
+    /// chỉ 3 tin, và cả 3 là LỖI BÓC của bộ parser cũ chứ không phải tin ngắn thật.
     ///
-    /// KHÁC với ngưỡng bóc hụt trong HttpArticleFetcher (300): cái đó hỏi "có bóc được gì
-    /// không" để quyết định gọi dự phòng, cái này hỏi "bài có đủ dày để viết lại không".
-    /// Trước đây MỘT số lái cả hai quyết định, nên chỉnh cái này là vô tình đổi cả cái kia.
+    /// Đo lại sau khi SmartReader bóc đúng, trên tin thật dưới 2.000 ký tự:
+    ///   1.564 ký tự → 94 điểm   Điểm chuẩn Học viện Quân y
+    ///   1.548 ký tự → 82 điểm   Trường ĐH Mỏ - Địa chất công bố điểm chuẩn
+    ///   1.866 ký tự → 82 điểm   Minh bạch hoá thông tin trong tuyển sinh
+    ///   1.592 ký tự → 35 điểm
+    ///   1.550 ký tự → 15 điểm
+    /// Độ dài KHÔNG dự đoán được chất lượng. Sàn 2.000 đã loại 46 tin trong một lượt cào, phần
+    /// lớn là tin "điểm chuẩn trường X" — đúng thứ phụ huynh cần nhất.
+    ///
+    /// Giữ 500 chỉ để chặn trang rỗng thật (trang video bóc ra 54 ký tự). Phần còn lại để bộ
+    /// chấm điểm quyết — tốn thêm lượt gọi AI, nhưng mất một tin 94 điểm đắt hơn nhiều.
     /// </summary>
-    public int MinContentLength { get; set; } = 2000;
+    public int MinContentLength { get; set; } = 500;
 
     /// <summary>Dưới mức này coi như bóc hụt và gọi đường dự phòng. Không phải sàn chất lượng.</summary>
     public int MinExtractedLength { get; set; } = 300;

@@ -28,6 +28,14 @@ public class UpdateCrawlSourceRequest
 {
     public string? Name { get; set; }
     public string? Url { get; set; }
+
+    /// <summary>
+    /// Đổi loại nguồn. Trước đây KHÔNG sửa được — muốn chuyển một trang danh mục sang feed RSS
+    /// thì phải xoá rồi tạo lại, mất luôn lịch sử cào và danh sách URL đã biết (nên lượt sau
+    /// cào lại từ đầu và ra một đống tin trùng).
+    /// </summary>
+    public Enums.CrawlSourceType? SourceType { get; set; }
+
     public Guid? CategoryId { get; set; }
     public bool? IsActive { get; set; }
     public List<string>? CrawlTimes { get; set; }
