@@ -12,6 +12,25 @@ public class ContentCrawlOptions
     public int MaxSourcesPerTick { get; set; } = 5;
 
     /// <summary>
+    /// LỊCH CÀO CHUNG cho mọi nguồn — giờ Việt Nam, dạng "HH:mm".
+    ///
+    /// Trước đây mỗi nguồn tự đặt chu kỳ riêng (cái 30 phút, cái 120 phút). Hậu quả:
+    ///  · Thêm nguồn mới là phải nhớ đặt lại chu kỳ, quên thì nó chạy theo mặc định 30 phút
+    ///    và ăn hết suất MaxSourcesPerTick của các nguồn khác.
+    ///  · Muốn đổi nhịp cho cả hệ thống phải sửa từng nguồn một.
+    ///  · Không nhìn đâu ra được "hệ thống cào lúc mấy giờ" — phải mở 10 nguồn ra cộng nhẩm.
+    ///
+    /// Giờ MỘT nơi quyết. Nguồn nào cũng chạy đúng những mốc này.
+    ///
+    /// Ba mốc mặc định bám nhịp ra tin của báo Việt: sáng sớm (tin đêm qua), giữa trưa (tin
+    /// buổi sáng), chiều muộn (tin trong ngày).
+    /// </summary>
+    public List<string> CrawlScheduleTimes { get; set; } = ["06:30", "12:00", "17:30"];
+
+    // Múi giờ dùng chung với ScheduleTimezone bên dưới (lịch ĐĂNG BÀI) — cả hai đều là giờ
+    // Việt Nam, tách thành hai núm chỉ tạo thêm chỗ để đặt lệch nhau.
+
+    /// <summary>
     /// Toàn văn ngắn hơn mức này thì coi như bóc hỏng → đánh Filtered, không đưa cho AI.
     /// Gặp thật: trang chuyên mục video (dantri.com.vn/dt360/...) không có bài chữ nào, bóc ra
     /// đúng 54 ký tự là chuỗi trợ năng của trình phát video.

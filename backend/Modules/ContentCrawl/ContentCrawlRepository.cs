@@ -11,7 +11,10 @@ namespace Backend.Modules.ContentCrawl;
 /// Một repository cho cả module (nguồn / lượt cào / tin) — theo quy ước dự án là không tách
 /// quá nhiều file nhỏ.
 /// </summary>
-public class ContentCrawlRepository(AppDbContext context, IUserContext userContext)
+public class ContentCrawlRepository(
+    AppDbContext context,
+    IUserContext userContext,
+    Microsoft.Extensions.Options.IOptions<ContentCrawlOptions> options)
     : GenericRepository<CrawledArticleModel>(context, userContext)
 {
     // ── Nguồn cào ───────────────────────────────────────────────────────────
@@ -39,14 +42,26 @@ public class ContentCrawlRepository(AppDbContext context, IUserContext userConte
             .ToListAsync(ct);
 
         return sources
-            .Where(s => IsDue(s, now))
+            .Where(s => IsDue(s, now, options.Value.CrawlScheduleTimes, options.Value.ScheduleTimezone))
             .OrderBy(s => s.LastRunAt ?? DateTime.MinValue)
             .Take(Math.Max(1, max))
             .ToList();
     }
 
-    public static bool IsDue(CrawlSourceModel source, DateTime nowUtc, string timezone = "Asia/Ho_Chi_Minh")
+    /// <summary>
+    /// Nguồn này đã tới lượt cào chưa.
+    ///
+    /// LỊCH CHUNG đứng trước lịch riêng: cấu hình ContentCrawl:ScheduleTimes quyết cho MỌI
+    /// nguồn. Lịch riêng của từng nguồn (CrawlTimes / IntervalMinutes) chỉ còn là đường lui khi
+    /// lịch chung bị để trống — giữ lại để nguồn cũ trong DB không đứng im sau khi nâng cấp.
+    /// </summary>
+    public static bool IsDue(
+        CrawlSourceModel source, DateTime nowUtc,
+        IReadOnlyList<string>? globalTimes = null, string timezone = "Asia/Ho_Chi_Minh")
     {
+        var shared = ParseCrawlTimes(globalTimes is null ? null : string.Join(',', globalTimes));
+        if (shared.Count > 0) return IsDueBySlots(source, nowUtc, shared, timezone);
+
         var slots = ParseCrawlTimes(source.CrawlTimes);
         return slots.Count > 0
             ? IsDueBySlots(source, nowUtc, slots, timezone)

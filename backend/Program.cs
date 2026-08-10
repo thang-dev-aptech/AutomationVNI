@@ -188,6 +188,16 @@ builder.Services.AddHttpClient<RssFeedReader>(client => client.Timeout = TimeSpa
 // Đường lấy tin CHÍNH: HTTP thuần. Đo thật 12 bài/6 báo — 0,021s mỗi bài, lấy được 100-105%
 // số ký tự so với OpenClaw (41s mỗi bài). Báo Việt render sẵn ở server.
 builder.Services.AddScoped<ReadableArticleParser>();
+// Bộ dò feed dùng handler tự giải nén như các client cào khác — nhiều báo trả gzip kể cả khi
+// không xin, và chuỗi nén đọc ra là nhị phân chứ không phải XML.
+builder.Services.AddHttpClient<FeedDiscoveryService>(c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(30);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("VNIAutomationBot/1.0 (+https://vni.edu.vn)");
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AutomaticDecompression = System.Net.DecompressionMethods.All,
+});
 builder.Services.AddHttpClient<HttpArticleFetcher>(client =>
     {
         // Trang chuyên mục của báo Việt nặng 250-520KB. 20s là rộng rãi; để mặc định 100s thì

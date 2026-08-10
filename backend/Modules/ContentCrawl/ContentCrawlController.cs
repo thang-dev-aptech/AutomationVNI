@@ -14,6 +14,7 @@ public class ContentCrawlController(
     ContentCrawlPipelineService pipeline,
     HttpArticleFetcher httpFetcher,
     FeedSourceFetcher feedFetcher,
+    FeedDiscoveryService feedDiscovery,
     IOpenClawBrowserClient browser,
     Microsoft.Extensions.Options.IOptions<ContentCrawlOptions> crawlOptions,
     ILogger<ContentCrawlController> logger) : ControllerBase
@@ -25,6 +26,30 @@ public class ContentCrawlController(
     {
         var sources = await repository.GetSourcesAsync(onlyActive, ct);
         return Ok(ApiResponse.Ok(sources.Select(ContentCrawlRepository.ToResponse).ToList()));
+    }
+
+    /// <summary>
+    /// Dò feed RSS từ địa chỉ trang báo. KHÔNG ghi gì vào DB.
+    ///
+    /// Giao diện gọi cái này ngay khi người dùng dán địa chỉ, để họ thấy trước "tìm được feed
+    /// X, đọc thử ra 50 bài" rồi mới bấm Lưu — thay vì lưu xong mới biết sai.
+    /// </summary>
+    [HttpPost("sources/discover")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> DiscoverFeed([FromBody] CreateCrawlSourceRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Url))
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Chưa nhập địa chỉ trang"));
+
+        var r = await feedDiscovery.DiscoverAsync(request.Url, ct);
+        if (r.FeedUrl is null)
+            return Ok(ApiResponse.Ok(new { found = false, tried = r.Tried },
+                $"Không tìm được feed RSS ở trang này (đã thử {r.Tried.Count} địa chỉ). "
+                + "Trang có thể không có RSS — thử dán địa chỉ chuyên mục cụ thể, ví dụ "
+                + "https://tuoitre.vn/giao-duc.htm"));
+
+        return Ok(ApiResponse.Ok(new { found = true, feedUrl = r.FeedUrl, itemCount = r.ItemCount, how = r.How },
+            $"{r.How} — đọc thử được {r.ItemCount} bài"));
     }
 
     [HttpPost("sources")]
@@ -46,6 +71,29 @@ public class ContentCrawlController(
 
         if (!Uri.TryCreate(request.Url.Trim(), UriKind.Absolute, out var uri))
             return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "URL không hợp lệ"));
+
+        // TỰ DÒ FEED khi người dùng dán địa chỉ trang thường.
+        //
+        // Người làm nội dung không có nghĩa vụ biết RSS là gì, càng không phải mở mã nguồn
+        // trang đi tìm. Họ dán https://tuoitre.vn/giao-duc.htm là đủ.
+        //
+        // Dò được thì lưu ĐỊA CHỈ FEED và đặt loại Rss. Không dò được thì vẫn lưu như cũ —
+        // WebPage cào trang danh mục vẫn chạy, chỉ kém hơn.
+        if (request.SourceType != CrawlSourceType.GoogleNews)
+        {
+            var found = await feedDiscovery.DiscoverAsync(request.Url, ct);
+            if (found.FeedUrl is not null)
+            {
+                request.Url = found.FeedUrl;
+                request.SourceType = CrawlSourceType.Rss;
+                logger.LogInformation("Tự dò ra feed {Feed} cho {Name} ({How})",
+                    found.FeedUrl, request.Name, found.How);
+            }
+            else
+            {
+                logger.LogInformation("Không dò ra feed cho {Name}, giữ nguyên cào trang", request.Name);
+            }
+        }
 
         // Chặn NGAY lúc tạo nguồn, kèm lời giải thích.
         //

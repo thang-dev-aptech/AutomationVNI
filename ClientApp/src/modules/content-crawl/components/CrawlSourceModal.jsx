@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Modal from '@/shared/components/Modal'
+import { crawlApi } from '../services/crawlApi'
 import { toast } from '@/shared/stores/toastStore'
 import { getErrorMessage, formatDateTime } from '@/shared/utils/apiHelpers'
 import {
@@ -38,6 +39,24 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
   const [form, setForm] = useState(EMPTY)
   const [preview, setPreview] = useState(null)
 
+  // Kết quả dò feed, hiện ngay dưới ô địa chỉ. Xoá mỗi khi người dùng sửa địa chỉ — giữ lại
+  // kết quả cũ bên cạnh địa chỉ mới là nói dối bằng dữ liệu cũ.
+  const [discovery, setDiscovery] = useState(null)
+  const [discovering, setDiscovering] = useState(false)
+
+  const handleDiscover = async () => {
+    setDiscovering(true)
+    setDiscovery(null)
+    try {
+      const r = await crawlApi.discoverSource({ name: form.name || 't', url: form.url.trim() })
+      const body = r?.data ?? r
+      setDiscovery({ found: Boolean(body?.data?.found), message: body?.message ?? '' })
+    } catch (e) {
+      setDiscovery({ found: false, message: getErrorMessage(e) })
+    } finally {
+      setDiscovering(false)
+    }
+  }
   const isFacebook = Number(form.sourceType) === CRAWL_SOURCE_TYPE.FACEBOOK_PAGE
   const typeMeta = CRAWL_SOURCE_TYPE_OPTIONS.find((t) => t.value === Number(form.sourceType))
     ?? CRAWL_SOURCE_TYPE_OPTIONS[0]
@@ -162,67 +181,39 @@ export default function CrawlSourceModal({ open, onClose, canManage }) {
                 ))}
               </div>
             )}
-            <span className="crawl-times-label">Loại nguồn</span>
-            <div className="crawl-type-row">
-              {CRAWL_SOURCE_TYPE_OPTIONS.map((t) => (
-                <label key={t.value} className="crawl-type-option">
-                  <input
-                    type="radio"
-                    name="crawl-source-type"
-                    checked={Number(form.sourceType) === t.value}
-                    onChange={() => setForm((f) => ({ ...f, sourceType: t.value, url: '' }))}
-                  />
-                  <span>{t.label}</span>
-                </label>
-              ))}
+            <input className="form-control" placeholder="Tên hiển thị, vd: Tuổi Trẻ — Giáo dục"
+              value={form.name} onChange={setField('name')} />
+
+            <span className="crawl-times-label">Địa chỉ trang</span>
+            <input className="form-control" placeholder="https://tuoitre.vn/giao-duc.htm"
+              value={form.url} onChange={(e) => { setField('url')(e); setDiscovery(null) }} />
+            <p className="form-hint">
+              Dán địa chỉ trang chuyên mục là đủ — hệ thống tự tìm feed RSS của trang đó.
+              Không cần đi tìm địa chỉ RSS.
+            </p>
+
+            <div className="crawl-discover-row">
+              <button type="button" className="btn btn-ghost btn-sm"
+                onClick={handleDiscover} disabled={discovering || !form.url.trim()}>
+                {discovering ? 'Đang tìm feed…' : 'Kiểm tra trang này'}
+              </button>
+              {discovery && (
+                <span className={discovery.found ? 'crawl-discover-ok' : 'crawl-discover-bad'}>
+                  {discovery.found
+                    ? `✓ ${discovery.message}`
+                    : `✗ ${discovery.message}`}
+                </span>
+              )}
             </div>
 
-            {isFacebook && (
-              <div className={`crawl-note ${fbStatus?.loggedIn ? 'crawl-note-success' : 'crawl-note-warning'}`}>
-                {fbChecking && 'Đang kiểm tra đăng nhập Facebook...'}
-                {!fbChecking && fbStatus?.loggedIn && '✓ Trình duyệt đã đăng nhập Facebook.'}
-                {!fbChecking && fbStatus && !fbStatus.loggedIn && (
-                  <>
-                    <strong>Chưa đăng nhập Facebook</strong> — cào fanpage sẽ không đọc được gì.
-                    <div>{fbStatus.reason}</div>
-                  </>
-                )}
-              </div>
-            )}
-
-            <input className="form-control" placeholder="Tên hiển thị"
-              value={form.name} onChange={setField('name')} />
-            <span className="crawl-times-label">{typeMeta.urlLabel}</span>
-            <input className="form-control" placeholder={typeMeta.placeholder}
-              value={form.url} onChange={setField('url')} />
-            <p className="form-hint">{typeMeta.hint}</p>
-            <div className="crawl-times">
-              <span className="crawl-times-label">Giờ cào mỗi ngày</span>
-              <div className="crawl-times-list">
-                {form.crawlTimes.map((t, i) => (
-                  // eslint-disable-next-line react/no-array-index-key
-                  <span className="crawl-time-item" key={i}>
-                    <input type="time" className="form-control" value={t} onChange={setTimeAt(i)} />
-                    <button type="button" className="btn btn-ghost btn-sm"
-                      onClick={() => removeTime(i)} title="Bỏ mốc này">×</button>
-                  </span>
-                ))}
-                <button type="button" className="btn btn-ghost btn-sm" onClick={addTime}>+ Thêm giờ</button>
-              </div>
-              <p className="form-hint">
-                {form.crawlTimes.length > 0
-                  ? `Cào ${form.crawlTimes.length} lượt/ngày vào ${form.crawlTimes.join(', ')} (giờ Việt Nam). Máy tắt lúc đến giờ thì bật lên sẽ cào bù.`
-                  : 'Không đặt giờ nào thì chạy theo chu kỳ lặp bên dưới.'}
-              </p>
+            {/* Lịch cào là CẤU HÌNH CHUNG, không phải của riêng nguồn này. Trước đây mỗi nguồn
+                một chu kỳ (cái 30 phút, cái 120) nên không nhìn đâu ra được hệ thống chạy lúc
+                mấy giờ, và thêm nguồn mới mà quên đặt là nó ăn hết suất của nguồn khác. */}
+            <div className="crawl-note">
+              Giờ cào do <b>cấu hình chung</b> quyết, áp cho mọi nguồn — không đặt riêng từng nguồn nữa.
             </div>
 
             <div className="crawl-form-row">
-              {form.crawlTimes.length === 0 && (
-                <label>Chu kỳ (phút)
-                  <input className="form-control" type="number" value={form.intervalMinutes}
-                    onChange={setField('intervalMinutes')} />
-                </label>
-              )}
               <label>Tối đa mỗi lượt
                 <input className="form-control" type="number" value={form.maxItemsPerRun}
                   onChange={setField('maxItemsPerRun')} />

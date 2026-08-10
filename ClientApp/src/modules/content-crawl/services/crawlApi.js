@@ -9,6 +9,8 @@ export const crawlApi = {
   deleteSource: (id) => axiosInstance.delete(`/api/ContentCrawl/sources/${id}`),
   /** Đọc thử feed, KHÔNG ghi gì vào DB — dùng để debug một nguồn trước khi thêm. */
   testSource: (payload) => axiosInstance.post('/api/ContentCrawl/sources/test', payload),
+  /** Dò feed RSS từ địa chỉ trang. Không ghi gì vào DB. */
+  discoverSource: (payload) => axiosInstance.post('/api/ContentCrawl/sources/discover', payload),
   crawlNow: (id) => axiosInstance.post(`/api/ContentCrawl/sources/${id}/crawl-now`, {}),
   facebookStatus: () => axiosInstance.get('/api/ContentCrawl/openclaw/facebook-status'),
 
