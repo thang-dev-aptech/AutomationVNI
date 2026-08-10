@@ -12,7 +12,8 @@ namespace Backend.Modules.ContentCrawl;
 public class ContentCrawlController(
     ContentCrawlRepository repository,
     ContentCrawlPipelineService pipeline,
-    OpenClawWebCrawler webCrawler,
+    HttpArticleFetcher httpFetcher,
+    FeedSourceFetcher feedFetcher,
     IOpenClawBrowserClient browser,
     Microsoft.Extensions.Options.IOptions<ContentCrawlOptions> crawlOptions,
     ILogger<ContentCrawlController> logger) : ControllerBase
@@ -46,13 +47,14 @@ public class ContentCrawlController(
         if (!Uri.TryCreate(request.Url.Trim(), UriKind.Absolute, out var uri))
             return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "URL không hợp lệ"));
 
-        var isFacebookUrl = uri.Host.Contains("facebook.com", StringComparison.OrdinalIgnoreCase);
-        if (request.SourceType == CrawlSourceType.FacebookPage && !isFacebookUrl)
+        // Chặn NGAY lúc tạo nguồn, kèm lời giải thích.
+        //
+        // Trước đây tạo được nguồn fanpage rồi nó ném NotSupportedException mỗi 30 phút, ghi
+        // lượt cào trắng vào lịch sử, và không ai biết. Thà từ chối thẳng ở đây.
+        if (uri.Host.Contains("facebook.com", StringComparison.OrdinalIgnoreCase))
             return BadRequest(ApiResponse.Fail("VALIDATION_ERROR",
-                "Đã chọn loại Fanpage nhưng URL không phải facebook.com"));
-        if (request.SourceType == CrawlSourceType.WebPage && isFacebookUrl)
-            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR",
-                "URL là fanpage Facebook — hãy chọn loại nguồn \"Fanpage Facebook\""));
+                "Chưa cào được fanpage Facebook. Hệ thống đang lấy tin từ RSS và trang báo; "
+                + "cào fanpage cần trình duyệt thật nên để giai đoạn sau."));
 
         var entity = await repository.CreateSourceAsync(request, ct);
         return Ok(ApiResponse.Ok(ContentCrawlRepository.ToResponse(entity), "Đã thêm nguồn cào"));
@@ -88,17 +90,25 @@ public class ContentCrawlController(
 
         try
         {
-            // Cào thử chỉ vài bài — mỗi bài là một lượt mở trang thật nên đừng để nhiều.
+            // Cào thử chỉ vài bài — mỗi bài là một lượt tải trang thật nên đừng để nhiều.
+            //
+            // DÙNG ĐÚNG LOẠI NGUỒN người dùng chọn. Trước đây chỗ này viết cứng WebPage và gọi
+            // thẳng OpenClaw — tức "Cào thử" chạy một đường mà production KHÔNG còn đi: thử
+            // một feed RSS thì nó đem URL feed vào bộ bóc HTML, còn OpenClaw thì mặc định tắt
+            // nên luôn về tay không. Người dùng kết luận "feed hỏng" trong khi feed vẫn tốt.
             var probe = new CrawlSourceModel
             {
                 Name = "test",
                 Url = request.Url.Trim(),
-                SourceType = CrawlSourceType.WebPage,
+                SourceType = request.SourceType,
                 MaxItemsPerRun = Math.Clamp(request.MaxItemsPerRun, 1, 5),
             };
+
             // Cào thử KHÔNG lọc bài đã cào — mục đích là xem bộ bóc có chạy trên báo này không,
             // nên cần thấy kết quả kể cả với bài đã có trong kho.
-            var items = await webCrawler.FetchAsync(probe, null, ct);
+            var items = probe.SourceType is CrawlSourceType.Rss or CrawlSourceType.GoogleNews
+                ? await feedFetcher.FetchAsync(probe, null, ct)
+                : await httpFetcher.FetchAsync(probe, null, ct);
             return Ok(ApiResponse.Ok(new TestCrawlSourceResult
             {
                 Ok = true,

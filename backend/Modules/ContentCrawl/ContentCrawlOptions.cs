@@ -10,12 +10,7 @@ public class ContentCrawlOptions
     public int IntervalSeconds { get; set; } = 300;
     /// <summary>Số nguồn xử lý mỗi tick — chặn việc 7 feed cùng tới hạn rồi nổ một lượt.</summary>
     public int MaxSourcesPerTick { get; set; } = 5;
-    public int MaxConcurrency { get; set; } = 2;
-    public int FetchTimeoutSeconds { get; set; } = 25;
-    public string UserAgent { get; set; } = "VNIAutomationBot/1.0 (+https://vni.edu.vn)";
 
-    public int DefaultLookbackHours { get; set; } = 48;
-    public int DefaultMaxItemsPerRun { get; set; } = 30;
     /// <summary>
     /// Toàn văn ngắn hơn mức này thì coi như bóc hỏng → đánh Filtered, không đưa cho AI.
     /// Gặp thật: trang chuyên mục video (dantri.com.vn/dt360/...) không có bài chữ nào, bóc ra
@@ -66,8 +61,6 @@ public class ContentCrawlOptions
     public string ScheduleTimezone { get; set; } = "Asia/Ho_Chi_Minh";
     public int ScheduleJitterMinutes { get; set; } = 12;
 
-    /// <summary>Mặc định gán cho post sinh ra khi duyệt, nếu request không chỉ định.</summary>
-    public Guid? CrawlPromptTemplateId { get; set; }
     public string DefaultObjective { get; set; } = "Chia sẻ tin giáo dục mới tới phụ huynh và học sinh";
 
     /// <summary>Cho AI đọc và chấm điểm tin trước khi đưa vào hàng chờ duyệt.</summary>
@@ -91,7 +84,6 @@ public class ContentCrawlOptions
     /// <summary>Đo thật: gateway vietai chấm một bài mất ~28s, để 30s là hụt gần hết.</summary>
     public int ScreenTimeoutSeconds { get; set; } = 120;
 
-    public int ArticleRetentionDays { get; set; } = 60;
 
     public DedupOptions Dedup { get; set; } = new();
 }

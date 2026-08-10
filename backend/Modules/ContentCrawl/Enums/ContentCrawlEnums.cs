@@ -7,8 +7,18 @@ public enum CrawlSourceType
     /// (OpenClaw chỉ là dự phòng khi HTTP về tay không).
     /// </summary>
     WebPage = 1,
-    /// <summary>Phase 3 — fanpage Facebook, dùng profile trình duyệt giữ phiên đăng nhập.</summary>
-    FacebookPage = 2,
+
+    // 2 = FacebookPage — ĐÃ GỠ.
+    //
+    // Loại nguồn này chưa bao giờ chạy được: nhánh điều phối ném NotSupportedException, và
+    // nguồn "giaoducthoidai" đã ném đúng lỗi đó mỗi 30 phút suốt 7 ngày — 7/7 lượt trắng, ghi
+    // vào lịch sử cào như một lượt bình thường. Hỏng câm điển hình.
+    //
+    // KHÔNG tái dùng số 2 cho loại khác: nguồn cũ trong DB vẫn mang giá trị đó, và gán lại số
+    // sẽ khiến chúng tự đổi nghĩa. Đúng bài học đã ghi cho Rss = 3 ngay dưới đây.
+    //
+    // Cào fanpage vẫn khả thi (OpenClaw đang đăng nhập Facebook), nhưng để sau khi luồng web
+    // đã ổn — nó cần trình duyệt thật, ~41 giây mỗi bài, và hỏng mỗi lần Facebook đổi giao diện.
 
     /// <summary>
     /// Feed RSS/Atom của một báo. Feed cho tiêu đề + link + tóm tắt + ảnh; toàn văn lấy

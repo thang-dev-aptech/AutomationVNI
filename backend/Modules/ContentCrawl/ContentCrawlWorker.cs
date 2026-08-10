@@ -25,8 +25,9 @@ public class ContentCrawlWorker(
         }
 
         logger.LogInformation(
-            "ContentCrawlWorker chạy (chu kỳ={Interval}s, tối đa {Sources} nguồn/lượt, song song={Concurrency})",
-            settings.IntervalSeconds, settings.MaxSourcesPerTick, settings.MaxConcurrency);
+            // Cào TUẦN TỰ, không song song — xem chú thích ở FetchDueSourcesAsync.
+            "ContentCrawlWorker chạy (chu kỳ={Interval}s, tối đa {Sources} nguồn/lượt, tuần tự)",
+            settings.IntervalSeconds, settings.MaxSourcesPerTick);
 
         // Chờ một nhịp cho migration và seed xong trước khi đụng DB.
         try { await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken); }
