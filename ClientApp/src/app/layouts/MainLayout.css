@@ -244,3 +244,56 @@
     transition: none;
   }
 }
+
+/* ── Menu chia nhóm ───────────────────────────────────────────────────────── */
+
+.sidebar-group { display: flex; flex-direction: column; }
+
+/* Nút nhóm dùng lại .sidebar-link nên phải gỡ mặc định của <button>. */
+.sidebar-group-head {
+  width: 100%;
+  background: none;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebar-caret {
+  margin-left: auto;
+  flex-shrink: 0;
+  transition: transform .18s ease;
+  opacity: .55;
+}
+.sidebar-group.is-open .sidebar-caret { transform: rotate(180deg); }
+
+/* Mũi tên vô nghĩa khi chỉ còn icon — cột 64px không đủ chỗ cho nhãn lẫn mũi tên. */
+.sidebar--collapsed .sidebar-caret { display: none; }
+
+.sidebar-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 4px;
+}
+
+/* Thụt vào + vạch dọc: nhìn là biết mấy dòng này thuộc nhóm trên, không phải mục ngang hàng. */
+.sidebar-sublink {
+  padding-left: 34px;
+  font-size: .88rem;
+  position: relative;
+}
+.sidebar-sublink::before {
+  content: '';
+  position: absolute;
+  left: 20px; top: 6px; bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: .18;
+}
+.sidebar-sublink.sidebar-link--active::before { opacity: .8; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-caret { transition: none; }
+}
