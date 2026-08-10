@@ -40,6 +40,18 @@ backend/Data/*.db
 backend/Data/*.db-shm
 backend/Data/*.db-wal
 backend/Storage/Files/
+backend/Storage/*.db
+
+# Trang tin là ĐẦU RA, không phải mã nguồn — mọi thứ trong đó do NewsSiteBuilder sinh ra
+# từ CSDL, assets thì chép từ khuôn VNINews/assets (khuôn đó VẪN theo git).
+#
+# Để nó theo git là hỏng đường cập nhật VPS: backend trên VPS tự ghi đè mấy file này mỗi
+# lượt xuất bản, nên `git pull` lần sau bị chặn —
+#   error: Your local changes to the following files would be overwritten by merge
+# Đã dựng lại đúng tình huống đó để kiểm chứng.
+#
+# Máy mới không có sẵn trang: gọi POST /api/NewsSite/build là dựng lại đủ từ CSDL.
+backend/Storage/News/
 
 # FE build output served by backend (rebuild via: cd ClientApp && npm run build)
 backend/wwwroot/dist/

@@ -1,3 +1,0 @@
-User-agent: *
-Allow: /
-Sitemap: https://tintuc.vni.edu.vn/sitemap.xml
