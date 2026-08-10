@@ -248,7 +248,20 @@ public class ContentCrawlPipelineService(
             var tooShort = bodyLen > 0
                 ? bodyLen < options.Value.MinContentLength
                 : $"{item.Title} {item.Summary}".Trim().Length < options.Value.MinSummaryLength;
-            var isFiltered = tooOld || blocked || missesInclude || tooShort;
+
+            // KHÔNG có toàn văn thì KHÔNG được vào hàng chờ duyệt.
+            //
+            // Luật cũ cho tin rỗng thân bài đi tiếp nếu tiêu đề + tóm tắt đủ dài. Ý định đúng
+            // (đừng lọc sạch cả feed khi lấy toàn văn hỏng) nhưng hậu quả nặng hơn: người duyệt
+            // bấm Duyệt, AI không có gì để viết, bài rơi vào mục "chưa lên web được" — và không
+            // ai hiểu vì sao, vì trên thẻ tin nhìn vẫn bình thường.
+            //
+            // Đo thật: 8 tin thiếu Content, 2 trong số đó đang nằm ở hàng chờ duyệt.
+            //
+            // Đánh Filtered kèm lý do rõ thì không phải hỏng câm — tin vẫn còn, vẫn xem được ở
+            // tab "Bị lọc", và tên nguồn hiện lên nếu một nguồn hỏng liên tục.
+            var noBody = bodyLen == 0;
+            var isFiltered = tooOld || blocked || missesInclude || tooShort || noBody;
 
             // Chấm trùng trên tiêu đề + tóm tắt, KHÔNG trên toàn văn: hai báo đưa cùng một tin
             // sẽ viết thân bài khác nhau khá nhiều, so toàn văn thì gần như không bao giờ khớp.
@@ -276,7 +289,8 @@ public class ContentCrawlPipelineService(
                 RejectReason = isFiltered
                     ? (tooOld ? "Quá cũ so với LookbackHours"
                         : blocked ? "Dính từ khoá chặn"
-                        : tooShort ? $"Không bóc được nội dung ({item.Content?.Trim().Length ?? 0} ký tự) — có thể là trang video/ảnh"
+                        : noBody ? "Chưa lấy được toàn văn — không viết bài được, cần xem lại nguồn"
+                        : tooShort ? $"Không bóc được nội dung ({bodyLen} ký tự) — có thể là trang video/ảnh"
                         : "Không khớp từ khoá bắt buộc")
                     : null,
                 CreatedAt = now,
@@ -346,9 +360,35 @@ public class ContentCrawlPipelineService(
                     : CrawledArticleStatus.Pending;
                 article.UpdatedAt = DateTime.UtcNow;
 
+                // Bài này vừa bị loại → HỒI SINH những bài từng bị đánh trùng với nó.
+                //
+                // Chống trùng chạy TRƯỚC chấm điểm, nên bài được giữ lại chưa hề có điểm lúc
+                // đó. Nếu sau đó nó bị chấm rớt, CẢ HAI nửa cùng biến mất: bài này Filtered,
+                // bài trùng của nó thì Duplicate và chưa từng được chấm.
+                //
+                // Đã xảy ra thật, hai tin — và một trong hai đáng đăng:
+                //   "Trẻ bị bắn dây thun vào chân ở TP.HCM"           giữ lại → 20 điểm → Filtered
+                //   "Phó thủ tướng yêu cầu Bộ Giáo dục rà soát học phí"  giữ lại → 35 điểm → Filtered
+                // Bài trùng của cả hai chưa từng được chấm. Không ai thấy, không có gì báo.
+                if (article.Status == CrawledArticleStatus.Filtered)
+                    await ResurrectDuplicatesOfAsync(article, ct);
+
                 // Vân tay ghi SAU khi sạch, để bài trùng không tự làm mồi cho lần chấm sau.
                 await UpsertArticleFingerprintAsync(article, ct);
                 await context.SaveChangesAsync(ct);
+
+                // ĐƯA NGAY vào cửa sổ đang dùng cho lô này.
+                //
+                // Cửa sổ được nạp MỘT LẦN ở dòng 308, trước vòng lặp. Không thêm vào đây thì
+                // hai bài gần trùng nằm CÙNG một lô 10 tin không bao giờ bắt được nhau — bài
+                // thứ hai so với ảnh chụp cũ, nơi bài thứ nhất chưa tồn tại.
+                //
+                // Đây đúng là chỗ sinh ra cảnh trang chủ có hai bài cùng một sự việc. Chỉ lộ
+                // ra khi hai báo đăng cùng lúc và cả hai rơi vào một lô — nên nó ẩn được lâu.
+                window.Rows.Add(new DedupWindowRow(
+                    article.Id, FingerprintOwner.CrawledArticle,
+                    article.ContentHash, article.SimHash,
+                    article.Title, article.PublishedAt ?? article.FetchedAt));
 
                 // Cấp số thứ tự nhỏ để gõ trên Telegram. Làm ở đây thay vì đợi lúc gửi tin
                 // nhắn: web và Telegram phải thấy CÙNG một số, không thì hai bên nói chuyện
@@ -366,6 +406,102 @@ public class ContentCrawlPipelineService(
         }
 
         return processed;
+    }
+
+    /// <summary>
+    /// Quét MỘT LƯỢT toàn bộ tin đã bị lọc, hồi sinh mọi bài từng bị đánh trùng với chúng.
+    ///
+    /// Dùng cho dữ liệu CŨ — sinh ra trước khi có lưới an toàn ở ProcessPendingAsync. Chạy lại
+    /// được nhiều lần: lượt sau không còn gì để hồi sinh thì trả 0.
+    /// </summary>
+    public async Task<int> RecoverLostDuplicatesAsync(CancellationToken ct = default)
+    {
+        var filtered = await context.Set<CrawledArticleModel>()
+            .Where(x => !x.IsDeleted && x.Status == CrawledArticleStatus.Filtered)
+            .Where(x => context.Set<CrawledArticleModel>().Any(v =>
+                v.DuplicateOfId == x.Id
+                && v.Status == CrawledArticleStatus.Duplicate
+                && v.DuplicateMethod != DedupMethod.Manual))
+            .ToListAsync(ct);
+
+        var total = 0;
+        foreach (var f in filtered)
+        {
+            var before = await context.Set<CrawledArticleModel>()
+                .CountAsync(v => v.DuplicateOfId == f.Id && v.Status == CrawledArticleStatus.Duplicate, ct);
+            await ResurrectDuplicatesOfAsync(f, ct);
+            total += before;
+        }
+
+        // Loại thứ hai: bị đánh trùng với một bài KHÔNG CÒN TỒN TẠI.
+        //
+        // Vân tay chỉ được ghi thêm, không ai dọn — bài gốc biến mất thì dòng vân tay ở lại và
+        // vẫn bắt tin mới. Nạn nhân nằm vĩnh viễn ở tab Trùng, chưa từng được chấm điểm, và
+        // không có gì để người duyệt đối chiếu.
+        var dangling = await context.Set<CrawledArticleModel>()
+            .Where(x => !x.IsDeleted
+                        && x.Status == CrawledArticleStatus.Duplicate
+                        && x.DuplicateOfId != null
+                        && x.DuplicateMethod != DedupMethod.Manual
+                        && !context.Set<CrawledArticleModel>().Any(b => b.Id == x.DuplicateOfId))
+            .ToListAsync(ct);
+
+        foreach (var d in dangling)
+        {
+            d.Status = CrawledArticleStatus.New;
+            d.DuplicateOfId = null;
+            d.DuplicateMethod = DedupMethod.None;
+            d.DuplicateTarget = DuplicateTarget.None;
+            d.DuplicateScore = null;
+            d.DuplicateReason = "Bài từng bị coi là trùng đã biến mất — xét lại tin này";
+            d.DedupAttemptCount = 0;
+            d.UpdatedAt = DateTime.UtcNow;
+        }
+        total += dangling.Count;
+
+        if (total > 0) await context.SaveChangesAsync(ct);
+        logger.LogInformation(
+            "Quét cứu tin: hồi sinh {N} bài ({A} từ tin bị lọc, {B} trỏ vào bài đã biến mất)",
+            total, total - dangling.Count, dangling.Count);
+        return total;
+    }
+
+    /// <summary>
+    /// Đưa những bài từng bị đánh trùng với <paramref name="filtered"/> quay lại hàng xử lý.
+    ///
+    /// KHÔNG đụng bài do người đánh dấu tay (<c>DedupMethod.Manual</c>) — đó là quyết định của
+    /// người, máy không được lật.
+    ///
+    /// Đưa về <c>New</c> chứ không thẳng <c>Pending</c>: chúng cần đi lại đủ đường chấm trùng
+    /// và chấm điểm. Có thể chúng còn trùng với một bài khác, và chắc chắn chúng chưa có điểm.
+    /// </summary>
+    private async Task ResurrectDuplicatesOfAsync(CrawledArticleModel filtered, CancellationToken ct)
+    {
+        var victims = await context.Set<CrawledArticleModel>()
+            .Where(x => !x.IsDeleted
+                        && x.DuplicateOfId == filtered.Id
+                        && x.Status == CrawledArticleStatus.Duplicate
+                        && x.DuplicateMethod != DedupMethod.Manual)
+            .ToListAsync(ct);
+
+        if (victims.Count == 0) return;
+
+        foreach (var v in victims)
+        {
+            v.Status = CrawledArticleStatus.New;
+            v.DuplicateOfId = null;
+            v.DuplicateMethod = DedupMethod.None;
+            v.DuplicateTarget = DuplicateTarget.None;
+            v.DuplicateScore = null;
+            v.DuplicateReason = "Bài từng được giữ lại đã bị lọc — xét lại tin này";
+            // Đặt lại chốt lặp: đây là lượt xét MỚI, không phải lần thử lại của lượt cũ.
+            v.DedupAttemptCount = 0;
+            v.UpdatedAt = DateTime.UtcNow;
+        }
+
+        logger.LogInformation(
+            "Tin {Id} bị lọc ({Score} điểm) — hồi sinh {N} bài từng bị đánh trùng với nó",
+            filtered.Id, filtered.QualityScore, victims.Count);
     }
 
     private void ApplyVerdict(CrawledArticleModel article, DedupVerdict verdict)

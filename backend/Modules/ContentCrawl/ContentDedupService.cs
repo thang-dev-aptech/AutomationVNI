@@ -74,13 +74,57 @@ public class ContentDedupService(
         var opt = options.Value.Dedup;
         var since = DateTime.UtcNow.AddDays(-Math.Max(1, opt.LookbackDays));
 
-        var rows = await context.Set<ContentFingerprintModel>()
+        var all = await context.Set<ContentFingerprintModel>()
             .Where(x => !x.IsDeleted && x.ContentAt >= since)
             .OrderByDescending(x => x.ContentAt)
             .Take(Math.Max(100, opt.MaxWindowRows))
             .Select(x => new DedupWindowRow(
                 x.OwnerId, x.OwnerType, x.ContentHash, x.SimHash, x.TitleSnippet, x.ContentAt))
             .ToListAsync(ct);
+
+        // BỎ vân tay không còn chủ.
+        //
+        // Vân tay chỉ được ghi thêm, không ai dọn. Khi bài gốc biến mất, dòng vân tay ở lại và
+        // vẫn tham gia so sánh — kết quả là tin bị đánh "trùng với <một Guid không tồn tại>".
+        // Người duyệt mở tab Trùng ra không có gì để đối chiếu, và tin thật nằm đó chờ mãi.
+        //
+        // Đo thật: 8/100 vân tay mồ côi, kéo theo 4/13 phán quyết trùng (31%) trỏ vào hư không.
+        var articleIds = all.Where(r => r.OwnerType == FingerprintOwner.CrawledArticle)
+            .Select(r => r.OwnerId).ToList();
+        var postIds = all.Where(r => r.OwnerType == FingerprintOwner.Post)
+            .Select(r => r.OwnerId).ToList();
+
+        // Bài đã BỊ LOẠI không được làm mốc so trùng.
+        //
+        // Đánh một tin mới là "trùng với bài mình đã vứt đi" nghĩa là vứt nốt tin mới — trong
+        // khi bài kia sẽ không bao giờ lên web. Cả hai nửa cùng mất.
+        //
+        // Đây cũng là thứ làm vòng lặp: hồi sinh bài trùng xong, lượt worker kế tiếp so lại
+        // với đúng bài đã bị lọc đó và đánh trùng lần nữa. Đã thấy thật — 3 tin vừa cứu bị
+        // đánh trùng lại trong vòng một nhịp, kèm lý do "AI xác nhận trùng: Cùng sự việc…".
+        //
+        // Chỉ giữ tin còn sống trong luồng: chờ xử lý, chờ duyệt, đã duyệt.
+        var usable = new[]
+        {
+            CrawledArticleStatus.New, CrawledArticleStatus.Deduping, CrawledArticleStatus.Rewriting,
+            CrawledArticleStatus.Pending, CrawledArticleStatus.Approved,
+        };
+
+        var liveArticles = await context.Set<CrawledArticleModel>()
+            .Where(x => articleIds.Contains(x.Id) && !x.IsDeleted && usable.Contains(x.Status))
+            .Select(x => x.Id).ToListAsync(ct);
+        var livePosts = await context.Posts
+            .Where(x => postIds.Contains(x.Id) && !x.IsDeleted)
+            .Select(x => x.Id).ToListAsync(ct);
+
+        var live = liveArticles.Concat(livePosts).ToHashSet();
+        var rows = all.Where(r => live.Contains(r.OwnerId)).ToList();
+
+        var dropped = all.Count - rows.Count;
+        if (dropped > 0)
+            logger.LogInformation(
+                "Bỏ {N}/{Total} vân tay không dùng được — chủ đã bị xoá, bị lọc, hoặc đã loại",
+                dropped, all.Count);
 
         logger.LogDebug("Dedup: nạp {Count} vân tay trong {Days} ngày", rows.Count, opt.LookbackDays);
         return new DedupWindow(rows);
@@ -114,6 +158,16 @@ public class ContentDedupService(
             .Where(c => c.HammingDistance <= opt.BorderlineHammingMax
                         || c.TitleJaccard >= opt.BorderlineJaccardMin)
             .OrderByDescending(c => c.Score)
+            // GOM THEO TIÊU ĐỀ trước khi cắt lấy 3.
+            //
+            // Một bài đăng lên 15 page sinh 15 dòng vân tay CÙNG tiêu đề. Không gom thì cả 3
+            // suất ứng viên rơi vào đúng một bài, và tầng AI — thứ đang bắt 16/20 ca trùng —
+            // được cho ăn một danh sách chỉ có một lựa chọn lặp lại ba lần.
+            //
+            // Đo thật: 28 dòng vân tay loại Post nhưng chỉ 10 tiêu đề khác nhau; một tiêu đề
+            // lặp 15 lần.
+            .GroupBy(c => c.TitleSnippet ?? c.OwnerId.ToString(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
             .Take(Math.Max(1, opt.AiJudgeMaxCandidates))
             .ToList();
 

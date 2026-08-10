@@ -270,6 +270,18 @@ public class ContentCrawlController(
         }));
     }
 
+    /// <summary>
+    /// Cứu tin đã mất: bài bị đánh trùng với một bài mà bài đó sau lại bị lọc.
+    /// Chạy lại được nhiều lần.
+    /// </summary>
+    [HttpPost("articles/recover-lost")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> RecoverLost(CancellationToken ct)
+    {
+        var n = await pipeline.RecoverLostDuplicatesAsync(ct);
+        return Ok(ApiResponse.Ok(new { recovered = n }, $"Đã đưa {n} tin quay lại hàng xử lý"));
+    }
+
     [HttpPost("articles/{id:guid}/approve")]
     [Authorize(Roles = "Admin,Reviewer")]
     public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveCrawledArticleRequest request, CancellationToken ct)
