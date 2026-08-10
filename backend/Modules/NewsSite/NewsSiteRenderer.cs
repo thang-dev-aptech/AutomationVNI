@@ -157,6 +157,27 @@ public class NewsSiteRenderer(NewsSiteOptions options)
 
     // ── Mảnh dùng lại ──────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Ô ảnh của thẻ tin. Có ảnh thật thì dùng, không thì giữ ô gradient như trước.
+    ///
+    /// loading="lazy" và decoding="async": trang chủ có tới 12 thẻ, tải hết ảnh ngay lúc mở là
+    /// chậm hẳn trên 3G. onerror ẩn ảnh để lộ nền gradient bên dưới — báo đổi đường dẫn ảnh
+    /// hoặc chặn nhúng chéo thì thẻ vẫn nguyên khung, không thủng một lỗ trắng.
+    /// </summary>
+    private static string Thumb(NewsArticleModel a, string tag, string? extraClass = null)
+    {
+        var cls = $"thumb {ThumbClass(a.CategorySlug)}{(extraClass is null ? "" : " " + extraClass)}";
+        var inner = string.IsNullOrWhiteSpace(a.ImageUrl)
+            ? ""
+            : $"<img src=\"{NewsHtml.Esc(a.ImageUrl)}\" alt=\"\" loading=\"lazy\" decoding=\"async\" "
+              + "onerror=\"this.remove()\">";
+        return tag switch
+        {
+            "a" => $"<a href=\"{NewsHtml.ArticlePath(a.Slug)}\" class=\"{cls}\" aria-hidden=\"true\" tabindex=\"-1\">{inner}</a>",
+            _ => $"<span class=\"{cls}\">{inner}</span>",
+        };
+    }
+
     private static string ThumbClass(string? slug) => "t-" + NewsTaxonomy.Resolve(slug).Slug;
 
     private string Byline(NewsArticleModel a, bool withDate = true)
@@ -180,7 +201,7 @@ public class NewsSiteRenderer(NewsSiteOptions options)
     {
         var cat = NewsTaxonomy.Resolve(a.CategorySlug);
         var sb = new StringBuilder("<article class=\"card\">");
-        sb.Append($"<a href=\"{NewsHtml.ArticlePath(a.Slug)}\" class=\"thumb {ThumbClass(a.CategorySlug)}\" aria-hidden=\"true\" tabindex=\"-1\"></a>");
+        sb.Append(Thumb(a, "a"));
         sb.Append("<div class=\"card-body\">");
         sb.Append($"<span class=\"kicker\">{NewsHtml.Esc(cat.Name)}</span>");
         sb.Append($"<h3><a href=\"{NewsHtml.ArticlePath(a.Slug)}\">{NewsHtml.Esc(a.Title)}</a></h3>");
@@ -193,7 +214,7 @@ public class NewsSiteRenderer(NewsSiteOptions options)
     private static string Mini(NewsArticleModel a)
     {
         var sb = new StringBuilder($"<a class=\"mini\" href=\"{NewsHtml.ArticlePath(a.Slug)}\">");
-        sb.Append($"<span class=\"thumb {ThumbClass(a.CategorySlug)}\"></span><span>");
+        sb.Append(Thumb(a, "span") + "<span>");
         sb.Append($"<h3>{NewsHtml.Esc(a.Title)}</h3>");
         if (a.PublishedAt.HasValue)
             sb.Append($"<time datetime=\"{NewsHtml.IsoDate(a.PublishedAt.Value)}\">"
@@ -283,6 +304,13 @@ public class NewsSiteRenderer(NewsSiteOptions options)
         {
             sb.AppendLine("<div class=\"grid-hero\">");
             sb.AppendLine($"<article class=\"feature {ThumbClass(lead.CategorySlug)}\">");
+
+            // Ảnh nền của tin nổi bật nằm DƯỚI lớp phủ tối, nên chữ tít vẫn đọc được.
+            // Thiếu ảnh thì lớp gradient của .feature lộ ra — đúng diện mạo cũ.
+            if (!string.IsNullOrWhiteSpace(lead.ImageUrl))
+                sb.AppendLine($"<img class=\"feature-bg\" src=\"{NewsHtml.Esc(lead.ImageUrl)}\" alt=\"\" "
+                              + "decoding=\"async\" onerror=\"this.remove()\">");
+
             sb.AppendLine("<span class=\"feature-shade\"></span><div class=\"feature-body\">");
             sb.AppendLine("<span class=\"badge-hot\">Tin nổi bật</span>");
             sb.AppendLine($"<h2><a href=\"{NewsHtml.ArticlePath(lead.Slug)}\">{NewsHtml.Esc(lead.Title)}</a></h2>");
@@ -378,8 +406,18 @@ public class NewsSiteRenderer(NewsSiteOptions options)
         if (!string.IsNullOrWhiteSpace(a.Sapo))
             sb.AppendLine($"<p class=\"sapo\">{NewsHtml.Esc(a.Sapo)}</p>");
 
-        sb.AppendLine($"<figure><div class=\"thumb {ThumbClass(a.CategorySlug)}\"></div>"
-                      + "<figcaption>Ảnh minh hoạ.</figcaption></figure>");
+        // Ảnh đầu bài LUÔN đi kèm dòng ghi nguồn.
+        //
+        // "Ảnh: thanhnien.vn" là điều kiện để dùng ảnh của toà soạn, không phải phần trang trí
+        // — cũng vì thế NewsPublisher chỉ nhận ảnh khi biết tên báo. Không có ảnh thật thì giữ
+        // ô gradient và ghi "Ảnh minh hoạ", đừng ghi nguồn cho một ô màu.
+        sb.AppendLine(string.IsNullOrWhiteSpace(a.ImageUrl)
+            ? $"<figure><div class=\"thumb {ThumbClass(a.CategorySlug)}\"></div>"
+              + "<figcaption>Ảnh minh hoạ.</figcaption></figure>"
+            : $"<figure><div class=\"thumb {ThumbClass(a.CategorySlug)}\">"
+              + $"<img src=\"{NewsHtml.Esc(a.ImageUrl)}\" alt=\"{NewsHtml.Esc(a.Title)}\" "
+              + "decoding=\"async\" onerror=\"this.remove()\"></div>"
+              + $"<figcaption>{NewsHtml.Esc(a.ImageCredit ?? "Ảnh minh hoạ.")}</figcaption></figure>");
 
         var keyPoints = NewsSiteRepository.ReadKeyPoints(a.KeyPointsJson);
         if (keyPoints.Count > 0)

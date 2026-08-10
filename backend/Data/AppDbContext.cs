@@ -433,6 +433,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
 
         modelBuilder.Entity<Backend.Modules.NewsSite.NewsArticleModel>(e =>
         {
+            e.Property(x => x.ImageUrl).HasMaxLength(1000);
+            e.Property(x => x.ImageCredit).HasMaxLength(200);
             e.ToTable("NewsArticles");
             e.HasKey(x => x.Id);
             // Slug là khoá tra cứu duy nhất và là một phần của URL công khai.

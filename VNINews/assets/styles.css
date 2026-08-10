@@ -398,3 +398,35 @@ main { padding: 26px 0 60px; }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* ── Ảnh thật trong ô thumb ────────────────────────────────────────────────
+   Ô .thumb vốn là nền gradient. Ảnh nằm ĐÈ lên nó, nên khi ảnh hỏng và bị
+   onerror gỡ đi thì lộ lại nền màu — thẻ giữ nguyên khung, không thủng lỗ trắng.
+   object-fit: cover để ảnh ngang/dọc bất kỳ đều lấp kín mà không méo. */
+.thumb { position: relative; overflow: hidden; }
+.thumb img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  border: 0;
+}
+
+/* Dòng ghi nguồn ảnh — bắt buộc có khi dùng ảnh của toà soạn. */
+figure figcaption {
+  margin-top: 6px;
+  font-size: .78rem;
+  color: var(--muted, #6b7280);
+  font-style: italic;
+}
+
+/* Ảnh nền tin nổi bật — nằm DƯỚI .feature-shade để chữ tít vẫn đọc được. */
+.feature-bg {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  z-index: 0;
+  border: 0;
+}
+.feature-shade { z-index: 1; }
+.feature-body  { position: relative; z-index: 2; }

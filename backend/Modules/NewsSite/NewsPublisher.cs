@@ -177,6 +177,14 @@ public class NewsPublisher(
         article.SourceName = Uri.TryCreate(crawled.SourceUrl, UriKind.Absolute, out var uri)
             ? uri.Host.Replace("www.", "")
             : null;
+
+        // Ảnh CHỈ nhận khi biết ghi nguồn là báo nào. Không có tên báo thì bỏ ảnh — đăng ảnh
+        // người ta mà không ghi nguồn là chuyện khác hẳn với dẫn nguồn tử tế.
+        if (!string.IsNullOrWhiteSpace(crawled.ThumbnailUrl) && article.SourceName is not null)
+        {
+            article.ImageUrl = crawled.ThumbnailUrl;
+            article.ImageCredit = $"Ảnh: {article.SourceName}";
+        }
         article.EventKey = composed.EventKey;
         article.DuplicateOfNewsId = null;
         article.Status = NewsArticleStatus.Published;

@@ -66,6 +66,22 @@ public class NewsArticleModel : BaseEntity
     /// <summary>Chốt chặn lặp vô hạn, cùng khuôn DedupAttemptCount của luồng cào.</summary>
     public int ComposeAttemptCount { get; set; }
 
+    /// <summary>
+    /// Ảnh minh hoạ, lấy từ bài báo gốc.
+    ///
+    /// LƯU URL, KHÔNG tải về máy mình. Hai lý do:
+    ///  · Bản quyền — ảnh thuộc toà soạn. Nhúng kèm dòng "Ảnh: {báo}" là dẫn nguồn, tải về
+    ///    rồi phục vụ từ máy mình là tự nhận làm của mình.
+    ///  · Băng thông và dung lượng — 156 tin/giờ × vài trăm KB là con số không nhỏ.
+    ///
+    /// Đánh đổi đã cân nhắc: báo đổi đường dẫn ảnh hoặc chặn nhúng chéo thì ảnh vỡ. Trang phải
+    /// chịu được điều đó — thiếu ảnh thì hiện ô màu như trước, không được vỡ khung.
+    /// </summary>
+    public string? ImageUrl { get; set; }
+
+    /// <summary>Tên báo hiện dưới ảnh, ví dụ "Ảnh: thanhnien.vn". Thiếu thì KHÔNG hiện ảnh.</summary>
+    public string? ImageCredit { get; set; }
+
     public string? ErrorMessage { get; set; }
 
     /// <summary>
