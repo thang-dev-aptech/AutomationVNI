@@ -213,7 +213,10 @@ builder.Services.AddHttpClient<HttpArticleFetcher>(client =>
                                  | System.Net.DecompressionMethods.Brotli,
         AllowAutoRedirect = true,
     });
+builder.Services.AddScoped<CrawlSourcePortability>();
 builder.Services.AddHostedService<ContentCrawlWorker>();
+// Soi cấu hình một lượt lúc khởi động — hệ thống này hỏng câm rất giỏi.
+builder.Services.AddHostedService<Backend.Shared.Startup.StartupHealthCheck>();
 
 // ── Bot Telegram duyệt tin ────────────────────────────────────────────────────
 builder.Services.Configure<Backend.Shared.Notification.TelegramOptions>(

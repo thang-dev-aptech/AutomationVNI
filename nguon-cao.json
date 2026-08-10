@@ -1,0 +1,102 @@
+[
+  {
+    "name": "GNews · Kỹ năng",
+    "sourceType": 4,
+    "url": "kỹ năng nghề nghiệp",
+    "isActive": true,
+    "maxItemsPerRun": 2,
+    "lookbackHours": 72,
+    "includeKeywords": null,
+    "excludeKeywords": null
+  },
+  {
+    "name": "RSS · Dân trí — Giáo dục",
+    "sourceType": 3,
+    "url": "https://dantri.com.vn/rss/giao-duc.rss",
+    "isActive": true,
+    "maxItemsPerRun": 15,
+    "lookbackHours": 48,
+    "includeKeywords": null,
+    "excludeKeywords": null
+  },
+  {
+    "name": "RSS · GD Việt Nam",
+    "sourceType": 3,
+    "url": "https://giaoduc.net.vn/rss/home.rss",
+    "isActive": true,
+    "maxItemsPerRun": 15,
+    "lookbackHours": 48,
+    "includeKeywords": null,
+    "excludeKeywords": null
+  },
+  {
+    "name": "RSS · Người LĐ GD-KH",
+    "sourceType": 3,
+    "url": "https://nld.com.vn/rss/giao-duc-khoa-hoc.rss",
+    "isActive": true,
+    "maxItemsPerRun": 15,
+    "lookbackHours": 48,
+    "includeKeywords": null,
+    "excludeKeywords": null
+  },
+  {
+    "name": "RSS · Thanh Niên GD",
+    "sourceType": 3,
+    "url": "https://thanhnien.vn/rss/giao-duc.rss",
+    "isActive": true,
+    "maxItemsPerRun": 5,
+    "lookbackHours": 72,
+    "includeKeywords": null,
+    "excludeKeywords": null
+  },
+  {
+    "name": "RSS · Tiền Phong GD",
+    "sourceType": 3,
+    "url": "https://tienphong.vn/rss/giao-duc.rss",
+    "isActive": true,
+    "maxItemsPerRun": 15,
+    "lookbackHours": 48,
+    "includeKeywords": null,
+    "excludeKeywords": null
+  },
+  {
+    "name": "RSS · Tuổi Trẻ GD",
+    "sourceType": 3,
+    "url": "https://tuoitre.vn/rss/giao-duc.rss",
+    "isActive": true,
+    "maxItemsPerRun": 15,
+    "lookbackHours": 48,
+    "includeKeywords": null,
+    "excludeKeywords": null
+  },
+  {
+    "name": "RSS · VOV Giáo dục",
+    "sourceType": 3,
+    "url": "https://vov.vn/rss/xa-hoi/giao-duc.rss",
+    "isActive": true,
+    "maxItemsPerRun": 15,
+    "lookbackHours": 48,
+    "includeKeywords": null,
+    "excludeKeywords": null
+  },
+  {
+    "name": "RSS · VietnamNet GD",
+    "sourceType": 3,
+    "url": "https://vietnamnet.vn/rss/giao-duc.rss",
+    "isActive": true,
+    "maxItemsPerRun": 15,
+    "lookbackHours": 48,
+    "includeKeywords": null,
+    "excludeKeywords": null
+  },
+  {
+    "name": "RSS · VnExpress — Giáo dục",
+    "sourceType": 3,
+    "url": "https://vnexpress.net/rss/giao-duc.rss",
+    "isActive": true,
+    "maxItemsPerRun": 15,
+    "lookbackHours": 48,
+    "includeKeywords": null,
+    "excludeKeywords": null
+  }
+]

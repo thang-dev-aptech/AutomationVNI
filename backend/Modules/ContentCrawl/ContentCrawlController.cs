@@ -15,6 +15,7 @@ public class ContentCrawlController(
     HttpArticleFetcher httpFetcher,
     FeedSourceFetcher feedFetcher,
     FeedDiscoveryService feedDiscovery,
+    CrawlSourcePortability portability,
     IOpenClawBrowserClient browser,
     Microsoft.Extensions.Options.IOptions<ContentCrawlOptions> crawlOptions,
     ILogger<ContentCrawlController> logger) : ControllerBase
@@ -181,6 +182,34 @@ public class ContentCrawlController(
             return Ok(ApiResponse.Ok(new TestCrawlSourceResult { Ok = false, Error = ex.Message },
                 "Không đọc được feed"));
         }
+    }
+
+    /// <summary>
+    /// Xuất danh sách nguồn cào ra JSON để mang sang máy khác.
+    ///
+    /// Nguồn nằm trong CSDL mà .gitignore loại Data/*.db, nên đẩy code lên VPS là có đủ mọi thứ
+    /// TRỪ nguồn — máy mới chạy với 0 nguồn, worker quay đều mà không cào gì.
+    /// </summary>
+    [HttpGet("sources/export")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> ExportSources(CancellationToken ct)
+    {
+        var list = await portability.ExportAsync(ct);
+        return File(System.Text.Encoding.UTF8.GetBytes(CrawlSourcePortability.ToJson(list)),
+            "application/json", "nguon-cao.json");
+    }
+
+    /// <summary>Nhập nguồn từ file xuất. Khớp theo URL nên chạy lại nhiều lần không đẻ bản trùng.</summary>
+    [HttpPost("sources/import")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> ImportSources([FromBody] List<PortableSource> sources, CancellationToken ct)
+    {
+        if (sources is null || sources.Count == 0)
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Danh sách rỗng"));
+
+        var r = await portability.ImportAsync(sources, ct);
+        return Ok(ApiResponse.Ok(r, $"Thêm {r.Added}, cập nhật {r.Updated}"
+                                    + (r.Skipped > 0 ? $", bỏ qua {r.Skipped}" : "")));
     }
 
     /// <summary>Kiểm tra OpenClaw có sẵn sàng không — luôn trả 200, không bao giờ 500.</summary>
