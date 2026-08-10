@@ -354,12 +354,44 @@ public class ContentCrawlPipelineService(
                     article.ScreenTopic = Truncate(screen.Topic, 100);
                     article.ScreenReason = Truncate(screen.Reason, 400);
                     article.ScreenSummary = Truncate(screen.Summary, 900);
+                    article.EventKey = Truncate(screen.EventKey, 120);
                 }
 
                 article.Status = screen is not null && screen.Score < opt.MinQualityScore
                     ? CrawledArticleStatus.Filtered
                     : CrawledArticleStatus.Pending;
                 article.UpdatedAt = DateTime.UtcNow;
+
+                // CHỐNG TRÙNG THEO SỰ VIỆC — phải nằm SAU dòng gán trạng thái ở trên.
+                //
+                // Đặt trước dòng đó là tự vô hiệu hoá mình: đánh Duplicate xong bị ghi đè ngay
+                // thành Pending. Đã dính thật — log báo "trùng sự việc" hai lần trong khi CSDL
+                // vẫn ghi cả 5 tin là chờ duyệt.
+                //
+                // Đây là tầng duy nhất bắt được "cùng việc, khác chữ". Đo trên cụm 16 tin
+                // Tuyên Quang: 117/120 cặp chồng lấp từ dưới 0,40 nên không tầng số học nào
+                // với tới; "Bộ GD&ĐT: Thi lại với thí sinh chuyên Tuyên Quang" và "Vụ gian lận
+                // điểm thi: Khởi tố thầy…" chỉ chồng lấp 0,12.
+                //
+                // Chỉ chạy trên tin ĐẠT chuẩn: tin bị lọc thì đằng nào cũng không lên web, gán
+                // thêm nhãn trùng chỉ làm rối tab Trùng.
+                if (article.Status == CrawledArticleStatus.Pending
+                    && !string.IsNullOrWhiteSpace(article.EventKey))
+                {
+                    var twin = await FindSameEventAsync(article, ct);
+                    if (twin is not null)
+                    {
+                        article.Status = CrawledArticleStatus.Duplicate;
+                        article.DuplicateOfId = twin.Id;
+                        article.DuplicateTarget = DuplicateTarget.CrawledArticle;
+                        article.DuplicateMethod = DedupMethod.AiJudge;
+                        article.DuplicateScore = 1.0;
+                        article.DuplicateReason =
+                            $"Cùng sự việc \"{article.EventKey}\" với: {Truncate(twin.Title, 90)}";
+                        logger.LogInformation(
+                            "Tin {Id} trùng sự việc {Key} với tin {Twin}", article.Id, article.EventKey, twin.Id);
+                    }
+                }
 
                 // Bài này vừa bị loại → HỒI SINH những bài từng bị đánh trùng với nó.
                 //
@@ -476,6 +508,37 @@ public class ContentCrawlPipelineService(
     /// Đưa về <c>New</c> chứ không thẳng <c>Pending</c>: chúng cần đi lại đủ đường chấm trùng
     /// và chấm điểm. Có thể chúng còn trùng với một bài khác, và chắc chắn chúng chưa có điểm.
     /// </summary>
+    /// <summary>
+    /// Tìm tin CÒN SỐNG khác có cùng khoá sự việc.
+    ///
+    /// Chỉ so với tin còn trong luồng (chờ xử lý / chờ duyệt / đã duyệt). Bài đã bị lọc hay đã
+    /// loại không được làm mốc — đánh tin mới là "trùng với bài mình đã vứt" nghĩa là vứt nốt
+    /// tin mới, trong khi bài kia không bao giờ lên web.
+    ///
+    /// Giữ bài VÀO TRƯỚC. Không xếp theo điểm vì lúc này bài kia có thể chưa được chấm — đo
+    /// thật: 21/26 tin đã duyệt không có điểm, nên "điểm cao thắng" sẽ hạ cấp cả bài đang sống
+    /// trên web xuống thành trùng.
+    /// </summary>
+    private async Task<CrawledArticleModel?> FindSameEventAsync(
+        CrawledArticleModel article, CancellationToken ct)
+    {
+        var usable = new[]
+        {
+            CrawledArticleStatus.New, CrawledArticleStatus.Deduping, CrawledArticleStatus.Rewriting,
+            CrawledArticleStatus.Pending, CrawledArticleStatus.Approved,
+        };
+        var since = DateTime.UtcNow.AddDays(-Math.Max(1, options.Value.Dedup.LookbackDays));
+
+        return await context.Set<CrawledArticleModel>()
+            .Where(x => !x.IsDeleted
+                        && x.Id != article.Id
+                        && x.EventKey == article.EventKey
+                        && x.FetchedAt >= since
+                        && usable.Contains(x.Status))
+            .OrderBy(x => x.FetchedAt)
+            .FirstOrDefaultAsync(ct);
+    }
+
     private async Task ResurrectDuplicatesOfAsync(CrawledArticleModel filtered, CancellationToken ct)
     {
         var victims = await context.Set<CrawledArticleModel>()

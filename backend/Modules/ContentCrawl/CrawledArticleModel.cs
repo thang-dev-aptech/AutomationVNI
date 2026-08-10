@@ -79,6 +79,15 @@ public class CrawledArticleModel : BaseEntity
     public string? ScreenSummary { get; set; }
 
     // ── Telegram (Phase 2) ──────────────────────────────────────────────────
+    /// <summary>
+    /// Định danh SỰ VIỆC cụ thể, do AI sinh ngay trong lượt chấm điểm — không tốn lượt gọi
+    /// riêng. Ví dụ <c>to-chuc-thi-lai-thpt-chuyen-tuyen-quang</c>.
+    ///
+    /// Cùng dạng chuỗi với <c>NewsArticles.EventKey</c> để đối chiếu được giữa tin mới cào và
+    /// bài đã lên web.
+    /// </summary>
+    public string? EventKey { get; set; }
+
     public long? TelegramChatId { get; set; }
     public int? TelegramMessageId { get; set; }
 

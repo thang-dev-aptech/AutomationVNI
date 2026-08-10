@@ -6,7 +6,17 @@ namespace Backend.Modules.ContentCrawl;
 
 /// <summary>Kết quả chấm một tin.</summary>
 public sealed record ScreenVerdict(
-    int Score, string Topic, string Reason, string Summary, string CategorySlug);
+    int Score, string Topic, string Reason, string Summary, string CategorySlug,
+    /// <summary>
+    /// Định danh SỰ VIỆC cụ thể, ví dụ <c>to-chuc-thi-lai-thpt-chuyen-tuyen-quang</c>.
+    ///
+    /// Đây là thứ trả lời câu hỏi mà chồng lấp từ ngữ KHÔNG trả lời được: "hai bài này có nói
+    /// về cùng một việc không". Đo trên cụm 16 tin Tuyên Quang: 117/120 cặp có độ chồng lấp
+    /// dưới 0,40 vì mỗi báo dùng chữ khác nhau cho cùng một việc.
+    ///
+    /// Null khi AI không trả về hoặc khoá quá rộng — nơi gọi phải chịu được điều đó.
+    /// </summary>
+    string? EventKey = null);
 
 /// <summary>
 /// Chấm điểm tin cào về: có đáng đăng lên fanpage giáo dục của mình không.
@@ -45,9 +55,24 @@ public class CrawlScreenService(
         KHÔNG trừ điểm vì bài bị cắt ngắn ở cuối. Bản tin đưa cho bạn có thể đã được lược bớt
         phần đuôi để tiết kiệm, chuyện đó là bình thường — cứ chấm theo phần đọc được.
 
+        ### KHOÁ SỰ VIỆC
+        Trường "eventKey": định danh SỰ VIỆC CỤ THỂ mà bản tin này tường thuật. Viết thường
+        không dấu, nối bằng gạch ngang, 3–6 từ.
+
+        Dùng để nhận ra hai bài của hai báo khác nhau đang nói về CÙNG một việc, nên hai bản
+        tin cùng việc PHẢI ra cùng một chuỗi — kể cả khi tiêu đề viết khác hẳn nhau.
+
+        Ghi việc CỤ THỂ, không ghi chủ đề chung:
+          ĐÚNG  to-chuc-thi-lai-thpt-chuyen-tuyen-quang
+          SAI   giao-duc · thi-cu · tuyen-sinh   (quá rộng, bài nào cũng khớp)
+
+        Cùng một vụ nhưng KHÁC việc thì phải khác khoá:
+          khoi-to-gian-lan-diem-thi-tuyen-quang   ≠   to-chuc-thi-lai-thpt-chuyen-tuyen-quang
+
         CHỈ trả về JSON, không thêm chữ nào ngoài JSON:
         {"score": 0-100, "category": "slug chuyên mục",
          "topic": "chủ đề ngắn gọn 2-4 từ",
+         "eventKey": "dinh-danh-su-viec-cu-the",
          "reason": "một câu ngắn vì sao chấm điểm đó",
          "summary": "2-3 câu tóm tắt tin, nêu đúng dữ kiện trong bài"}
         """;
@@ -115,6 +140,33 @@ public class CrawlScreenService(
         return body[..cut].TrimEnd() + "\n\n[Phần sau của bài đã được lược bớt để chấm điểm.]";
     }
 
+    /// <summary>
+    /// Chuẩn hoá khoá sự việc để hai lượt gọi AI khác nhau ra CÙNG một chuỗi.
+    ///
+    /// Model khi thì trả có dấu, khi thì viết hoa, khi thì dùng gạch dưới. Không chuẩn hoá thì
+    /// "Thi-Lại-Tuyên-Quang" và "thi-lai-tuyen-quang" là hai khoá khác nhau, và cơ chế khớp
+    /// chính xác trở nên vô dụng đúng lúc cần nhất.
+    ///
+    /// PHẢI dùng chung luật với NewsComposeService.NormalizeEventKey — hai nơi sinh khoá mà ra
+    /// hai dạng chuỗi thì việc đối chiếu giữa tin đã cào và bài đã lên web không bao giờ khớp.
+    ///
+    /// Khoá dưới 3 đoạn bị loại: "giao-duc" khớp với gần như mọi bài, chặn nhầm còn tệ hơn
+    /// không chặn — người duyệt mất tin thật mà không hiểu vì sao.
+    /// </summary>
+    private string? NormalizeEventKey(string? raw, Guid articleId)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+
+        var slug = Backend.Modules.NewsSite.NewsSiteRepository.Slugify(raw);
+        var parts = slug.Split('-', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 3)
+        {
+            logger.LogDebug("Khoá sự việc '{Raw}' quá rộng cho tin {Id} — bỏ qua", raw, articleId);
+            return null;
+        }
+        return string.Join('-', parts.Take(8));
+    }
+
     private ScreenVerdict? Parse(string raw, Guid articleId)
     {
         // Model hay bọc JSON trong ```json … ``` dù đã dặn. Cắt lấy khối {...} ngoài cùng
@@ -146,7 +198,8 @@ public class CrawlScreenService(
                 Str(root, "topic"),
                 Str(root, "reason"),
                 Str(root, "summary"),
-                cat.Slug);
+                cat.Slug,
+                NormalizeEventKey(Str(root, "eventKey"), articleId));
         }
         catch (JsonException ex)
         {

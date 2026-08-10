@@ -396,6 +396,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
 
         modelBuilder.Entity<CrawledArticleModel>(e =>
         {
+            // Khoá sự việc được tra ở MỌI lượt chấm trùng — phải có chỉ mục.
+            e.HasIndex(x => x.EventKey);
+            e.Property(x => x.EventKey).HasMaxLength(120);
             e.ToTable("CrawledArticles");
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.CrawlSourceId);
