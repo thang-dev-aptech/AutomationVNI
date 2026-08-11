@@ -65,3 +65,40 @@
   font-size: 0.85rem;
   color: var(--color-text-muted);
 }
+
+/* ─── Khối vận hành gập được ─── */
+.dashboard-ops {
+  border-top: 1px solid var(--color-border);
+  padding-top: 16px;
+}
+
+.dashboard-ops-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 6px 0;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-align: left;
+  transition: color var(--ease);
+}
+
+.dashboard-ops-toggle:hover { color: var(--color-text); }
+
+.dashboard-ops-hint {
+  font-weight: 400;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.dashboard-ops-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 16px;
+}

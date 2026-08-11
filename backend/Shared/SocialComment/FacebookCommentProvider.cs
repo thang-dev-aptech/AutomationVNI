@@ -33,7 +33,19 @@ public class FacebookCommentProvider(
         string externalPageId, string accessToken, string? cursor, int limit, CancellationToken ct = default)
     {
         var fb = options.Value.Facebook;
-        var fields = "id,message,permalink_url,created_time";
+
+        // summary(true).limit(0) = "cho tôi CON SỐ TỔNG, đừng gửi danh sách".
+        //
+        // Thiếu .limit(0) thì Facebook kèm theo 25 người like đầu tiên của MỖI bài — với 50 bài
+        // là hơn một nghìn object thừa mỗi lượt gọi, chậm và tốn băng thông, trong khi thứ cần
+        // dùng chỉ là một số nguyên.
+        //
+        // Ba trường này KHÔNG cần thêm quyền: đo thật trên page thật bằng đúng token đang có
+        // (pages_manage_posts + pages_manage_metadata + pages_show_list) đều trả về số.
+        // Ngược lại, mọi chỉ số qua /insights — tiếp cận, lượt hiển thị — trả về mảng rỗng vì
+        // thiếu quyền read_insights, thứ phải qua App Review của Facebook mới có.
+        var fields = "id,message,permalink_url,created_time,"
+                   + "likes.summary(true).limit(0),comments.summary(true).limit(0),shares";
         var url = $"{fb.GraphBaseUrl.TrimEnd('/')}/{fb.GraphVersion}/{Uri.EscapeDataString(externalPageId)}/published_posts" +
                   $"?fields={Uri.EscapeDataString(fields)}" +
                   $"&limit={Math.Clamp(limit, 1, 100)}" +
@@ -54,7 +66,10 @@ public class FacebookCommentProvider(
                     ExternalPostId = id,
                     Message = GetString(item, "message"),
                     PermalinkUrl = GetString(item, "permalink_url"),
-                    PostedAt = GetDateTime(item, "created_time")
+                    PostedAt = GetDateTime(item, "created_time"),
+                    LikeCount = GetSummaryTotal(item, "likes"),
+                    CommentCount = GetSummaryTotal(item, "comments"),
+                    ShareCount = GetSharesCount(item),
                 });
             }
         }
@@ -248,6 +263,61 @@ public class FacebookCommentProvider(
         var raw = GetString(el, name);
         return DateTime.TryParse(raw, out var dt) ? dt.ToUniversalTime() : null;
     }
+
+    /// <summary>
+    /// Đọc <c>{ "likes": { "summary": { "total_count": 12 } } }</c>.
+    ///
+    /// Trả null khi trường không có, KHÔNG trả 0. Bài mà token không đọc được tương tác sẽ thiếu
+    /// hẳn trường này; ghi 0 vào là dashboard tự tin báo "bài này không ai like" trong khi thật ra
+    /// mình chưa đo được. Sai kiểu đó không có cách nào phát hiện từ giao diện.
+    /// </summary>
+    private static int? GetSummaryTotal(JsonElement el, string edge)
+    {
+        if (!el.TryGetProperty(edge, out var node)) return null;
+        if (!node.TryGetProperty("summary", out var summary)) return null;
+        return summary.TryGetProperty("total_count", out var total)
+               && total.ValueKind == JsonValueKind.Number
+            ? total.GetInt32()
+            : null;
+    }
+
+    /// <summary>
+    /// Chia sẻ có hình dạng khác hẳn like và bình luận: <c>{ "shares": { "count": 3 } }</c>,
+    /// không có tầng "summary".
+    ///
+    /// Và Facebook BỎ HẲN trường shares khi bài chưa ai chia sẻ, chứ không gửi count = 0. Nên ở
+    /// đây null nghĩa là "không có ai chia sẻ" — khác với like/bình luận, nơi null nghĩa là
+    /// "chưa đo được". Người gọi quy về 0 là đúng với riêng trường này.
+    /// </summary>
+    private static int? GetSharesCount(JsonElement el)
+    {
+        if (!el.TryGetProperty("shares", out var node)) return 0;
+        return node.TryGetProperty("count", out var count) && count.ValueKind == JsonValueKind.Number
+            ? count.GetInt32()
+            : 0;
+    }
+
+    public async Task<ProviderPageProfileDto?> GetPageProfileAsync(
+        string externalPageId, string accessToken, CancellationToken ct = default)
+    {
+        var fb = options.Value.Facebook;
+        // followers_count là số hiển thị trên page. fan_count là số "người thích" kiểu cũ —
+        // Facebook đã gộp hai khái niệm và trên phần lớn page hai số bằng nhau, nhưng con số
+        // người dùng nhìn thấy là followers_count. Lấy cả hai để còn đường lui.
+        var url = $"{fb.GraphBaseUrl.TrimEnd('/')}/{fb.GraphVersion}/{Uri.EscapeDataString(externalPageId)}" +
+                  $"?fields={Uri.EscapeDataString("name,followers_count,fan_count")}" +
+                  $"&access_token={Uri.EscapeDataString(accessToken)}";
+
+        using var doc = await GetJsonAsync(url, ct);
+        if (doc is null) return null;
+
+        var root = doc.RootElement;
+        var followers = GetInt(root, "followers_count") ?? GetInt(root, "fan_count");
+        return new ProviderPageProfileDto { Name = GetString(root, "name"), Followers = followers };
+    }
+
+    private static int? GetInt(JsonElement el, string name)
+        => el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt32() : null;
 
     private static string Truncate(string? value, int max = 400)
         => string.IsNullOrEmpty(value) ? string.Empty : value.Length <= max ? value : value[..max];

@@ -303,6 +303,17 @@ public class SocialCommentService(
         entity.LastSyncedAt = DateTime.UtcNow;
         entity.UpdatedAt = DateTime.UtcNow;
 
+        // Chỉ ghi đè khi provider THỰC SỰ trả về số.
+        //
+        // Nếu gán thẳng dto.LikeCount ?? 0 thì mỗi lượt đồng bộ từ nguồn không có chỉ số — Threads,
+        // hoặc một lượt gọi Facebook bị lỗi một phần — sẽ xoá trắng số đã đo đúng hôm qua. Dashboard
+        // tụt về 0 mà không có lỗi nào để lần ra.
+        if (dto.LikeCount.HasValue) entity.LikeCount = dto.LikeCount.Value;
+        if (dto.ShareCount.HasValue) entity.ShareCount = dto.ShareCount.Value;
+        if (dto.CommentCount.HasValue) entity.PlatformCommentCount = dto.CommentCount.Value;
+        if (dto.LikeCount.HasValue || dto.CommentCount.HasValue)
+            entity.MetricsSyncedAt = DateTime.UtcNow;
+
         if (!entity.LocalPostId.HasValue)
         {
             var local = await db.Posts.AsNoTracking()

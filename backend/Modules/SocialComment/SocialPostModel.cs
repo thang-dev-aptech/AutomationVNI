@@ -20,4 +20,17 @@ public class SocialPostModel : BaseEntity
     public DateTime? LastCommentAt { get; set; }
     public DateTime? LastSyncedAt { get; set; }
     public string? SyncCursor { get; set; }
+
+    // ═══ Chỉ số tương tác lấy từ nền tảng ═══
+    //
+    // CommentCount ở trên KHÁC ba cột này. Nó đếm số dòng trong bảng SocialComments của mình —
+    // tức chỉ những bình luận đã đồng bộ về, đã trừ bình luận do chính page viết và bình luận
+    // bị xoá trên nền tảng. Dùng cho hộp thư.
+    //
+    // PlatformCommentCount là con số Facebook TỰ báo. Hai số này lệch nhau là bình thường, và
+    // đưa cho khách phải là số của Facebook — vì đó là số họ thấy khi mở page ra đối chiếu.
+    public int LikeCount { get; set; }
+    public int ShareCount { get; set; }
+    public int PlatformCommentCount { get; set; }
+    public DateTime? MetricsSyncedAt { get; set; }
 }
