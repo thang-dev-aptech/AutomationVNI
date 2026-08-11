@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import Modal from '@/shared/components/Modal'
+import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 
 /**
  * Tạo mới / đổi tên thư mục media. Khi `editing` có giá trị → chế độ sửa.
@@ -17,11 +18,15 @@ export default function MediaFolderFormModal({
 }) {
   const [name, setName] = useState('')
   const [parentFolderId, setParentFolderId] = useState('')
+  const [socialChannelId, setSocialChannelId] = useState('')
+
+  const { data: channels = [] } = useSocialChannelAll()
 
   useEffect(() => {
     if (!open) return
     setName(editing?.name ?? '')
     setParentFolderId(editing?.parentFolderId ?? defaultParentId ?? '')
+    setSocialChannelId(editing?.socialChannelId ?? '')
   }, [open, editing, defaultParentId])
 
   const handleSubmit = (event) => {
@@ -30,6 +35,7 @@ export default function MediaFolderFormModal({
     onSubmit({
       name: name.trim(),
       parentFolderId: parentFolderId || null,
+      socialChannelId: socialChannelId || null,
     })
   }
 
@@ -77,6 +83,19 @@ export default function MediaFolderFormModal({
             <option value="">— Thư mục gốc —</option>
             {options.map((f) => (
               <option key={f.id} value={f.id}>{f.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group">
+          <label htmlFor="folder-page">Gắn với Page (Tùy chọn)</label>
+          <select
+            id="folder-page"
+            value={socialChannelId}
+            onChange={(event) => setSocialChannelId(event.target.value)}
+          >
+            <option value="">— Không gắn page —</option>
+            {channels.map((c) => (
+              <option key={c.id} value={c.id}>{c.pageName}</option>
             ))}
           </select>
         </div>

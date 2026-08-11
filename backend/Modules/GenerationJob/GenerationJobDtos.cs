@@ -109,6 +109,7 @@ public class TextGenerationJobOutput
     public string? BannerHeadline { get; set; }
     public string? BannerSubheadline { get; set; }
     public string? BannerCta { get; set; }
+    public List<string> BannerBullets { get; set; } = [];
 }
 
 public class MockImageGenerationResult

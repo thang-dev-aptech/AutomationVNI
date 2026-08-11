@@ -5,6 +5,7 @@ using Backend.Modules.Category;
 using Backend.Modules.GenerationJob.Enums;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaAsset.Enums;
+using Backend.Modules.MediaFolder;
 using Backend.Modules.PageContext;
 using Backend.Modules.Post;
 using Backend.Modules.Post.Enums;
@@ -29,12 +30,12 @@ public class GenerationJobPipelineService(
     MediaIntelligenceService mediaIntelligenceService,
     PostMediaRepository postMediaRepository,
     PageContextRepository pageContextRepository,
+    MediaFolderRepository mediaFolderRepository,
     PromptTemplateRepository promptTemplateRepository,
     IFileStorageService fileStorageService,
     IImageOverlayService imageOverlayService,
     IAiTextGenerationService aiTextGenerationService,
     IAiImageGenerationService aiImageGenerationService,
-    ShortLinkService shortLinkService,
     IOptions<ContentCrawlOptions> crawlOptions,
     IUserContext userContext,
     ILogger<GenerationJobPipelineService> logger)
@@ -90,6 +91,15 @@ public class GenerationJobPipelineService(
             return;
         }
 
+        // Nhánh Template: ảnh lấy ngẫu nhiên từ MediaFolder gắn PageContext của page, ghép chữ đè
+        // lên bằng RichTemplateRenderService — không sinh ảnh AI, không fallback sang FullAI khi
+        // thiếu folder (báo lỗi rõ ràng để người dùng tự setup thư mục Template cho page).
+        if (post.GenerationFlow == GenerationFlow.Template)
+        {
+            await GenerateFromTemplateAsync(post, ct);
+            return;
+        }
+
         var useMedia = post.GenerationFlow == GenerationFlow.RAG;
 
         // FullAI + user đã gắn media sẵn → giữ hành vi cũ: bỏ sinh ảnh AI.
@@ -110,6 +120,48 @@ public class GenerationJobPipelineService(
             var matchJob = await QueueMediaMatchAsync(postId, ct);
             await ProcessAsync(matchJob.JobId, ct);
         }
+    }
+
+    /// <summary>
+    /// Nhánh Template: chọn ngẫu nhiên 1 ảnh trong MediaFolder gắn trực tiếp với page
+    /// (SocialChannelId — không qua PageContext, vì không phải page nào cũng có PageContext) làm
+    /// cover, rồi render overlay chữ đè lên (RichTemplateRenderService, qua job ImageOverlay có sẵn).
+    /// Không có folder/folder rỗng → set post NeedFix + GenerationError rồi throw — KHÔNG tự
+    /// fallback sang sinh ảnh AI (đã chốt với người dùng).
+    /// </summary>
+    private async Task GenerateFromTemplateAsync(PostModel post, CancellationToken ct)
+    {
+        var folder = await mediaFolderRepository.QueryActive()
+            .FirstOrDefaultAsync(f => f.SocialChannelId == post.SocialChannelId, ct);
+
+        var candidateIds = folder is null
+            ? []
+            : await context.Set<MediaAssetModel>()
+                .Where(x => !x.IsDeleted && x.FolderId == folder.Id && x.MimeType.StartsWith("image/"))
+                .Select(x => x.Id)
+                .ToListAsync(ct);
+
+        if (candidateIds.Count == 0)
+        {
+            const string message =
+                "Page chưa có thư mục Template (MediaFolder gắn trực tiếp với page) hoặc thư mục rỗng. " +
+                "Vào Media > Thư mục để tạo/gắn page này + upload ảnh trước khi tạo bài Template.";
+            logger.LogWarning(
+                "Post {PostId}: GenerationFlow.Template không có ảnh template (SocialChannelId={SocialChannelId}, FolderId={FolderId})",
+                post.Id, post.SocialChannelId, folder?.Id);
+
+            post.Status = PostStatus.NeedFix;
+            post.GenerationError = message;
+            ApplyPostUpdate(post);
+            await context.SaveChangesAsync(ct);
+            throw new InvalidOperationException(message);
+        }
+
+        var chosenId = candidateIds[Random.Shared.Next(candidateIds.Count)];
+        await postMediaRepository.ReplaceCoverAsync(post.Id, chosenId, ct);
+
+        var renderJob = await QueueImageRenderAsync(post.Id, ct);
+        await ProcessAsync(renderJob.JobId, ct);
     }
 
     private async Task<bool> HasAttachedMediaAsync(Guid postId, CancellationToken ct)
@@ -674,7 +726,21 @@ public class GenerationJobPipelineService(
                 .FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
                 .Value is { ValueKind: JsonValueKind.String } v ? v.GetString() : null;
 
-            return new BannerCopy(Read("bannerHeadline"), Read("bannerSubheadline"), Read("bannerCta"));
+            List<string> ReadBullets(string name)
+            {
+                var prop = tg.EnumerateObject()
+                    .FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+                if (prop.Value.ValueKind != JsonValueKind.Array) return [];
+                return prop.Value.EnumerateArray()
+                    .Where(x => x.ValueKind == JsonValueKind.String)
+                    .Select(x => x.GetString()!)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .ToList();
+            }
+
+            return new BannerCopy(
+                Read("bannerHeadline"), Read("bannerSubheadline"), Read("bannerCta"),
+                ReadBullets("bannerBullets"));
         }
         catch (JsonException)
         {
@@ -839,7 +905,7 @@ public class GenerationJobPipelineService(
     }
 
     /// <summary>Text banner do AI text đề xuất, lưu trong Post.ExtraJson sau bước sinh text.</summary>
-    private sealed record BannerCopy(string? Headline, string? Subheadline, string? Cta);
+    private sealed record BannerCopy(string? Headline, string? Subheadline, string? Cta, List<string> Bullets);
 
     private static string BuildTextJobInputPayload(AiTextGenerationRequest request)
         => JsonSerializer.Serialize(new
@@ -900,7 +966,8 @@ public class GenerationJobPipelineService(
             ImagePrompt = ai.ImagePrompt,
             BannerHeadline = ai.BannerHeadline,
             BannerSubheadline = ai.BannerSubheadline,
-            BannerCta = ai.BannerCta
+            BannerCta = ai.BannerCta,
+            BannerBullets = ai.BannerBullets
         };
     }
 
@@ -1033,7 +1100,8 @@ public class GenerationJobPipelineService(
                 output.ImagePrompt,
                 output.BannerHeadline,
                 output.BannerSubheadline,
-                output.BannerCta
+                output.BannerCta,
+                output.BannerBullets
             }
         };
 
@@ -1173,15 +1241,70 @@ public class GenerationJobPipelineService(
         var headline = BuildHeadline(post);
         var logoStorageKey = await ResolveLogoStorageKeyAsync(pageContext?.LogoMediaId, ct);
 
+        // --- Bắt đầu trích xuất Data cho RichTemplateRenderService ---
+        var contentStr = string.IsNullOrWhiteSpace(post.Content) ? post.Title : post.Content;
+        var extractedTemplate = ExtractTemplateText(contentStr);
+
+        // Ưu tiên banner copy có cấu trúc do AI text-gen sinh (Post.ExtraJson) — chỉ fallback về
+        // regex heuristic (ExtractTemplateText) khi AI/mock không trả (vd content cũ trước khi có field này).
+        var banner = ExtractBannerCopy(post.ExtraJson);
+        var subheadline = FirstNonEmpty(banner?.Subheadline, extractedTemplate.Subheadline) ?? "";
+        var bulletPoints = banner?.Bullets is { Count: > 0 } ? banner.Bullets : extractedTemplate.BulletPoints;
+
+        var orgLine = pageContext?.BrandName?.Trim();
+        // Hashtag không in lên ảnh — đã có sẵn trong caption bài đăng (xem ResolvePromptContextAsync),
+        // in lại trên ảnh chỉ làm dòng liên hệ tràn quá dài, vỡ bố cục footer 2 dòng.
+        var contactParts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(pageContext?.Hotline)) contactParts.Add($"Hotline: {pageContext.Hotline.Trim()}");
+        if (!string.IsNullOrWhiteSpace(pageContext?.Website)) contactParts.Add(pageContext.Website.Trim());
+        var contactLine = contactParts.Count > 0 ? string.Join("  ·  ", contactParts) : null;
+
+        string defaultLayout = "TopBottomSplit";
+        float? safeTextRegionX = null;
+        float? safeTextRegionY = null;
+        float? safeTextRegionWidth = null;
+        float? safeTextRegionHeight = null;
+        
+        if (!string.IsNullOrWhiteSpace(sourceMedia.Tags))
+        {
+            try
+            {
+                var tagsObj = System.Text.Json.Nodes.JsonNode.Parse(sourceMedia.Tags);
+                var aiLayout = tagsObj?["layoutStyle"]?.GetValue<string>();
+                if (!string.IsNullOrWhiteSpace(aiLayout)) defaultLayout = aiLayout;
+
+                var safeRegion = tagsObj?["safeTextRegion"];
+                if (safeRegion != null)
+                {
+                    safeTextRegionX = (float?)safeRegion["x"];
+                    safeTextRegionY = (float?)safeRegion["y"];
+                    safeTextRegionWidth = (float?)safeRegion["width"];
+                    safeTextRegionHeight = (float?)safeRegion["height"];
+                }
+            }
+            catch { }
+        }
+
         var renderResult = await imageOverlayService.RenderAsync(new ImageOverlayRequest
         {
             SourceStorageKey = sourceMedia.StoragePath,
             PostTitle = post.Title,
-            Headline = headline,
+            Headline = FirstNonEmpty(headline, extractedTemplate.Headline)!.ToUpperInvariant(),
+            Subheadline = subheadline,
+            BulletPoints = bulletPoints,
             CtaText = ctaText,
+            OrgLine = orgLine,
+            ContactLine = contactLine,
+            BrandColors = pageContext?.BrandColors,
             OutputFolder = "rendered",
-            LogoStorageKey = logoStorageKey
+            LogoStorageKey = logoStorageKey,
+            LayoutStyle = defaultLayout,
+            SafeTextRegionX = safeTextRegionX,
+            SafeTextRegionY = safeTextRegionY,
+            SafeTextRegionWidth = safeTextRegionWidth,
+            SafeTextRegionHeight = safeTextRegionHeight
         }, ct);
+        // --- Kết thúc khối trích xuất ---
 
         var renderedAsset = await mediaAssetRepository.CreateAsync(new CreateMediaAssetRequest
         {
@@ -1457,6 +1580,32 @@ public class GenerationJobPipelineService(
         var line = post.Content.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
         if (string.IsNullOrWhiteSpace(line)) return "VNI Automation";
         return line.Length > 80 ? line[..80] : line;
+    }
+
+    private static (string Headline, string Subheadline, List<string> BulletPoints) ExtractTemplateText(string content)
+    {
+        var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim())
+            .Where(x => x.Length > 0 && !x.StartsWith('#'))
+            .ToList();
+            
+        var headline = lines.FirstOrDefault(x => x.Length > 20 && !x.ToUpperInvariant().Equals(x)) ?? lines.FirstOrDefault() ?? "VNI Automation";
+        var subheadline = lines.LastOrDefault(x => x != headline && (x.ToLowerInvariant().Contains("inbox") || x.ToLowerInvariant().Contains("liên hệ") || x.ToLowerInvariant().Contains("tư vấn"))) 
+                          ?? lines.LastOrDefault(x => x != headline) 
+                          ?? "";
+                          
+        var bulletPoints = lines.Where(x => x != headline && x != subheadline && (x.StartsWith("-") || x.StartsWith("+") || x.StartsWith("•") || x.StartsWith("*")))
+                                .Take(3)
+                                .ToList(); // We KEEP emojis now, so no StripEmojis!
+                                
+        if (bulletPoints.Count == 0) {
+            bulletPoints = lines.Where(x => x != headline && x != subheadline && x.Length > 15 && x.Length < 60)
+                                .Take(3)
+                                .Select(x => "• " + x)
+                                .ToList();
+        }
+        
+        return (headline, subheadline, bulletPoints);
     }
 
     private static MediaJobOutputInfo? ParseMediaJobOutput(string? outputPayload)

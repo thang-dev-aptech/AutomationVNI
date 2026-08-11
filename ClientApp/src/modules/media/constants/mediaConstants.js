@@ -49,6 +49,17 @@ export function guessMimeFromUrl(url) {
   return 'image/jpeg'
 }
 
+/** Ảnh đã "Quét Vùng An Toàn" (AnalyzeLayoutAsync/AnalyzeLayoutFolderAsync) → Tags có safeTextRegion → dùng được cho bài Template. */
+export function hasTemplateLayout(tags) {
+  if (!tags) return false
+  try {
+    const parsed = JSON.parse(tags)
+    return Boolean(parsed?.safeTextRegion)
+  } catch {
+    return false
+  }
+}
+
 export function fileNameFromUrl(url) {
   try {
     const pathname = new URL(url).pathname

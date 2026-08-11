@@ -159,6 +159,48 @@ public class MediaAssetController
         }
     }
 
+    [HttpPost("{id:guid}/analyze-layout")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> AnalyzeLayout(Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            var entity = await _intelligence.AnalyzeLayoutAsync(id, ct);
+            return Ok(ApiResponse.Ok(ToResponse(entity), "Đã quét Vùng An Toàn"));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse.Fail("NOT_FOUND", ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(ApiResponse.Fail("MEDIA_LAYOUT_ANALYSIS_FAILED", ex.Message));
+        }
+    }
+
+    [HttpPost("analyze-layout-folder/{folderId:guid}")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> AnalyzeLayoutFolder(Guid folderId, CancellationToken ct = default)
+    {
+        try
+        {
+            var result = await _intelligence.AnalyzeLayoutFolderAsync(folderId, ct);
+            return Ok(ApiResponse.Ok(
+                result,
+                $"Đã phân tích layout {result.Analyzed} ảnh; lỗi {result.Failed}"));
+        }
+        catch (OperationCanceledException)
+        {
+            return StatusCode(
+                StatusCodes.Status408RequestTimeout,
+                ApiResponse.Fail("MEDIA_ANALYSIS_CANCELLED", "Tiến trình bị hủy"));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(ApiResponse.Fail("MEDIA_ANALYSIS_FAILED", ex.Message));
+        }
+    }
+
     [HttpPost("move")]
     public async Task<IActionResult> Move(
         [FromBody] MoveMediaAssetsRequest request,

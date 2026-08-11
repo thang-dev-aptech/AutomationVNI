@@ -3,6 +3,7 @@ using System;
 using Backend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace backend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260811012643_AddMediaFolderPageContextId")]
+    partial class AddMediaFolderPageContextId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.0");
@@ -1047,10 +1050,10 @@ namespace backend.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid?>("ParentFolderId")
+                    b.Property<Guid?>("PageContextId")
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid?>("SocialChannelId")
+                    b.Property<Guid?>("ParentFolderId")
                         .HasColumnType("TEXT");
 
                     b.Property<int>("SortOrder")
@@ -1067,8 +1070,6 @@ namespace backend.Migrations
                     b.HasIndex("IsDeleted");
 
                     b.HasIndex("ParentFolderId");
-
-                    b.HasIndex("SocialChannelId");
 
                     b.ToTable("MediaFolders", (string)null);
                 });

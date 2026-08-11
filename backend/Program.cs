@@ -98,7 +98,7 @@ builder.Services.AddScoped<IUserContext, HttpUserContext>();
 builder.Services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
 builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddSingleton<IFileStorageService, LocalFileStorageService>();
-builder.Services.AddScoped<IImageOverlayService, ImageOverlayService>();
+builder.Services.AddScoped<IImageOverlayService, RichTemplateRenderService>();
 
 // Module repositories
 builder.Services.AddScoped<CategoryRepository>();

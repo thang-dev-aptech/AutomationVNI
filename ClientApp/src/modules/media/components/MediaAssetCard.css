@@ -53,6 +53,19 @@
   transform: scale(1.06);
 }
 
+.media-asset-card-layout-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(124, 58, 237, 0.85);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .media-asset-card-placeholder {
   padding: 16px;
   text-align: center;

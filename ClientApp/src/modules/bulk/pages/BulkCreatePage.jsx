@@ -10,6 +10,7 @@ import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromp
 import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import { usePageContextList } from '@/modules/page-contexts/hooks/usePageContexts'
 import { isPageContextTemplateReady } from '@/modules/posts/components/PostCreateForm'
+import GenerationFlowPicker from '@/modules/posts/components/GenerationFlowPicker'
 import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import { useBulkCreate, useBulkImport } from '../hooks/useBulk'
 import {
@@ -55,8 +56,11 @@ export default function BulkCreatePage() {
   const [rows, setRows] = useState([emptyRow(), emptyRow(), emptyRow()])
   const [channelIds, setChannelIds] = useState([])
   const [promptTemplateId, setPromptTemplateId] = useState('')
+  const [flow, setFlow] = useState('fullai')
+  const isTemplateFlow = flow === 'template'
   const [useMedia, setUseMedia] = useState(false)
   const [postTypeId, setPostTypeId] = useState('')
+  const generationFlow = isTemplateFlow ? 6 : (useMedia ? 2 : 1)
 
   const [skelFrom, setSkelFrom] = useState(defaultDateFrom)
   const [skelTo, setSkelTo] = useState(defaultDateTo)
@@ -179,8 +183,8 @@ export default function BulkCreatePage() {
 
     const result = await importMutation.mutateAsync({
       timezone: 'Asia/Ho_Chi_Minh',
-      generationFlow: useMedia ? 2 : 1,
-      categoryId: useMedia ? (postTypeId || null) : null,
+      generationFlow,
+      categoryId: isTemplateFlow ? null : (useMedia ? (postTypeId || null) : null),
       promptTemplateId: promptTemplateId || null,
       rows: parsedRows.map((r) => ({
         idea: r.idea,
@@ -199,8 +203,8 @@ export default function BulkCreatePage() {
       ...(r.objective?.trim() ? { objective: r.objective.trim() } : {}),
     })),
     channelIds,
-    generationFlow: useMedia ? 2 : 1,
-    categoryId: useMedia ? (postTypeId || null) : null,
+    generationFlow,
+    categoryId: isTemplateFlow ? null : (useMedia ? (postTypeId || null) : null),
     promptTemplateId: promptTemplateId || null,
   })
 
@@ -431,39 +435,45 @@ export default function BulkCreatePage() {
               <h3 className="bulk-panel__title">Tuỳ chọn chung</h3>
               <p className="bulk-panel__desc">Áp cho import CSV và tạo hàng loạt bên dưới.</p>
             </div>
-            <div className="bulk-schedule-grid" style={{ gridTemplateColumns: 'minmax(220px, 1fr) minmax(220px, 1fr)' }}>
-              <div className="form-group">
-                <label htmlFor="bulk-category">Danh mục (tuỳ chọn — ghi đè PageContext)</label>
-                <select
-                  id="bulk-category"
-                  value={promptTemplateId}
-                  onChange={(e) => setPromptTemplateId(e.target.value)}
-                >
-                  <option value="">Dùng mặc định PageContext từng page</option>
-                  {categoryTemplates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}{t.isDefault ? ' ⭐' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label htmlFor="bulk-media-toggle">Ảnh</label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, margin: 0, cursor: 'pointer', fontWeight: 500 }}>
-                  <input id="bulk-media-toggle" type="checkbox" checked={useMedia} onChange={(e) => setUseMedia(e.target.checked)} />
-                  <span>Dùng ảnh từ kho media</span>
-                </label>
-              </div>
+            <div className="form-group">
+              <label htmlFor="bulk-category">Danh mục (tuỳ chọn — ghi đè PageContext)</label>
+              <select
+                id="bulk-category"
+                value={promptTemplateId}
+                onChange={(e) => setPromptTemplateId(e.target.value)}
+                style={{ maxWidth: 360 }}
+              >
+                <option value="">Dùng mặc định PageContext từng page</option>
+                {categoryTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}{t.isDefault ? ' ⭐' : ''}
+                  </option>
+                ))}
+              </select>
             </div>
-            {useMedia && (
-              <div className="form-group" style={{ marginTop: 12, marginBottom: 0, maxWidth: 360 }}>
-                <label htmlFor="bulk-post-type">Loại bài viết — lọc ảnh (tuỳ chọn)</label>
-                <select id="bulk-post-type" value={postTypeId} onChange={(e) => setPostTypeId(e.target.value)}>
-                  <option value="">Tất cả loại (không lọc)</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+
+            <div className="form-group" style={{ marginTop: 12 }}>
+              <label>Phương pháp tạo ảnh</label>
+              <GenerationFlowPicker value={flow} onChange={setFlow} />
+            </div>
+
+            {!isTemplateFlow && (
+              <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, margin: 0, cursor: 'pointer', fontWeight: 500 }}>
+                  <input type="checkbox" checked={useMedia} onChange={(e) => setUseMedia(e.target.checked)} />
+                  <span>Ngoài ảnh AI, tự tìm thêm 2–3 ảnh từ kho media phù hợp nội dung (RAG)</span>
+                </label>
+                {useMedia && (
+                  <div style={{ marginTop: 10, maxWidth: 360 }}>
+                    <label htmlFor="bulk-post-type">Loại bài viết — lọc ảnh (tuỳ chọn)</label>
+                    <select id="bulk-post-type" value={postTypeId} onChange={(e) => setPostTypeId(e.target.value)}>
+                      <option value="">Tất cả loại (không lọc)</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
           </div>

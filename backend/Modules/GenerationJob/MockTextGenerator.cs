@@ -53,6 +53,7 @@ public static class MockTextGenerator
             BannerHeadline = title,
             BannerSubheadline = request.BrandContext ?? "VNI Automation",
             BannerCta = mock.Cta,
+            BannerBullets = ["✅ Chất lượng đảm bảo", "⭐ Uy tín hàng đầu", "📞 Tư vấn miễn phí"],
             ImagePrompt = mock.ImagePrompt
         };
     }

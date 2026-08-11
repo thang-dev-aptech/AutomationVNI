@@ -17,6 +17,7 @@ export function isPageContextTemplateReady(ctx) {
 }
 
 export default function PostCreateForm({
+  flow = 'fullai',
   channels = [],
   categoryTemplates = [],
   pageContexts = [],
@@ -25,6 +26,7 @@ export default function PostCreateForm({
   errorMessage,
   onSubmit,
 }) {
+  const isTemplateFlow = flow === 'template'
   const [form, setForm] = useState(emptyForm)
   const [channelIds, setChannelIds] = useState([])
   const [showCategoryOverride, setShowCategoryOverride] = useState(false)
@@ -66,8 +68,8 @@ export default function PostCreateForm({
       socialChannelIds: channelIds,
       socialChannelId: channelIds.length === 1 ? channelIds[0] : undefined,
       promptTemplateId: form.promptTemplateId || null,
-      categoryId: useMedia ? (postTypeId || null) : null,
-      generationFlow: useMedia ? 2 : 1,
+      categoryId: isTemplateFlow ? null : (useMedia ? (postTypeId || null) : null),
+      generationFlow: isTemplateFlow ? 6 : (useMedia ? 2 : 1),
     })
   }
 
@@ -157,6 +159,17 @@ export default function PostCreateForm({
         </p>
       )}
 
+      {isTemplateFlow && (
+        <div
+          className="form-group"
+          style={{ border: '1px solid var(--color-border, #e5e7eb)', borderRadius: 8, padding: 12, fontSize: '0.85rem', color: 'var(--text-muted, #888)' }}
+        >
+          🖼️ Ảnh sẽ tự lấy ngẫu nhiên từ thư mục Template gắn với page (Media &gt; Thư mục) rồi ghép chữ AI đè lên.
+          Page chưa setup thư mục Template sẽ báo lỗi khi sinh bài.
+        </div>
+      )}
+
+      {!isTemplateFlow && (
       <div
         className="form-group"
         style={{ border: '1px solid var(--color-border, #e5e7eb)', borderRadius: 8, padding: 12 }}
@@ -189,6 +202,7 @@ export default function PostCreateForm({
           </div>
         )}
       </div>
+      )}
 
       <button
         type="submit"
