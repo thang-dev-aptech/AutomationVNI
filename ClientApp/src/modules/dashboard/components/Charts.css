@@ -1,0 +1,199 @@
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 20px 16px;
+}
+
+.chart-canvas {
+  position: relative;
+  padding-left: 42px;
+}
+
+/* preserveAspectRatio="none" kéo giãn theo chiều ngang, nên MỌI nét phải dùng
+   vector-effect: non-scaling-stroke, không thì đường kẻ dày mỏng khác nhau tuỳ bề rộng màn hình. */
+.chart-svg {
+  display: block;
+  width: 100%;
+  height: 180px;
+  overflow: visible;
+}
+
+.chart-grid {
+  stroke: var(--color-border);
+  stroke-width: 1;
+  /* Nét liền, không đứt đoạn — nét đứt thêm nhiễu thị giác mà không thêm thông tin nào. */
+}
+
+.chart-crosshair {
+  stroke: var(--color-text-muted);
+  stroke-width: 1;
+  opacity: 0.45;
+}
+
+.chart-yaxis {
+  position: absolute;
+  left: 0;
+  width: 38px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  font-size: 0.68rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.chart-xaxis {
+  display: flex;
+  justify-content: space-between;
+  padding-left: 42px;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+
+/* ─── Chú giải: BẮT BUỘC có, không được bỏ để lấy chỗ ───
+   Cam và xanh lá tương phản 2,5:1 với nền trắng, dưới ngưỡng 3:1. Bộ kiểm bảng màu yêu cầu
+   bù bằng nhãn chữ, và đây chính là chỗ bù. */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chart-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.chart-empty {
+  margin: 0;
+  padding: 28px 20px;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--color-text-muted);
+}
+
+/* ─── Tooltip: số đứng trước, tên chuỗi đứng sau ─── */
+.chart-tip {
+  position: absolute;
+  bottom: 100%;
+  transform: translateX(-50%);
+  margin-bottom: 6px;
+  background: var(--color-text);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  padding: 8px 11px;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow-md);
+  z-index: 2;
+}
+
+.chart-tip-head {
+  font-weight: 700;
+  margin-bottom: 4px;
+  opacity: 0.85;
+}
+
+.chart-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Khoá màu bằng NÉT NGẮN chứ không phải ô đặc — ở mật độ tooltip, ô đặc là mực thừa. */
+.chart-tip-key {
+  width: 10px;
+  height: 2px;
+  border-radius: 1px;
+  flex: none;
+}
+
+.chart-tip-val {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 22px;
+  text-align: right;
+}
+
+.chart-tip-lbl { opacity: 0.75; }
+
+.chart-tip-total {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgb(255 255 255 / 0.2);
+  padding-left: 16px;
+}
+
+/* ─── Dải cơ cấu ─── */
+.mix {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 20px 16px;
+}
+
+.mix-bar {
+  display: flex;
+  /* Khe hở 2px màu nền tách hai khối cạnh nhau — không viền, viền là mực thừa. */
+  gap: 2px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.mix-seg { display: block; height: 100%; }
+
+.mix-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.mix-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mix-item strong {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.mix-pct {
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Biểu đồ nhỏ hơn cho hai khung phụ */
+.chart--short .chart-svg { height: 120px; }
+
+@media (max-width: 900px) {
+  .chart-svg { height: 150px; }
+  .chart-canvas { padding-left: 36px; }
+  .chart-xaxis { padding-left: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-svg rect { transition: none; }
+}

@@ -100,6 +100,86 @@ public class PageMetricsController(
             .ToListAsync(ct);
         var byChannel = postsInWindow.ToDictionary(x => x.ChannelId, x => x);
 
+        // ═══ Chuỗi theo thời gian để vẽ biểu đồ ═══
+        //
+        // Dựng lại từ NGÀY ĐĂNG của từng bài, không phải từ bảng mốc ChannelMetricDaily.
+        //
+        // Vì sao: bảng mốc mới chạy từ hôm nay nên chỉ có một điểm, trong khi SocialPosts đã có
+        // sẵn 8 tháng lịch sử — 28/30 ngày gần nhất đều có bài. Vẽ từ ngày đăng là có biểu đồ
+        // thật ngay, thay vì một ô trống chờ hai tuần nữa mới đủ dữ liệu.
+        //
+        // Điều này gán tương tác vào NGÀY ĐĂNG BÀI, không phải ngày người ta bấm thích. Đó là
+        // cách đọc đúng cho câu hỏi "bài đăng hôm đó chạy tốt không" — cũng là câu hỏi người làm
+        // nội dung thực sự hỏi. Ngày phát sinh từng lượt thích thì Facebook không trả về.
+        var windowPosts = await db.SocialPosts
+            .Where(x => !x.IsDeleted && channelIds.Contains(x.SocialChannelId)
+                        && x.PostedAt != null && x.PostedAt >= windowStartUtc)
+            .Select(x => new { x.PostedAt, x.LikeCount, x.PlatformCommentCount, x.ShareCount })
+            .ToListAsync(ct);
+
+        // Gộp theo tuần khi cửa sổ dài, để số cột không vượt quá 30. 90 cột trên một khung rộng
+        // 600px thì mỗi cột dưới 5px — không đọc được và không trỏ trúng để xem tooltip.
+        var bucketDays = days <= 31 ? 1 : 7;
+        var bucketCount = (int)Math.Ceiling(days / (double)bucketDays);
+
+        var buckets = Enumerable.Range(0, bucketCount)
+            .Select(i => new
+            {
+                Index = i,
+                Start = windowStart.AddDays(i * bucketDays),
+                End = windowStart.AddDays((i + 1) * bucketDays),
+            })
+            .Select(b => new
+            {
+                b.Start,
+                b.End,
+                Posts = 0, Likes = 0, Comments = 0, Shares = 0,
+            })
+            .ToList();
+
+        var acc = buckets.Select(b => new int[4]).ToList();
+        foreach (var p in windowPosts)
+        {
+            var localDay = TimeZoneInfo.ConvertTimeFromUtc(
+                DateTime.SpecifyKind(p.PostedAt!.Value, DateTimeKind.Utc), VnTime).Date;
+            var idx = (int)((localDay - windowStart).TotalDays / bucketDays);
+            if (idx < 0 || idx >= acc.Count) continue;
+            acc[idx][0] += 1;
+            acc[idx][1] += p.LikeCount;
+            acc[idx][2] += p.PlatformCommentCount;
+            acc[idx][3] += p.ShareCount;
+        }
+
+        var series = buckets.Select((b, i) => new
+        {
+            from = b.Start,
+            // Cắt về HÔM NAY, không để nhãn nhận cả những ngày chưa xảy ra.
+            //
+            // Mốc 90 ngày gộp theo tuần, nên ô cuối luôn là tuần đang chạy dở. Ghi "6/8–12/8"
+            // trong khi mới tới 11/8 là hứa một tuần đầy đủ, người xem thấy cột đó thấp hơn hẳn
+            // và tưởng tương tác đang tụt — thật ra tuần mới đi được một nửa.
+            to = b.End.AddDays(-1) > today ? today : b.End.AddDays(-1),
+            partial = b.End.AddDays(-1) > today,
+            posts = acc[i][0],
+            likes = acc[i][1],
+            comments = acc[i][2],
+            shares = acc[i][3],
+        }).ToList();
+
+        // Chuỗi người theo dõi lấy từ bảng mốc — cộng mọi page theo từng ngày.
+        // Ngày nào chưa đo đủ 15 page thì tổng sẽ thấp giả tạo, nên trả kèm số page đo được để
+        // giao diện tự quyết có vẽ điểm đó hay không.
+        var followerSeries = snapshots
+            .GroupBy(x => x.Date)
+            .OrderBy(g => g.Key)
+            .Select(g => new
+            {
+                date = g.Key,
+                followers = g.Sum(x => x.Followers),
+                measuredPages = g.Count(x => x.SyncError == null),
+            })
+            .ToList();
+
         var pages = channels.Select(c =>
         {
             var w = byChannel.GetValueOrDefault(c.Id);
@@ -197,6 +277,9 @@ public class PageMetricsController(
                 total = pages.Sum(x => x.engagement),
             },
             posts = new { published = pages.Sum(x => x.posts), scheduled },
+            series,
+            followerSeries,
+            bucketDays,
             todo = new { waitingReview, newsPending, scheduled },
             news = new { published = newsPublished, inWindow = newsThisWindow },
             pages,

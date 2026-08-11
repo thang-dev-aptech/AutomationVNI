@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { num, delta, relativeTime, shortDateTime, excerpt } from '../utils/metricFormat'
+import { EngagementChart, PostsChart, MixBar, FollowerChart } from './Charts'
 import './CustomerOverview.css'
 
 function HeroCard({ label, value, unit, sub, deltaValue, deltaSuffix, tone = 'neutral', to }) {
@@ -38,7 +39,10 @@ function Bar({ value, max }) {
 }
 
 export default function CustomerOverview({ data, days, onChangeDays, onSync, syncing }) {
-  const { followers, engagement, posts, todo, news, pages = [], topPosts = [], upcoming = [], sync, unavailable = [] } = data
+  const {
+    followers, engagement, posts, todo, news, pages = [], topPosts = [], upcoming = [],
+    sync, unavailable = [], series = [], followerSeries = [], bucketDays = 1,
+  } = data
   const maxEngagement = pages.reduce((m, p) => Math.max(m, p.engagement || 0), 0)
   const needAction = (todo?.waitingReview ?? 0) + (todo?.newsPending ?? 0)
   const followersPartial = followers.measured < followers.totalPages
@@ -109,6 +113,37 @@ export default function CustomerOverview({ data, days, onChangeDays, onSync, syn
           tone={needAction > 0 ? 'action' : 'ok'}
           to={needAction > 0 ? '/crawl' : undefined}
         />
+      </div>
+
+      <section className="card cust-panel">
+        <header className="cust-panel-head">
+          <h2>Tương tác theo {bucketDays === 1 ? 'ngày' : 'tuần'}</h2>
+          <p>Tính theo ngày đăng bài — trả lời "bài hôm đó chạy tốt không"</p>
+        </header>
+        <EngagementChart series={series} bucketDays={bucketDays} />
+        <MixBar engagement={engagement} />
+      </section>
+
+      <div className="cust-split">
+        <section className="card cust-panel">
+          <header className="cust-panel-head">
+            <h2>Bài đăng theo {bucketDays === 1 ? 'ngày' : 'tuần'}</h2>
+            <p>Nhịp đăng có đều không</p>
+          </header>
+          <div className="chart--short">
+            <PostsChart series={series} bucketDays={bucketDays} />
+          </div>
+        </section>
+
+        <section className="card cust-panel">
+          <header className="cust-panel-head">
+            <h2>Người theo dõi</h2>
+            <p>Cộng {followers.totalPages} page</p>
+          </header>
+          <div className="chart--short">
+            <FollowerChart points={followerSeries} />
+          </div>
+        </section>
       </div>
 
       <section className="card cust-panel">
