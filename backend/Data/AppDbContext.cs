@@ -38,6 +38,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<ApiLogModel> ApiLogs => Set<ApiLogModel>();
     public DbSet<PromptTemplateModel> PromptTemplates => Set<PromptTemplateModel>();
     public DbSet<SocialPostModel> SocialPosts => Set<SocialPostModel>();
+    public DbSet<Backend.Modules.PageMetrics.ChannelMetricDailyModel> ChannelMetricDaily
+        => Set<Backend.Modules.PageMetrics.ChannelMetricDailyModel>();
     public DbSet<SocialCommentModel> SocialComments => Set<SocialCommentModel>();
     public DbSet<CommentActionLogModel> CommentActionLogs => Set<CommentActionLogModel>();
     public DbSet<WebhookEventModel> WebhookEvents => Set<WebhookEventModel>();
@@ -262,6 +264,21 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.PermalinkUrl).HasMaxLength(1000);
             e.Property(x => x.Message).HasColumnType("TEXT");
             e.Property(x => x.SyncCursor).HasMaxLength(500);
+            // Dashboard sắp bài theo tương tác giảm dần để lấy "bài tốt nhất" — không có chỉ mục
+            // thì mỗi lần mở là quét toàn bảng.
+            e.HasIndex(x => x.PostedAt);
+        });
+
+        modelBuilder.Entity<Backend.Modules.PageMetrics.ChannelMetricDailyModel>(e =>
+        {
+            e.ToTable("ChannelMetricDaily");
+            e.HasKey(x => x.Id);
+            // Mỗi page mỗi ngày ĐÚNG một dòng. Ràng buộc ở tầng CSDL chứ không chỉ trong code:
+            // worker có thể chạy lại sau khi lỗi giữa chừng, và hai dòng cùng ngày sẽ làm biểu đồ
+            // xu hướng nhảy gấp đôi mà nhìn số tổng vẫn thấy hợp lý.
+            e.HasIndex(x => new { x.SocialChannelId, x.Date }).IsUnique();
+            e.HasIndex(x => x.Date);
+            e.Property(x => x.SyncError).HasMaxLength(500);
         });
 
         modelBuilder.Entity<SocialCommentModel>(e =>

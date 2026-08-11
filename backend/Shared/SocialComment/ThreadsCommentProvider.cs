@@ -271,6 +271,19 @@ public class ThreadsCommentProvider(
         return DateTime.TryParse(raw, out var dt) ? dt.ToUniversalTime() : null;
     }
 
+    /// <summary>
+    /// Threads chưa có đường lấy số người theo dõi bằng token của app này.
+    ///
+    /// Trả null là CÓ CHỦ Ý, không phải chưa làm xong. Dashboard đọc null sẽ hiện "chưa đo được"
+    /// thay vì con số 0 — một page Threads đang chạy tốt mà bị báo 0 người theo dõi thì người xem
+    /// mất niềm tin vào toàn bộ bảng số, kể cả những ô đang đúng.
+    ///
+    /// Hiện tại 18/18 kênh đều là Facebook nên nhánh này chưa chạy lần nào.
+    /// </summary>
+    public Task<ProviderPageProfileDto?> GetPageProfileAsync(
+        string externalPageId, string accessToken, CancellationToken ct = default)
+        => Task.FromResult<ProviderPageProfileDto?>(null);
+
     private static string Truncate(string? value, int max = 400)
         => string.IsNullOrEmpty(value) ? string.Empty : value.Length <= max ? value : value[..max];
 }

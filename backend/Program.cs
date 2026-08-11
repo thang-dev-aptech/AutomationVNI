@@ -215,6 +215,12 @@ builder.Services.AddHttpClient<HttpArticleFetcher>(client =>
     });
 builder.Services.AddScoped<CrawlSourcePortability>();
 builder.Services.AddHostedService<ContentCrawlWorker>();
+
+// ═══ Chỉ số page cho dashboard khách hàng ═══
+builder.Services.Configure<Backend.Modules.PageMetrics.PageMetricsOptions>(
+    builder.Configuration.GetSection("PageMetrics"));
+builder.Services.AddScoped<Backend.Modules.PageMetrics.PageMetricsSyncService>();
+builder.Services.AddHostedService<Backend.Modules.PageMetrics.PageMetricsWorker>();
 // Soi cấu hình một lượt lúc khởi động — hệ thống này hỏng câm rất giỏi.
 builder.Services.AddHostedService<Backend.Shared.Startup.StartupHealthCheck>();
 

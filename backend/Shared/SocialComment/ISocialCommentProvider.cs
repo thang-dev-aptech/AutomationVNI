@@ -10,6 +10,20 @@ public class ProviderPostDto
     public string? PermalinkUrl { get; set; }
     public DateTime? PostedAt { get; set; }
     public string? NextCursor { get; set; }
+
+    // Chỉ số tương tác. Nền tảng nào không trả thì để null — KHÁC HẲN với 0.
+    // Threads chưa có đường lấy mấy số này; ghi 0 vào là dashboard hiện "0 like" cho một page
+    // thật ra đang chạy tốt, mà không ai biết đó là "chưa đo được".
+    public int? LikeCount { get; set; }
+    public int? ShareCount { get; set; }
+    public int? CommentCount { get; set; }
+}
+
+/// <summary>Thông tin hồ sơ của page — dùng cho thẻ "Người theo dõi" trên dashboard.</summary>
+public class ProviderPageProfileDto
+{
+    public string? Name { get; set; }
+    public int? Followers { get; set; }
 }
 
 public class ProviderCommentDto
@@ -60,6 +74,15 @@ public interface ISocialCommentProvider
         string accessToken,
         string? cursor,
         int limit,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Hồ sơ page (tên, số người theo dõi). Nền tảng chưa hỗ trợ thì trả null — người gọi phải
+    /// hiểu null là "chưa đo được", không phải "bằng 0".
+    /// </summary>
+    Task<ProviderPageProfileDto?> GetPageProfileAsync(
+        string externalPageId,
+        string accessToken,
         CancellationToken ct = default);
 
     Task<(List<ProviderCommentDto> Items, string? NextCursor)> ListCommentsAsync(
