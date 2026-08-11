@@ -1,7 +1,7 @@
 .chart {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   padding: 14px 20px 16px;
 }
 
@@ -10,8 +10,8 @@
   padding-left: 42px;
 }
 
-/* preserveAspectRatio="none" kéo giãn theo chiều ngang, nên MỌI nét phải dùng
-   vector-effect: non-scaling-stroke, không thì đường kẻ dày mỏng khác nhau tuỳ bề rộng màn hình. */
+/* preserveAspectRatio="none" căng trục X mà không căng trục Y, nên MỌI nét phải dùng
+   vector-effect: non-scaling-stroke — không thì đường dày mỏng khác nhau tuỳ bề rộng màn hình. */
 .chart-svg {
   display: block;
   width: 100%;
@@ -22,13 +22,25 @@
 .chart-grid {
   stroke: var(--color-border);
   stroke-width: 1;
-  /* Nét liền, không đứt đoạn — nét đứt thêm nhiễu thị giác mà không thêm thông tin nào. */
+  /* Nét liền, không đứt đoạn — nét đứt thêm nhiễu mà không thêm thông tin. */
 }
 
 .chart-crosshair {
   stroke: var(--color-text-muted);
   stroke-width: 1;
-  opacity: 0.45;
+  opacity: 0.4;
+}
+
+/* Chấm là thẻ HTML nên luôn tròn đều, kể cả khi SVG bị căng ngang.
+   Vòng viền màu nền để chấm không lẫn vào nhau ở chỗ hai đường cắt nhau. */
+.chart-dot {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 2px var(--color-surface);
+  pointer-events: none;
 }
 
 .chart-yaxis {
@@ -48,6 +60,7 @@
 .chart-xaxis {
   display: flex;
   justify-content: space-between;
+  gap: 12px;
   padding-left: 42px;
   font-size: 0.7rem;
   color: var(--color-text-muted);
@@ -59,7 +72,7 @@
 .chart-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 14px;
+  gap: 16px;
   font-size: 0.78rem;
   color: var(--color-text-muted);
 }
@@ -70,9 +83,11 @@
   gap: 6px;
 }
 
-.chart-swatch {
-  width: 10px;
-  height: 10px;
+/* Chú giải của biểu đồ ĐƯỜNG dùng nét ngắn, không dùng ô đặc — hình khoá phải giống hình vẽ
+   trên biểu đồ, không thì mắt phải dịch nghĩa thêm một lần. */
+.chart-key {
+  width: 14px;
+  height: 3px;
   border-radius: 2px;
   flex: none;
 }
@@ -90,7 +105,7 @@
   position: absolute;
   bottom: 100%;
   transform: translateX(-50%);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   background: var(--color-text);
   color: #fff;
   border-radius: var(--radius-sm);
@@ -115,7 +130,6 @@
   gap: 6px;
 }
 
-/* Khoá màu bằng NÉT NGẮN chứ không phải ô đặc — ở mật độ tooltip, ô đặc là mực thừa. */
 .chart-tip-key {
   width: 10px;
   height: 2px;
@@ -139,51 +153,87 @@
   padding-left: 16px;
 }
 
-/* ─── Dải cơ cấu ─── */
-.mix {
+/* ─── Biểu đồ tròn khuyết ─── */
+.donut-wrap {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 6px 20px 20px;
+  flex-wrap: wrap;
+}
+
+.donut { flex: none; }
+
+/* KHÔNG có preserveAspectRatio="none" ở đây — vòng tròn phải tròn. */
+.donut-svg {
+  display: block;
+  width: 148px;
+  height: 148px;
+  overflow: visible;
+}
+
+.donut-arc {
+  cursor: default;
+  transition: stroke-width var(--ease), opacity var(--ease);
+}
+
+.donut-num {
+  text-anchor: middle;
+  font-size: 26px;
+  font-weight: 700;
+  fill: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.donut-lbl {
+  text-anchor: middle;
+  font-size: 11px;
+  fill: var(--color-text-muted);
+}
+
+.donut-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 0 20px 16px;
+  min-width: 190px;
+  flex: 1;
 }
 
-.mix-bar {
-  display: flex;
-  /* Khe hở 2px màu nền tách hai khối cạnh nhau — không viền, viền là mực thừa. */
-  gap: 2px;
-  height: 10px;
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-}
-
-.mix-seg { display: block; height: 100%; }
-
-.mix-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-}
-
-.mix-item {
-  display: inline-flex;
+.donut-legend li {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  transition: background var(--ease);
 }
 
-.mix-item strong {
+.donut-legend li.is-focus { background: var(--color-surface-muted); }
+
+.donut-legend-label { color: var(--color-text); }
+
+.donut-legend strong {
   color: var(--color-text);
   font-variant-numeric: tabular-nums;
 }
 
-.mix-pct {
-  padding: 1px 6px;
+.donut-pct {
+  padding: 1px 7px;
   border-radius: var(--radius-pill);
   background: var(--color-surface-muted);
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   font-variant-numeric: tabular-nums;
+  min-width: 42px;
+  text-align: right;
 }
+
+.donut-legend li.is-focus .donut-pct { background: var(--color-surface); }
 
 /* Biểu đồ nhỏ hơn cho hai khung phụ */
 .chart--short .chart-svg { height: 120px; }
@@ -191,9 +241,10 @@
 @media (max-width: 900px) {
   .chart-svg { height: 150px; }
   .chart-canvas { padding-left: 36px; }
-  .chart-xaxis { padding-left: 36px; }
+  .chart-xaxis { padding-left: 36px; font-size: 0.66rem; }
+  .donut-wrap { gap: 18px; justify-content: center; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chart-svg rect { transition: none; }
+  .donut-arc { transition: none; }
 }

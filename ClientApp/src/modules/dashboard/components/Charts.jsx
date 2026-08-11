@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useState } from 'react'
 import { num } from '../utils/metricFormat'
 import './Charts.css'
 
@@ -6,25 +6,27 @@ import './Charts.css'
  * Biểu đồ vẽ bằng SVG thuần, không thêm thư viện.
  *
  * Dự án đang có 11 gói phụ thuộc và gói JS đã 600 KB kèm cảnh báo quá ngưỡng. Recharts thêm
- * khoảng 500 KB nữa cho ba biểu đồ cột — không đáng. SVG cột và đường là hình học đơn giản,
- * và tự viết thì màu bám thẳng vào biến CSS sẵn có của dự án.
+ * khoảng 500 KB cho mấy biểu đồ này — không đáng. Tự viết thì màu bám thẳng vào biến CSS
+ * sẵn có của dự án.
  *
  * ═══ BA MÀU CHUỖI ĐÃ QUA KIỂM ═══
  *
- * #2d6cb6 xanh dương · #f08a22 cam · #10b981 xanh lá — chạy qua bộ kiểm bảng màu:
+ * #2d6cb6 xanh dương · #f08a22 cam · #10b981 xanh lá:
  *   dải sáng ĐẠT · sàn độ tươi ĐẠT · tách màu cho người mù màu ĐẠT (ΔE 10,4 protan)
  *   sàn thị lực thường ĐẠT (ΔE 24,7) · tương phản nền CẢNH BÁO (2,5:1 < 3:1)
  *
- * Cảnh báo tương phản bắt buộc phải bù bằng NHÃN CHỮ — nên chú giải luôn hiện kèm tên, tooltip
- * luôn đọc ra số, và bảng xếp hạng phía dưới là bản tra cứu không cần rê chuột. Không được bỏ
- * chú giải để lấy chỗ.
+ * Cảnh báo tương phản bắt buộc bù bằng NHÃN CHỮ — nên chú giải luôn hiện kèm tên, tooltip luôn
+ * đọc ra số, và bảng xếp hạng phía dưới là bản tra cứu không cần rê chuột.
  *
- * MỘT ĐÁNH ĐỔI ĐÃ BIẾT: #10b981 chính là --color-success, vốn là màu TRẠNG THÁI của dự án.
- * Quy tắc chuẩn là không mượn màu trạng thái làm màu chuỗi dữ liệu. Nhưng bảng màu của dự án
- * chỉ có ba sắc độ đủ khác nhau (xanh dương, cam, xanh lá) — --color-warning quá gần cam, còn
- * --color-primary-strong quá gần xanh dương. Chọn giữ màu của hệ thiết kế thay vì bịa một sắc
- * mới, và bù bằng chỗ đặt: trong ba biểu đồ này không có ô nào mã hoá trạng thái, nên xanh lá
- * ở đây chỉ có một nghĩa duy nhất là "Chia sẻ", luôn kèm chữ.
+ * MỘT ĐÁNH ĐỔI ĐÃ BIẾT: #10b981 chính là --color-success, vốn là màu TRẠNG THÁI. Bảng màu dự
+ * án không có sắc thứ tư đủ khác (--color-warning quá gần cam). Trong ba biểu đồ này không ô
+ * nào mã hoá trạng thái, nên xanh lá chỉ mang một nghĩa duy nhất là "Chia sẻ", luôn kèm chữ.
+ *
+ * ═══ VÌ SAO CHẤM TRÒN LÀ THẺ HTML, KHÔNG PHẢI <circle> ═══
+ *
+ * Các biểu đồ đường dùng preserveAspectRatio="none" để căng hết bề ngang khung. Kiểu căng đó
+ * kéo trục X mà không kéo trục Y, nên mọi <circle> vẽ trong đó biến thành hình bầu dục méo.
+ * Đặt chấm bằng thẻ HTML định vị tuyệt đối thì luôn tròn đều ở mọi bề rộng màn hình.
  */
 const SERIES = [
   { key: 'likes', label: 'Thích', color: '#2d6cb6' },
@@ -32,20 +34,8 @@ const SERIES = [
   { key: 'shares', label: 'Chia sẻ', color: '#10b981' },
 ]
 
-const GAP = 2 // khe hở màu nền giữa hai khối chồng nhau và giữa hai cột cạnh nhau
-
-// Bề rộng cột tối đa, tính theo % của viewBox.
-//
-// Quy cách yêu cầu cột không dày quá 24px. Nhưng SVG ở đây dùng preserveAspectRatio="none" nên
-// đơn vị viewBox co giãn theo bề ngang khung — 2,1% ở khung 700px là 15px, ở khung 1400px thành
-// 30px, vượt mốc. Lấy 2% để ở khung rộng nhất thực tế (~1200px) vẫn còn 24px.
-const MAX_BAR_PCT = 2
-
-// Thang chia mịn hơn [1, 2, 2.5, 5].
-//
-// Với đỉnh dữ liệu 28, thang thô nhảy thẳng lên 50 và cột cao nhất chỉ chiếm 56% chiều cao khung
-// — nhìn như tương tác đang thấp trong khi thật ra đó là đỉnh. Thêm 3 và 4 để đỉnh trục bám sát
-// dữ liệu.
+// Thang chia bám sát dữ liệu. Thang thô [1,2,2.5,5] đẩy đỉnh 28 lên trục 50 và đường cao nhất
+// chỉ chiếm 56% khung — nhìn như tương tác đang thấp trong khi đó là đỉnh.
 function niceTop(value) {
   if (value <= 0) return 1
   const pow = 10 ** Math.floor(Math.log10(value))
@@ -62,24 +52,41 @@ function labelOf(point, bucketDays) {
   if (bucketDays === 1) return d
   const to = new Date(point.to)
   const range = `${d}–${to.getDate()}/${to.getMonth() + 1}`
-  // Ô cuối của mốc 90 ngày luôn là tuần đang chạy dở; nói rõ để không ai đọc cột thấp đó thành
-  // "tương tác đang tụt".
   return point.partial ? `${range} (chưa hết tuần)` : range
 }
 
-/** Cột chồng: thích + bình luận + chia sẻ theo từng mốc thời gian. */
+/** Toạ độ X theo phần trăm — dùng chung cho đường, chấm cuối, và vùng bắt chuột. */
+const xAt = (i, n) => (n <= 1 ? 50 : (i / (n - 1)) * 100)
+
+/**
+ * Nhãn vạch giữa trục dọc.
+ *
+ * Phải in ĐÚNG giá trị của vạch đó. Đỉnh trục 25 thì vạch giữa là 12,5 — làm tròn thành "13"
+ * là dán một con số sai lên một đường kẻ có thật, và ai đọc giá trị theo vạch sẽ lệch.
+ */
+const midLabel = (top) => {
+  const mid = top / 2
+  return Number.isInteger(mid) ? num(mid) : mid.toLocaleString('vi-VN')
+}
+
+function Grid({ plotH, top: padTop = 8, lines = [0, 0.5, 1] }) {
+  return lines.map((f) => (
+    <line key={f} x1="0" x2="100" y1={padTop + plotH * f} y2={padTop + plotH * f}
+          className="chart-grid" vectorEffect="non-scaling-stroke" />
+  ))
+}
+
+/** Ba đường: thích · bình luận · chia sẻ. Cùng một trục, không bao giờ hai trục. */
 export function EngagementChart({ series, bucketDays }) {
   const [hover, setHover] = useState(null)
-  const clipId = useId()
-
-  const totals = series.map((p) => p.likes + p.comments + p.shares)
-  const top = niceTop(Math.max(...totals, 0))
-  const H = 180
-  const plotH = H - 26 - 8
 
   const n = series.length
-  const slot = 100 / n // phần trăm chiều rộng mỗi ô
-  const grand = totals.reduce((a, b) => a + b, 0)
+  const maxVal = Math.max(...series.flatMap((p) => SERIES.map((s) => p[s.key])), 0)
+  const grand = series.reduce((a, p) => a + p.likes + p.comments + p.shares, 0)
+  const top = niceTop(maxVal)
+  const H = 180
+  const PAD = 8
+  const plotH = H - 26 - PAD
 
   if (grand === 0) {
     return (
@@ -90,12 +97,14 @@ export function EngagementChart({ series, bucketDays }) {
     )
   }
 
+  const yAt = (v) => PAD + plotH - (v / top) * plotH
+
   return (
     <div className="chart">
       <div className="chart-legend">
         {SERIES.map((s) => (
           <span key={s.key} className="chart-legend-item">
-            <span className="chart-swatch" style={{ background: s.color }} aria-hidden="true" />
+            <span className="chart-key" style={{ background: s.color }} aria-hidden="true" />
             {s.label}
           </span>
         ))}
@@ -104,62 +113,52 @@ export function EngagementChart({ series, bucketDays }) {
       <div className="chart-canvas">
         <svg viewBox={`0 0 100 ${H}`} preserveAspectRatio="none" className="chart-svg" role="img"
              aria-label={`Tương tác theo thời gian, tổng ${grand}`}>
-          <defs>
-            <clipPath id={clipId}><rect x="0" y="0" width="100" height={H} /></clipPath>
-          </defs>
-          {[0, 0.5, 1].map((f) => (
-            <line key={f} x1="0" x2="100" y1={8 + plotH * f} y2={8 + plotH * f}
-                  className="chart-grid" vectorEffect="non-scaling-stroke" />
+          <Grid plotH={plotH} />
+          {SERIES.map((s) => (
+            <polyline
+              key={s.key}
+              points={series.map((p, i) => `${xAt(i, n)},${yAt(p[s.key])}`).join(' ')}
+              fill="none" stroke={s.color} strokeWidth="2"
+              strokeLinejoin="round" strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+              opacity={hover === null ? 1 : 0.85}
+            />
           ))}
-
-          {series.map((p, i) => {
-            const total = totals[i]
-            const barW = Math.min(slot - 1.2, MAX_BAR_PCT)
-            const x = i * slot + (slot - barW) / 2
-            let y = 8 + plotH
-            const isHover = hover === i
-            return (
-              <g key={i} clipPath={`url(#${clipId})`}>
-                {SERIES.map((s, si) => {
-                  const v = p[s.key]
-                  if (v <= 0) return null
-                  const h = (v / top) * plotH
-                  y -= h
-                  const isTop = SERIES.slice(si + 1).every((o) => p[o.key] <= 0)
-                  return (
-                    <rect
-                      key={s.key}
-                      x={x} y={y} width={barW}
-                      height={Math.max(h - (si === 0 ? 0 : GAP * (plotH / H) * 0.9), 0.6)}
-                      fill={s.color}
-                      rx={isTop ? 1 : 0}
-                      opacity={hover === null || isHover ? 1 : 0.45}
-                    />
-                  )
-                })}
-                {/* Vùng bắt chuột rộng hết ô, không chỉ phần cột đã tô — cột 4px thì không ai trỏ trúng. */}
-                <rect x={i * slot} y="0" width={slot} height={H} fill="transparent"
-                      onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} />
-                {total > 0 && isHover && (
-                  <line x1={i * slot + slot / 2} x2={i * slot + slot / 2} y1="8" y2={8 + plotH}
-                        className="chart-crosshair" vectorEffect="non-scaling-stroke" />
-                )}
-              </g>
-            )
-          })}
+          {hover !== null && (
+            <line x1={xAt(hover, n)} x2={xAt(hover, n)} y1={PAD} y2={PAD + plotH}
+                  className="chart-crosshair" vectorEffect="non-scaling-stroke" />
+          )}
+          {/* Vùng bắt chuột trải hết ô — người ta nhắm vào một NGÀY, không ai nhắm trúng nét 2px. */}
+          {series.map((_, i) => (
+            <rect key={i} x={Math.max(xAt(i, n) - 50 / (n - 1 || 1), 0)} y="0"
+                  width={100 / (n - 1 || 1)} height={H} fill="transparent"
+                  onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} />
+          ))}
         </svg>
 
-        <div className="chart-yaxis" style={{ height: plotH, top: 8 }}>
+        {/* Chấm cuối mỗi đường + chấm trên đường lúc rê chuột. Vòng viền màu nền để chấm không
+            lẫn vào nhau chỗ hai đường cắt nhau. */}
+        {SERIES.map((s) => {
+          const i = hover ?? n - 1
+          return (
+            <span key={s.key} className="chart-dot"
+                  style={{
+                    left: `${xAt(i, n)}%`,
+                    top: `${yAt(series[i][s.key])}px`,
+                    background: s.color,
+                  }} />
+          )
+        })}
+
+        <div className="chart-yaxis" style={{ height: plotH, top: PAD }}>
           <span>{num(top)}</span>
-          <span>{num(Math.round(top / 2))}</span>
+          <span>{midLabel(top)}</span>
           <span>0</span>
         </div>
 
         {hover !== null && (
-          <div
-            className="chart-tip"
-            style={{ left: `${Math.min(Math.max((hover + 0.5) * slot, 12), 88)}%` }}
-          >
+          <div className="chart-tip"
+               style={{ left: `${Math.min(Math.max(xAt(hover, n), 14), 86)}%` }}>
             <div className="chart-tip-head">{labelOf(series[hover], bucketDays)}</div>
             {SERIES.map((s) => (
               <div key={s.key} className="chart-tip-row">
@@ -169,8 +168,8 @@ export function EngagementChart({ series, bucketDays }) {
               </div>
             ))}
             <div className="chart-tip-row chart-tip-total">
-              <span className="chart-tip-val">{num(totals[hover])}</span>
-              <span className="chart-tip-lbl">tổng · {series[hover].posts} bài đăng</span>
+              <span className="chart-tip-val">{num(series[hover].posts)}</span>
+              <span className="chart-tip-lbl">bài đăng hôm đó</span>
             </div>
           </div>
         )}
@@ -178,60 +177,68 @@ export function EngagementChart({ series, bucketDays }) {
 
       <div className="chart-xaxis">
         <span>{labelOf(series[0], bucketDays)}</span>
-        <span>{labelOf(series[series.length - 1], bucketDays)}</span>
+        <span>{labelOf(series[n - 1], bucketDays)}</span>
       </div>
     </div>
   )
 }
 
-/** Một chuỗi duy nhất → không cần hộp chú giải, tiêu đề đã nói rõ đang vẽ cái gì. */
+/**
+ * Một chuỗi duy nhất → đường kèm mảng nền nhạt, và KHÔNG cần hộp chú giải: chỉ có một màu,
+ * tiêu đề đã nói rõ đang vẽ gì. Mảng nền để 10% độ đục — một lớp phủ mờ, không phải khối đặc.
+ */
 export function PostsChart({ series, bucketDays }) {
   const [hover, setHover] = useState(null)
+  const n = series.length
   const values = series.map((p) => p.posts)
   const top = niceTop(Math.max(...values, 0))
   const H = 120
-  const plotH = H - 24
-  const n = series.length
-  const slot = 100 / n
-  const peak = values.indexOf(Math.max(...values))
+  const PAD = 8
+  const plotH = H - 24 - PAD
 
   if (values.every((v) => v === 0)) {
     return <p className="chart-empty">Chưa đăng bài nào trong khoảng này.</p>
   }
+
+  const yAt = (v) => PAD + plotH - (v / top) * plotH
+  const line = series.map((p, i) => `${xAt(i, n)},${yAt(p.posts)}`).join(' ')
+  const area = `0,${PAD + plotH} ${line} 100,${PAD + plotH}`
 
   return (
     <div className="chart">
       <div className="chart-canvas">
         <svg viewBox={`0 0 100 ${H}`} preserveAspectRatio="none" className="chart-svg" role="img"
              aria-label={`Số bài đăng theo thời gian, cao nhất ${Math.max(...values)} bài`}>
-          <line x1="0" x2="100" y1={8 + plotH} y2={8 + plotH} className="chart-grid"
-                vectorEffect="non-scaling-stroke" />
-          {series.map((p, i) => {
-            const h = (p.posts / top) * plotH
-            const barW = Math.min(slot - 1.2, MAX_BAR_PCT)
-            const x = i * slot + (slot - barW) / 2
-            return (
-              <g key={i}>
-                {p.posts > 0 && (
-                  <rect x={x} y={8 + plotH - h} width={barW} height={Math.max(h, 0.6)} rx="1"
-                        fill="#2d6cb6"
-                        opacity={hover === null || hover === i ? (i === peak ? 1 : 0.8) : 0.35} />
-                )}
-                <rect x={i * slot} y="0" width={slot} height={H} fill="transparent"
-                      onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} />
-              </g>
-            )
-          })}
+          <Grid plotH={plotH} lines={[0, 1]} />
+          <polygon points={area} fill="#2d6cb6" opacity="0.1" />
+          <polyline points={line} fill="none" stroke="#2d6cb6" strokeWidth="2"
+                    strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+          {hover !== null && (
+            <line x1={xAt(hover, n)} x2={xAt(hover, n)} y1={PAD} y2={PAD + plotH}
+                  className="chart-crosshair" vectorEffect="non-scaling-stroke" />
+          )}
+          {series.map((_, i) => (
+            <rect key={i} x={Math.max(xAt(i, n) - 50 / (n - 1 || 1), 0)} y="0"
+                  width={100 / (n - 1 || 1)} height={H} fill="transparent"
+                  onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} />
+          ))}
         </svg>
 
-        <div className="chart-yaxis" style={{ height: plotH, top: 8 }}>
+        <span className="chart-dot"
+              style={{
+                left: `${xAt(hover ?? n - 1, n)}%`,
+                top: `${yAt(series[hover ?? n - 1].posts)}px`,
+                background: '#2d6cb6',
+              }} />
+
+        <div className="chart-yaxis" style={{ height: plotH, top: PAD }}>
           <span>{num(top)}</span>
           <span />
           <span>0</span>
         </div>
 
         {hover !== null && (
-          <div className="chart-tip" style={{ left: `${Math.min(Math.max((hover + 0.5) * slot, 12), 88)}%` }}>
+          <div className="chart-tip" style={{ left: `${Math.min(Math.max(xAt(hover, n), 16), 84)}%` }}>
             <div className="chart-tip-head">{labelOf(series[hover], bucketDays)}</div>
             <div className="chart-tip-row">
               <span className="chart-tip-val">{num(series[hover].posts)}</span>
@@ -242,45 +249,84 @@ export function PostsChart({ series, bucketDays }) {
       </div>
       <div className="chart-xaxis">
         <span>{labelOf(series[0], bucketDays)}</span>
-        <span>{labelOf(series[series.length - 1], bucketDays)}</span>
+        <span>{labelOf(series[n - 1], bucketDays)}</span>
       </div>
     </div>
   )
 }
 
-/** Cơ cấu tương tác: một dải ngang, nhãn chữ đi kèm nên không phụ thuộc màu để đọc. */
-export function MixBar({ engagement }) {
+/**
+ * Cơ cấu tương tác — biểu đồ tròn khuyết.
+ *
+ * Tròn chỉ dùng được cho phần-trên-tổng, tối đa 6 miếng, và các giá trị phải CÁCH XA nhau —
+ * mắt người so góc rất kém, hai miếng 31% và 34% thì nhìn y hệt nhau. Ở đây ba miếng
+ * 68% / 26% / 6% cách nhau rất rộng nên đọc được ngay.
+ *
+ * Con số phần trăm vẫn in ra chữ bên dưới, nên không ai phải ước lượng góc để lấy số.
+ *
+ * SVG này KHÔNG dùng preserveAspectRatio="none" — vòng tròn phải tròn.
+ */
+export function MixDonut({ engagement }) {
+  const [hover, setHover] = useState(null)
   const total = engagement.total || 0
   if (total === 0) return null
 
+  const R = 52
+  const STROKE = 22
+  const C = 2 * Math.PI * R
+  const GAP = 3 // khe hở màu nền giữa hai miếng, tính theo đơn vị chu vi
+
+  let offset = 0
+  const arcs = SERIES.map((s) => {
+    const v = engagement[s.key] ?? 0
+    const len = (v / total) * C
+    const arc = { ...s, value: v, len, offset, pct: Math.round((v / total) * 100) }
+    offset += len
+    return arc
+  }).filter((a) => a.value > 0)
+
+  const focus = hover === null ? null : arcs[hover]
+
   return (
-    <div className="mix">
-      <div className="mix-bar">
-        {SERIES.map((s) => {
-          const v = engagement[s.key] ?? 0
-          if (v <= 0) return null
-          return (
-            <span
-              key={s.key}
-              className="mix-seg"
-              style={{ width: `${(v / total) * 100}%`, background: s.color }}
-              title={`${s.label}: ${num(v)}`}
-            />
-          )
-        })}
+    <div className="donut-wrap">
+      <div className="donut">
+        <svg viewBox="0 0 140 140" className="donut-svg" role="img"
+             aria-label={`Cơ cấu tương tác: ${arcs.map((a) => `${a.label} ${a.pct}%`).join(', ')}`}>
+          <g transform="rotate(-90 70 70)">
+            {arcs.map((a, i) => (
+              <circle
+                key={a.key}
+                cx="70" cy="70" r={R}
+                fill="none"
+                stroke={a.color}
+                strokeWidth={hover === i ? STROKE + 4 : STROKE}
+                strokeDasharray={`${Math.max(a.len - GAP, 0.5)} ${C - Math.max(a.len - GAP, 0.5)}`}
+                strokeDashoffset={-a.offset}
+                opacity={hover === null || hover === i ? 1 : 0.4}
+                onMouseEnter={() => setHover(i)}
+                onMouseLeave={() => setHover(null)}
+                className="donut-arc"
+              />
+            ))}
+          </g>
+          <text x="70" y="66" className="donut-num">{num(focus ? focus.value : total)}</text>
+          <text x="70" y="84" className="donut-lbl">{focus ? focus.label : 'tương tác'}</text>
+        </svg>
       </div>
-      <div className="mix-legend">
-        {SERIES.map((s) => {
-          const v = engagement[s.key] ?? 0
-          return (
-            <span key={s.key} className="mix-item">
-              <span className="chart-swatch" style={{ background: s.color }} aria-hidden="true" />
-              <strong>{num(v)}</strong> {s.label}
-              <span className="mix-pct">{total > 0 ? Math.round((v / total) * 100) : 0}%</span>
-            </span>
-          )
-        })}
-      </div>
+
+      <ul className="donut-legend">
+        {arcs.map((a, i) => (
+          <li key={a.key}
+              className={hover === i ? 'is-focus' : undefined}
+              onMouseEnter={() => setHover(i)}
+              onMouseLeave={() => setHover(null)}>
+            <span className="chart-key" style={{ background: a.color }} aria-hidden="true" />
+            <span className="donut-legend-label">{a.label}</span>
+            <strong>{num(a.value)}</strong>
+            <span className="donut-pct">{a.pct}%</span>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
@@ -292,7 +338,9 @@ export function MixBar({ engagement }) {
  * suốt kỳ", trong khi sự thật là "mới đo được một lần". Nói thẳng còn hơn vẽ một biểu đồ nói dối.
  */
 export function FollowerChart({ points }) {
+  const [hover, setHover] = useState(null)
   const usable = (points ?? []).filter((p) => p.measuredPages > 0)
+
   if (usable.length < 2) {
     return (
       <p className="chart-empty">
@@ -302,39 +350,62 @@ export function FollowerChart({ points }) {
     )
   }
 
+  const n = usable.length
   const values = usable.map((p) => p.followers)
   const min = Math.min(...values)
   const max = Math.max(...values)
   // Không neo về 0: người theo dõi dao động vài chục trên nền 30.000, vẽ từ 0 thì đường phẳng lì.
-  // Bù lại phải nói rõ trục không bắt đầu từ 0 — nhãn trục dưới đây làm việc đó.
+  // Bù lại PHẢI nói rõ trục không bắt đầu từ 0 — nhãn dưới biểu đồ làm việc đó.
   const lo = min - Math.max((max - min) * 0.2, 1)
   const hi = max + Math.max((max - min) * 0.2, 1)
   const H = 120
-  const plotH = H - 20
+  const PAD = 8
+  const plotH = H - 24 - PAD
 
-  const pts = usable.map((p, i) => {
-    const x = usable.length === 1 ? 50 : (i / (usable.length - 1)) * 100
-    const y = 8 + plotH - ((p.followers - lo) / (hi - lo)) * plotH
-    return `${x},${y}`
-  })
+  const yAt = (v) => PAD + plotH - ((v - lo) / (hi - lo)) * plotH
+  const line = usable.map((p, i) => `${xAt(i, n)},${yAt(p.followers)}`).join(' ')
 
   return (
     <div className="chart">
       <div className="chart-canvas">
         <svg viewBox={`0 0 100 ${H}`} preserveAspectRatio="none" className="chart-svg" role="img"
              aria-label={`Người theo dõi từ ${num(min)} đến ${num(max)}`}>
-          <polyline points={pts.join(' ')} fill="none" stroke="#2d6cb6" strokeWidth="2"
+          <Grid plotH={plotH} lines={[0, 1]} />
+          <polygon points={`0,${PAD + plotH} ${line} 100,${PAD + plotH}`} fill="#2d6cb6" opacity="0.1" />
+          <polyline points={line} fill="none" stroke="#2d6cb6" strokeWidth="2"
                     strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+          {usable.map((_, i) => (
+            <rect key={i} x={Math.max(xAt(i, n) - 50 / (n - 1 || 1), 0)} y="0"
+                  width={100 / (n - 1 || 1)} height={H} fill="transparent"
+                  onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} />
+          ))}
         </svg>
-        <div className="chart-yaxis" style={{ height: plotH, top: 8 }}>
+
+        <span className="chart-dot"
+              style={{
+                left: `${xAt(hover ?? n - 1, n)}%`,
+                top: `${yAt(usable[hover ?? n - 1].followers)}px`,
+                background: '#2d6cb6',
+              }} />
+
+        <div className="chart-yaxis" style={{ height: plotH, top: PAD }}>
           <span>{num(max)}</span>
           <span />
           <span>{num(min)}</span>
         </div>
+
+        {hover !== null && (
+          <div className="chart-tip" style={{ left: `${Math.min(Math.max(xAt(hover, n), 20), 80)}%` }}>
+            <div className="chart-tip-row">
+              <span className="chart-tip-val">{num(usable[hover].followers)}</span>
+              <span className="chart-tip-lbl">người theo dõi</span>
+            </div>
+          </div>
+        )}
       </div>
       <div className="chart-xaxis">
         <span>trục dọc bắt đầu từ {num(min)}, không phải 0</span>
-        <span>{usable.length} ngày</span>
+        <span>{n} ngày</span>
       </div>
     </div>
   )

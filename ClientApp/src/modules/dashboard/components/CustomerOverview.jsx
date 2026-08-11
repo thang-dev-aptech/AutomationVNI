@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { num, delta, relativeTime, shortDateTime, excerpt } from '../utils/metricFormat'
-import { EngagementChart, PostsChart, MixBar, FollowerChart } from './Charts'
+import { EngagementChart, PostsChart, MixDonut, FollowerChart } from './Charts'
 import './CustomerOverview.css'
 
 function HeroCard({ label, value, unit, sub, deltaValue, deltaSuffix, tone = 'neutral', to }) {
@@ -121,7 +121,7 @@ export default function CustomerOverview({ data, days, onChangeDays, onSync, syn
           <p>Tính theo ngày đăng bài — trả lời "bài hôm đó chạy tốt không"</p>
         </header>
         <EngagementChart series={series} bucketDays={bucketDays} />
-        <MixBar engagement={engagement} />
+        <MixDonut engagement={engagement} />
       </section>
 
       <div className="cust-split">
