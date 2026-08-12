@@ -10,7 +10,7 @@ const OPTIONS = [
     icon: '🖼️',
     title: 'AI sinh text, ghép vào ảnh mẫu',
     description:
-      'AI viết nội dung, hệ thống tự chọn 1 ảnh Template có sẵn của page rồi ghép chữ đè lên. '
+      'AI viết nội dung, hệ thống tự chọn 1 (hoặc nhiều) ảnh Template có sẵn của page rồi ghép chữ đè lên. '
       + 'Page cần có thư mục Media gắn sẵn cho page này (Media > Thư mục).',
   },
 ]

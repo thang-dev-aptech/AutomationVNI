@@ -33,6 +33,8 @@ export default function PostCreateForm({
   // Nhánh 2: bật để AI tự tìm 2–3 ảnh kho phù hợp (GenerationFlow.RAG). Kèm "loại bài" để lọc kho.
   const [useMedia, setUseMedia] = useState(false)
   const [postTypeId, setPostTypeId] = useState('')
+  // Template: để trống = 1 ảnh (mặc định cũ); nhập >=3 để AI ghép chữ lên nhiều ảnh, ra bài multi-photo.
+  const [imageCount, setImageCount] = useState('')
 
   const contextByChannel = useMemo(() => {
     const map = new Map()
@@ -70,6 +72,7 @@ export default function PostCreateForm({
       promptTemplateId: form.promptTemplateId || null,
       categoryId: isTemplateFlow ? null : (useMedia ? (postTypeId || null) : null),
       generationFlow: isTemplateFlow ? 6 : (useMedia ? 2 : 1),
+      imageCount: isTemplateFlow && imageCount ? Number(imageCount) : null,
     })
   }
 
@@ -164,8 +167,24 @@ export default function PostCreateForm({
           className="form-group"
           style={{ border: '1px solid var(--color-border, #e5e7eb)', borderRadius: 8, padding: 12, fontSize: '0.85rem', color: 'var(--text-muted, #888)' }}
         >
-          🖼️ Ảnh sẽ tự lấy ngẫu nhiên từ thư mục Template gắn với page (Media &gt; Thư mục) rồi ghép chữ AI đè lên.
+          🖼️ Ảnh sẽ tự lấy từ thư mục Template gắn với page (Media &gt; Thư mục) rồi ghép chữ AI đè lên.
           Page chưa setup thư mục Template sẽ báo lỗi khi sinh bài.
+          <div style={{ marginTop: 10 }}>
+            <label htmlFor="post-image-count">Số lượng ảnh (tuỳ chọn)</label>
+            <input
+              id="post-image-count"
+              type="number"
+              min={1}
+              placeholder="Để trống = 1 ảnh"
+              value={imageCount}
+              onChange={(event) => setImageCount(event.target.value)}
+              style={{ maxWidth: 140 }}
+            />
+            <p style={{ margin: '6px 0 0', fontSize: '0.82rem' }}>
+              Để trống hoặc nhập 1: chọn 1 ảnh phù hợp nhất, ghép chữ như bình thường. Nhập từ 2 trở lên: AI tự chọn
+              đúng số ảnh phù hợp nội dung trong thư mục, ghép cùng nội dung lên từng ảnh, đăng thành bài nhiều ảnh.
+            </p>
+          </div>
         </div>
       )}
 

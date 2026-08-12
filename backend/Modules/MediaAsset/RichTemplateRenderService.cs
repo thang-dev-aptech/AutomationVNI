@@ -223,10 +223,20 @@ public class RichTemplateRenderService(IFileStorageService fileStorage) : IImage
         var botHeight = height * 0.42f;
         DrawVerticalScrim(canvas, new SKRect(0, height - botHeight, width, height), fromTop: false, palette.Primary);
 
-        var bulletBottom = DrawBulletBox(canvas, width, height - width * 0.11f, width * 0.05f, width * 0.95f,
+        // Đo footer (org/hotline/website) TRƯỚC khi đặt khung bullet — trước đây bullet box luôn đặt
+        // đáy ở "height - width*0.11f" (ước lượng cố định), không liên quan gì tới chiều cao thật của
+        // footer bên dưới. Với ảnh dọc (width < height) hoặc footer 2 dòng, ước lượng đó nhỏ hơn thực
+        // tế, khiến bullet box tràn xuống bị footer (vẽ sau) đè lên/che mất chữ.
+        var (footerOrgBlock, footerContactBlock, footerBarHeight) = MeasureFooterBar(width, request, palette);
+        var footerMargin = width * 0.03f;
+        var bulletBottomLimit = footerBarHeight > 0
+            ? height - footerBarHeight - footerMargin * 2
+            : height - width * 0.11f;
+
+        DrawBulletBox(canvas, width, bulletBottomLimit, width * 0.05f, width * 0.95f,
             request.BulletPoints, TextAlignment.Left, palette);
 
-        DrawFooterBar(canvas, width, height, request, palette);
+        PaintFooterBar(canvas, width, height, footerOrgBlock, footerContactBlock, footerBarHeight, palette);
     }
 
     /// <summary>Layout FreeText — khối chữ canh trái, đặt trong vùng an toàn AI đã quét (khớp ảnh mẫu có vùng trống lệch).</summary>
@@ -239,27 +249,63 @@ public class RichTemplateRenderService(IFileStorageService fileStorage) : IImage
         var safeY = height * request.SafeTextRegionY!.Value / 100f;
         var safeW = width * request.SafeTextRegionWidth!.Value / 100f;
 
-        var headlineBlock = BuildFittedHeadlineBlock(request.Headline, safeW, width * 0.06f, 800, TextAlignment.Left, palette.TextPrimary);
+        // Đo footer TRƯỚC để biết khoảng trống thật còn lại phía dưới, và dùng SafeTextRegionHeight
+        // (AI trả về nhưng trước đây bị bỏ qua hoàn toàn) làm giới hạn chiều cao thứ 2 — trước đây
+        // khối chữ (headline+subheadline+bullet) được đặt hoàn toàn độc lập với 2 giới hạn này, nên
+        // khi nội dung dài (nhiều bullet) sẽ tràn xuống ĐÈ LÊN footer hoặc tràn QUA MÉP DƯỚI ảnh (bug
+        // quan sát được: bullet cuối bị cắt mất/bị banner che một phần).
+        var (footerOrgBlock, footerContactBlock, footerBarHeight) = MeasureFooterBar(width, request, palette);
+        var footerMargin = width * 0.03f;
+        var footerTop = footerBarHeight > 0 ? height - footerBarHeight - footerMargin : height;
+        var bottomLimit = footerTop - footerMargin;
 
-        var subBlock = new TextBlock { Alignment = TextAlignment.Left, MaxWidth = safeW };
-        if (!string.IsNullOrWhiteSpace(request.Subheadline))
+        var safeH = request.SafeTextRegionHeight.HasValue
+            ? height * request.SafeTextRegionHeight.Value / 100f
+            : (float?)null;
+        var maxBottom = safeH.HasValue ? Math.Min(safeY + safeH.Value, bottomLimit) : bottomLimit;
+
+        var boxPadding = width * 0.03f;
+        var minSafeTop = height * 0.17f;
+        var availableHeight = Math.Max(width * 0.15f, maxBottom - safeY - boxPadding * 2);
+
+        // Thu nhỏ dần font (giống cơ chế BuildFittedHeadlineBlock) tới khi toàn bộ khối chữ vừa trong
+        // availableHeight — đảm bảo KHÔNG BAO GIỜ tràn qua footer/mép ảnh dù bullet dài cỡ nào.
+        var scale = 1f;
+        TextBlock headlineBlock;
+        TextBlock subBlock;
+        TextBlock bulletBlock;
+        var gap = width * 0.02f;
+        float totalHeight;
+        for (var attempt = 0; ; attempt++)
         {
-            AddRichText(subBlock, request.Subheadline,
-                new Style { FontFamily = MainFamily, FontSize = width * 0.032f, TextColor = palette.TextSecondary },
-                new Style { FontFamily = EmojiFamily, FontSize = width * 0.032f, TextColor = palette.TextSecondary });
-            subBlock.Layout();
+            headlineBlock = BuildFittedHeadlineBlock(request.Headline, safeW, width * 0.06f * scale, 800, TextAlignment.Left, palette.TextPrimary);
+
+            subBlock = new TextBlock { Alignment = TextAlignment.Left, MaxWidth = safeW };
+            if (!string.IsNullOrWhiteSpace(request.Subheadline))
+            {
+                AddRichText(subBlock, request.Subheadline,
+                    new Style { FontFamily = MainFamily, FontSize = width * 0.032f * scale, TextColor = palette.TextSecondary },
+                    new Style { FontFamily = EmojiFamily, FontSize = width * 0.032f * scale, TextColor = palette.TextSecondary });
+                subBlock.Layout();
+            }
+
+            bulletBlock = BuildBulletBlock(width, safeW, request.BulletPoints, palette.TextPrimary, scale);
+            bulletBlock.Layout();
+
+            totalHeight = headlineBlock.MeasuredHeight
+                + (subBlock.MeasuredLength > 0 ? gap + subBlock.MeasuredHeight : 0)
+                + (request.BulletPoints.Count > 0 ? gap * 1.5f + bulletBlock.MeasuredHeight + gap : 0);
+
+            if (totalHeight <= availableHeight || attempt >= 4) break;
+            scale *= 0.85f;
         }
 
-        var bulletBlock = BuildBulletBlock(width, safeW, request.BulletPoints, palette.TextPrimary);
-        bulletBlock.Layout();
-
-        var gap = width * 0.02f;
-        var totalHeight = headlineBlock.MeasuredHeight
-            + (subBlock.MeasuredLength > 0 ? gap + subBlock.MeasuredHeight : 0)
-            + (request.BulletPoints.Count > 0 ? gap * 1.5f + bulletBlock.MeasuredHeight + gap : 0);
+        // Nếu vẫn tràn dù đã thu nhỏ hết mức (vd quá nhiều bullet) — kéo safeY lên để đáy khối chữ
+        // không bao giờ vượt quá bottomLimit, tránh chữ bị footer đè hoặc bị cắt mép ảnh.
+        if (safeY + totalHeight + boxPadding * 2 > bottomLimit)
+            safeY = Math.Max(minSafeTop, bottomLimit - totalHeight - boxPadding * 2);
 
         // Khung nền bán trong suốt bám màu thương hiệu sau toàn bộ khối chữ — đảm bảo đọc được dù ảnh nền sáng/tối.
-        var boxPadding = width * 0.03f;
         var boxRect = new SKRect(
             safeX - boxPadding, safeY - boxPadding,
             safeX + safeW + boxPadding, safeY + totalHeight + boxPadding);
@@ -284,7 +330,7 @@ public class RichTemplateRenderService(IFileStorageService fileStorage) : IImage
             bulletBlock.Paint(canvas, new SKPoint(safeX, y));
         }
 
-        DrawFooterBar(canvas, width, height, request, palette);
+        PaintFooterBar(canvas, width, height, footerOrgBlock, footerContactBlock, footerBarHeight, palette);
     }
 
     /// <summary>Viền mảnh nhấn màu thương hiệu thứ 3 (nếu page có cấu hình) — bỏ qua hoàn toàn nếu không có.</summary>
@@ -333,14 +379,34 @@ public class RichTemplateRenderService(IFileStorageService fileStorage) : IImage
         }
     }
 
-    private static TextBlock BuildBulletBlock(int width, float maxWidth, List<string> bulletPoints, SKColor textColor)
+    private static TextBlock BuildBulletBlock(int width, float maxWidth, List<string> bulletPoints, SKColor textColor, float scale = 1f)
     {
         var block = new TextBlock { Alignment = TextAlignment.Left, MaxWidth = maxWidth };
-        var textStyle = new Style { FontFamily = MainFamily, FontSize = width * 0.033f, FontWeight = 600, TextColor = textColor, LineHeight = 1.35f };
-        var emojiStyle = new Style { FontFamily = EmojiFamily, FontSize = width * 0.033f, TextColor = textColor, LineHeight = 1.35f };
+        var fontSize = width * 0.033f * scale;
+        var textStyle = new Style { FontFamily = MainFamily, FontSize = fontSize, FontWeight = 600, TextColor = textColor, LineHeight = 1.35f };
+        var emojiStyle = new Style { FontFamily = EmojiFamily, FontSize = fontSize, TextColor = textColor, LineHeight = 1.35f };
         foreach (var bp in bulletPoints)
-            AddRichText(block, bp + "\n", textStyle, emojiStyle);
+            AddRichText(block, "• " + StripLeadingEmoji(bp) + "\n", textStyle, emojiStyle);
         return block;
+    }
+
+    /// <summary>
+    /// AI vẫn tự thêm emoji đầu dòng cho bullet (✅, 🎓...) — bỏ đi để đổi hẳn sang bullet "•",
+    /// không hiện cả hai cùng lúc. Chỉ cắt phần emoji+khoảng trắng ở ĐẦU chuỗi, giữ nguyên
+    /// emoji nằm giữa câu (nếu AI lỡ chèn) vì đó là nội dung, không phải icon trang trí.
+    /// </summary>
+    private static string StripLeadingEmoji(string text)
+    {
+        var enumerator = StringInfo.GetTextElementEnumerator(text);
+        var index = 0;
+        while (enumerator.MoveNext())
+        {
+            var element = (string)enumerator.Current;
+            var firstRune = element.EnumerateRunes().FirstOrDefault();
+            if (!IsEmojiCodepoint(firstRune.Value) && !char.IsWhiteSpace(element[0])) break;
+            index += element.Length;
+        }
+        return text[index..];
     }
 
     /// <summary>Vẽ khung bo góc nền bán trong suốt (màu phụ của bảng màu) chứa bullet, căn theo chiều rộng [left, right]. Trả về Y đáy khung.</summary>
@@ -365,12 +431,19 @@ public class RichTemplateRenderService(IFileStorageService fileStorage) : IImage
         return boxTop;
     }
 
-    private static void DrawFooterBar(SKCanvas canvas, int width, int height, ImageOverlayRequest request, BrandPalette palette)
+    /// <summary>
+    /// Đo trước nội dung footer (org/hotline/website) mà KHÔNG vẽ — layout gọi hàm này trước khi đặt
+    /// vị trí các khối chữ khác, để biết chính xác footer chiếm bao nhiêu chỗ ở đáy ảnh (tránh chữ
+    /// phía trên tràn đè lên footer, xem <see cref="DrawFreeTextLayout"/>/<see cref="DrawTopBottomSplitLayout"/>).
+    /// </summary>
+    private static (TextBlock? Org, TextBlock? Contact, float BarHeight) MeasureFooterBar(
+        int width, ImageOverlayRequest request, BrandPalette palette)
     {
         var orgLine = request.OrgLine?.Trim();
         var contactLine = string.IsNullOrWhiteSpace(request.ContactLine) ? request.CtaText?.Trim() : request.ContactLine.Trim();
 
-        if (string.IsNullOrWhiteSpace(orgLine) && string.IsNullOrWhiteSpace(contactLine)) return;
+        if (string.IsNullOrWhiteSpace(orgLine) && string.IsNullOrWhiteSpace(contactLine))
+            return (null, null, 0f);
 
         var maxWidth = width * 0.92f;
         TextBlock? orgBlock = null;
@@ -396,7 +469,16 @@ public class RichTemplateRenderService(IFileStorageService fileStorage) : IImage
         var vGap = orgBlock != null && contactBlock != null ? width * 0.012f : 0f;
         var padding = width * 0.025f;
         var contentHeight = (orgBlock?.MeasuredHeight ?? 0) + vGap + (contactBlock?.MeasuredHeight ?? 0);
-        var barHeight = contentHeight + padding * 2;
+        return (orgBlock, contactBlock, contentHeight + padding * 2);
+    }
+
+    private static void PaintFooterBar(
+        SKCanvas canvas, int width, int height, TextBlock? orgBlock, TextBlock? contactBlock, float barHeight, BrandPalette palette)
+    {
+        if (barHeight <= 0) return;
+
+        var vGap = orgBlock != null && contactBlock != null ? width * 0.012f : 0f;
+        var padding = width * 0.025f;
 
         var barRect = new SKRect(width * 0.04f, height - barHeight - width * 0.03f, width * 0.96f, height - width * 0.03f);
         using (var paint = new SKPaint { Color = palette.Primary, IsAntialias = true })

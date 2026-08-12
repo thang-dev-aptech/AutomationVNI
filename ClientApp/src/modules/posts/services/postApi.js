@@ -24,6 +24,8 @@ export const postApi = {
   createAndGenerate: (payload) => axiosInstance.post('/api/Post/create-and-generate', payload),
   regenerateText: (id) => axiosInstance.post(`/api/Post/${id}/regenerate-text`),
   regenerateImage: (id) => axiosInstance.post(`/api/Post/${id}/regenerate-image`),
+  setReelsFrames: (id, mediaIds) => axiosInstance.put(`/api/Post/${id}/reels-frames`, { mediaIds }),
+  convertToReels: (id, mediaIds) => axiosInstance.post(`/api/Post/${id}/convert-to-reels`, mediaIds ? { mediaIds } : undefined),
 
   getGenerationStatus: (id) => axiosInstance.get(`/api/Post/${id}/generation-status`),
   getTimeline: (id) => axiosInstance.get(`/api/Post/${id}/timeline`),

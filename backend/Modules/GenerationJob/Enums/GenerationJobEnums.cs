@@ -6,7 +6,10 @@ public enum JobType
     ImageGeneration = 2,
     ImageOverlay    = 3,
     MediaMatch      = 4,
-    Publish         = 5
+    Publish         = 5,
+
+    /// <summary>Ghép các khung hình ImageOverlay của 1 post Reels thành video slideshow (FFmpeg).</summary>
+    ReelsRender     = 6
 }
 
 public enum JobStatus

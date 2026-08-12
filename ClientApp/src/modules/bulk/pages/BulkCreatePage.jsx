@@ -61,6 +61,8 @@ export default function BulkCreatePage() {
   const [useMedia, setUseMedia] = useState(false)
   const [postTypeId, setPostTypeId] = useState('')
   const generationFlow = isTemplateFlow ? 6 : (useMedia ? 2 : 1)
+  const [generateAsReels, setGenerateAsReels] = useState(false)
+  const [imageCount, setImageCount] = useState('')
 
   const [skelFrom, setSkelFrom] = useState(defaultDateFrom)
   const [skelTo, setSkelTo] = useState(defaultDateTo)
@@ -186,6 +188,8 @@ export default function BulkCreatePage() {
       generationFlow,
       categoryId: isTemplateFlow ? null : (useMedia ? (postTypeId || null) : null),
       promptTemplateId: promptTemplateId || null,
+      imageCount: imageCount ? Number(imageCount) : null,
+      generateAsReels,
       rows: parsedRows.map((r) => ({
         idea: r.idea,
         objective: r.objective || null,
@@ -206,6 +210,8 @@ export default function BulkCreatePage() {
     generationFlow,
     categoryId: isTemplateFlow ? null : (useMedia ? (postTypeId || null) : null),
     promptTemplateId: promptTemplateId || null,
+    imageCount: imageCount ? Number(imageCount) : null,
+    generateAsReels,
   })
 
   const validateChannels = () => {
@@ -457,6 +463,26 @@ export default function BulkCreatePage() {
               <GenerationFlowPicker value={flow} onChange={setFlow} />
             </div>
 
+            {isTemplateFlow && (
+              <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
+                <label htmlFor="bulk-image-count">Số ảnh mỗi bài (tuỳ chọn)</label>
+                <input
+                  id="bulk-image-count"
+                  type="number"
+                  min={1}
+                  placeholder="Để trống = 1 ảnh"
+                  value={imageCount}
+                  onChange={(e) => setImageCount(e.target.value)}
+                  style={{ maxWidth: 140 }}
+                />
+                <p className="bulk-field-hint">
+                  {generateAsReels
+                    ? 'N ảnh sẽ được ghép thành 1 video Reels dài khoảng N×3.5 giây.'
+                    : 'Để trống hoặc 1: mỗi bài 1 ảnh. Từ 2 trở lên: AI chọn đúng số ảnh phù hợp trong thư mục Template, ra bài nhiều ảnh.'}
+                </p>
+              </div>
+            )}
+
             {!isTemplateFlow && (
               <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, margin: 0, cursor: 'pointer', fontWeight: 500 }}>
@@ -476,6 +502,18 @@ export default function BulkCreatePage() {
                 )}
               </div>
             )}
+
+            <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, margin: 0, cursor: 'pointer', fontWeight: 500 }}>
+                <input type="checkbox" checked={generateAsReels} onChange={(e) => setGenerateAsReels(e.target.checked)} />
+                <span>🎬 Tạo dạng Reels (tự ghép ảnh vừa sinh thành video ngay sau khi sinh xong)</span>
+              </label>
+              {generateAsReels && !isTemplateFlow && (
+                <p className="bulk-field-hint">
+                  Sẽ dùng đúng ảnh vừa sinh (1 ảnh AI, hoặc thêm 2–3 ảnh nếu bật tìm ảnh kho ở trên) ghép thành video.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="bulk-panel">
@@ -526,6 +564,9 @@ export default function BulkCreatePage() {
                 Sẽ tạo <strong style={{ color: 'var(--color-text)' }}>{totalPosts}</strong> bài
                 {' '}({validRows.length} ý tưởng × {channelIds.length} kênh)
                 {totalPosts > 50 && <span style={{ color: 'var(--color-warning-text)' }}> — lô lớn, sinh dần ở nền</span>}
+                {generateAsReels && (
+                  <div>🎬 Các bài sẽ tự chuyển thành video Reels sau khi sinh xong, không cần bấm gì thêm.</div>
+                )}
               </div>
               <button
                 type="button"

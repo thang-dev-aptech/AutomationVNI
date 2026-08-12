@@ -83,9 +83,28 @@ public class PostGenerationWorker(
         try
         {
             await pipeline.GenerateForPostAsync(postId, ct);
+            var post = await workflow.GetPostAsync(postId, ct);
+
+            // Bulk có thể yêu cầu tự chuyển thành Reels ngay sau khi sinh ảnh xong (ExtraJson.reelsRequested,
+            // gắn lúc bulk-create/bulk-import) — làm TRƯỚC auto-approve để bài vào hàng chờ duyệt đã là
+            // video, không cần thao tác tay. Lỗi convert KHÔNG fail cả generation — giữ bài dạng ảnh,
+            // người dùng vẫn tự bấm "Đăng dạng Reels" (ReelsFramePicker) sau nếu muốn.
+            if (post?.Status == PostStatus.WaitingReview && PendingReelsHelper.TryRead(post.ExtraJson))
+            {
+                try
+                {
+                    await pipeline.ConvertToReelsAsync(postId, null, ct);
+                    post = await workflow.GetPostAsync(postId, ct);
+                    logger.LogInformation("PostGenerationWorker converted post {PostId} to Reels", postId);
+                }
+                catch (Exception reelsEx)
+                {
+                    logger.LogWarning(reelsEx,
+                        "PostGenerationWorker could not convert post {PostId} to Reels — kept as image post", postId);
+                }
+            }
 
             // Same as create-and-generate: skip review gate → Approved, ready to schedule/publish.
-            var post = await workflow.GetPostAsync(postId, ct);
             if (post?.Status == PostStatus.WaitingReview)
             {
                 await workflow.ApproveAsync(postId, ct);

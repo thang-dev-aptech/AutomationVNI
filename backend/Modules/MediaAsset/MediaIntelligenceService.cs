@@ -367,17 +367,26 @@ public class MediaIntelligenceService(
     /// Tối ưu token: lexical (0 token) thu kho về top-K candidate, rồi CHỈ 1 call AI chọn ảnh cuối.
     /// AI lỗi/timeout → fallback top lexical. Kho rỗng / không khớp → trả rỗng (không ném).
     /// </summary>
+    /// <param name="folderId">
+    /// Giới hạn ứng viên trong 1 MediaFolder (Template/Reels chọn ảnh riêng của page thay vì
+    /// toàn bộ kho). Null = giữ hành vi cũ, quét toàn kho (nhánh RAG).
+    /// </param>
     public async Task<MediaMatchResult> MatchForPostAsync(
         string content,
         Guid? postCategoryId,
         int take = 3,
+        Guid? folderId = null,
         CancellationToken ct = default)
     {
-        take = Math.Clamp(take, 1, 5);
+        take = Math.Clamp(take, 1, 10);
         var contentTokens = Tokenize(content);
 
-        var candidates = await db.MediaAssets.AsNoTracking()
-            .Where(x => !x.IsDeleted && x.MimeType.StartsWith("image/"))
+        var candidatesQuery = db.MediaAssets.AsNoTracking()
+            .Where(x => !x.IsDeleted && x.MimeType.StartsWith("image/"));
+        if (folderId is Guid folder)
+            candidatesQuery = candidatesQuery.Where(x => x.FolderId == folder);
+
+        var candidates = await candidatesQuery
             .OrderByDescending(x => x.CreatedAt)
             .Take(500)
             .ToListAsync(ct);

@@ -77,6 +77,8 @@ public class QueueImageRenderResponse : QueueGenerationResponse;
 
 public class QueueMediaMatchResponse : QueueGenerationResponse;
 
+public class QueueReelsRenderResponse : QueueGenerationResponse;
+
 public class ProcessGenerationJobResponse
 {
     public Guid JobId { get; set; }

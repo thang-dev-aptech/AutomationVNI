@@ -22,6 +22,7 @@ export const GENERATION_FLOW = {
   3: { value: 3, label: 'Copy nguyên văn' },
   4: { value: 4, label: 'AI viết lại' },
   5: { value: 5, label: 'Chỉ chữ + link (không sinh ảnh)' },
+  6: { value: 6, label: 'Template (AI ghép chữ vào ảnh mẫu)' },
 }
 
 export const GENERATION_FLOW_OPTIONS = Object.values(GENERATION_FLOW)

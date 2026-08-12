@@ -9,8 +9,10 @@ namespace Backend.Shared.SocialPublish;
 
 public partial class FacebookPagePublishService(
     HttpClient httpClient,
+    IHttpClientFactory httpClientFactory,
     IFileStorageService fileStorage,
     IOptions<SocialPublishOptions> options,
+    IOptions<ReelsOptions> reelsOptions,
     ILogger<FacebookPagePublishService> logger)
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -54,6 +56,13 @@ public partial class FacebookPagePublishService(
         if (mediaItems.Count == 1)
         {
             var item = mediaItems[0];
+
+            // Reels: post luôn có đúng 1 media item là video (ReelsRender xoá hết ảnh khung hình,
+            // chỉ giữ video làm Cover — xem GenerationJobPipelineService.ProcessReelsRenderAsync).
+            // Sniff theo MimeType giống tiền lệ lọc "image/" ở GenerationJobPipelineService.
+            if (item.MimeType?.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true)
+                return await PublishReelAsync(request, item, ct);
+
             return !string.IsNullOrWhiteSpace(item.StorageKey)
                 ? await PublishPhotoMultipartAsync(request, item, ct)
                 : await PublishPhotoByUrlAsync(request, item, ct);
@@ -343,6 +352,166 @@ public partial class FacebookPagePublishService(
         }
 
         return await SendGraphAsync(url, new FormUrlEncodedContent(form), request.PostId, ct);
+    }
+
+    /// <summary>
+    /// Đăng Facebook Reels — quy trình 3 bước riêng của Meta Video API (khác hẳn /photos, /feed):
+    /// 1) start (lấy video_id + upload_url) → 2) upload byte video lên rupload.facebook.com (host
+    /// riêng, không phải graph.facebook.com) → 3) poll trạng thái xử lý → 4) finish (publish thật).
+    /// Reels KHÔNG nhận ảnh tĩnh — bug hiển thị "khung hình đứng yên" nếu cố gửi ảnh vào endpoint
+    /// này, nên bài Reels luôn phải có đúng 1 media item là video/mp4 (đảm bảo ở tầng pipeline).
+    /// </summary>
+    private async Task<SocialPublishResult> PublishReelAsync(
+        SocialPublishRequest request, SocialPublishMediaItem item, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(item.StorageKey))
+            return SocialPublishResult.Failed("FB_MEDIA_MISSING", "Reels cần file video lưu trong storage nội bộ.");
+        if (!await fileStorage.ExistsAsync(item.StorageKey, ct))
+            return SocialPublishResult.Failed("FB_MEDIA_MISSING", $"Không tìm thấy file video: {item.StorageKey}");
+
+        var fb = options.Value.Facebook;
+        var reels = reelsOptions.Value;
+
+        // Bước 1: start
+        var startUrl = BuildGraphUrl(fb, request.PageExternalId, "video_reels");
+        var startForm = new Dictionary<string, string>
+        {
+            ["upload_phase"] = "start",
+            ["access_token"] = request.AccessToken!
+        };
+
+        string videoId;
+        string uploadUrl;
+        try
+        {
+            using var startRequest = new HttpRequestMessage(HttpMethod.Post, startUrl)
+            {
+                Content = new FormUrlEncodedContent(startForm)
+            };
+            var startResponse = await httpClient.SendAsync(startRequest, ct);
+            var startBody = await startResponse.Content.ReadAsStringAsync(ct);
+            var startSanitized = SanitizeFacebookResponse(startBody);
+            if (!startResponse.IsSuccessStatusCode)
+                return MapFacebookError(startResponse, startSanitized);
+
+            using var startDoc = JsonDocument.Parse(startBody);
+            videoId = startDoc.RootElement.TryGetProperty("video_id", out var vidEl) ? vidEl.GetString() ?? "" : "";
+            uploadUrl = startDoc.RootElement.TryGetProperty("upload_url", out var urlEl) ? urlEl.GetString() ?? "" : "";
+            if (string.IsNullOrWhiteSpace(videoId))
+                return SocialPublishResult.Failed("FB_INVALID_RESPONSE", "Facebook không trả video_id.", startSanitized);
+        }
+        catch (TaskCanceledException)
+        {
+            return SocialPublishResult.Failed("FB_TIMEOUT", "Facebook API request timed out (start reels).");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Facebook Reels start lỗi cho post {PostId}", request.PostId);
+            return SocialPublishResult.Failed("FB_NETWORK_ERROR", "Facebook API request failed (start reels).");
+        }
+
+        // Bước 2: upload byte video — host riêng (rupload.facebook.com), named client tách biệt
+        // khỏi client typed đang trỏ graph.facebook.com.
+        try
+        {
+            await using var videoStream = await fileStorage.OpenReadAsync(item.StorageKey, ct);
+            var ruploadClient = httpClientFactory.CreateClient("FacebookRupload");
+            var effectiveUploadUrl = string.IsNullOrWhiteSpace(uploadUrl)
+                ? $"{reels.RuploadBaseUrl.TrimEnd('/')}/video-upload/{fb.GraphVersion}/{videoId}"
+                : uploadUrl;
+
+            using var uploadRequest = new HttpRequestMessage(HttpMethod.Post, effectiveUploadUrl);
+            uploadRequest.Headers.TryAddWithoutValidation("Authorization", $"OAuth {request.AccessToken}");
+            uploadRequest.Headers.TryAddWithoutValidation("offset", "0");
+            uploadRequest.Headers.TryAddWithoutValidation("file_size", videoStream.Length.ToString());
+            uploadRequest.Content = new StreamContent(videoStream);
+            uploadRequest.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+
+            var uploadResponse = await ruploadClient.SendAsync(uploadRequest, ct);
+            var uploadBody = await uploadResponse.Content.ReadAsStringAsync(ct);
+            if (!uploadResponse.IsSuccessStatusCode)
+                return MapFacebookError(uploadResponse, SanitizeFacebookResponse(uploadBody));
+        }
+        catch (TaskCanceledException)
+        {
+            return SocialPublishResult.Failed("FB_TIMEOUT", "Facebook API request timed out (upload reels video).");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Facebook Reels upload lỗi cho post {PostId}, video_id {VideoId}", request.PostId, videoId);
+            return SocialPublishResult.Failed("FB_NETWORK_ERROR", "Facebook API request failed (upload reels video).");
+        }
+
+        // Bước 3: poll trạng thái xử lý — video còn "processing"/"uploading" thì finish sẽ lỗi.
+        // Chạy an toàn ở đây vì publish luôn nằm trong BackgroundService, không chờ HTTP request người dùng.
+        var pollDeadline = DateTime.UtcNow.AddSeconds(reels.TimeoutSeconds);
+        while (DateTime.UtcNow < pollDeadline)
+        {
+            try
+            {
+                var statusUrl = $"{fb.GraphBaseUrl.TrimEnd('/')}/{fb.GraphVersion}/{Uri.EscapeDataString(videoId)}" +
+                    $"?fields=status&access_token={Uri.EscapeDataString(request.AccessToken!)}";
+                var statusResponse = await httpClient.GetAsync(statusUrl, ct);
+                var statusBody = await statusResponse.Content.ReadAsStringAsync(ct);
+                if (statusResponse.IsSuccessStatusCode)
+                {
+                    using var statusDoc = JsonDocument.Parse(statusBody);
+                    var videoStatus = statusDoc.RootElement.TryGetProperty("status", out var statusEl)
+                        && statusEl.TryGetProperty("video_status", out var vsEl)
+                        ? vsEl.GetString()
+                        : null;
+                    if (videoStatus is not ("processing" or "uploading"))
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Facebook Reels poll status lỗi cho video_id {VideoId} — thử lại", videoId);
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(3), ct);
+        }
+
+        // Bước 4: finish
+        var finishUrl = BuildGraphUrl(fb, request.PageExternalId, "video_reels");
+        var finishForm = new Dictionary<string, string>
+        {
+            ["upload_phase"] = "finish",
+            ["video_id"] = videoId,
+            ["video_state"] = "PUBLISHED",
+            ["access_token"] = request.AccessToken!,
+            ["description"] = request.Caption ?? string.Empty
+        };
+
+        try
+        {
+            using var finishRequest = new HttpRequestMessage(HttpMethod.Post, finishUrl)
+            {
+                Content = new FormUrlEncodedContent(finishForm)
+            };
+            var finishResponse = await httpClient.SendAsync(finishRequest, ct);
+            var finishBody = await finishResponse.Content.ReadAsStringAsync(ct);
+            var finishSanitized = SanitizeFacebookResponse(finishBody);
+            if (!finishResponse.IsSuccessStatusCode)
+                return MapFacebookError(finishResponse, finishSanitized);
+
+            logger.LogInformation(
+                "Facebook Reels publish succeeded for post {PostId}, video_id {VideoId}", request.PostId, videoId);
+
+            // Reels không trả post_id ở finish — dùng video_id làm external id, link xem trên Facebook
+            // theo dạng /reel/{video_id} (chuẩn URL Reels công khai của Meta).
+            return SocialPublishResult.Succeeded(
+                videoId, $"https://www.facebook.com/reel/{videoId}", finishSanitized);
+        }
+        catch (TaskCanceledException)
+        {
+            return SocialPublishResult.Failed("FB_TIMEOUT", "Facebook API request timed out (finish reels).");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Facebook Reels finish lỗi cho post {PostId}, video_id {VideoId}", request.PostId, videoId);
+            return SocialPublishResult.Failed("FB_NETWORK_ERROR", "Facebook API request failed (finish reels).");
+        }
     }
 
     /// <summary>

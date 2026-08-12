@@ -43,6 +43,7 @@ builder.Services.Configure<GenerationWorkerOptions>(builder.Configuration.GetSec
 builder.Services.Configure<DevSeedOptions>(builder.Configuration.GetSection("DevSeed"));
 builder.Services.Configure<AiProvidersOptions>(builder.Configuration.GetSection("AiProviders"));
 builder.Services.Configure<SocialPublishOptions>(builder.Configuration.GetSection("SocialPublish"));
+builder.Services.Configure<ReelsOptions>(builder.Configuration.GetSection("Reels"));
 builder.Services.Configure<MetaOAuthOptions>(builder.Configuration.GetSection("MetaOAuth"));
 builder.Services.Configure<ThreadsOAuthOptions>(builder.Configuration.GetSection("ThreadsOAuth"));
 builder.Services.Configure<CommentWorkerOptions>(builder.Configuration.GetSection("CommentWorker"));
@@ -259,6 +260,14 @@ builder.Services.AddHttpClient<FacebookPagePublishService>((sp, client) =>
     var fb = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SocialPublishOptions>>().Value.Facebook;
     client.Timeout = TimeSpan.FromSeconds(Math.Max(5, fb.TimeoutSeconds));
 });
+// Upload video Reels đi qua host riêng (rupload.facebook.com) — khác hẳn graph.facebook.com nên
+// cần 1 named client tách biệt, không dùng chung client typed ở trên.
+builder.Services.AddHttpClient("FacebookRupload", (sp, client) =>
+{
+    var reels = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ReelsOptions>>().Value;
+    client.Timeout = TimeSpan.FromSeconds(Math.Max(30, reels.TimeoutSeconds));
+});
+builder.Services.AddSingleton<SlideshowVideoRenderService>();
 builder.Services.AddHttpClient<ThreadsPublishService>((sp, client) =>
 {
     var th = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SocialPublishOptions>>().Value.Threads;

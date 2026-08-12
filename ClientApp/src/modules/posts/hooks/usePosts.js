@@ -208,3 +208,24 @@ export function useRegenerateText() {
 export function useRegenerateImage() {
   return useRegenerate((id) => postApi.regenerateImage(id))
 }
+
+/** Biến ảnh bài đang có (hoặc mediaIds tự chọn) thành video rồi đăng Reels. */
+export function useConvertToReels() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, mediaIds }) => unwrapApiData(await postApi.convertToReels(id, mediaIds)),
+    onSettled: (_data, _error, variables) => {
+      invalidatePostQueries(queryClient, variables?.id)
+      queryClient.invalidateQueries({ queryKey: ['generation-jobs'] })
+    },
+  })
+}
+
+/** Lưu khung hình Reels đã chỉnh (không tự ghép video — dùng khi muốn lưu trước rồi convert sau). */
+export function useSetReelsFrames() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, mediaIds }) => unwrapApiData(await postApi.setReelsFrames(id, mediaIds)),
+    onSettled: (_data, _error, variables) => invalidatePostQueries(queryClient, variables?.id),
+  })
+}

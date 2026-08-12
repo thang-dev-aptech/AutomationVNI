@@ -16,6 +16,27 @@ public class FacebookPublishOptions
     public int TimeoutSeconds { get; set; } = 90;
 }
 
+/// <summary>Cấu hình dựng + đăng video slideshow Reels (ghép ảnh Template bằng FFmpeg).</summary>
+public class ReelsOptions
+{
+    /// <summary>Đường dẫn binary FFmpeg — tương đối so với thư mục publish (Resources/ffmpeg/ffmpeg).</summary>
+    public string FfmpegPath { get; set; } = "Resources/ffmpeg/ffmpeg";
+
+    /// <summary>Nhạc nền cố định do người dùng tự cung cấp — để trống thì video không có âm thanh.</summary>
+    public string? AudioTrackPath { get; set; } = "Resources/ReelsAudio/default.mp3";
+
+    /// <summary>Số khung hình mặc định khi tạo post Reels mà không tự nhập ImageCount.</summary>
+    public int DefaultFrameCount { get; set; } = 5;
+
+    /// <summary>Mỗi khung hình hiển thị bao lâu trong video (giây).</summary>
+    public double SecondsPerFrame { get; set; } = 3.5;
+
+    /// <summary>Host riêng cho bước upload video — khác hẳn GraphBaseUrl (graph.facebook.com).</summary>
+    public string RuploadBaseUrl { get; set; } = "https://rupload.facebook.com";
+
+    public int TimeoutSeconds { get; set; } = 180;
+}
+
 public class ThreadsPublishOptions
 {
     public string GraphBaseUrl { get; set; } = "https://graph.threads.net";

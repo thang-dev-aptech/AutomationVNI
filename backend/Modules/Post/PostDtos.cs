@@ -22,6 +22,22 @@ public class CreatePostRequest
     public string? Objective { get; set; }
     public Guid? TextTemplateId { get; set; }
     public Guid? ImageTemplateId { get; set; }
+    /// <summary>Số ảnh cho flow Template (&gt;=3 bật multi-photo) / số khung hình cho Reels. Null = 1 ảnh (mặc định cũ).</summary>
+    public int? ImageCount { get; set; }
+}
+
+public class SetReelsFramesRequest
+{
+    /// <summary>Id ảnh (đã render sẵn của post hoặc ảnh mới từ MediaFolder), theo đúng thứ tự muốn hiện trong video.</summary>
+    public List<Guid>? MediaIds { get; set; }
+}
+
+public class ConvertToReelsRequest
+{
+    /// <summary>
+    /// Thứ tự khung hình muốn dùng — null thì dùng đúng ảnh bài đang có (mặc định, không cần chỉnh tay).
+    /// </summary>
+    public List<Guid>? MediaIds { get; set; }
 }
 
 // --- Bulk (tạo hàng loạt) ---
@@ -50,6 +66,10 @@ public class BulkCreatePostRequest
     public Guid? CategoryId { get; set; }
     public Guid? TextTemplateId { get; set; }
     public Guid? ImageTemplateId { get; set; }
+    /// <summary>Số ảnh mỗi bài (Template flow) — chung cho cả batch. Null/&lt;=1 = 1 ảnh (hành vi cũ).</summary>
+    public int? ImageCount { get; set; }
+    /// <summary>Bật thì worker tự ghép ảnh vừa sinh thành video Reels sau khi generation xong.</summary>
+    public bool GenerateAsReels { get; set; }
 }
 
 public class BulkCreateResult
@@ -79,6 +99,10 @@ public class BulkImportRequest
     /// <summary>Ghi đè danh mục cho cả lô; null = mỗi page dùng PageContext.</summary>
     public Guid? PromptTemplateId { get; set; }
     public Guid? CategoryId { get; set; }
+    /// <summary>Số ảnh mỗi bài (Template flow) — chung cho cả lô import. Null/&lt;=1 = 1 ảnh (hành vi cũ).</summary>
+    public int? ImageCount { get; set; }
+    /// <summary>Bật thì worker tự ghép ảnh vừa sinh thành video Reels sau khi generation xong.</summary>
+    public bool GenerateAsReels { get; set; }
 }
 
 public class BulkTargetRequest

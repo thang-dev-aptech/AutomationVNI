@@ -1,19 +1,25 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import PageHeader from '@/shared/components/PageHeader'
 import { usePermissions } from '@/shared/hooks/usePermissions'
 import LoadingState from '@/shared/components/LoadingState'
 import ErrorState from '@/shared/components/ErrorState'
-import { formatDateTime, getErrorMessage } from '@/shared/utils/apiHelpers'
+import { formatDateTime, getErrorMessage, unwrapApiData } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
+import { postMediaApi, postMediaQueryKeys } from '@/modules/media/services/postMediaApi'
 import PostGenerationActions from '../components/PostGenerationActions'
+import ReelsFramePicker from '../components/ReelsFramePicker'
 import PostGenerationStatus from '../components/PostGenerationStatus'
 import PostMediaPanel from '@/modules/media/components/PostMediaPanel'
 import PostStatusBadge from '../components/PostStatusBadge'
 import PostWorkflowActions from '../components/PostWorkflowActions'
 import { getAvailableWorkflowActions, getGenerationFlowLabel } from '../constants/postStatus'
 import { usePostDetail, usePostTimeline, useUpdatePost } from '../hooks/usePosts'
+
+const COVER_ROLE = 4
+const ATTACHMENT_ROLE = 3
 
 export default function PostDetailPage() {
   const { id } = useParams()
@@ -23,6 +29,17 @@ export default function PostDetailPage() {
   const { data: channels = [] } = useSocialChannelAll()
   const { data: timeline } = usePostTimeline(id)
   const updateMutation = useUpdatePost()
+
+  // Cùng queryKey với ReelsFramePicker — react-query gộp cache, không tốn thêm request. Chỉ để
+  // hiện indicator "đang là bài Reels" (video) ngay trên đầu trang, không cần mở picker mới thấy.
+  const mediaQuery = useQuery({
+    queryKey: postMediaQueryKeys.byPost(id),
+    queryFn: async () => unwrapApiData(await postMediaApi.getByPost(id)),
+    enabled: Boolean(id),
+  })
+  const isReelsPost = (mediaQuery.data ?? []).some(
+    (pm) => (pm.mediaRole === COVER_ROLE || pm.mediaRole === ATTACHMENT_ROLE) && pm.mimeType?.startsWith('video/'),
+  )
 
   const [content, setContent] = useState('')
   const [saveError, setSaveError] = useState('')
@@ -76,7 +93,20 @@ export default function PostDetailPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24 }}>
           <div>
             <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>Trạng thái</div>
-            <PostStatusBadge status={post.status} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <PostStatusBadge status={post.status} />
+              {isReelsPost && (
+                <span
+                  title="Bài này sẽ đăng dạng Facebook Reels (video), không phải bài ảnh thường"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
+                    borderRadius: 999, background: '#7c3aed', color: '#fff', fontSize: '0.72rem', fontWeight: 700,
+                  }}
+                >
+                  🎬 REELS
+                </span>
+              )}
+            </div>
           </div>
           <div>
             <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>Lịch đăng</div>
@@ -105,6 +135,8 @@ export default function PostDetailPage() {
       <PostWorkflowActions post={post} onDeleted={() => navigate('/posts')} />
 
       <PostGenerationActions post={post} />
+
+      <ReelsFramePicker post={post} />
 
       {/* Chỉ hiện khi đang sinh / lỗi gen — preview Approved không còn panel generation cũ */}
       {[2, 3, 8, 12, 14].includes(Number(post.status)) && (

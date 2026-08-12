@@ -11,6 +11,13 @@ public class PostModel : BaseEntity
     public Guid SocialChannelId { get; set; }
     public GenerationFlow GenerationFlow { get; set; } = GenerationFlow.FullAI;
 
+    /// <summary>
+    /// Số ảnh dùng cho flow Template/Reels — null hoặc 1 = 1 ảnh (hành vi cũ). Template: &gt;=3 để bật
+    /// chế độ nhiều ảnh (ra bài multi-photo). Reels: số khung hình mong muốn (mặc định lấy theo
+    /// ReelsOptions.DefaultFrameCount nếu null).
+    /// </summary>
+    public int? ImageCount { get; set; }
+
     /// <summary>Override template prompt cho riêng bài này (thư viện PromptTemplate). No FK.</summary>
     public Guid? TextTemplateId { get; set; }
     public Guid? ImageTemplateId { get; set; }
