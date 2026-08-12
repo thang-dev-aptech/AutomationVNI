@@ -30,5 +30,12 @@ public enum GenerationFlow
     /// Tiết kiệm một lượt gọi AI ảnh cho mỗi bài, mà tin tức vốn cũng không cần banner.
     /// Bài tự tạo tay vẫn dùng FullAI và vẫn sinh ảnh như cũ.
     /// </summary>
-    TextOnly       = 5
+    TextOnly       = 5,
+
+    /// <summary>
+    /// AI chỉ sinh CHỮ; ảnh lấy ngẫu nhiên từ MediaFolder gắn PageContext của page rồi ghép chữ
+    /// đè lên (RichTemplateRenderService) thay vì sinh ảnh AI. Không có folder/folder rỗng → lỗi
+    /// rõ ràng, không tự fallback sang FullAI.
+    /// </summary>
+    Template       = 6
 }

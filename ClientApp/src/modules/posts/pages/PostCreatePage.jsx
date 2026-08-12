@@ -4,6 +4,7 @@ import PageHeader from '@/shared/components/PageHeader'
 import LoadingState from '@/shared/components/LoadingState'
 import ErrorState from '@/shared/components/ErrorState'
 import EmptyState from '@/shared/components/EmptyState'
+import Modal from '@/shared/components/Modal'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
@@ -11,10 +12,13 @@ import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromp
 import { usePageContextList } from '@/modules/page-contexts/hooks/usePageContexts'
 import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import PostCreateForm from '../components/PostCreateForm'
+import GenerationFlowPicker from '../components/GenerationFlowPicker'
 import { useCreateAndGeneratePost } from '../hooks/usePosts'
 
 export default function PostCreatePage() {
   const navigate = useNavigate()
+  const [flow, setFlow] = useState(null)
+  const [pickerValue, setPickerValue] = useState('fullai')
   const createMutation = useCreateAndGeneratePost()
   const {
     data: channels = [],
@@ -74,36 +78,61 @@ export default function PostCreatePage() {
         )}
       />
 
-      <div className="card card-body" style={{ maxWidth: 720 }}>
-        {isLoading && <LoadingState message="Đang tải dữ liệu form..." />}
-        {channelsError && (
-          <ErrorState
-            message={getErrorMessage(channelsErrorObj, 'Không thể tải danh sách kênh')}
-            onRetry={refetchChannels}
-          />
+      <Modal
+        open={flow === null}
+        title="Chọn phương pháp tạo ảnh"
+        onClose={() => navigate('/posts')}
+        footer={(
+          <button type="button" className="btn btn-primary" onClick={() => setFlow(pickerValue)}>
+            Tiếp tục
+          </button>
         )}
-        {!isLoading && !channelsError && channels.length === 0 && (
-          <EmptyState
-            message="Chưa có kênh nào được kết nối. Hãy kết nối kênh trước khi tạo bài."
-            action={(
-              <Link to="/platforms" className="btn btn-primary">
-                Đến Platforms
-              </Link>
-            )}
-          />
-        )}
-        {!isLoading && !channelsError && channels.length > 0 && (
-          <PostCreateForm
-            channels={channels}
-            categoryTemplates={categoryTemplates}
-            pageContexts={pageContexts}
-            categories={categories}
-            isSubmitting={createMutation.isPending}
-            errorMessage={errorMessage}
-            onSubmit={handleSubmit}
-          />
-        )}
-      </div>
+      >
+        <GenerationFlowPicker value={pickerValue} onChange={setPickerValue} />
+      </Modal>
+
+      {flow !== null && (
+        <div className="card card-body" style={{ maxWidth: 720 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted, #888)' }}>
+              Phương pháp: <strong>{flow === 'template' ? 'AI sinh text, ghép vào ảnh mẫu' : 'Sinh toàn bộ bằng AI'}</strong>
+            </span>
+            <button type="button" className="btn btn-ghost" onClick={() => setFlow(null)}>
+              Đổi phương pháp
+            </button>
+          </div>
+
+          {isLoading && <LoadingState message="Đang tải dữ liệu form..." />}
+          {channelsError && (
+            <ErrorState
+              message={getErrorMessage(channelsErrorObj, 'Không thể tải danh sách kênh')}
+              onRetry={refetchChannels}
+            />
+          )}
+          {!isLoading && !channelsError && channels.length === 0 && (
+            <EmptyState
+              message="Chưa có kênh nào được kết nối. Hãy kết nối kênh trước khi tạo bài."
+              action={(
+                <Link to="/platforms" className="btn btn-primary">
+                  Đến Platforms
+                </Link>
+              )}
+            />
+          )}
+          {!isLoading && !channelsError && channels.length > 0 && (
+            <PostCreateForm
+              flow={flow}
+              channels={channels}
+              categoryTemplates={categoryTemplates}
+              pageContexts={pageContexts}
+              categories={categories}
+              isSubmitting={createMutation.isPending}
+              errorMessage={errorMessage}
+              onSubmit={handleSubmit}
+            />
+          )}
+        </div>
+      )}
     </section>
   )
 }

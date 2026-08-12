@@ -20,6 +20,8 @@ import {
   useUpdateMediaAsset,
   useUploadMediaAsset,
   useUploadMediaBatch,
+  useAnalyzeLayoutFolder,
+  useAnalyzeLayout,
 } from '../hooks/useMediaAssets'
 import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import {
@@ -31,6 +33,7 @@ import {
 import {
   MEDIA_SOURCE_OPTIONS,
   getMediaSourceMeta,
+  hasTemplateLayout,
   isImageMime,
 } from '../constants/mediaConstants'
 import './MediaPage.css'
@@ -76,7 +79,10 @@ export default function MediaPage() {
   const createFolderMutation = useCreateMediaFolder()
   const updateFolderMutation = useUpdateMediaFolder()
   const deleteFolderMutation = useDeleteMediaFolder()
+  const analyzeLayoutMutation = useAnalyzeLayoutFolder()
+  const analyzeLayoutSingleMutation = useAnalyzeLayout()
   const [analyzingId, setAnalyzingId] = useState(null)
+  const [analyzingLayoutId, setAnalyzingLayoutId] = useState(null)
 
   const items = data?.items ?? []
   const currentFolderId = selection !== 'all' && selection !== 'unassigned' ? selection : null
@@ -135,6 +141,36 @@ export default function MediaPage() {
     }
   }
 
+  const handleAnalyzeLayoutSingle = async (asset) => {
+    setAnalyzingLayoutId(asset.id)
+    try {
+      const result = await analyzeLayoutSingleMutation.mutateAsync(asset.id)
+      toast.success('Đã quét Vùng An Toàn')
+      // Cập nhật popup đang mở (Chi tiết / Xem ảnh) để huy hiệu/tags mới hiện ngay.
+      setDetailsAsset((prev) => (prev && prev.id === asset.id ? { ...prev, ...result } : prev))
+      setViewingAsset((prev) => (prev && prev.id === asset.id ? { ...prev, ...result } : prev))
+    } catch (error) {
+      toast.error(getErrorMessage(error))
+    } finally {
+      setAnalyzingLayoutId(null)
+    }
+  }
+
+  const handleAnalyzeLayoutFolder = async () => {
+    if (!currentFolderId) return
+    if (!confirmAction('GPT sẽ quét tất cả ảnh trong thư mục này để tìm Vùng An Toàn cho chữ. Tiếp tục?')) return
+
+    try {
+      const result = await analyzeLayoutMutation.mutateAsync(currentFolderId)
+      toast.success(
+        `Đã quét layout ${result?.analyzed ?? 0} ảnh`
+        + (result?.failed ? ` · lỗi ${result.failed}` : ''),
+      )
+    } catch (error) {
+      toast.error(getErrorMessage(error))
+    }
+  }
+
   const handleUpdate = async (event) => {
     event.preventDefault()
     if (!editingAsset) return
@@ -179,17 +215,17 @@ export default function MediaPage() {
     }
   }
 
-  const handleFolderSubmit = async ({ name, parentFolderId }) => {
+  const handleFolderSubmit = async ({ name, parentFolderId, socialChannelId }) => {
     try {
       setFormError('')
       if (folderModal?.editing) {
         await updateFolderMutation.mutateAsync({
           id: folderModal.editing.id,
-          payload: { name, parentFolderId },
+          payload: { name, parentFolderId, socialChannelId },
         })
         toast.success('Đã cập nhật thư mục')
       } else {
-        await createFolderMutation.mutateAsync({ name, parentFolderId })
+        await createFolderMutation.mutateAsync({ name, parentFolderId, socialChannelId })
         toast.success('Đã tạo thư mục')
       }
       setFolderModal(null)
@@ -217,6 +253,16 @@ export default function MediaPage() {
         actions={
           canManageMedia ? (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {currentFolderId && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={analyzeLayoutMutation.isPending}
+                  onClick={handleAnalyzeLayoutFolder}
+                >
+                  {analyzeLayoutMutation.isPending ? '⏳ Đang quét...' : '✨ Quét Vùng An Toàn'}
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -382,6 +428,18 @@ export default function MediaPage() {
         open={Boolean(viewingAsset)}
         title={viewingAsset?.originalFileName || viewingAsset?.fileName || 'Ảnh'}
         onClose={() => setViewingAsset(null)}
+        footer={(
+          canManageMedia && viewingAsset && isImageMime(viewingAsset.mimeType) && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={analyzingLayoutId === viewingAsset.id}
+              onClick={() => handleAnalyzeLayoutSingle(viewingAsset)}
+            >
+              {analyzingLayoutId === viewingAsset.id ? '⏳ Đang quét...' : '📐 Quét Vùng An Toàn'}
+            </button>
+          )
+        )}
       >
         {viewingAsset && (
           viewingAsset.publicUrl && isImageMime(viewingAsset.mimeType) ? (
@@ -490,6 +548,32 @@ export default function MediaPage() {
                 </div>
               ) : (
                 <p className="media-details-empty">Chưa có nhãn nào.</p>
+              )}
+            </div>
+
+            <div className="media-details-labels">
+              <div className="media-details-labels-head">
+                <span className="ai-media-keyword-label">
+                  Vùng An Toàn (Template)
+                  {hasTemplateLayout(detailsAsset.tags) && ' — ✅ đã quét'}
+                </span>
+                {canManageMedia && isImageMime(detailsAsset.mimeType) && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={analyzingLayoutId === detailsAsset.id}
+                    onClick={() => handleAnalyzeLayoutSingle(detailsAsset)}
+                  >
+                    {analyzingLayoutId === detailsAsset.id
+                      ? '⏳ Đang quét...'
+                      : (hasTemplateLayout(detailsAsset.tags) ? '📐 Quét lại' : '📐 Quét Vùng An Toàn')}
+                  </button>
+                )}
+              </div>
+              {!hasTemplateLayout(detailsAsset.tags) && (
+                <p className="media-details-empty">
+                  Chưa quét — cần quét trước khi dùng ảnh này cho bài Template.
+                </p>
               )}
             </div>
           </div>

@@ -145,6 +145,120 @@ public class MediaIntelligenceService(
         return result;
     }
 
+    public async Task<BulkMediaAnalysisResult> AnalyzeLayoutFolderAsync(Guid folderId, CancellationToken ct = default)
+    {
+        var result = new BulkMediaAnalysisResult();
+        var candidates = await db.MediaAssets
+            .Where(x => !x.IsDeleted && x.FolderId == folderId && x.MimeType.StartsWith("image/"))
+            .ToListAsync(ct);
+
+        foreach (var candidate in candidates)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                await AnalyzeLayoutForAssetAsync(candidate, ct);
+                result.Analyzed++;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                result.Failed++;
+                if (result.Errors.Count < 20)
+                    result.Errors.Add($"{candidate.OriginalFileName ?? candidate.FileName}: {ex.Message}");
+                logger.LogWarning(ex, "Layout analysis failed for media {MediaId}", candidate.Id);
+            }
+        }
+        return result;
+    }
+
+    /// <summary>Quét Vùng An Toàn cho MỘT ảnh (dùng ở popup Chi tiết / Xem ảnh) — khác bản
+    /// <see cref="AnalyzeLayoutFolderAsync"/> chạy hàng loạt cả thư mục.</summary>
+    public async Task<MediaAssetModel> AnalyzeLayoutAsync(Guid mediaId, CancellationToken ct = default)
+    {
+        var asset = await db.MediaAssets.FirstOrDefaultAsync(x => !x.IsDeleted && x.Id == mediaId, ct)
+            ?? throw new KeyNotFoundException("Không tìm thấy media");
+
+        if (!asset.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Chỉ quét được Vùng An Toàn cho file ảnh");
+
+        await AnalyzeLayoutForAssetAsync(asset, ct);
+        return asset;
+    }
+
+    private async Task AnalyzeLayoutForAssetAsync(MediaAssetModel asset, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(asset.StoragePath) || !await storage.ExistsAsync(asset.StoragePath, ct))
+            throw new InvalidOperationException("File ảnh không tồn tại");
+
+        using var stream = await storage.OpenReadAsync(asset.StoragePath, ct);
+        using var memoryStream = new MemoryStream();
+        await stream.CopyToAsync(memoryStream, ct);
+        var imageBytes = memoryStream.ToArray();
+
+        var (providerKey, config, model) = ResolveConfig();
+        
+        var dataUrl = $"data:{asset.MimeType};base64,{Convert.ToBase64String(imageBytes)}";
+        var payload = new
+        {
+            model,
+            messages = new object[]
+            {
+                new
+                {
+                    role = "user",
+                    content = new object[]
+                    {
+                        new {
+                            type = "text",
+                            text = "Phân tích ảnh này cho nhu cầu ghép chữ banner marketing. Trả về đúng JSON:\n" +
+                                "{ \"layoutStyle\": \"TopBottomSplit\" hoặc \"FreeText\", \"safeTextRegion\": { \"x\": 10, \"y\": 20, \"width\": 80, \"height\": 30 } }\n" +
+                                "- \"layoutStyle\": chọn \"TopBottomSplit\" nếu ảnh có bố cục đối xứng, còn dải trống rõ ràng ở cả mép trên và mép dưới (phù hợp banner căn giữa, header/footer riêng biệt). Chọn \"FreeText\" nếu ảnh có MỘT vùng trống lớn nằm lệch (trái/phải/trên/dưới), không đối xứng (phù hợp khối chữ căn trái đặt gọn trong vùng trống đó).\n" +
+                                "- \"safeTextRegion\": x, y, width, height là số nguyên 0-100 (phần trăm), đại diện vùng an toàn để chèn chữ — không đè lên mặt người mẫu hoặc chi tiết quan trọng. Nếu chọn \"TopBottomSplit\" vẫn trả vùng trống lớn nhất tương ứng."
+                        },
+                        new { type = "image_url", image_url = new { url = dataUrl } }
+                    }
+                }
+            },
+            max_tokens = 500,
+            temperature = 0.1
+        };
+
+        var content = await CallChatCompletionsAsync(config, payload, ct);
+        var parsed = JsonSerializer.Deserialize<LayoutAnalysisPayload>(StripJsonFence(content), JsonOptions)
+            ?? throw new InvalidOperationException("AI không trả metadata layout hợp lệ");
+
+        // Merge tags
+        var existingTags = string.IsNullOrWhiteSpace(asset.Tags) 
+            ? new System.Text.Json.Nodes.JsonObject() 
+            : System.Text.Json.Nodes.JsonNode.Parse(asset.Tags)?.AsObject() ?? new System.Text.Json.Nodes.JsonObject();
+
+        if (parsed.SafeTextRegion != null)
+        {
+            existingTags["safeTextRegion"] = JsonSerializer.SerializeToNode(new {
+                x = parsed.SafeTextRegion.X,
+                y = parsed.SafeTextRegion.Y,
+                width = parsed.SafeTextRegion.Width,
+                height = parsed.SafeTextRegion.Height
+            });
+        }
+
+        var layoutStyle = parsed.LayoutStyle is "TopBottomSplit" or "FreeText"
+            ? parsed.LayoutStyle
+            : "TopBottomSplit";
+        existingTags["layoutStyle"] = layoutStyle;
+
+        asset.Tags = existingTags.ToJsonString(JsonOptions);
+        asset.UpdatedAt = DateTime.UtcNow;
+        asset.UpdatedBy = "AI";
+
+        db.MediaAssets.Update(asset);
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task<MediaAnalysisResult> AnalyzeImageAsync(
         byte[] imageBytes,
         string mimeType,
@@ -253,17 +367,26 @@ public class MediaIntelligenceService(
     /// Tối ưu token: lexical (0 token) thu kho về top-K candidate, rồi CHỈ 1 call AI chọn ảnh cuối.
     /// AI lỗi/timeout → fallback top lexical. Kho rỗng / không khớp → trả rỗng (không ném).
     /// </summary>
+    /// <param name="folderId">
+    /// Giới hạn ứng viên trong 1 MediaFolder (Template/Reels chọn ảnh riêng của page thay vì
+    /// toàn bộ kho). Null = giữ hành vi cũ, quét toàn kho (nhánh RAG).
+    /// </param>
     public async Task<MediaMatchResult> MatchForPostAsync(
         string content,
         Guid? postCategoryId,
         int take = 3,
+        Guid? folderId = null,
         CancellationToken ct = default)
     {
-        take = Math.Clamp(take, 1, 5);
+        take = Math.Clamp(take, 1, 10);
         var contentTokens = Tokenize(content);
 
-        var candidates = await db.MediaAssets.AsNoTracking()
-            .Where(x => !x.IsDeleted && x.MimeType.StartsWith("image/"))
+        var candidatesQuery = db.MediaAssets.AsNoTracking()
+            .Where(x => !x.IsDeleted && x.MimeType.StartsWith("image/"));
+        if (folderId is Guid folder)
+            candidatesQuery = candidatesQuery.Where(x => x.FolderId == folder);
+
+        var candidates = await candidatesQuery
             .OrderByDescending(x => x.CreatedAt)
             .Take(500)
             .ToListAsync(ct);
@@ -549,6 +672,20 @@ public class MediaIntelligenceService(
         public List<string>? Keywords { get; set; }
         public string? AltText { get; set; }
         public string? Description { get; set; }
+    }
+
+    private sealed class LayoutAnalysisPayload
+    {
+        public SafeRegionPayload? SafeTextRegion { get; set; }
+        public string? LayoutStyle { get; set; }
+    }
+
+    private sealed class SafeRegionPayload
+    {
+        public int X { get; set; }
+        public int Y { get; set; }
+        public int Width { get; set; }
+        public int Height { get; set; }
     }
 
     private sealed class KeywordPayload

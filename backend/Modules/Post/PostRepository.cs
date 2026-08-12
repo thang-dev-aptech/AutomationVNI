@@ -92,6 +92,7 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
             GenerationFlow = request.GenerationFlow,
             TextTemplateId = textTpl,
             ImageTemplateId = imageTpl,
+            ImageCount = request.ImageCount,
             UserId = GetCurrentUserId(),
             Status = PostStatus.Draft
         };
@@ -154,13 +155,12 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
                     GenerationFlow = request.GenerationFlow,
                     TextTemplateId = textTpl,
                     ImageTemplateId = imageTpl,
+                    ImageCount = request.ImageCount,
                     BatchId = batchId,
                     UserId = userId,
-                    Status = PostStatus.Queued
+                    Status = PostStatus.Queued,
+                    ExtraJson = BuildBulkCreateExtraJson(it.Objective, request.GenerateAsReels)
                 };
-                if (!string.IsNullOrWhiteSpace(it.Objective))
-                    post.ExtraJson = System.Text.Json.JsonSerializer.Serialize(
-                        new { input = new { objective = it.Objective!.Trim() } });
                 posts.Add(post);
             }
 
@@ -225,10 +225,11 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
                 GenerationFlow = request.GenerationFlow,
                 TextTemplateId = textTpl,
                 ImageTemplateId = imageTpl,
+                ImageCount = request.ImageCount,
                 BatchId = batchId,
                 UserId = userId,
                 Status = PostStatus.Queued,
-                ExtraJson = BuildImportExtraJson(row.Objective, row.ScheduledAtLocal, timezone),
+                ExtraJson = BuildImportExtraJson(row.Objective, row.ScheduledAtLocal, timezone, request.GenerateAsReels),
             };
             posts.Add(post);
         }
@@ -242,11 +243,12 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         };
     }
 
-    private static string? BuildImportExtraJson(string? objective, string? scheduledAtLocal, string timezone)
+    private static string? BuildImportExtraJson(
+        string? objective, string? scheduledAtLocal, string timezone, bool reelsRequested = false)
     {
         var hasObjective = !string.IsNullOrWhiteSpace(objective);
         var hasSchedule = !string.IsNullOrWhiteSpace(scheduledAtLocal);
-        if (!hasObjective && !hasSchedule) return null;
+        if (!hasObjective && !hasSchedule && !reelsRequested) return null;
 
         var root = new Dictionary<string, object?>();
         if (hasObjective)
@@ -259,6 +261,23 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
                 ["timezone"] = timezone,
             };
         }
+        if (reelsRequested)
+            root["reelsRequested"] = true;
+        return System.Text.Json.JsonSerializer.Serialize(root);
+    }
+
+    /// <summary>ExtraJson lúc bulk-create (ideas × channels) — objective (nếu có) + cờ reelsRequested
+    /// (PostGenerationWorker đọc lại sau khi sinh ảnh xong để tự convert sang video).</summary>
+    private static string? BuildBulkCreateExtraJson(string? objective, bool reelsRequested)
+    {
+        var hasObjective = !string.IsNullOrWhiteSpace(objective);
+        if (!hasObjective && !reelsRequested) return null;
+
+        var root = new Dictionary<string, object?>();
+        if (hasObjective)
+            root["input"] = new Dictionary<string, object?> { ["objective"] = objective!.Trim() };
+        if (reelsRequested)
+            root["reelsRequested"] = true;
         return System.Text.Json.JsonSerializer.Serialize(root);
     }
 

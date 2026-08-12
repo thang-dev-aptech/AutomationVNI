@@ -65,6 +65,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
             Name = f.Name,
             Description = f.Description,
             ParentFolderId = f.ParentFolderId,
+            SocialChannelId = f.SocialChannelId,
             SortOrder = f.SortOrder,
             AssetCount = assetCounts.TryGetValue(f.Id, out var c) ? c : 0,
             HasChildren = parentsWithChildren.Contains(f.Id),
@@ -86,6 +87,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
             Name = request.Name.Trim(),
             Description = request.Description?.Trim(),
             ParentFolderId = request.ParentFolderId,
+            SocialChannelId = request.SocialChannelId,
             SortOrder = request.SortOrder
         };
 
@@ -100,6 +102,8 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
 
         if (request.Name is not null) entity.Name = request.Name.Trim();
         if (request.Description is not null) entity.Description = request.Description.Trim();
+        // SocialChannelId is optional, if provided in request we can update it
+        if (request.SocialChannelId.HasValue) entity.SocialChannelId = request.SocialChannelId.Value;
         if (request.SortOrder.HasValue) entity.SortOrder = request.SortOrder.Value;
 
         // ParentFolderId: form luôn gửi kèm (rỗng = đưa về gốc). Đổi cha thì validate tồn tại + chống lặp cây.
@@ -147,6 +151,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         Name = f.Name,
         Description = f.Description,
         ParentFolderId = f.ParentFolderId,
+        SocialChannelId = f.SocialChannelId,
         SortOrder = f.SortOrder,
         AssetCount = 0,
         HasChildren = false,

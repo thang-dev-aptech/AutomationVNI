@@ -18,6 +18,8 @@ export const mediaAssetApi = {
   analyze: (id) => axiosInstance.post(`/api/MediaAsset/${id}/analyze`),
   analyzeAll: (force = false) =>
     axiosInstance.post(`/api/MediaAsset/analyze-all?force=${force}`),
+  analyzeLayoutFolder: (folderId) => axiosInstance.post(`/api/MediaAsset/analyze-layout-folder/${folderId}`),
+  analyzeLayout: (id) => axiosInstance.post(`/api/MediaAsset/${id}/analyze-layout`),
   recommend: (payload) => axiosInstance.post('/api/MediaAsset/recommend', payload),
 }
 

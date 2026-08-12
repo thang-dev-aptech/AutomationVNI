@@ -18,13 +18,23 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
     <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.5" />
+    <PackageReference Include="SkiaSharp" Version="4.151.1" />
+    <PackageReference Include="SkiaSharp.HarfBuzz" Version="4.151.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.151.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.151.1" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="14.2.1.1" />
     <PackageReference Include="SmartReader" Version="0.11.1" />
+    <PackageReference Include="Topten.RichTextKit" Version="0.4.167" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- Khuôn giao diện trang tin: CSS và logo sao nguyên từ VNINews/ sang thư mục xuất bản
          lúc dựng trang. Không có thì trang ra không có CSS. -->
     <Content Include="Templates\news\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Font cho RichTemplateRenderService (InitializeFonts đọc theo Directory.GetCurrentDirectory()/Resources).
+         Thiếu bước copy này thì `dotnet publish` không mang theo Resources/, và bản deploy sẽ
+         âm thầm rớt về font hệ thống thay vì Inter — sự cố đã từng gặp với chính font này. -->
+    <Content Include="Resources\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

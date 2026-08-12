@@ -5,6 +5,7 @@ using Backend.Modules.Category;
 using Backend.Modules.GenerationJob.Enums;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaAsset.Enums;
+using Backend.Modules.MediaFolder;
 using Backend.Modules.PageContext;
 using Backend.Modules.Post;
 using Backend.Modules.Post.Enums;
@@ -15,6 +16,7 @@ using Backend.Modules.ContentCrawl;
 using Backend.Modules.ShortLink;
 using Backend.Shared.Ai;
 using Backend.Shared.Repositories;
+using Backend.Shared.SocialPublish;
 using Backend.Shared.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -29,13 +31,15 @@ public class GenerationJobPipelineService(
     MediaIntelligenceService mediaIntelligenceService,
     PostMediaRepository postMediaRepository,
     PageContextRepository pageContextRepository,
+    MediaFolderRepository mediaFolderRepository,
     PromptTemplateRepository promptTemplateRepository,
     IFileStorageService fileStorageService,
     IImageOverlayService imageOverlayService,
     IAiTextGenerationService aiTextGenerationService,
     IAiImageGenerationService aiImageGenerationService,
-    ShortLinkService shortLinkService,
+    SlideshowVideoRenderService slideshowVideoRenderService,
     IOptions<ContentCrawlOptions> crawlOptions,
+    IOptions<ReelsOptions> reelsOptions,
     IUserContext userContext,
     ILogger<GenerationJobPipelineService> logger)
 {
@@ -52,6 +56,11 @@ public class GenerationJobPipelineService(
 
     private static readonly PostStatus[] QueueRenderAllowedStatuses =
         [PostStatus.WaitingReview, PostStatus.NeedFix, PostStatus.Failed];
+
+    // Đăng Reels là lựa chọn ở bước ĐĂNG (không phải lúc sinh bài) — cho phép cả sau khi đã duyệt
+    // (Approved), vì người dùng có thể đổi ý muốn đăng Reels sau khi bài đã qua bước duyệt.
+    private static readonly PostStatus[] QueueReelsRenderAllowedStatuses =
+        [PostStatus.WaitingReview, PostStatus.Approved, PostStatus.NeedFix, PostStatus.Failed];
 
     private static readonly PostStatus[] QueueMediaMatchAllowedStatuses =
         [PostStatus.WaitingReview, PostStatus.Approved, PostStatus.NeedMedia, PostStatus.GeneratingMedia];
@@ -90,6 +99,15 @@ public class GenerationJobPipelineService(
             return;
         }
 
+        // Nhánh Template: ảnh lấy ngẫu nhiên từ MediaFolder gắn PageContext của page, ghép chữ đè
+        // lên bằng RichTemplateRenderService — không sinh ảnh AI, không fallback sang FullAI khi
+        // thiếu folder (báo lỗi rõ ràng để người dùng tự setup thư mục Template cho page).
+        if (post.GenerationFlow == GenerationFlow.Template)
+        {
+            await GenerateFromTemplateAsync(post, ct);
+            return;
+        }
+
         var useMedia = post.GenerationFlow == GenerationFlow.RAG;
 
         // FullAI + user đã gắn media sẵn → giữ hành vi cũ: bỏ sinh ảnh AI.
@@ -110,6 +128,102 @@ public class GenerationJobPipelineService(
             var matchJob = await QueueMediaMatchAsync(postId, ct);
             await ProcessAsync(matchJob.JobId, ct);
         }
+    }
+
+    /// <summary>
+    /// Nhánh Template: chọn ảnh trong MediaFolder gắn trực tiếp với page (SocialChannelId — không
+    /// qua PageContext, vì không phải page nào cũng có PageContext) rồi render overlay chữ đè lên
+    /// (RichTemplateRenderService, qua job ImageOverlay có sẵn).
+    /// post.ImageCount null/&lt;=1 (mặc định): chọn ngẫu nhiên đúng 1 ảnh, set Cover — hành vi cũ,
+    /// không đổi. post.ImageCount &gt;=2: AI chọn N ảnh phù hợp nội dung nhất (MatchForPostAsync,
+    /// giới hạn trong folder của page), lưu tạm ở MediaRole.TemplateSource — ImageOverlay job render
+    /// từng ảnh, ra bài multi-photo. AI lỗi/không đủ ảnh khớp → chọn ngẫu nhiên bù cho đủ N.
+    /// Không có folder/folder rỗng, hoặc không đủ N ảnh trong kho → set post NeedFix +
+    /// GenerationError rồi throw — KHÔNG tự fallback sang sinh ảnh AI (đã chốt với người dùng).
+    /// </summary>
+    private async Task GenerateFromTemplateAsync(PostModel post, CancellationToken ct)
+    {
+        var (folder, candidateIds) = await ResolveFolderCandidatesAsync(post, ct);
+        var desiredCount = post.ImageCount is int n && n >= 1 ? n : 1;
+
+        await EnsureEnoughTemplateCandidatesAsync(post, folder, candidateIds, desiredCount, ct);
+
+        if (desiredCount == 1)
+        {
+            var chosenId = candidateIds[Random.Shared.Next(candidateIds.Count)];
+            await postMediaRepository.ReplaceCoverAsync(post.Id, chosenId, ct);
+        }
+        else
+        {
+            var chosenIds = await ChooseTemplateSourceImagesAsync(
+                post, folder!.Id, candidateIds, desiredCount, ct);
+            await postMediaRepository.ReplaceTemplateSourcesAsync(post.Id, chosenIds, ct);
+        }
+
+        var renderJob = await QueueImageRenderAsync(post.Id, ct);
+        await ProcessAsync(renderJob.JobId, ct);
+    }
+
+    private async Task<(MediaFolderModel? Folder, List<Guid> CandidateIds)> ResolveFolderCandidatesAsync(
+        PostModel post, CancellationToken ct)
+    {
+        var folder = await mediaFolderRepository.QueryActive()
+            .FirstOrDefaultAsync(f => f.SocialChannelId == post.SocialChannelId, ct);
+
+        var candidateIds = folder is null
+            ? []
+            : await context.Set<MediaAssetModel>()
+                .Where(x => !x.IsDeleted && x.FolderId == folder.Id && x.MimeType.StartsWith("image/"))
+                .Select(x => x.Id)
+                .ToListAsync(ct);
+
+        return (folder, candidateIds);
+    }
+
+    private async Task EnsureEnoughTemplateCandidatesAsync(
+        PostModel post, MediaFolderModel? folder, List<Guid> candidateIds, int desiredCount,
+        CancellationToken ct)
+    {
+        if (candidateIds.Count > 0 && candidateIds.Count >= desiredCount) return;
+
+        var message = desiredCount > 1
+            ? $"Page chưa có thư mục Template (MediaFolder gắn trực tiếp với page) hoặc không đủ {desiredCount} ảnh (hiện có {candidateIds.Count}). " +
+              "Vào Media > Thư mục để upload thêm ảnh trước khi tạo bài Template nhiều ảnh."
+            : "Page chưa có thư mục Template (MediaFolder gắn trực tiếp với page) hoặc thư mục rỗng. " +
+              "Vào Media > Thư mục để tạo/gắn page này + upload ảnh trước khi tạo bài Template.";
+        logger.LogWarning(
+            "Post {PostId}: {Flow} không đủ ảnh template (SocialChannelId={SocialChannelId}, FolderId={FolderId}, CandidateCount={CandidateCount}, Desired={Desired})",
+            post.Id, post.GenerationFlow, post.SocialChannelId, folder?.Id, candidateIds.Count, desiredCount);
+
+        post.Status = PostStatus.NeedFix;
+        post.GenerationError = message;
+        ApplyPostUpdate(post);
+        await context.SaveChangesAsync(ct);
+        throw new InvalidOperationException(message);
+    }
+
+    /// <summary>
+    /// AI chọn N ảnh phù hợp nội dung bài trong folder (MatchForPostAsync) — lỗi/không đủ ảnh khớp
+    /// thì bù ngẫu nhiên cho đủ N, không để thiếu ảnh làm hỏng bài multi-photo/Reels.
+    /// </summary>
+    private async Task<List<Guid>> ChooseTemplateSourceImagesAsync(
+        PostModel post, Guid folderId, List<Guid> candidateIds, int desiredCount, CancellationToken ct)
+    {
+        var content = string.IsNullOrWhiteSpace(post.Content) ? post.Title : post.Content!;
+        var match = await mediaIntelligenceService.MatchForPostAsync(
+            content, post.CategoryId, take: desiredCount, folderId: folderId, ct: ct);
+
+        var chosen = match.MediaIds.Distinct().ToList();
+        if (chosen.Count < desiredCount)
+        {
+            var remaining = candidateIds
+                .Where(id => !chosen.Contains(id))
+                .OrderBy(_ => Random.Shared.Next())
+                .ToList();
+            chosen.AddRange(remaining.Take(desiredCount - chosen.Count));
+        }
+
+        return chosen.Take(desiredCount).ToList();
     }
 
     private async Task<bool> HasAttachedMediaAsync(Guid postId, CancellationToken ct)
@@ -240,6 +354,72 @@ public class GenerationJobPipelineService(
         };
     }
 
+    /// <summary>
+    /// Ghép các khung hình Attachment (vừa render ở ImageOverlay) thành video slideshow — chỉ
+    /// dùng cho post Reels, cần post đã có sẵn Attachment (do ImageOverlay tạo ra).
+    /// </summary>
+    public async Task<QueueReelsRenderResponse> QueueReelsRenderAsync(
+        Guid postId, CancellationToken ct = default)
+    {
+        var post = await RequirePostAsync(postId, ct);
+        EnsurePostStatus(post, "queue reels render", QueueReelsRenderAllowedStatuses);
+
+        var frameCount = await context.Set<PostMediaModel>()
+            .CountAsync(x => !x.IsDeleted && x.PostId == postId
+                && (x.MediaRole == MediaRole.Attachment || x.MediaRole == MediaRole.Cover), ct);
+        if (frameCount == 0)
+            throw new ArgumentException("Bài viết chưa có khung hình nào để dựng video — render ảnh trước");
+
+        var activeJob = await FindActiveJobAsync(postId, JobType.ReelsRender, ct);
+        if (activeJob is not null)
+            throw new ArgumentException("Đã có job dựng video Reels đang chờ hoặc đang xử lý");
+
+        var idempotencyKey = $"reels_render:{postId}:{DateTime.UtcNow:yyyyMMddHHmmss}";
+
+        var job = await jobRepository.CreateAsync(new CreateGenerationJobRequest
+        {
+            PostId = postId,
+            JobType = JobType.ReelsRender,
+            FlowType = ResolveFlowType(post),
+            Priority = 0,
+            MaxRetries = 1,
+            IdempotencyKey = idempotencyKey,
+            InputPayload = $"{{\"postId\":\"{postId}\"}}"
+        }, ct);
+
+        post.Status = PostStatus.RenderingTemplate;
+        post.GenerationError = null;
+        ApplyPostUpdate(post);
+        await context.SaveChangesAsync(ct);
+
+        return new QueueReelsRenderResponse
+        {
+            PostId = postId,
+            JobId = job.Id,
+            IdempotencyKey = idempotencyKey,
+            JobStatus = job.Status,
+            JobType = job.JobType
+        };
+    }
+
+    /// <summary>
+    /// Đăng Reels: lựa chọn ở bước ĐĂNG (không phải lúc sinh bài) — áp dụng cho MỌI post đã có ảnh
+    /// (FullAI 1 ảnh AI hay Template N ảnh), không phân biệt GenerationFlow lúc tạo. Biến ảnh đang
+    /// có của post thành 1 video slideshow rồi thay thế toàn bộ media của post bằng video đó.
+    /// </summary>
+    /// <param name="frameMediaIds">
+    /// Thứ tự khung hình người dùng chọn (từ ReelsFramePicker) — null thì tự lấy TemplateSource nếu
+    /// người dùng đã chỉnh trước đó, không có thì mặc định dùng đúng ảnh Cover/Attachment hiện tại
+    /// của post (không cần chỉnh tay — "biến ảnh đang có thành video").
+    /// </param>
+    public async Task<ProcessGenerationJobResponse> ConvertToReelsAsync(
+        Guid postId, List<Guid>? frameMediaIds, CancellationToken ct = default)
+    {
+        var queued = await QueueReelsRenderAsync(postId, ct);
+        var job = await RequireJobAsync(queued.JobId, ct);
+        return await ProcessReelsRenderAsync(job, frameMediaIds, ct);
+    }
+
     public async Task<QueueMediaMatchResponse> QueueMediaMatchAsync(
         Guid postId, CancellationToken ct = default)
     {
@@ -292,6 +472,7 @@ public class GenerationJobPipelineService(
             JobType.ImageGeneration => await ProcessImageGenerationAsync(job, ct),
             JobType.ImageOverlay => await ProcessImageOverlayAsync(job, ct),
             JobType.MediaMatch => await ProcessMediaMatchAsync(job, ct),
+            JobType.ReelsRender => await ProcessReelsRenderAsync(job, ct),
             _ => throw new ArgumentException($"Job type '{job.JobType}' chưa được hỗ trợ mock process")
         };
     }
@@ -674,7 +855,21 @@ public class GenerationJobPipelineService(
                 .FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
                 .Value is { ValueKind: JsonValueKind.String } v ? v.GetString() : null;
 
-            return new BannerCopy(Read("bannerHeadline"), Read("bannerSubheadline"), Read("bannerCta"));
+            List<string> ReadBullets(string name)
+            {
+                var prop = tg.EnumerateObject()
+                    .FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+                if (prop.Value.ValueKind != JsonValueKind.Array) return [];
+                return prop.Value.EnumerateArray()
+                    .Where(x => x.ValueKind == JsonValueKind.String)
+                    .Select(x => x.GetString()!)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .ToList();
+            }
+
+            return new BannerCopy(
+                Read("bannerHeadline"), Read("bannerSubheadline"), Read("bannerCta"),
+                ReadBullets("bannerBullets"));
         }
         catch (JsonException)
         {
@@ -839,7 +1034,7 @@ public class GenerationJobPipelineService(
     }
 
     /// <summary>Text banner do AI text đề xuất, lưu trong Post.ExtraJson sau bước sinh text.</summary>
-    private sealed record BannerCopy(string? Headline, string? Subheadline, string? Cta);
+    private sealed record BannerCopy(string? Headline, string? Subheadline, string? Cta, List<string> Bullets);
 
     private static string BuildTextJobInputPayload(AiTextGenerationRequest request)
         => JsonSerializer.Serialize(new
@@ -900,7 +1095,8 @@ public class GenerationJobPipelineService(
             ImagePrompt = ai.ImagePrompt,
             BannerHeadline = ai.BannerHeadline,
             BannerSubheadline = ai.BannerSubheadline,
-            BannerCta = ai.BannerCta
+            BannerCta = ai.BannerCta,
+            BannerBullets = ai.BannerBullets
         };
     }
 
@@ -1033,7 +1229,8 @@ public class GenerationJobPipelineService(
                 output.ImagePrompt,
                 output.BannerHeadline,
                 output.BannerSubheadline,
-                output.BannerCta
+                output.BannerCta,
+                output.BannerBullets
             }
         };
 
@@ -1167,46 +1364,62 @@ public class GenerationJobPipelineService(
         ApplyPostUpdate(post);
         await context.SaveChangesAsync(ct);
 
-        var (_, sourceMedia) = await RequireCoverMediaAsync(post.Id, ct);
-        var pageContext = await pageContextRepository.GetByChannelAsync(post.SocialChannelId, ct);
-        var ctaText = string.IsNullOrWhiteSpace(pageContext?.CtaText) ? "Đăng ký ngay" : pageContext.CtaText.Trim();
-        var headline = BuildHeadline(post);
-        var logoStorageKey = await ResolveLogoStorageKeyAsync(pageContext?.LogoMediaId, ct);
+        // Template.ImageCount>=3: danh sách TemplateSource đã chọn ở GenerateFromTemplateAsync —
+        // SortOrder = thứ tự ảnh. Không có TemplateSource nào → hành vi cũ, 1 ảnh lấy từ Cover.
+        var templateSources = await context.Set<PostMediaModel>()
+            .Where(x => !x.IsDeleted && x.PostId == post.Id && x.MediaRole == MediaRole.TemplateSource)
+            .OrderBy(x => x.SortOrder)
+            .ToListAsync(ct);
 
-        var renderResult = await imageOverlayService.RenderAsync(new ImageOverlayRequest
+        List<MediaAssetModel> sourceMedias;
+        if (templateSources.Count > 0)
         {
-            SourceStorageKey = sourceMedia.StoragePath,
-            PostTitle = post.Title,
-            Headline = headline,
-            CtaText = ctaText,
-            OutputFolder = "rendered",
-            LogoStorageKey = logoStorageKey
-        }, ct);
-
-        var renderedAsset = await mediaAssetRepository.CreateAsync(new CreateMediaAssetRequest
+            var mediaIds = templateSources.Select(x => x.MediaId).ToList();
+            var mediaById = await context.Set<MediaAssetModel>()
+                .Where(x => mediaIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, ct);
+            sourceMedias = mediaIds.Where(mediaById.ContainsKey).Select(id => mediaById[id]).ToList();
+        }
+        else
         {
-            FileName = renderResult.StorageKey.Split('/').Last(),
-            OriginalFileName = $"{SanitizeFileName(post.Title)}-rendered.png",
-            StoragePath = renderResult.StorageKey,
-            MimeType = renderResult.ContentType,
-            FileSize = renderResult.SizeBytes,
-            Source = MediaSource.Overlay,
-            AltText = $"Rendered cover for {post.Title}",
-            Description = headline,
-            Width = renderResult.Width > 0 ? renderResult.Width : null,
-            Height = renderResult.Height > 0 ? renderResult.Height : null,
-            Tags = renderResult.UsedFallbackCopy
-                ? "{\"overlay\":\"fallback-copy\"}"
-                : $"{{\"overlay\":\"imagesharp\",\"textRendered\":{renderResult.TextRendered.ToString().ToLowerInvariant()}}}"
-        }, ct);
+            var (_, singleSource) = await RequireCoverMediaAsync(post.Id, ct);
+            sourceMedias = [singleSource];
+        }
 
-        await mediaAssetRepository.SetPreviewUrlAsync(renderedAsset, ct);
-        var previewUrl = MediaAssetUrls.Preview(renderedAsset.Id);
+        var ctx = await BuildFrameRenderContextAsync(post, ct);
 
-        var postMedia = await postMediaRepository.ReplaceCoverAsync(post.Id, renderedAsset.Id, ct);
+        var renderedAssets = new List<MediaAssetModel>();
+        ImageOverlayResult? lastRenderResult = null;
+        for (var i = 0; i < sourceMedias.Count; i++)
+        {
+            var (asset, result) = await RenderFrameAsync(post, sourceMedias[i], ctx, i, ct);
+            renderedAssets.Add(asset);
+            lastRenderResult = result;
+        }
+
+        var renderResultFinal = lastRenderResult!;
+        var previewUrl = MediaAssetUrls.Preview(renderedAssets[0].Id);
+
+        // Ảnh đầu tiên set Cover (tương thích chỗ đang đọc Cover để hiển thị thumbnail); ảnh 2..N
+        // thành Attachment — publish tự route sang multi-photo khi có >1 ảnh (FacebookPagePublishService).
+        var postMedia = await postMediaRepository.ReplaceCoverAsync(post.Id, renderedAssets[0].Id, ct);
+        for (var i = 1; i < renderedAssets.Count; i++)
+        {
+            await postMediaRepository.CreateAsync(new CreatePostMediaRequest
+            {
+                PostId = post.Id,
+                MediaId = renderedAssets[i].Id,
+                MediaRole = MediaRole.Attachment,
+                SortOrder = i
+            }, ct);
+        }
+
+        // TemplateSource đã render xong, không cần giữ nữa — dọn để lần "Tạo lại ảnh" sau không nhặt nhầm.
+        if (templateSources.Count > 0)
+            await postMediaRepository.ReplaceTemplateSourcesAsync(post.Id, [], ct);
 
         var outputJson = RenderOutputHelper.ToJson(
-            renderedAsset.Id, postMedia.Id, previewUrl, renderResult);
+            renderedAssets[0].Id, postMedia.Id, previewUrl, renderResultFinal);
 
         job.Status = JobStatus.Completed;
         job.CompletedAt = DateTime.UtcNow;
@@ -1225,7 +1438,272 @@ public class GenerationJobPipelineService(
             JobType = job.JobType,
             JobStatus = job.Status,
             OutputPayload = outputJson,
-            MediaAssetId = renderedAsset.Id,
+            MediaAssetId = renderedAssets[0].Id,
+            PostMediaId = postMedia.Id,
+            PublicUrl = previewUrl
+        };
+    }
+
+    /// <summary>Dữ liệu headline/subheadline/bullet/liên hệ/logo — tính 1 lần, dùng chung cho mọi khung hình của 1 post.</summary>
+    private sealed record FrameRenderContext(
+        string CtaText,
+        string FinalHeadline,
+        string Headline,
+        string Subheadline,
+        List<string> BulletPoints,
+        string? OrgLine,
+        string? ContactLine,
+        string? BrandColors,
+        string? LogoStorageKey);
+
+    private async Task<FrameRenderContext> BuildFrameRenderContextAsync(PostModel post, CancellationToken ct)
+    {
+        var pageContext = await pageContextRepository.GetByChannelAsync(post.SocialChannelId, ct);
+        var ctaText = string.IsNullOrWhiteSpace(pageContext?.CtaText) ? "Đăng ký ngay" : pageContext.CtaText.Trim();
+        var headline = BuildHeadline(post);
+        var logoStorageKey = await ResolveLogoStorageKeyAsync(pageContext?.LogoMediaId, ct);
+
+        var contentStr = string.IsNullOrWhiteSpace(post.Content) ? post.Title : post.Content;
+        var extractedTemplate = ExtractTemplateText(contentStr);
+
+        // Ưu tiên banner copy có cấu trúc do AI text-gen sinh (Post.ExtraJson) — chỉ fallback về
+        // regex heuristic (ExtractTemplateText) khi AI/mock không trả (vd content cũ trước khi có field này).
+        var banner = ExtractBannerCopy(post.ExtraJson);
+        var subheadline = FirstNonEmpty(banner?.Subheadline, extractedTemplate.Subheadline) ?? "";
+        var bulletPoints = banner?.Bullets is { Count: > 0 } ? banner.Bullets : extractedTemplate.BulletPoints;
+        var finalHeadline = FirstNonEmpty(headline, extractedTemplate.Headline)!.ToUpperInvariant();
+
+        var orgLine = pageContext?.BrandName?.Trim();
+        // Hashtag không in lên ảnh — đã có sẵn trong caption bài đăng (xem ResolvePromptContextAsync),
+        // in lại trên ảnh chỉ làm dòng liên hệ tràn quá dài, vỡ bố cục footer 2 dòng.
+        var contactParts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(pageContext?.Hotline)) contactParts.Add($"Hotline: {pageContext.Hotline.Trim()}");
+        if (!string.IsNullOrWhiteSpace(pageContext?.Website)) contactParts.Add(pageContext.Website.Trim());
+        var contactLine = contactParts.Count > 0 ? string.Join("  ·  ", contactParts) : null;
+
+        return new FrameRenderContext(
+            ctaText, finalHeadline, headline, subheadline, bulletPoints, orgLine, contactLine,
+            pageContext?.BrandColors, logoStorageKey);
+    }
+
+    /// <summary>
+    /// Render 1 ảnh nguồn thành 1 khung hình có chữ (RichTemplateRenderService qua imageOverlayService) —
+    /// dùng chung cho Template nhiều ảnh (ProcessImageOverlayAsync) và ghép ảnh mới vào Reels
+    /// (ConvertToReelsAsync) khi người dùng thêm ảnh chưa qua overlay từ MediaFolder.
+    /// </summary>
+    private async Task<(MediaAssetModel Asset, ImageOverlayResult Result)> RenderFrameAsync(
+        PostModel post, MediaAssetModel sourceMedia, FrameRenderContext ctx, int frameIndex, CancellationToken ct)
+    {
+        string defaultLayout = "TopBottomSplit";
+        float? safeTextRegionX = null;
+        float? safeTextRegionY = null;
+        float? safeTextRegionWidth = null;
+        float? safeTextRegionHeight = null;
+
+        if (!string.IsNullOrWhiteSpace(sourceMedia.Tags))
+        {
+            try
+            {
+                var tagsObj = System.Text.Json.Nodes.JsonNode.Parse(sourceMedia.Tags);
+                var aiLayout = tagsObj?["layoutStyle"]?.GetValue<string>();
+                if (!string.IsNullOrWhiteSpace(aiLayout)) defaultLayout = aiLayout;
+
+                var safeRegion = tagsObj?["safeTextRegion"];
+                if (safeRegion != null)
+                {
+                    safeTextRegionX = (float?)safeRegion["x"];
+                    safeTextRegionY = (float?)safeRegion["y"];
+                    safeTextRegionWidth = (float?)safeRegion["width"];
+                    safeTextRegionHeight = (float?)safeRegion["height"];
+                }
+            }
+            catch { }
+        }
+
+        var renderResult = await imageOverlayService.RenderAsync(new ImageOverlayRequest
+        {
+            SourceStorageKey = sourceMedia.StoragePath,
+            PostTitle = post.Title,
+            Headline = ctx.FinalHeadline,
+            Subheadline = ctx.Subheadline,
+            BulletPoints = ctx.BulletPoints,
+            CtaText = ctx.CtaText,
+            OrgLine = ctx.OrgLine,
+            ContactLine = ctx.ContactLine,
+            BrandColors = ctx.BrandColors,
+            OutputFolder = "rendered",
+            LogoStorageKey = ctx.LogoStorageKey,
+            LayoutStyle = defaultLayout,
+            SafeTextRegionX = safeTextRegionX,
+            SafeTextRegionY = safeTextRegionY,
+            SafeTextRegionWidth = safeTextRegionWidth,
+            SafeTextRegionHeight = safeTextRegionHeight
+        }, ct);
+
+        var renderedAsset = await mediaAssetRepository.CreateAsync(new CreateMediaAssetRequest
+        {
+            FileName = renderResult.StorageKey.Split('/').Last(),
+            OriginalFileName = $"{SanitizeFileName(post.Title)}-rendered-{frameIndex + 1}.png",
+            StoragePath = renderResult.StorageKey,
+            MimeType = renderResult.ContentType,
+            FileSize = renderResult.SizeBytes,
+            Source = MediaSource.Overlay,
+            AltText = $"Rendered cover for {post.Title}",
+            Description = ctx.Headline,
+            Width = renderResult.Width > 0 ? renderResult.Width : null,
+            Height = renderResult.Height > 0 ? renderResult.Height : null,
+            Tags = renderResult.UsedFallbackCopy
+                ? "{\"overlay\":\"fallback-copy\"}"
+                : $"{{\"overlay\":\"imagesharp\",\"textRendered\":{renderResult.TextRendered.ToString().ToLowerInvariant()}}}"
+        }, ct);
+
+        await mediaAssetRepository.SetPreviewUrlAsync(renderedAsset, ct);
+        return (renderedAsset, renderResult);
+    }
+
+    /// <summary>Dispatch chung từ <see cref="ProcessAsync"/> (retry/timeline) — không có lựa chọn khung hình tường minh, tự suy từ TemplateSource/ảnh hiện có của post.</summary>
+    private Task<ProcessGenerationJobResponse> ProcessReelsRenderAsync(GenerationJobModel job, CancellationToken ct)
+        => ProcessReelsRenderAsync(job, frameMediaIds: null, ct);
+
+    /// <summary>
+    /// Ghép khung hình thành 1 video slideshow bằng FFmpeg (SlideshowVideoRenderService) — bước
+    /// cuối của "Đăng Reels". Dọn hết ảnh cũ sau khi ghép xong, chỉ giữ đúng 1 video làm Cover:
+    /// publish Reels (FacebookPagePublishService) cần mediaItems.Count==1 + mimetype video/ để
+    /// route đúng nhánh.
+    ///
+    /// Khung hình lấy theo thứ tự ưu tiên: <paramref name="frameMediaIds"/> (người dùng chọn qua
+    /// ReelsFramePicker) → TemplateSource (lần chỉnh tay trước, nếu có) → ảnh Cover/Attachment
+    /// hiện tại của post theo SortOrder (mặc định — "biến ảnh đang có thành video", không cần
+    /// chỉnh gì). Mỗi mediaId: nếu ĐÃ là Cover/Attachment của chính post này → dùng thẳng (đã có
+    /// chữ, render lại sẽ chồng chữ 2 lần); nếu là ảnh MỚI từ MediaFolder (chưa gắn post) →
+    /// render qua RenderFrameAsync cho nhất quán thương hiệu trước khi ghép vào video.
+    /// </summary>
+    private async Task<ProcessGenerationJobResponse> ProcessReelsRenderAsync(
+        GenerationJobModel job, List<Guid>? frameMediaIds, CancellationToken ct)
+    {
+        var post = await RequirePostAsync(job.PostId, ct);
+
+        job.Status = JobStatus.Processing;
+        job.StartedAt = DateTime.UtcNow;
+        job.ErrorMessage = null;
+        job.ErrorCode = null;
+        ApplyJobUpdate(job);
+
+        post.Status = PostStatus.RenderingTemplate;
+        ApplyPostUpdate(post);
+        await context.SaveChangesAsync(ct);
+
+        var currentMedia = await context.Set<PostMediaModel>()
+            .Where(x => !x.IsDeleted && x.PostId == post.Id
+                && (x.MediaRole == MediaRole.Attachment || x.MediaRole == MediaRole.Cover))
+            .OrderBy(x => x.SortOrder)
+            .ToListAsync(ct);
+        if (currentMedia.Count == 0)
+            throw new InvalidOperationException("Bài viết chưa có ảnh nào — sinh bài xong mới đăng Reels được");
+
+        var templateSources = await context.Set<PostMediaModel>()
+            .Where(x => !x.IsDeleted && x.PostId == post.Id && x.MediaRole == MediaRole.TemplateSource)
+            .OrderBy(x => x.SortOrder)
+            .ToListAsync(ct);
+
+        var order = frameMediaIds
+            ?? (templateSources.Count > 0 ? templateSources.Select(x => x.MediaId).ToList() : null)
+            ?? currentMedia.Select(x => x.MediaId).ToList();
+        if (order.Count == 0)
+            throw new InvalidOperationException("Cần chọn ít nhất 1 khung hình để dựng video Reels");
+
+        var currentAssetIds = currentMedia.Select(x => x.MediaId).ToHashSet();
+        var neededIds = order.Concat(currentAssetIds).Distinct().ToList();
+        var assetsById = await context.Set<MediaAssetModel>()
+            .Where(x => neededIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, ct);
+
+        FrameRenderContext? ctx = null;
+        var frameBytesList = new List<byte[]>();
+        var frameIndex = 0;
+        foreach (var mediaId in order)
+        {
+            if (!assetsById.TryGetValue(mediaId, out var media) || string.IsNullOrWhiteSpace(media.StoragePath))
+                continue;
+            if (media.MimeType?.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true)
+                // Post đã convert sang Reels trước đó — media hiện có là video, không phải ảnh, không
+                // dùng làm khung hình được (FFmpeg concat cần ảnh). Bỏ qua, người dùng phải chọn ảnh
+                // mới từ thư mục để dựng lại.
+                continue;
+
+            string? storagePath;
+            if (currentAssetIds.Contains(mediaId))
+            {
+                // Đã là ảnh của chính post này (Cover/Attachment) — đã có chữ, dùng thẳng.
+                storagePath = media.StoragePath;
+            }
+            else
+            {
+                // Ảnh mới từ MediaFolder, chưa qua overlay — render cho nhất quán thương hiệu.
+                ctx ??= await BuildFrameRenderContextAsync(post, ct);
+                var (rendered, _) = await RenderFrameAsync(post, media, ctx, frameIndex, ct);
+                storagePath = rendered.StoragePath;
+            }
+
+            await using var stream = await fileStorageService.OpenReadAsync(storagePath, ct);
+            using var mem = new MemoryStream();
+            await stream.CopyToAsync(mem, ct);
+            frameBytesList.Add(mem.ToArray());
+            frameIndex++;
+        }
+        if (frameBytesList.Count == 0)
+            throw new InvalidOperationException("Không đọc được file khung hình nào để dựng video Reels");
+
+        var pageContext = await pageContextRepository.GetByChannelAsync(post.SocialChannelId, ct);
+        var brandColorHex = pageContext?.BrandColors?.Split(',').FirstOrDefault()?.Trim();
+
+        var videoBytes = await slideshowVideoRenderService.RenderAsync(frameBytesList, brandColorHex, ct);
+
+        var saveResult = await fileStorageService.SaveBytesAsync(
+            videoBytes, "rendered", ".mp4", "video/mp4", ct);
+
+        var videoAsset = await mediaAssetRepository.CreateAsync(new CreateMediaAssetRequest
+        {
+            FileName = saveResult.StorageKey.Split('/').Last(),
+            OriginalFileName = $"{SanitizeFileName(post.Title)}-reels.mp4",
+            StoragePath = saveResult.StorageKey,
+            MimeType = "video/mp4",
+            FileSize = saveResult.SizeBytes,
+            Source = MediaSource.Overlay,
+            AltText = $"Reels video for {post.Title}",
+            Description = post.Title
+        }, ct);
+
+        await mediaAssetRepository.SetPreviewUrlAsync(videoAsset, ct);
+        var previewUrl = MediaAssetUrls.Preview(videoAsset.Id);
+
+        await postMediaRepository.SoftDeleteAllForPostAsync(
+            post.Id, [MediaRole.Attachment, MediaRole.Cover], ct);
+        var postMedia = await postMediaRepository.ReplaceCoverAsync(post.Id, videoAsset.Id, ct);
+
+        if (templateSources.Count > 0)
+            await postMediaRepository.ReplaceTemplateSourcesAsync(post.Id, [], ct);
+
+        var outputJson = $"{{\"videoMediaAssetId\":\"{videoAsset.Id}\",\"frameCount\":{frameBytesList.Count}}}";
+
+        job.Status = JobStatus.Completed;
+        job.CompletedAt = DateTime.UtcNow;
+        job.OutputPayload = outputJson;
+        ApplyJobUpdate(job);
+
+        post.Status = PostStatus.WaitingReview;
+        post.GenerationError = null;
+        ApplyPostUpdate(post);
+        await context.SaveChangesAsync(ct);
+
+        return new ProcessGenerationJobResponse
+        {
+            JobId = job.Id,
+            PostId = post.Id,
+            JobType = job.JobType,
+            JobStatus = job.Status,
+            OutputPayload = outputJson,
+            MediaAssetId = videoAsset.Id,
             PostMediaId = postMedia.Id,
             PublicUrl = previewUrl
         };
@@ -1251,7 +1729,7 @@ public class GenerationJobPipelineService(
         await context.SaveChangesAsync(ct);
 
         var content = string.IsNullOrWhiteSpace(post.Content) ? post.Title : post.Content!;
-        var match = await mediaIntelligenceService.MatchForPostAsync(content, post.CategoryId, take: 3, ct);
+        var match = await mediaIntelligenceService.MatchForPostAsync(content, post.CategoryId, take: 3, ct: ct);
 
         var existing = await postMediaRepository.GetByPostAsync(post.Id, ct);
         var existingMediaIds = existing.Select(x => x.MediaId).ToHashSet();
@@ -1413,21 +1891,21 @@ public class GenerationJobPipelineService(
     private static PostStatus ResolveDeadLetterPostStatus(JobType jobType) => jobType switch
     {
         JobType.ImageGeneration => PostStatus.NeedMedia,
-        JobType.ImageOverlay => PostStatus.NeedFix,
+        JobType.ImageOverlay or JobType.ReelsRender => PostStatus.NeedFix,
         _ => PostStatus.Failed
     };
 
     private static PostStatus ResolveRetryableFailPostStatus(JobType jobType) => jobType switch
     {
         JobType.TextGeneration => PostStatus.Queued,
-        JobType.ImageGeneration or JobType.ImageOverlay => PostStatus.WaitingReview,
+        JobType.ImageGeneration or JobType.ImageOverlay or JobType.ReelsRender => PostStatus.WaitingReview,
         _ => PostStatus.Queued
     };
 
     private static PostStatus ResolveRetryPostStatus(JobType jobType) => jobType switch
     {
         JobType.ImageGeneration => PostStatus.GeneratingMedia,
-        JobType.ImageOverlay => PostStatus.RenderingTemplate,
+        JobType.ImageOverlay or JobType.ReelsRender => PostStatus.RenderingTemplate,
         _ => PostStatus.Queued
     };
 
@@ -1439,7 +1917,7 @@ public class GenerationJobPipelineService(
                 post.Status = PostStatus.WaitingReview;
                 ApplyPostUpdate(post);
                 break;
-            case JobType.ImageOverlay when post.Status == PostStatus.RenderingTemplate:
+            case JobType.ImageOverlay or JobType.ReelsRender when post.Status == PostStatus.RenderingTemplate:
                 post.Status = PostStatus.WaitingReview;
                 ApplyPostUpdate(post);
                 break;
@@ -1457,6 +1935,32 @@ public class GenerationJobPipelineService(
         var line = post.Content.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
         if (string.IsNullOrWhiteSpace(line)) return "VNI Automation";
         return line.Length > 80 ? line[..80] : line;
+    }
+
+    private static (string Headline, string Subheadline, List<string> BulletPoints) ExtractTemplateText(string content)
+    {
+        var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim())
+            .Where(x => x.Length > 0 && !x.StartsWith('#'))
+            .ToList();
+            
+        var headline = lines.FirstOrDefault(x => x.Length > 20 && !x.ToUpperInvariant().Equals(x)) ?? lines.FirstOrDefault() ?? "VNI Automation";
+        var subheadline = lines.LastOrDefault(x => x != headline && (x.ToLowerInvariant().Contains("inbox") || x.ToLowerInvariant().Contains("liên hệ") || x.ToLowerInvariant().Contains("tư vấn"))) 
+                          ?? lines.LastOrDefault(x => x != headline) 
+                          ?? "";
+                          
+        var bulletPoints = lines.Where(x => x != headline && x != subheadline && (x.StartsWith("-") || x.StartsWith("+") || x.StartsWith("•") || x.StartsWith("*")))
+                                .Take(3)
+                                .ToList(); // We KEEP emojis now, so no StripEmojis!
+                                
+        if (bulletPoints.Count == 0) {
+            bulletPoints = lines.Where(x => x != headline && x != subheadline && x.Length > 15 && x.Length < 60)
+                                .Take(3)
+                                .Select(x => "• " + x)
+                                .ToList();
+        }
+        
+        return (headline, subheadline, bulletPoints);
     }
 
     private static MediaJobOutputInfo? ParseMediaJobOutput(string? outputPayload)

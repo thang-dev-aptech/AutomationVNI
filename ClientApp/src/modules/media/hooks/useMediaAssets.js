@@ -120,3 +120,24 @@ export function useMediaRecommendation(payload, { enabled = true } = {}) {
     staleTime: 30_000,
   })
 }
+
+export function useAnalyzeLayoutFolder() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (folderId) => unwrapApiData(await mediaAssetApi.analyzeLayoutFolder(folderId)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mediaAssetQueryKeys.all })
+    },
+  })
+}
+
+/** Quét Vùng An Toàn cho MỘT ảnh — dùng ở popup Chi tiết / Xem ảnh. */
+export function useAnalyzeLayout() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id) => unwrapApiData(await mediaAssetApi.analyzeLayout(id)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mediaAssetQueryKeys.all })
+    },
+  })
+}

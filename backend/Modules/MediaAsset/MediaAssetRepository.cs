@@ -328,6 +328,54 @@ public class PostMediaRepository : GenericRepository<PostMediaModel>
         }, ct);
     }
 
+    /// <summary>
+    /// Xoá mềm toàn bộ PostMedia của post theo các MediaRole chỉ định — dùng khi ReelsRender ghép
+    /// xong video: N khung hình Attachment/Cover cũ không còn cần nữa, publish Reels cần đúng 1
+    /// media item (video) để FacebookPagePublishService route đúng nhánh, không lẫn với multi-photo.
+    /// </summary>
+    public async Task SoftDeleteAllForPostAsync(
+        Guid postId, IReadOnlyCollection<MediaRole> roles, CancellationToken ct = default)
+    {
+        var rows = await QueryActive()
+            .Where(x => x.PostId == postId && roles.Contains(x.MediaRole))
+            .ToListAsync(ct);
+        foreach (var row in rows)
+            ApplySoftDeleteAudit(row);
+        if (rows.Count > 0)
+            await Context.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Ghi đè toàn bộ ảnh nguồn (MediaRole.TemplateSource) của 1 post — dùng cho Template nhiều ảnh
+    /// và Reels (AI chọn tự động hoặc người dùng chỉnh tay đều gọi qua đây). Xoá mềm hàng cũ, tạo
+    /// hàng mới theo đúng thứ tự mediaIds (SortOrder = vị trí trong mảng = thứ tự khung hình).
+    /// </summary>
+    public async Task<List<PostMediaModel>> ReplaceTemplateSourcesAsync(
+        Guid postId, List<Guid> mediaIds, CancellationToken ct = default)
+    {
+        var existing = await QueryActive()
+            .Where(x => x.PostId == postId && x.MediaRole == MediaRole.TemplateSource)
+            .ToListAsync(ct);
+        foreach (var row in existing)
+            ApplySoftDeleteAudit(row);
+        if (existing.Count > 0)
+            await Context.SaveChangesAsync(ct);
+
+        var created = new List<PostMediaModel>();
+        for (var i = 0; i < mediaIds.Count; i++)
+        {
+            created.Add(await CreateAsync(new CreatePostMediaRequest
+            {
+                PostId = postId,
+                MediaId = mediaIds[i],
+                MediaRole = MediaRole.TemplateSource,
+                SortOrder = i
+            }, ct));
+        }
+
+        return created;
+    }
+
     public static PostMediaResponse ToResponse(PostMediaModel e) => new()
     {
         Id = e.Id,

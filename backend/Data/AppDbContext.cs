@@ -76,6 +76,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.ToTable("MediaFolders");
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.ParentFolderId);
+            e.HasIndex(x => x.SocialChannelId);
             e.HasIndex(x => x.IsDeleted);
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.Description).HasMaxLength(500);

@@ -76,3 +76,29 @@ coverage/
 # Luật "Data/*.db" ở backend/.gitignore KHÔNG phủ thư mục này, nên phải chặn riêng.
 # Gửi cho đồng đội qua kênh riêng tư, không qua git và không qua chat nhóm.
 ban-giao/
+
+# Bản sao/gói zip CHỨA BÍ MẬT khác phát sinh khi bàn giao/backup thủ công — cùng rủi ro như
+# ban-giao/ ở trên (token Facebook, appsettings.Production.json có API key/JWT secret...).
+/Data/
+backend/Data.zip
+backend/backend.zip
+backend/Storage.zip
+backend/wwwroot/dist.zip
+
+# Gói publish/deploy dựng thủ công ngoài quy trình CI — không phải mã nguồn, rất nặng.
+publish_output/
+publish_output_sc/
+publish_frontend/
+/publish_backend.zip
+/publish_frontend.zip
+
+# Project/script debug cá nhân, không thuộc source chính thức của repo.
+scratch/
+test_api/
+test_find_inputs.js
+program_version_*.txt
+
+# FFmpeg static binary cho SlideshowVideoRenderService (dựng video Reels) — ~80MB, tải về theo
+# hướng dẫn ở REELS_PLAN.md phần C4 (johnvansickle.com/ffmpeg), không commit để khỏi phình repo
+# vĩnh viễn. `dotnet publish`/build zip vẫn gắp được bình thường vì file nằm sẵn trên đĩa.
+backend/Resources/ffmpeg/

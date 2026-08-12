@@ -19,6 +19,7 @@ public class PostController
     private readonly GenerationJob.GenerationJobPipelineService _generationPipeline;
     private readonly PublishLog.IPublishPipelineService _publishPipeline;
     private readonly PageContextRepository _pageContextRepository;
+    private readonly MediaAsset.PostMediaRepository _postMediaRepository;
 
     public PostController(
         PostRepository repository,
@@ -26,7 +27,8 @@ public class PostController
         PostRecycleService recycleService,
         GenerationJob.GenerationJobPipelineService generationPipeline,
         PublishLog.IPublishPipelineService publishPipeline,
-        PageContextRepository pageContextRepository) : base(repository)
+        PageContextRepository pageContextRepository,
+        MediaAsset.PostMediaRepository postMediaRepository) : base(repository)
     {
         _repo = repository;
         _workflow = workflow;
@@ -34,6 +36,7 @@ public class PostController
         _generationPipeline = generationPipeline;
         _publishPipeline = publishPipeline;
         _pageContextRepository = pageContextRepository;
+        _postMediaRepository = postMediaRepository;
     }
 
     protected override string EntityLabel => "bài viết";
@@ -190,7 +193,8 @@ public class PostController
             ImageTemplateId = packId is null ? pcImage : null,
             CategoryId = request.CategoryId,
             GenerationFlow = request.GenerationFlow,
-            Objective = request.Objective
+            Objective = request.Objective,
+            ImageCount = request.ImageCount
         };
 
         var post = await _repo.CreateAsync(createReq, ct);
@@ -338,6 +342,46 @@ public class PostController
 
         var post = await _workflow.GetPostAsync(id, ct);
         return Ok(ApiResponse.Ok(ToResponse(post!), "Đã tạo lại ảnh"));
+    }
+
+    /// <summary>
+    /// Ghi đè khung hình Reels đang chọn (chỉnh tay qua ReelsFramePicker) — KHÔNG tự ghép video,
+    /// chỉ lưu lựa chọn để convert-to-reels dùng sau. Áp dụng cho MỌI post đã có ảnh (FullAI hay
+    /// Template), không phân biệt flow lúc tạo — Reels giờ là lựa chọn ở bước ĐĂNG.
+    /// </summary>
+    [HttpPut("{id:guid}/reels-frames")]
+    public async Task<IActionResult> SetReelsFrames(
+        Guid id, [FromBody] SetReelsFramesRequest request, CancellationToken ct)
+    {
+        var guard = await EnsureGenerationPermissionAsync(id, ct);
+        if (guard is not null) return guard;
+
+        var mediaIds = (request.MediaIds ?? []).Where(x => x != Guid.Empty).Distinct().ToList();
+        if (mediaIds.Count == 0)
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", "Cần chọn ít nhất 1 khung hình"));
+
+        await _postMediaRepository.ReplaceTemplateSourcesAsync(id, mediaIds, ct);
+        return Ok(ApiResponse.Ok(true, $"Đã lưu {mediaIds.Count} khung hình — bấm Đăng dạng Reels để áp dụng"));
+    }
+
+    /// <summary>
+    /// Biến ảnh bài đang có thành video rồi đăng Reels — áp dụng cho MỌI post đã có ảnh (FullAI 1
+    /// ảnh AI hay Template N ảnh). Không truyền mediaIds thì dùng đúng ảnh bài đang có (mặc định,
+    /// không cần chỉnh tay); truyền mediaIds thì dùng đúng thứ tự đó (mix ảnh đã render sẵn của
+    /// post lẫn ảnh mới chọn từ MediaFolder — ảnh mới sẽ tự render chữ cho nhất quán).
+    /// </summary>
+    [HttpPost("{id:guid}/convert-to-reels")]
+    public async Task<IActionResult> ConvertToReels(
+        Guid id, [FromBody] ConvertToReelsRequest? request, CancellationToken ct)
+    {
+        var guard = await EnsureGenerationPermissionAsync(id, ct);
+        if (guard is not null) return guard;
+
+        await _generationPipeline.ConvertToReelsAsync(id, request?.MediaIds, ct);
+        await _workflow.ApproveAsync(id, ct);
+
+        var post = await _workflow.GetPostAsync(id, ct);
+        return Ok(ApiResponse.Ok(ToResponse(post!), "Đã đăng dạng Reels"));
     }
 
     private Task GenerateTextThenImageAsync(Guid postId, CancellationToken ct)

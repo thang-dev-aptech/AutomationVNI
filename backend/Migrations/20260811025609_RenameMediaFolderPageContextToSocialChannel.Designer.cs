@@ -3,6 +3,7 @@ using System;
 using Backend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace backend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260811025609_RenameMediaFolderPageContextToSocialChannel")]
+    partial class RenameMediaFolderPageContextToSocialChannel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.0");
@@ -1607,71 +1610,6 @@ namespace backend.Migrations
                     b.ToTable("PageMessages", (string)null);
                 });
 
-            modelBuilder.Entity("Backend.Modules.PageMetrics.ChannelMetricDailyModel", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("Date")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DeletedBy")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ExtraJson")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Followers")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("PostsPublished")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("SocialChannelId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SyncError")
-                        .HasMaxLength(500)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("TotalComments")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("TotalLikes")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("TotalShares")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Date");
-
-                    b.HasIndex("SocialChannelId", "Date")
-                        .IsUnique();
-
-                    b.ToTable("ChannelMetricDaily", (string)null);
-                });
-
             modelBuilder.Entity("Backend.Modules.Post.PostModel", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1717,9 +1655,6 @@ namespace backend.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int>("GenerationFlow")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("ImageCount")
                         .HasColumnType("INTEGER");
 
                     b.Property<Guid?>("ImageTemplateId")
@@ -2315,16 +2250,10 @@ namespace backend.Migrations
                     b.Property<DateTime?>("LastSyncedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("LikeCount")
-                        .HasColumnType("INTEGER");
-
                     b.Property<Guid?>("LocalPostId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Message")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("MetricsSyncedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PermalinkUrl")
@@ -2334,14 +2263,8 @@ namespace backend.Migrations
                     b.Property<int>("Platform")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int>("PlatformCommentCount")
-                        .HasColumnType("INTEGER");
-
                     b.Property<DateTime?>("PostedAt")
                         .HasColumnType("TEXT");
-
-                    b.Property<int>("ShareCount")
-                        .HasColumnType("INTEGER");
 
                     b.Property<Guid>("SocialChannelId")
                         .HasColumnType("TEXT");
@@ -2363,8 +2286,6 @@ namespace backend.Migrations
                     b.HasIndex("LocalPostId");
 
                     b.HasIndex("Platform");
-
-                    b.HasIndex("PostedAt");
 
                     b.HasIndex("SocialChannelId");
 

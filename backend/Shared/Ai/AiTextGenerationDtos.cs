@@ -28,6 +28,9 @@ public class AiTextGenerationResult
     public string BannerHeadline { get; set; } = string.Empty;
     public string BannerSubheadline { get; set; } = string.Empty;
     public string BannerCta { get; set; } = string.Empty;
+
+    /// <summary>3-4 dòng ngắn (khuyến khích kèm emoji đầu dòng) — dùng làm bullet khi ghép chữ vào ảnh Template.</summary>
+    public List<string> BannerBullets { get; set; } = [];
     public string ImagePrompt { get; set; } = string.Empty;
     public string? Provider { get; set; }
     public string? Model { get; set; }

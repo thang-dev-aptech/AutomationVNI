@@ -7,6 +7,7 @@ public class CreateMediaFolderRequest
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public Guid? ParentFolderId { get; set; }
+    public Guid? SocialChannelId { get; set; }
     public int SortOrder { get; set; }
 }
 
@@ -15,12 +16,14 @@ public class UpdateMediaFolderRequest
     public string? Name { get; set; }
     public string? Description { get; set; }
     public Guid? ParentFolderId { get; set; }
+    public Guid? SocialChannelId { get; set; }
     public int? SortOrder { get; set; }
 }
 
 public class MediaFolderFilterRequest : PagedFilterRequest
 {
     public Guid? ParentFolderId { get; set; }
+    public Guid? SocialChannelId { get; set; }
 }
 
 public class MediaFolderResponse
@@ -29,6 +32,7 @@ public class MediaFolderResponse
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public Guid? ParentFolderId { get; set; }
+    public Guid? SocialChannelId { get; set; }
     public int SortOrder { get; set; }
 
     /// <summary>Số ảnh trực tiếp trong folder (không tính thư mục con).</summary>

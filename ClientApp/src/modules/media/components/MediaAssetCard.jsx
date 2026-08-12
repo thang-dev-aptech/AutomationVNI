@@ -1,4 +1,4 @@
-import { isImageMime } from '../constants/mediaConstants'
+import { hasTemplateLayout, isImageMime } from '../constants/mediaConstants'
 import './MediaAssetCard.css'
 
 export default function MediaAssetCard({
@@ -10,6 +10,7 @@ export default function MediaAssetCard({
 }) {
   const displayName = asset.originalFileName || asset.fileName
   const showPreview = asset.publicUrl && isImageMime(asset.mimeType)
+  const isTemplateReady = hasTemplateLayout(asset.tags)
 
   const handleDragStart = (event) => {
     event.dataTransfer.setData('text/media-asset-id', asset.id)
@@ -45,6 +46,11 @@ export default function MediaAssetCard({
           <div className="media-asset-card-placeholder">
             {asset.mimeType || 'No preview'}
           </div>
+        )}
+        {isTemplateReady && (
+          <span className="media-asset-card-layout-badge" title="Đã quét Vùng An Toàn — dùng được cho bài Template">
+            📐 Đã quét Layout
+          </span>
         )}
       </button>
       <div className="media-asset-card-actions">

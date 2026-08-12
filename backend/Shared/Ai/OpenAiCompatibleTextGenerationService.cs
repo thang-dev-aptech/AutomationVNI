@@ -24,6 +24,7 @@ public class OpenAiCompatibleTextGenerationService(
           "bannerHeadline": "tiêu đề banner ngắn",
           "bannerSubheadline": "dòng phụ banner",
           "bannerCta": "chữ nút banner",
+          "bannerBullets": ["3-4 dòng CỰC NGẮN (dưới 45 ký tự), mỗi dòng bắt đầu bằng 1 emoji phù hợp nội dung + khoảng trắng + cụm từ, dùng để ghép trực tiếp lên ảnh banner"],
           "imagePrompt": "English prompt tả banner: chủ thể chính, bối cảnh, bố cục, ánh sáng, phong cách. Banner có chữ — mô tả cả vị trí khối chữ, KHÔNG tự bịa hotline/website"
         }
 
@@ -639,6 +640,7 @@ public class OpenAiCompatibleTextGenerationService(
                 BannerHeadline = parsed.BannerHeadline?.Trim() ?? string.Empty,
                 BannerSubheadline = parsed.BannerSubheadline?.Trim() ?? string.Empty,
                 BannerCta = parsed.BannerCta?.Trim() ?? string.Empty,
+                BannerBullets = parsed.BannerBullets?.Select(x => x.Trim()).Where(x => x.Length > 0).ToList() ?? [],
                 ImagePrompt = parsed.ImagePrompt?.Trim() ?? string.Empty,
                 RawResponse = rawContent
             };
@@ -661,6 +663,7 @@ public class OpenAiCompatibleTextGenerationService(
         public string? BannerHeadline { get; set; }
         public string? BannerSubheadline { get; set; }
         public string? BannerCta { get; set; }
+        public List<string>? BannerBullets { get; set; }
         public string? ImagePrompt { get; set; }
     }
 }
