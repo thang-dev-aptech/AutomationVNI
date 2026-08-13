@@ -14,6 +14,11 @@ public class PublishFanpageRequest
     public bool AutoPublish { get; set; } = true;
 }
 
+public class SetSubscriberActiveRequest
+{
+    public bool IsActive { get; set; }
+}
+
 /// <summary>
 /// Quản lý trang tin: xem bài đã lên web, viết bài từ tin đã cào, dựng lại trang.
 /// </summary>
@@ -205,6 +210,37 @@ public class NewsSiteController(
     [Authorize(Roles = "Admin,ContentManager")]
     public async Task<IActionResult> Build(CancellationToken ct)
         => Ok(ApiResponse.Ok(await builder.BuildAsync(ct), "Đã dựng lại trang tin"));
+
+    [HttpGet("subscribers")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> Subscribers(
+        [FromQuery] string? keyword, [FromQuery] bool? isActive,
+        [FromQuery] int index = 1, [FromQuery] int size = 20, CancellationToken ct = default)
+    {
+        var result = await repository.GetSubscribersForAdminAsync(keyword, isActive, index, size, ct);
+        return Ok(ApiResponse.Ok(new
+        {
+            items = result.Items.Select(s => (object)new
+            {
+                s.Id, s.Email, s.IsActive, s.CreatedAt, s.UnsubscribedAt,
+            }),
+            result.Total,
+            result.Index,
+            result.Size,
+        }));
+    }
+
+    [HttpPatch("subscribers/{id:guid}")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> SetSubscriberActive(
+        Guid id, [FromBody] SetSubscriberActiveRequest request, CancellationToken ct)
+    {
+        var sub = await repository.SetSubscriberActiveAsync(id, request.IsActive, ct);
+        if (sub is null) return NotFound(ApiResponse.Fail("NOT_FOUND", "Không tìm thấy người đăng ký"));
+
+        return Ok(ApiResponse.Ok(new { sub.Id, sub.Email, sub.IsActive, sub.UnsubscribedAt },
+            request.IsActive ? "Đã bật lại nhận tin" : "Đã tắt nhận tin"));
+    }
 
     private object ToResponse(NewsArticleModel a) => new
     {

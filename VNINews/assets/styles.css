@@ -87,6 +87,7 @@ a:focus-visible, button:focus-visible, input:focus-visible {
 .topbar-in { display: flex; align-items: center; gap: 20px; height: 76px; }
 
 .brand { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.brand-logo, .brand-text-link { display: flex; align-items: center; text-decoration: none; color: inherit; }
 .brand img { height: 42px; width: auto; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.2; padding-left: 12px; border-left: 1px solid var(--line); }
 .brand-text b { font-size: .82rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); }
@@ -132,8 +133,8 @@ a:focus-visible, button:focus-visible, input:focus-visible {
 .burger:hover { background: var(--surface-2); }
 .mainnav a {
   padding: 8px 14px; border-radius: var(--r-sm);
-  font-size: .84rem; font-weight: 600; letter-spacing: .02em; text-transform: uppercase;
-  color: var(--ink-2); white-space: nowrap;
+  font-size: .84rem; font-weight: 800; letter-spacing: .02em; text-transform: uppercase;
+  color: var(--ink); white-space: nowrap;
 }
 .mainnav a:hover { background: var(--tint-blue); color: var(--blue); text-decoration: none; }
 .mainnav a[aria-current] { color: var(--blue); background: var(--tint-blue); }
@@ -253,10 +254,11 @@ main { padding: 26px 0 60px; }
    trang mình là rủi ro rõ hơn cả phần chữ. Class trùng slug chuyên mục để
    backend chỉ việc ghép "t-" + slug. */
 .thumb { display: grid; place-items: center; overflow: hidden; background: var(--surface-2); }
-.t-giao-duc     { background: linear-gradient(135deg, #2d6cb6, #1e4e82 60%, #33a457); }
-.t-cong-nghe-ai { background: linear-gradient(140deg, #1e4e82, #5b21b6); }
-.t-ky-nang      { background: linear-gradient(140deg, #f08a22, #c2610a); }
-.t-khac         { background: linear-gradient(140deg, #556274, #2b3441); }
+.t-giao-duc              { background: linear-gradient(135deg, #2d6cb6, #1e4e82 60%, #33a457); }
+.t-phap-luat-chinh-sach  { background: linear-gradient(140deg, #8a1f2b, #4a0e15); }
+.t-cong-nghe-ai          { background: linear-gradient(140deg, #1e4e82, #5b21b6); }
+.t-ky-nang               { background: linear-gradient(140deg, #f08a22, #c2610a); }
+.t-khac                  { background: linear-gradient(140deg, #556274, #2b3441); }
 
 /* ── 7. Cột phải ───────────────────────────────────────────────────────── */
 .aside { display: flex; flex-direction: column; gap: 22px; }
@@ -301,6 +303,7 @@ main { padding: 26px 0 60px; }
 .site-foot .wrap { padding: 38px 20px 26px; }
 .foot-grid { display: grid; grid-template-columns: 1.5fr repeat(3, 1fr); gap: 32px; }
 .foot-brand img { height: 44px; width: auto; margin-bottom: 14px; }
+.foot-brand-link { display: block; font-size: .82rem; font-weight: 600; color: var(--blue); margin: 0 0 14px; }
 .foot-brand p { margin: 0 0 16px; font-size: .84rem; line-height: 1.65; }
 .foot-grid h3 { margin: 0 0 14px; font-size: .8rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ink); }
 .foot-grid ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
@@ -331,7 +334,7 @@ main { padding: 26px 0 60px; }
 
 /* Thân bài ~62 ký tự/dòng. Đọc trên điện thoại từ Facebook là ca chính, nhưng
    trên máy để bàn dòng dài quá thì mắt lạc hàng khi xuống dòng. */
-.prose { max-width: 62ch; font-size: 1.02rem; line-height: 1.78; color: var(--ink-2); }
+.prose { max-width: 62ch; font-size: 1.02rem; line-height: 1.78; color: var(--ink-2); text-align: justify; }
 .prose p { margin: 0 0 17px; }
 .prose h2 { margin: 30px 0 11px; font-size: 1.2rem; font-weight: 700; color: var(--ink); letter-spacing: -.012em; }
 .prose ul { margin: 0 0 17px; padding-left: 20px; }

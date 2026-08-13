@@ -101,4 +101,10 @@ public class NewsArticleModel : BaseEntity
     /// bài đã có để tự quyết nếu máy chặn nhầm.
     /// </summary>
     public Guid? DuplicateOfNewsId { get; set; }
+
+    /// <summary>
+    /// Đã gửi email báo bài mới cho subscriber chưa. Null = chưa gửi — NewsletterSendWorker
+    /// quét đúng cột này để biết bài nào cần gửi, không cần bảng hàng đợi riêng.
+    /// </summary>
+    public DateTime? NewsletterSentAt { get; set; }
 }

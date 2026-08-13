@@ -162,6 +162,12 @@ builder.Services.AddScoped<Backend.Modules.NewsSite.NewsSiteBuilder>();
 builder.Services.AddScoped<Backend.Modules.NewsSite.NewsDedupService>();
 builder.Services.AddScoped<Backend.Modules.NewsSite.NewsPublisher>();
 builder.Services.AddScoped<Backend.Modules.NewsSite.NewsFanpageService>();
+
+// ── Email (bản tin trang tin) ─────────────────────────────────────────────────
+builder.Services.Configure<Backend.Shared.Email.EmailOptions>(
+    builder.Configuration.GetSection("Email"));
+builder.Services.AddScoped<Backend.Shared.Email.IEmailSender, Backend.Shared.Email.SmtpEmailSender>();
+builder.Services.AddHostedService<Backend.Modules.NewsSite.NewsletterSendWorker>();
 builder.Services.AddScoped<ContentCrawlPipelineService>();
 builder.Services.AddHttpClient<IAiJudgeService, AiJudgeService>(client =>
     // Trần 30s là quá chặt: đo thật trên gateway vietai, chấm điểm một bài mất ~28s nên 6/9

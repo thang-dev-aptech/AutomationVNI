@@ -17,6 +17,10 @@ Thumbs.db
 **/appsettings.Production.json
 **/secrets.json
 
+# Ghi chú env đầy đủ tự tay soạn cho việc bàn giao — chứa secret thật (JWT secret, mật khẩu
+# admin, App Secret Meta/Threads, API key AI, Telegram bot token), không phải file mẫu.
+/VNI Automation env production.md
+
 # Logs
 *.log
 logs/

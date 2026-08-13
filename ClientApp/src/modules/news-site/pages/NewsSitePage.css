@@ -186,6 +186,42 @@
 
 .news-site-remove { color: var(--color-danger-text, #991b1b); }
 
+/* ── Bảng người đăng ký nhận tin ──────────────────────────────────────── */
+
+.news-site-subs-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 0.9rem;
+}
+
+.news-site-subs-table th, .news-site-subs-table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.news-site-subs-table th {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #6b7280);
+  background: var(--color-surface-alt, #f9fafb);
+}
+
+.news-site-subs-table tr:last-child td { border-bottom: none; }
+
+.news-site-sub-status {
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #6b7280);
+}
+
+.news-site-sub-status.is-active { color: var(--color-success-text, #166534); font-weight: 600; }
+
 /* Băng báo đang xem thử — vàng chứ không đỏ: đây là trạng thái BÌNH THƯỜNG khi chưa gắn
    tên miền, không phải lỗi. Đỏ dùng cho thư mục không ghi được. */
 .news-site-preview-note {

@@ -53,6 +53,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<ShortLinkModel> ShortLinks => Set<ShortLinkModel>();
     public DbSet<Backend.Modules.NewsSite.NewsArticleModel> NewsArticles
         => Set<Backend.Modules.NewsSite.NewsArticleModel>();
+    public DbSet<Backend.Modules.NewsSite.NewsSubscriberModel> NewsSubscribers
+        => Set<Backend.Modules.NewsSite.NewsSubscriberModel>();
     public DbSet<Backend.Modules.Notification.AppNotificationModel> AppNotifications
         => Set<Backend.Modules.Notification.AppNotificationModel>();
 
@@ -474,6 +476,19 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.KeyPointsJson).HasColumnType("TEXT");
             e.Property(x => x.TimelineJson).HasColumnType("TEXT");
             e.Property(x => x.ErrorMessage).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<Backend.Modules.NewsSite.NewsSubscriberModel>(e =>
+        {
+            e.ToTable("NewsSubscribers");
+            e.HasKey(x => x.Id);
+            // Tra theo Email lúc đăng ký lại (idempotent) và theo UnsubscribeToken lúc bấm huỷ
+            // từ email — cả hai chạy trên mỗi lượt độc giả tương tác.
+            e.HasIndex(x => x.Email).IsUnique();
+            e.HasIndex(x => x.UnsubscribeToken).IsUnique();
+            e.HasIndex(x => x.IsActive);
+            e.Property(x => x.Email).HasMaxLength(320);
+            e.Property(x => x.UnsubscribeToken).HasMaxLength(64);
         });
 
         modelBuilder.Entity<Backend.Modules.Notification.AppNotificationModel>(e =>

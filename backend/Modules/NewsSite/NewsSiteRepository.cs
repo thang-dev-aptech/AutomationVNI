@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Backend.Data;
+using Backend.Shared;
 using Backend.Shared.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -95,6 +96,25 @@ public partial class NewsSiteRepository(
             .ToListAsync(ct);
     }
 
+    /// <summary>
+    /// Tìm bài đã lên web theo từ khoá — chỉ soi Title/Sapo, KHÔNG soi BodyHtml (dễ khớp nhầm
+    /// vào rác thẻ HTML còn sót). EF dịch Contains sang LIKE của SQLite, không có FTS5 nên đây
+    /// chỉ là so khớp chuỗi con, không xếp hạng liên quan.
+    /// </summary>
+    public async Task<List<NewsArticleModel>> SearchPublishedAsync(
+        string q, int take = 20, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(q) || q.Trim().Length < 2) return [];
+        var needle = q.Trim();
+
+        return await context.Set<NewsArticleModel>()
+            .Where(x => !x.IsDeleted && x.Status == NewsArticleStatus.Published
+                        && (x.Title.Contains(needle) || (x.Sapo != null && x.Sapo.Contains(needle))))
+            .OrderByDescending(x => x.PublishedAt)
+            .Take(Math.Clamp(take, 1, 50))
+            .ToListAsync(ct);
+    }
+
     /// <summary>Bài đang chờ AI viết hoặc chờ dựng trang.</summary>
     public async Task<List<NewsArticleModel>> GetPendingAsync(int take = 5, CancellationToken ct = default)
         => await context.Set<NewsArticleModel>()
@@ -137,6 +157,109 @@ public partial class NewsSiteRepository(
             slug = $"{baseSlug}-{i}";
         }
         return $"{baseSlug}-{Guid.NewGuid():N}"[..Math.Min(110, baseSlug.Length + 33)];
+    }
+
+    // ── Đăng ký nhận tin ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Đăng ký là nhận luôn — không xác nhận email. Idempotent: email đã đăng ký (kể cả đã
+    /// huỷ trước đó) thì chỉ bật lại <c>IsActive</c>, không tạo dòng trùng.
+    /// </summary>
+    public async Task<NewsSubscriberModel> SubscribeAsync(string email, CancellationToken ct = default)
+    {
+        var normalized = email.Trim().ToLowerInvariant();
+        var existing = await context.Set<NewsSubscriberModel>()
+            .FirstOrDefaultAsync(x => x.Email == normalized, ct);
+
+        if (existing is not null)
+        {
+            existing.IsActive = true;
+            existing.UnsubscribedAt = null;
+            existing.UpdatedAt = DateTime.UtcNow;
+            await context.SaveChangesAsync(ct);
+            return existing;
+        }
+
+        var sub = new NewsSubscriberModel
+        {
+            Id = Guid.NewGuid(),
+            Email = normalized,
+            IsActive = true,
+            UnsubscribeToken = Guid.NewGuid().ToString("N"),
+            CreatedAt = DateTime.UtcNow,
+        };
+        context.Set<NewsSubscriberModel>().Add(sub);
+        await context.SaveChangesAsync(ct);
+        return sub;
+    }
+
+    /// <summary>Trả true khi tìm thấy token và huỷ thành công — false thì token sai/đã dùng lạ.</summary>
+    public async Task<bool> UnsubscribeAsync(string token, CancellationToken ct = default)
+    {
+        var sub = await context.Set<NewsSubscriberModel>()
+            .FirstOrDefaultAsync(x => x.UnsubscribeToken == token, ct);
+        if (sub is null) return false;
+
+        sub.IsActive = false;
+        sub.UnsubscribedAt = DateTime.UtcNow;
+        sub.UpdatedAt = DateTime.UtcNow;
+        await context.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<List<NewsSubscriberModel>> GetActiveSubscribersAsync(CancellationToken ct = default)
+        => await context.Set<NewsSubscriberModel>().Where(x => x.IsActive).ToListAsync(ct);
+
+    /// <summary>Trang quản lý admin — khác <see cref="GetActiveSubscribersAsync"/> (chỉ dùng nội bộ
+    /// cho worker gửi mail), ở đây trả CẢ người đã huỷ để admin nhìn được toàn cảnh.</summary>
+    public async Task<PagedResult<NewsSubscriberModel>> GetSubscribersForAdminAsync(
+        string? keyword, bool? isActive, int index, int size, CancellationToken ct = default)
+    {
+        var query = context.Set<NewsSubscriberModel>().AsQueryable();
+        if (!string.IsNullOrWhiteSpace(keyword))
+            query = query.Where(x => x.Email.Contains(keyword.Trim()));
+        if (isActive.HasValue)
+            query = query.Where(x => x.IsActive == isActive.Value);
+
+        var total = await query.CountAsync(ct);
+        var idx = Math.Max(1, index);
+        var sz = Math.Clamp(size, 1, 100);
+        var items = await query.OrderByDescending(x => x.CreatedAt)
+            .Skip((idx - 1) * sz).Take(sz).ToListAsync(ct);
+
+        return new PagedResult<NewsSubscriberModel> { Items = items, Total = total, Index = idx, Size = sz };
+    }
+
+    /// <summary>Admin bật/tắt theo Id — khác <see cref="UnsubscribeAsync"/> (theo token, luồng độc
+    /// giả tự bấm từ email).</summary>
+    public async Task<NewsSubscriberModel?> SetSubscriberActiveAsync(
+        Guid id, bool isActive, CancellationToken ct = default)
+    {
+        var sub = await context.Set<NewsSubscriberModel>().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (sub is null) return null;
+
+        sub.IsActive = isActive;
+        sub.UnsubscribedAt = isActive ? null : DateTime.UtcNow;
+        sub.UpdatedAt = DateTime.UtcNow;
+        await context.SaveChangesAsync(ct);
+        return sub;
+    }
+
+    /// <summary>Bài đã lên web nhưng chưa gửi email báo — NewsletterSendWorker quét đúng danh sách này.</summary>
+    public async Task<List<NewsArticleModel>> GetPendingNewsletterAsync(
+        int take = 10, CancellationToken ct = default)
+        => await context.Set<NewsArticleModel>()
+            .Where(x => !x.IsDeleted && x.Status == NewsArticleStatus.Published && x.NewsletterSentAt == null)
+            .OrderBy(x => x.PublishedAt)
+            .Take(Math.Clamp(take, 1, 50))
+            .ToListAsync(ct);
+
+    public async Task MarkNewsletterSentAsync(Guid articleId, CancellationToken ct = default)
+    {
+        var article = await context.Set<NewsArticleModel>().FirstOrDefaultAsync(x => x.Id == articleId, ct);
+        if (article is null) return;
+        article.NewsletterSentAt = DateTime.UtcNow;
+        await context.SaveChangesAsync(ct);
     }
 
     public static string Slugify(string? input)

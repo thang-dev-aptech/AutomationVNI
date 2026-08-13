@@ -7,7 +7,10 @@ import { usePermissions } from '@/shared/hooks/usePermissions'
 import { toast } from '@/shared/stores/toastStore'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
 import FanpageModal from '../components/FanpageModal'
-import { useNewsArticles, useNewsSiteStatus, usePublishToFanpage, useRebuildSite, useUnpublish } from '../hooks/useNewsSite'
+import {
+  useNewsArticles, useNewsSiteStatus, usePublishToFanpage, useRebuildSite, useSetSubscriberActive,
+  useSubscribers, useUnpublish,
+} from '../hooks/useNewsSite'
 import './NewsSitePage.css'
 
 const CATEGORIES = [
@@ -28,6 +31,7 @@ function formatDate(value) {
 
 export default function NewsSitePage() {
   const { canApproveCrawl, canManageCrawlSources } = usePermissions()
+  const [view, setView] = useState('articles')
   const [category, setCategory] = useState('')
   const [posting, setPosting] = useState(null)
 
@@ -37,6 +41,12 @@ export default function NewsSitePage() {
   const publish = usePublishToFanpage()
   const rebuild = useRebuildSite()
   const unpublish = useUnpublish()
+
+  const subParams = useMemo(() => ({ size: 100 }), [])
+  const { data: subData, isLoading: subLoading, isError: subIsError, error: subError, refetch: subRefetch } =
+    useSubscribers(subParams)
+  const setSubActive = useSetSubscriberActive()
+  const subscribers = subData?.items ?? []
 
   const articles = useMemo(() => data?.items ?? data ?? [], [data])
   const published = articles.filter((a) => a.status === 'Published')
@@ -63,6 +73,13 @@ export default function NewsSitePage() {
     try {
       const r = await rebuild.mutateAsync()
       toast.success(`Đã dựng lại ${r.articles} bài, ${r.pages} trang`)
+    } catch (e) { toast.error(getErrorMessage(e)) }
+  }
+
+  const handleToggleSubscriber = async (sub) => {
+    try {
+      await setSubActive.mutateAsync({ id: sub.id, isActive: !sub.isActive })
+      toast.success(sub.isActive ? 'Đã tắt nhận tin' : 'Đã bật lại nhận tin')
     } catch (e) { toast.error(getErrorMessage(e)) }
   }
 
@@ -98,97 +115,165 @@ export default function NewsSitePage() {
       )}
 
       <div className="news-site-tabs">
-        {CATEGORIES.map((c) => (
-          <button
-            key={c.key}
-            type="button"
-            className={`news-site-tab${category === c.key ? ' is-active' : ''}`}
-            onClick={() => setCategory(c.key)}
-          >
-            {c.label}
-          </button>
-        ))}
+        <button
+          type="button"
+          className={`news-site-tab${view === 'articles' ? ' is-active' : ''}`}
+          onClick={() => setView('articles')}
+        >
+          Bài đã lên web
+        </button>
+        <button
+          type="button"
+          className={`news-site-tab${view === 'subscribers' ? ' is-active' : ''}`}
+          onClick={() => setView('subscribers')}
+        >
+          Người đăng ký{typeof subData?.total === 'number' ? ` (${subData.total})` : ''}
+        </button>
       </div>
 
-      {/* AI viết ở nền ~40 giây. Không hiện khối này thì người duyệt bấm Duyệt xong nhìn
-          danh sách thấy y như cũ, và tưởng vừa bấm hụt. */}
-      {composing.length > 0 && (
-        <div className="news-site-composing">
-          <span className="news-site-spin" aria-hidden />
-          AI đang viết {composing.length} bài — khoảng 40 giây mỗi bài, danh sách tự cập nhật.
-          <span className="news-site-composing-list">
-            {composing.map((a) => a.title).join(' · ')}
-          </span>
-        </div>
-      )}
-
-      {isLoading && <LoadingState />}
-      {isError && <ErrorState message={getErrorMessage(error)} onRetry={refetch} />}
-
-      {!isLoading && !isError && published.length === 0 && composing.length === 0 && (
-        <EmptyState message="Chưa có bài nào. Sang mục Tin đã cào, bấm Duyệt để đưa tin lên website." />
-      )}
-
-      {published.length > 0 && (
-        <div className="news-site-list">
-          {published.map((a) => (
-            <article key={a.id} className="news-site-card">
-              <div className="news-site-card-main">
-                <span className="news-site-kicker">
-                  {CATEGORY_LABEL[a.categorySlug] ?? a.categorySlug}
-                  {a.suggestFanpage && <b className="news-site-pick">nên đăng fanpage</b>}
-                  {typeof a.qualityScore === 'number' && (
-                    <em className="news-site-score">{a.qualityScore} điểm</em>
-                  )}
-                </span>
-                <h3>{a.title}</h3>
-                <p className="news-site-sapo">{a.sapo}</p>
-                <p className="news-site-meta">
-                  {formatDate(a.publishedAt)} · {a.readMinutes} phút đọc
-                  {a.sourceName ? ` · nguồn ${a.sourceName}` : ''}
-                  {a.viewCount ? ` · ${a.viewCount} lượt xem` : ''}
-                </p>
-              </div>
-              <div className="news-site-card-actions">
-                {a.url
-                  ? <a className="btn btn-ghost" href={a.url} target="_blank" rel="noreferrer">Xem trên web</a>
-                  : <span className="news-site-nourl" title="Bài chưa có file HTML">chưa có link</span>}
-                {canApproveCrawl && (
-                  <button type="button" className="btn btn-primary" onClick={() => setPosting(a)}>
-                    Đăng fanpage
-                  </button>
-                )}
-                {canManageCrawlSources && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost news-site-remove"
-                    onClick={() => handleUnpublish(a)}
-                    disabled={unpublish.isPending}
-                  >
-                    Gỡ
-                  </button>
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
-
-      {/* Bài hỏng để riêng chứ không trộn vào danh sách: trộn vào thì người dùng bấm "Đăng
-          fanpage" trên một bài chưa hề tồn tại trên web. */}
-      {failed.length > 0 && (
+      {view === 'articles' && (
         <>
-          <h2 className="news-site-section">Chưa lên web được ({failed.length})</h2>
-          <div className="news-site-list">
-            {failed.map((a) => (
-              <article key={a.id} className="news-site-card is-failed">
-                <div className="news-site-card-main">
-                  <h3>{a.title || '(chưa có tiêu đề)'}</h3>
-                  <p className="news-site-error">{a.errorMessage ?? 'Chưa rõ lý do'}</p>
-                </div>
-              </article>
+          <div className="news-site-tabs">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                className={`news-site-tab${category === c.key ? ' is-active' : ''}`}
+                onClick={() => setCategory(c.key)}
+              >
+                {c.label}
+              </button>
             ))}
           </div>
+
+          {/* AI viết ở nền ~40 giây. Không hiện khối này thì người duyệt bấm Duyệt xong nhìn
+              danh sách thấy y như cũ, và tưởng vừa bấm hụt. */}
+          {composing.length > 0 && (
+            <div className="news-site-composing">
+              <span className="news-site-spin" aria-hidden />
+              AI đang viết {composing.length} bài — khoảng 40 giây mỗi bài, danh sách tự cập nhật.
+              <span className="news-site-composing-list">
+                {composing.map((a) => a.title).join(' · ')}
+              </span>
+            </div>
+          )}
+
+          {isLoading && <LoadingState />}
+          {isError && <ErrorState message={getErrorMessage(error)} onRetry={refetch} />}
+
+          {!isLoading && !isError && published.length === 0 && composing.length === 0 && (
+            <EmptyState message="Chưa có bài nào. Sang mục Tin đã cào, bấm Duyệt để đưa tin lên website." />
+          )}
+
+          {published.length > 0 && (
+            <div className="news-site-list">
+              {published.map((a) => (
+                <article key={a.id} className="news-site-card">
+                  <div className="news-site-card-main">
+                    <span className="news-site-kicker">
+                      {CATEGORY_LABEL[a.categorySlug] ?? a.categorySlug}
+                      {a.suggestFanpage && <b className="news-site-pick">nên đăng fanpage</b>}
+                      {typeof a.qualityScore === 'number' && (
+                        <em className="news-site-score">{a.qualityScore} điểm</em>
+                      )}
+                    </span>
+                    <h3>{a.title}</h3>
+                    <p className="news-site-sapo">{a.sapo}</p>
+                    <p className="news-site-meta">
+                      {formatDate(a.publishedAt)} · {a.readMinutes} phút đọc
+                      {a.sourceName ? ` · nguồn ${a.sourceName}` : ''}
+                      {a.viewCount ? ` · ${a.viewCount} lượt xem` : ''}
+                    </p>
+                  </div>
+                  <div className="news-site-card-actions">
+                    {a.url
+                      ? <a className="btn btn-ghost" href={a.url} target="_blank" rel="noreferrer">Xem trên web</a>
+                      : <span className="news-site-nourl" title="Bài chưa có file HTML">chưa có link</span>}
+                    {canApproveCrawl && (
+                      <button type="button" className="btn btn-primary" onClick={() => setPosting(a)}>
+                        Đăng fanpage
+                      </button>
+                    )}
+                    {canManageCrawlSources && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost news-site-remove"
+                        onClick={() => handleUnpublish(a)}
+                        disabled={unpublish.isPending}
+                      >
+                        Gỡ
+                      </button>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+
+          {/* Bài hỏng để riêng chứ không trộn vào danh sách: trộn vào thì người dùng bấm "Đăng
+              fanpage" trên một bài chưa hề tồn tại trên web. */}
+          {failed.length > 0 && (
+            <>
+              <h2 className="news-site-section">Chưa lên web được ({failed.length})</h2>
+              <div className="news-site-list">
+                {failed.map((a) => (
+                  <article key={a.id} className="news-site-card is-failed">
+                    <div className="news-site-card-main">
+                      <h3>{a.title || '(chưa có tiêu đề)'}</h3>
+                      <p className="news-site-error">{a.errorMessage ?? 'Chưa rõ lý do'}</p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {view === 'subscribers' && (
+        <>
+          {subLoading && <LoadingState />}
+          {subIsError && <ErrorState message={getErrorMessage(subError)} onRetry={subRefetch} />}
+          {!subLoading && !subIsError && subscribers.length === 0 && (
+            <EmptyState message="Chưa có ai đăng ký nhận tin." />
+          )}
+          {subscribers.length > 0 && (
+            <table className="news-site-subs-table">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Ngày đăng ký</th>
+                  <th>Trạng thái</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {subscribers.map((s) => (
+                  <tr key={s.id}>
+                    <td>{s.email}</td>
+                    <td>{formatDate(s.createdAt)}</td>
+                    <td>
+                      <span className={`news-site-sub-status${s.isActive ? ' is-active' : ''}`}>
+                        {s.isActive ? 'Đang nhận tin' : 'Đã huỷ'}
+                      </span>
+                    </td>
+                    <td>
+                      {canManageCrawlSources && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => handleToggleSubscriber(s)}
+                          disabled={setSubActive.isPending}
+                        >
+                          {s.isActive ? 'Tắt' : 'Bật lại'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </>
       )}
 
