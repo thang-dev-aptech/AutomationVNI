@@ -294,6 +294,8 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         string? objective,
         Guid? categoryId = null,
         SourceArticleBrief? sourceArticle = null,
+        int? imageCount = null,
+        bool generateAsReels = false,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(title))
@@ -339,6 +341,7 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
                 CategoryId = categoryId,
                 TextTemplateId = textTpl,
                 ImageTemplateId = imageTpl,
+                ImageCount = imageCount,
                 BatchId = batchId,
                 UserId = userId,
                 Status = PostStatus.Queued
@@ -348,7 +351,8 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
             post.ExtraJson = BuildFanOutExtraJson(
                 objective,
                 sourceArticle is null ? null
-                    : sourceArticle with { Angle = HeadlineAngles.ForIndex(channelIndex, sourceArticle.Title) });
+                    : sourceArticle with { Angle = HeadlineAngles.ForIndex(channelIndex, sourceArticle.Title) },
+                generateAsReels);
             channelIndex++;
             posts.Add(post);
         }
@@ -366,13 +370,16 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
     /// Dựng ExtraJson lúc fan-out. Bài từ tin crawl mang thêm khối sourceArticle để pipeline
     /// sinh text đọc lại lúc dựng prompt — xem SourceArticleHelper.
     /// </summary>
-    private static string? BuildFanOutExtraJson(string? objective, SourceArticleBrief? sourceArticle)
+    private static string? BuildFanOutExtraJson(
+        string? objective, SourceArticleBrief? sourceArticle, bool reelsRequested = false)
     {
         var root = new Dictionary<string, object?>();
         if (!string.IsNullOrWhiteSpace(objective))
             root["input"] = new Dictionary<string, object?> { ["objective"] = objective.Trim() };
         if (sourceArticle is not null)
             root[SourceArticleHelper.ExtraJsonKey] = SourceArticleHelper.ToJsonBlock(sourceArticle);
+        if (reelsRequested)
+            root["reelsRequested"] = true;
         return root.Count == 0 ? null : System.Text.Json.JsonSerializer.Serialize(root);
     }
 

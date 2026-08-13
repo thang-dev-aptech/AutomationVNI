@@ -24,6 +24,8 @@ public class CreatePostRequest
     public Guid? ImageTemplateId { get; set; }
     /// <summary>Số ảnh cho flow Template (&gt;=3 bật multi-photo) / số khung hình cho Reels. Null = 1 ảnh (mặc định cũ).</summary>
     public int? ImageCount { get; set; }
+    /// <summary>Bật thì tự ghép ảnh/khung hình vừa sinh thành video Reels ngay sau khi sinh xong.</summary>
+    public bool GenerateAsReels { get; set; }
 }
 
 public class SetReelsFramesRequest

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
+import PostFormatPicker from './PostFormatPicker'
 
 const emptyForm = {
   idea: '',
@@ -35,6 +36,8 @@ export default function PostCreateForm({
   const [postTypeId, setPostTypeId] = useState('')
   // Template: để trống = 1 ảnh (mặc định cũ); nhập >=3 để AI ghép chữ lên nhiều ảnh, ra bài multi-photo.
   const [imageCount, setImageCount] = useState('')
+  // Reels: ghép ảnh/khung hình vừa sinh thành video ngay sau khi sinh xong, đăng thẳng dạng Reels.
+  const [generateAsReels, setGenerateAsReels] = useState(false)
 
   const contextByChannel = useMemo(() => {
     const map = new Map()
@@ -73,6 +76,7 @@ export default function PostCreateForm({
       categoryId: isTemplateFlow ? null : (useMedia ? (postTypeId || null) : null),
       generationFlow: isTemplateFlow ? 6 : (useMedia ? 2 : 1),
       imageCount: isTemplateFlow && imageCount ? Number(imageCount) : null,
+      generateAsReels,
     })
   }
 
@@ -97,6 +101,11 @@ export default function PostCreateForm({
           rows={3}
           placeholder="Ví dụ: Khuyến mãi mùa hè, giảm 30% toàn bộ áo thun trong tuần này"
         />
+      </div>
+
+      <div className="form-group">
+        <label>Định dạng đăng</label>
+        <PostFormatPicker value={generateAsReels} onChange={setGenerateAsReels} />
       </div>
 
       <div className="form-group">
@@ -181,8 +190,10 @@ export default function PostCreateForm({
               style={{ maxWidth: 140 }}
             />
             <p style={{ margin: '6px 0 0', fontSize: '0.82rem' }}>
-              Để trống hoặc nhập 1: chọn 1 ảnh phù hợp nhất, ghép chữ như bình thường. Nhập từ 2 trở lên: AI tự chọn
-              đúng số ảnh phù hợp nội dung trong thư mục, ghép cùng nội dung lên từng ảnh, đăng thành bài nhiều ảnh.
+              {generateAsReels
+                ? 'Số khung hình cho video Reels — mỗi khung hiện khoảng 3.5 giây. Nhập từ 2 trở lên để video có nhiều cảnh.'
+                : 'Để trống hoặc nhập 1: chọn 1 ảnh phù hợp nhất, ghép chữ như bình thường. Nhập từ 2 trở lên: AI tự chọn '
+                  + 'đúng số ảnh phù hợp nội dung trong thư mục, ghép cùng nội dung lên từng ảnh, đăng thành bài nhiều ảnh.'}
             </p>
           </div>
         </div>
@@ -220,7 +231,18 @@ export default function PostCreateForm({
             </p>
           </div>
         )}
+        {generateAsReels && (
+          <p style={{ margin: '10px 0 0', fontSize: '0.82rem', color: '#a855f7' }}>
+            🎬 Video Reels sẽ dùng đúng ảnh vừa sinh (1 ảnh AI{useMedia ? ', cộng thêm ảnh kho ở trên' : ''}) ghép lại.
+          </p>
+        )}
       </div>
+      )}
+
+      {generateAsReels && (
+        <p style={{ margin: '0 0 12px', fontSize: '0.85rem', color: '#a855f7' }}>
+          🎬 Bài sẽ tự chuyển thành video Reels ngay sau khi sinh ảnh xong, không cần bấm gì thêm.
+        </p>
       )}
 
       <button

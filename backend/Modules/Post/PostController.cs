@@ -174,6 +174,8 @@ public class PostController
                 pageContextByChannel: pageMap,
                 objective: request.Objective,
                 categoryId: request.CategoryId,
+                imageCount: request.ImageCount,
+                generateAsReels: request.GenerateAsReels,
                 ct: ct);
 
             return Ok(ApiResponse.Ok(bulk,
@@ -202,6 +204,8 @@ public class PostController
         try
         {
             await GenerateTextThenImageAsync(post.Id, ct);
+            if (request.GenerateAsReels)
+                await _generationPipeline.ConvertToReelsAsync(post.Id, null, ct);
             await _workflow.ApproveAsync(post.Id, ct);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or KeyNotFoundException)

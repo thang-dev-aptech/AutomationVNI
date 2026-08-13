@@ -45,22 +45,41 @@ public class CrawlTelegramWorker(
             _chatId == 0 ? "chưa biết — chờ tin nhắn đầu tiên" : _chatId.ToString(),
             opt.AllowedChatIds.Count);
 
-        await telegram.SetupBotProfileAsync(
-            [
-                ("ds", "Tin đang chờ duyệt"),
-                ("dang", "Duyệt tin và đưa lên web"),
-                ("fb", "Đăng bài đã lên web sang fanpage"),
-                ("bo", "Bỏ một tin"),
-                ("page", "Các page đang bật"),
-                ("cao", "Cào tin ngay"),
-                ("tt", "Tình trạng hệ thống"),
-                ("help", "Hướng dẫn đầy đủ"),
-            ],
-            "Duyệt và đăng tin giáo dục lên fanpage VNI",
-            "Tự cào tin giáo dục từ báo, lọc trùng rồi đẩy về đây. "
-            + "Bấm một nút là bài được viết riêng cho từng page và đăng thẳng lên Facebook, "
-            + "xong bot gửi lại link để kiểm tra. Gõ /ds để bắt đầu.",
-            stoppingToken);
+        // Bọc try/catch: đây là lệnh gọi mạng ra Telegram DUY NHẤT nằm ngoài vòng lặp chính.
+        // Trước đây không bọc — một lần api.telegram.org treo/timeout (90s) ném
+        // TaskCanceledException chưa bắt, và vì HostOptions.BackgroundServiceExceptionBehavior
+        // mặc định là StopHost, lỗi này kéo sập LUÔN TOÀN BỘ ứng dụng (kể cả API, NewsSite —
+        // không riêng gì Telegram). Đăng ký lệnh bot là việc tiện ích, không đáng để đổi cả
+        // backend lấy nó.
+        //
+        // Lọc theo stoppingToken.IsCancellationRequested, KHÔNG lọc theo kiểu exception:
+        // TaskCanceledException do HttpClient.Timeout hết giờ CŨNG LÀ một OperationCanceledException
+        // — dùng "ex is not OperationCanceledException" ở đây sẽ vô tình loại trừ đúng cái lỗi cần
+        // bắt (đã xảy ra thật, xem log production). Chỉ khi chính stoppingToken bị huỷ (app tắt
+        // thật) mới bỏ qua không log.
+        try
+        {
+            await telegram.SetupBotProfileAsync(
+                [
+                    ("ds", "Tin đang chờ duyệt"),
+                    ("dang", "Duyệt tin và đưa lên web"),
+                    ("fb", "Đăng bài đã lên web sang fanpage"),
+                    ("bo", "Bỏ một tin"),
+                    ("page", "Các page đang bật"),
+                    ("cao", "Cào tin ngay"),
+                    ("tt", "Tình trạng hệ thống"),
+                    ("help", "Hướng dẫn đầy đủ"),
+                ],
+                "Duyệt và đăng tin giáo dục lên fanpage VNI",
+                "Tự cào tin giáo dục từ báo, lọc trùng rồi đẩy về đây. "
+                + "Bấm một nút là bài được viết riêng cho từng page và đăng thẳng lên Facebook, "
+                + "xong bot gửi lại link để kiểm tra. Gõ /ds để bắt đầu.",
+                stoppingToken);
+        }
+        catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Không đăng ký được danh sách lệnh bot Telegram — bot vẫn chạy tiếp");
+        }
 
         try { await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken); }
         catch (OperationCanceledException) { return; }
