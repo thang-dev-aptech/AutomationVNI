@@ -2,7 +2,7 @@ const OPTIONS = [
   {
     value: false,
     icon: '📄',
-    title: 'Bài viết Facebook',
+    title: 'Bài viết (ảnh)',
     description: 'Ảnh + chữ như bình thường, đăng thẳng lên newsfeed/trang page.',
   },
   {

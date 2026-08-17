@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import PostFormatPicker from './PostFormatPicker'
 
@@ -38,6 +38,13 @@ export default function PostCreateForm({
   const [imageCount, setImageCount] = useState('')
   // Reels: ghép ảnh/khung hình vừa sinh thành video ngay sau khi sinh xong, đăng thẳng dạng Reels.
   const [generateAsReels, setGenerateAsReels] = useState(false)
+  // true ngay khi user tự bấm chọn định dạng — chặn auto-default TikTok đè lên lựa chọn thủ công.
+  const [formatTouched, setFormatTouched] = useState(false)
+
+  const handleFormatChange = (nextValue) => {
+    setFormatTouched(true)
+    setGenerateAsReels(nextValue)
+  }
 
   const contextByChannel = useMemo(() => {
     const map = new Map()
@@ -46,6 +53,25 @@ export default function PostCreateForm({
     }
     return map
   }, [pageContexts])
+
+  const channelById = useMemo(() => {
+    const map = new Map()
+    for (const ch of channels) map.set(ch.id, ch)
+    return map
+  }, [channels])
+
+  // SocialPlatform.TikTok = 4 (backend/Modules/SocialChannel/Enums/SocialChannelEnums.cs).
+  const hasTikTokSelected = channelIds.some((id) => channelById.get(id)?.platform === 4)
+  const allSelectedAreTikTok = channelIds.length > 0
+    && channelIds.every((id) => channelById.get(id)?.platform === 4)
+
+  // TikTok Direct Post ảnh cần URL công khai (chưa cấu hình) — tự nhảy sang Reels khi chỉ chọn kênh TikTok,
+  // trừ khi user đã tự tay đổi định dạng (formatTouched).
+  useEffect(() => {
+    if (!formatTouched && allSelectedAreTikTok && !generateAsReels) {
+      setGenerateAsReels(true)
+    }
+  }, [formatTouched, allSelectedAreTikTok, generateAsReels])
 
   const selectedMeta = useMemo(() => {
     let ready = 0
@@ -105,7 +131,12 @@ export default function PostCreateForm({
 
       <div className="form-group">
         <label>Định dạng đăng</label>
-        <PostFormatPicker value={generateAsReels} onChange={setGenerateAsReels} />
+        <PostFormatPicker value={generateAsReels} onChange={handleFormatChange} />
+        {hasTikTokSelected && !generateAsReels && (
+          <p style={{ margin: '8px 0 0', fontSize: '0.85rem', color: 'var(--color-warning)' }}>
+            ⚠️ Kênh TikTok cần ảnh có URL công khai nếu không dùng Reels — khuyên chọn Reels (video).
+          </p>
+        )}
       </div>
 
       <div className="form-group">

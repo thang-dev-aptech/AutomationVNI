@@ -211,6 +211,16 @@ public class NewsSiteController(
     public async Task<IActionResult> Build(CancellationToken ct)
         => Ok(ApiResponse.Ok(await builder.BuildAsync(ct), "Đã dựng lại trang tin"));
 
+    [HttpPost("{id:guid}/resend-newsletter")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> ResendNewsletter(Guid id, CancellationToken ct)
+    {
+        var ok = await repository.ResetNewsletterSentAsync(id, ct);
+        if (!ok) return NotFound(ApiResponse.Fail("NOT_FOUND", "Không tìm thấy bài viết"));
+
+        return Ok(ApiResponse.Ok(new { id }, "Sẽ gửi lại trong tối đa 60 giây"));
+    }
+
     [HttpGet("subscribers")]
     [Authorize(Roles = "Admin,ContentManager")]
     public async Task<IActionResult> Subscribers(

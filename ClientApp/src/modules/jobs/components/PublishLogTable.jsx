@@ -33,9 +33,9 @@ export default function PublishLogTable({
               <th>Post</th>
               <th>Channel</th>
               <th>Status</th>
-              <th>Attempt</th>
-              <th>Published at</th>
               <th>External ID</th>
+              <th>Published at</th>
+              <th>Attempt</th>
               <th>Error</th>
               <th />
             </tr>
@@ -53,13 +53,25 @@ export default function PublishLogTable({
                   {channelMap[log.socialChannelId] || shortId(log.socialChannelId)}
                 </td>
                 <td><PublishStatusBadge status={log.status} /></td>
-                <td>{log.attemptNumber}</td>
-                <td>{formatDateTime(log.publishedAt)}</td>
                 <td title={log.externalPostId || ''}>
                   {truncateText(log.externalPostId, 24) || '—'}
                 </td>
+                <td>{formatDateTime(log.publishedAt)}</td>
+                <td>{log.attemptNumber}</td>
                 <td title={log.errorMessage || log.errorCode || ''}>
-                  {truncateText(log.errorCode || log.errorMessage, 40) || '—'}
+                  {log.responsePayload?.includes('SEND_TO_USER_INBOX') ? (
+                    <span
+                      title="Đã gửi vào TikTok Inbox — mở app TikTok để hoàn tất đăng (thêm nhạc, caption, quyền riêng tư)"
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
+                        borderRadius: 999, background: '#7c3aed', color: '#fff', fontSize: '0.72rem', fontWeight: 700,
+                      }}
+                    >
+                      📥 TikTok Inbox
+                    </span>
+                  ) : (
+                    truncateText(log.errorCode || log.errorMessage, 40) || '—'
+                  )}
                 </td>
                 <td>
                   {(log.errorMessage || log.errorCode) && (

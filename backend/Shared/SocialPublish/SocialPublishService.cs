@@ -8,6 +8,7 @@ public class SocialPublishService(
     MockSocialPublishService mockService,
     FacebookPagePublishService facebookService,
     ThreadsPublishService threadsService,
+    TikTokPublishService tikTokService,
     ILogger<SocialPublishService> logger) : ISocialPublishService
 {
     /// <summary>
@@ -40,8 +41,14 @@ public class SocialPublishService(
             PublishMode.Mock => await mockService.PublishAsync(request, ct),
             PublishMode.RealFacebook => await facebookService.PublishAsync(request, ct),
             PublishMode.RealThreads => await threadsService.PublishAsync(request, ct),
+            PublishMode.RealTikTok => await tikTokService.PublishAsync(request, ct),
             PublishMode.FailMissingToken => SocialPublishResult.Failed(
-                request.Platform == SocialPlatform.Threads ? "THREADS_TOKEN_MISSING" : "FB_TOKEN_MISSING",
+                request.Platform switch
+                {
+                    SocialPlatform.Threads => "THREADS_TOKEN_MISSING",
+                    SocialPlatform.TikTok => "TIKTOK_TOKEN_MISSING",
+                    _ => "FB_TOKEN_MISSING"
+                },
                 "Social channel has no access token configured."),
             _ => await mockService.PublishAsync(request, ct)
         };
@@ -49,18 +56,19 @@ public class SocialPublishService(
 
     private PublishMode ResolvePublishMode(SocialPublishRequest request)
     {
-        // Mỗi nền tảng có cờ bật riêng — bật Facebook thật không kéo theo Threads và ngược lại.
+        // Mỗi nền tảng có cờ bật riêng — bật Facebook thật không kéo theo Threads/TikTok và ngược lại.
         var wantsReal = request.ForceReal || request.Platform switch
         {
             SocialPlatform.Facebook => options.Value.UseRealFacebook,
             SocialPlatform.Threads => options.Value.UseRealThreads,
+            SocialPlatform.TikTok => options.Value.UseRealTikTok,
             _ => false
         };
 
         if (!wantsReal)
             return PublishMode.Mock;
 
-        if (request.Platform is not (SocialPlatform.Facebook or SocialPlatform.Threads))
+        if (request.Platform is not (SocialPlatform.Facebook or SocialPlatform.Threads or SocialPlatform.TikTok))
         {
             logger.LogInformation(
                 "Real publish requested for unsupported platform {Platform} on post {PostId}, using mock",
@@ -80,9 +88,12 @@ public class SocialPublishService(
         }
 
         // TODO: decrypt AccessToken when encryption service is implemented.
-        return request.Platform == SocialPlatform.Threads
-            ? PublishMode.RealThreads
-            : PublishMode.RealFacebook;
+        return request.Platform switch
+        {
+            SocialPlatform.Threads => PublishMode.RealThreads,
+            SocialPlatform.TikTok => PublishMode.RealTikTok,
+            _ => PublishMode.RealFacebook
+        };
     }
 
     private static bool IsDevOrMockToken(string token)
@@ -97,6 +108,7 @@ public class SocialPublishService(
         Mock,
         RealFacebook,
         RealThreads,
+        RealTikTok,
         FailMissingToken
     }
 }

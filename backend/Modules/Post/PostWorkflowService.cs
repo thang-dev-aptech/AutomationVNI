@@ -65,7 +65,8 @@ public class PostWorkflowService(
     }
 
     public async Task<PostModel> ScheduleAsync(
-        Guid id, DateTime scheduledAt, string? timezone, CancellationToken ct = default)
+        Guid id, DateTime scheduledAt, string? timezone, CancellationToken ct = default,
+        TikTokPostMode? tikTokPostMode = null)
     {
         if (scheduledAt <= DateTime.UtcNow)
             throw new ArgumentException("Thời gian lên lịch phải lớn hơn thời điểm hiện tại (UTC)");
@@ -76,6 +77,7 @@ public class PostWorkflowService(
         post.Status = PostStatus.Scheduled;
         post.ScheduledPublishAt = scheduledAt.ToUniversalTime();
         post.ScheduleTimezone = timezone?.Trim();
+        if (tikTokPostMode.HasValue) post.TikTokPostMode = tikTokPostMode;
         ApplyUpdate(post);
 
         await CancelPendingPublishAsync(post.Id, ct);
@@ -101,12 +103,14 @@ public class PostWorkflowService(
         return post;
     }
 
-    public async Task<PostModel> PublishNowAsync(Guid id, CancellationToken ct = default)
+    public async Task<PostModel> PublishNowAsync(
+        Guid id, CancellationToken ct = default, TikTokPostMode? tikTokPostMode = null)
     {
         var post = await RequirePostAsync(id, ct);
         EnsureStatus(post, "đăng ngay", PostStatus.Approved, PostStatus.Scheduled);
 
         post.Status = PostStatus.Publishing;
+        if (tikTokPostMode.HasValue) post.TikTokPostMode = tikTokPostMode;
         ApplyUpdate(post);
 
         await CancelPendingPublishAsync(post.Id, ct);

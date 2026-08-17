@@ -178,6 +178,7 @@ public class SocialConnectionRepository(
             InstagramCount = kids.Count(c => c.ChannelType == SocialChannelType.Instagram),
             GroupCount = kids.Count(c => c.ChannelType == SocialChannelType.Group),
             ThreadsCount = kids.Count(c => c.ChannelType == SocialChannelType.Threads),
+            TikTokCount = kids.Count(c => c.ChannelType == SocialChannelType.TikTok),
             Channels = kids.Select(SocialChannelRepository.ToResponse).ToList()
         };
     }

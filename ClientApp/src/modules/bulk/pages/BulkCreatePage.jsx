@@ -99,6 +99,21 @@ export default function BulkCreatePage() {
     return map
   }, [pageContexts])
 
+  const channelById = useMemo(() => {
+    const map = new Map()
+    for (const ch of channels) map.set(ch.id, ch)
+    return map
+  }, [channels])
+
+  // SocialPlatform.TikTok = 4 — gộp cả 2 danh sách chọn kênh (khung lịch + fan-out) vì panel
+  // "Định dạng đăng" dùng chung cho cả 2 luồng bên dưới.
+  const hasTikTokSelected = useMemo(() => {
+    for (const id of [...skelChannelIds, ...channelIds]) {
+      if (channelById.get(id)?.platform === 4) return true
+    }
+    return false
+  }, [skelChannelIds, channelIds, channelById])
+
   const needCategoryCount = useMemo(
     () => channelIds.filter((id) => !isPageContextTemplateReady(contextByChannel.get(id))).length,
     [channelIds, contextByChannel],
@@ -319,6 +334,12 @@ export default function BulkCreatePage() {
               {generateAsReels && (
                 <p className="bulk-field-hint" style={{ color: '#a855f7' }}>
                   🎬 Mọi bài trong lô sẽ tự chuyển thành video Reels sau khi sinh ảnh xong, không cần bấm gì thêm.
+                </p>
+              )}
+              {hasTikTokSelected && !generateAsReels && (
+                <p className="bulk-field-hint" style={{ color: 'var(--color-warning)' }}>
+                  ⚠️ Có kênh TikTok trong danh sách đã chọn — kênh này cần ảnh có URL công khai nếu không
+                  dùng Reels. Khuyên chọn Reels (video) ở trên.
                 </p>
               )}
             </div>

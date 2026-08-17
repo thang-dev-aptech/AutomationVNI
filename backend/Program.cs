@@ -19,6 +19,7 @@ using Backend.Shared.Ai;
 using Backend.Shared.Meta;
 using Backend.Shared.PageMessage;
 using Backend.Shared.Threads;
+using Backend.Shared.TikTok;
 using Backend.Shared.SocialPublish;
 using Backend.Shared.SocialComment;
 using Backend.Shared.DevSeed;
@@ -46,6 +47,7 @@ builder.Services.Configure<SocialPublishOptions>(builder.Configuration.GetSectio
 builder.Services.Configure<ReelsOptions>(builder.Configuration.GetSection("Reels"));
 builder.Services.Configure<MetaOAuthOptions>(builder.Configuration.GetSection("MetaOAuth"));
 builder.Services.Configure<ThreadsOAuthOptions>(builder.Configuration.GetSection("ThreadsOAuth"));
+builder.Services.Configure<TikTokOAuthOptions>(builder.Configuration.GetSection("TikTokOAuth"));
 builder.Services.Configure<CommentWorkerOptions>(builder.Configuration.GetSection("CommentWorker"));
 builder.Services.Configure<MessageWorkerOptions>(builder.Configuration.GetSection("MessageWorker"));
 
@@ -111,6 +113,7 @@ builder.Services.AddScoped<PostRepository>();
 builder.Services.AddScoped<PostWorkflowService>();
 builder.Services.AddScoped<MediaAssetRepository>();
 builder.Services.AddScoped<Backend.Modules.MediaFolder.MediaFolderRepository>();
+builder.Services.AddScoped<Backend.Modules.MusicTrack.MusicTrackRepository>();
 // 60s không đủ cho model vision họ Claude qua gateway (đo thực tế: opus-4.6 ~24s cho prompt text,
 // ảnh còn nặng hơn). Timeout quá chặt làm phân tích media fail hàng loạt.
 builder.Services.AddHttpClient<MediaIntelligenceService>(client =>
@@ -279,6 +282,11 @@ builder.Services.AddHttpClient<ThreadsPublishService>((sp, client) =>
     var th = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SocialPublishOptions>>().Value.Threads;
     client.Timeout = TimeSpan.FromSeconds(Math.Max(10, th.TimeoutSeconds));
 });
+builder.Services.AddHttpClient<TikTokPublishService>((sp, client) =>
+{
+    var tt = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SocialPublishOptions>>().Value.TikTok;
+    client.Timeout = TimeSpan.FromSeconds(Math.Max(10, tt.TimeoutSeconds));
+});
 builder.Services.AddScoped<ISocialPublishService, SocialPublishService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient(nameof(MetaOAuthService));
@@ -289,6 +297,11 @@ builder.Services.AddHttpClient(nameof(ThreadsOAuthService));
 builder.Services.AddScoped<ThreadsProfileSyncService>();
 builder.Services.AddScoped<IThreadsOAuthService, ThreadsOAuthService>();
 builder.Services.AddHostedService<ThreadsTokenRefreshService>();
+
+builder.Services.AddHttpClient(nameof(TikTokOAuthService));
+builder.Services.AddScoped<TikTokProfileSyncService>();
+builder.Services.AddScoped<ITikTokOAuthService, TikTokOAuthService>();
+builder.Services.AddHostedService<TikTokTokenRefreshService>();
 
 builder.Services.Configure<ApiBehaviorOptions>(options =>
     options.SuppressModelStateInvalidFilter = false);

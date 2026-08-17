@@ -10,6 +10,7 @@ import PostListPage from '@/modules/posts/pages/PostListPage'
 import PostCreatePage from '@/modules/posts/pages/PostCreatePage'
 import PostDetailPage from '@/modules/posts/pages/PostDetailPage'
 import MediaPage from '@/modules/media/pages/MediaPage'
+import MusicLibraryPage from '@/modules/music/pages/MusicLibraryPage'
 import JobsPage from '@/modules/jobs/pages/JobsPage'
 import PromptTemplateListPage from '@/modules/prompt-templates/pages/PromptTemplateListPage'
 import CategoryListPage from '@/modules/categories/pages/CategoryListPage'
@@ -56,6 +57,7 @@ export default function AppRouter() {
           </Route>
           <Route path="/posts/:id" element={<PostDetailPage />} />
           <Route path="/media" element={<MediaPage />} />
+          <Route path="/music" element={<MusicLibraryPage />} />
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.templates} />}>
             <Route path="/prompt-templates" element={<PromptTemplateListPage />} />
             <Route path="/categories" element={<CategoryListPage />} />

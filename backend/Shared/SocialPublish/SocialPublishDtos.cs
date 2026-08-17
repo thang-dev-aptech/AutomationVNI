@@ -1,3 +1,4 @@
+using Backend.Modules.Post.Enums;
 using Backend.Modules.SocialChannel.Enums;
 
 namespace Backend.Shared.SocialPublish;
@@ -30,6 +31,9 @@ public class SocialPublishRequest
     /// </summary>
     public string? TextFormatPresetId { get; set; }
     public bool ForceReal { get; set; }
+
+    /// <summary>Chỉ TikTok đọc field này — Facebook/Threads bỏ qua. Null coi như DirectPost.</summary>
+    public TikTokPostMode? TikTokPostMode { get; set; }
 }
 
 public class SocialPublishMediaItem

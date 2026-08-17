@@ -38,10 +38,22 @@ public class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<SmtpEmailSe
         message.Body = new BodyBuilder { HtmlBody = htmlBody }.ToMessageBody();
 
         using var client = new SmtpClient();
+        if (IsLoopback(opt.Host))
+        {
+            // Mail service DirectAdmin cục bộ thường dùng chứng chỉ tự ký (self-signed) — .NET
+            // từ chối theo mặc định. Kết nối không rời khỏi máy (loopback) nên bỏ qua kiểm tra
+            // chứng chỉ ở đây không phát sinh rủi ro nghe lén; nếu Host đổi sang SMTP relay bên
+            // ngoài thật thì việc kiểm tra chứng chỉ vẫn hoạt động bình thường như cũ.
+            client.ServerCertificateValidationCallback = (_, _, _, _) => true;
+        }
+
         var socketOptions = opt.EnableSsl ? SecureSocketOptions.StartTls : SecureSocketOptions.None;
         await client.ConnectAsync(opt.Host, opt.Port, socketOptions, ct);
         await client.AuthenticateAsync(opt.Username, opt.Password, ct);
         await client.SendAsync(message, ct);
         await client.DisconnectAsync(true, ct);
     }
+
+    private static bool IsLoopback(string host) =>
+        host is "localhost" or "127.0.0.1" or "::1";
 }

@@ -5,6 +5,7 @@ import { toast } from '@/shared/stores/toastStore'
 import { mediaFolderApi } from '@/modules/media/services/mediaFolderApi'
 import { mediaAssetApi } from '@/modules/media/services/mediaAssetApi'
 import { postMediaApi, postMediaQueryKeys } from '@/modules/media/services/postMediaApi'
+import { useMusicTrackAll } from '@/modules/music/hooks/useMusicTracks'
 import { useSetReelsFrames, useConvertToReels } from '../hooks/usePosts'
 
 const COVER_ROLE = 4
@@ -85,6 +86,9 @@ export default function ReelsFramePicker({ post }) {
 
   const [selected, setSelected] = useState([])
   const [initialized, setInitialized] = useState(false)
+  const [musicTrackId, setMusicTrackId] = useState('')
+
+  const { data: musicTracks = [] } = useMusicTrackAll()
 
   useEffect(() => {
     if (initialized || !currentQuery.data) return
@@ -141,7 +145,7 @@ export default function ReelsFramePicker({ post }) {
       return
     }
     try {
-      await convertToReels.mutateAsync({ id: postId, mediaIds: selected })
+      await convertToReels.mutateAsync({ id: postId, mediaIds: selected, musicTrackId: musicTrackId || null })
       toast.success('Đã đăng dạng Reels')
     } catch (error) {
       toast.error(getErrorMessage(error))
@@ -246,6 +250,20 @@ export default function ReelsFramePicker({ post }) {
           </p>
         </div>
       )}
+
+      <div className="form-group" style={{ marginTop: 12, marginBottom: 0, maxWidth: 320 }}>
+        <label htmlFor="reels-music-track">Nhạc nền</label>
+        <select
+          id="reels-music-track"
+          value={musicTrackId}
+          onChange={(event) => setMusicTrackId(event.target.value)}
+        >
+          <option value="">Nhạc mặc định hệ thống</option>
+          {musicTracks.map((track) => (
+            <option key={track.id} value={track.id}>{track.displayName}</option>
+          ))}
+        </select>
+      </div>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
         <button type="button" className="btn btn-secondary" disabled={isBusy} onClick={handleSave}>

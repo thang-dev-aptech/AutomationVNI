@@ -22,6 +22,9 @@ export const newsSiteApi = {
   /** Bật/tắt 1 người đăng ký theo Id — khác luồng độc giả tự huỷ bằng token trong email. */
   setSubscriberActive: (id, isActive) =>
     axiosInstance.patch(`/api/NewsSite/subscribers/${id}`, { isActive }),
+
+  /** Đưa bài về lại hàng chờ gửi email — dùng khi lần gửi trước hỏng hết (vd sai SMTP). */
+  resendNewsletter: (id) => axiosInstance.post(`/api/NewsSite/${id}/resend-newsletter`, {}),
 }
 
 export const newsSiteQueryKeys = {

@@ -50,7 +50,8 @@ export default function PostDetailPage() {
     }
   }, [post])
 
-  const channelName = channels.find((c) => c.id === post?.socialChannelId)?.pageName
+  const channel = channels.find((c) => c.id === post?.socialChannelId)
+  const channelName = channel?.pageName
   const workflowActions = post ? getAvailableWorkflowActions(post.status) : null
   const canEditContent = workflowActions?.canEditContent && canEditPost(post?.userId)
 
@@ -132,7 +133,7 @@ export default function PostDetailPage() {
         )}
       </div>
 
-      <PostWorkflowActions post={post} onDeleted={() => navigate('/posts')} />
+      <PostWorkflowActions post={post} channel={channel} onDeleted={() => navigate('/posts')} />
 
       <PostGenerationActions post={post} />
 

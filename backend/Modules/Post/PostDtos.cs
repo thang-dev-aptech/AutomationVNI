@@ -40,6 +40,9 @@ public class ConvertToReelsRequest
     /// Thứ tự khung hình muốn dùng — null thì dùng đúng ảnh bài đang có (mặc định, không cần chỉnh tay).
     /// </summary>
     public List<Guid>? MediaIds { get; set; }
+
+    /// <summary>Nhạc nền từ thư viện — null thì dùng nhạc mặc định hệ thống (ReelsOptions.AudioTrackPath).</summary>
+    public Guid? MusicTrackId { get; set; }
 }
 
 // --- Bulk (tạo hàng loạt) ---
@@ -225,6 +228,14 @@ public class SchedulePostRequest
 {
     public DateTime ScheduledAt { get; set; }
     public string? Timezone { get; set; }
+    /// <summary>Chỉ có ý nghĩa với post nhắm kênh TikTok. Null = giữ nguyên lựa chọn hiện tại.</summary>
+    public TikTokPostMode? TikTokPostMode { get; set; }
+}
+
+public class PublishNowRequest
+{
+    /// <summary>Chỉ có ý nghĩa với post nhắm kênh TikTok. Null = giữ nguyên lựa chọn hiện tại.</summary>
+    public TikTokPostMode? TikTokPostMode { get; set; }
 }
 
 public class PostGenerationStatusResponse

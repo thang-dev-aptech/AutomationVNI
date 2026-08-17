@@ -262,6 +262,18 @@ public partial class NewsSiteRepository(
         await context.SaveChangesAsync(ct);
     }
 
+    /// <summary>Admin bấm "Gửi lại email" — đưa bài về lại hàng chờ để NewsletterSendWorker nhặt
+    /// ở lượt quét kế tiếp (tối đa ~60 giây), dùng khi lần gửi trước hỏng hết vì cấu hình SMTP
+    /// sai mà lúc đó chưa có bản vá không-đánh-dấu-khi-hỏng-hết.</summary>
+    public async Task<bool> ResetNewsletterSentAsync(Guid articleId, CancellationToken ct = default)
+    {
+        var article = await context.Set<NewsArticleModel>().FirstOrDefaultAsync(x => x.Id == articleId, ct);
+        if (article is null) return false;
+        article.NewsletterSentAt = null;
+        await context.SaveChangesAsync(ct);
+        return true;
+    }
+
     public static string Slugify(string? input)
     {
         var text = VietnameseTextHelper.StripDiacritics(input).ToLowerInvariant();

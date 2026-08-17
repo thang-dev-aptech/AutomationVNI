@@ -10,6 +10,7 @@ import MediaGrid from '../components/MediaGrid'
 import MediaUploadForm from '../components/MediaUploadForm'
 import MediaFolderTree from '../components/MediaFolderTree'
 import MediaFolderFormModal from '../components/MediaFolderFormModal'
+import AiBackgroundPromptModal from '../components/AiBackgroundPromptModal'
 import {
   useAnalyzeAllMediaAssets,
   useAnalyzeMediaAsset,
@@ -43,6 +44,7 @@ export default function MediaPage() {
   const [keyword, setKeyword] = useState('')
   const [source, setSource] = useState('')
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [aiPromptOpen, setAiPromptOpen] = useState(false)
   const [editingAsset, setEditingAsset] = useState(null)
   const [viewingAsset, setViewingAsset] = useState(null)
   const [detailsAsset, setDetailsAsset] = useState(null)
@@ -253,16 +255,6 @@ export default function MediaPage() {
         actions={
           canManageMedia ? (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {currentFolderId && (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={analyzeLayoutMutation.isPending}
-                  onClick={handleAnalyzeLayoutFolder}
-                >
-                  {analyzeLayoutMutation.isPending ? '⏳ Đang quét...' : '✨ Quét Vùng An Toàn'}
-                </button>
-              )}
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -277,6 +269,13 @@ export default function MediaPage() {
                 onClick={() => { setFormError(''); setFolderModal({ editing: null, defaultParentId: currentFolderId }) }}
               >
                 📁 Tạo thư mục
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setAiPromptOpen(true)}
+              >
+                ✨ Tạo prompt ảnh nền AI
               </button>
               <button
                 type="button"
@@ -331,6 +330,18 @@ export default function MediaPage() {
                 ))}
               </select>
             </div>
+            {currentFolderId && (
+              <div className="media-page-filters-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={analyzeLayoutMutation.isPending}
+                  onClick={handleAnalyzeLayoutFolder}
+                >
+                  {analyzeLayoutMutation.isPending ? '⏳ Đang quét...' : '✨ Quét Vùng An Toàn'}
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="card card-body">
@@ -369,6 +380,11 @@ export default function MediaPage() {
         onSubmit={handleFolderSubmit}
         isSubmitting={createFolderMutation.isPending || updateFolderMutation.isPending}
         errorMessage={formError}
+      />
+
+      <AiBackgroundPromptModal
+        open={aiPromptOpen}
+        onClose={() => setAiPromptOpen(false)}
       />
 
       <Modal

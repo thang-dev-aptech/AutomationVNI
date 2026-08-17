@@ -8,8 +8,8 @@ import { toast } from '@/shared/stores/toastStore'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
 import FanpageModal from '../components/FanpageModal'
 import {
-  useNewsArticles, useNewsSiteStatus, usePublishToFanpage, useRebuildSite, useSetSubscriberActive,
-  useSubscribers, useUnpublish,
+  useNewsArticles, useNewsSiteStatus, usePublishToFanpage, useRebuildSite, useResendNewsletter,
+  useSetSubscriberActive, useSubscribers, useUnpublish,
 } from '../hooks/useNewsSite'
 import './NewsSitePage.css'
 
@@ -41,6 +41,7 @@ export default function NewsSitePage() {
   const publish = usePublishToFanpage()
   const rebuild = useRebuildSite()
   const unpublish = useUnpublish()
+  const resendNewsletter = useResendNewsletter()
 
   const subParams = useMemo(() => ({ size: 100 }), [])
   const { data: subData, isLoading: subLoading, isError: subIsError, error: subError, refetch: subRefetch } =
@@ -73,6 +74,13 @@ export default function NewsSitePage() {
     try {
       const r = await rebuild.mutateAsync()
       toast.success(`Đã dựng lại ${r.articles} bài, ${r.pages} trang`)
+    } catch (e) { toast.error(getErrorMessage(e)) }
+  }
+
+  const handleResendNewsletter = async (a) => {
+    try {
+      await resendNewsletter.mutateAsync(a.id)
+      toast.success('Sẽ gửi lại email trong tối đa 60 giây')
     } catch (e) { toast.error(getErrorMessage(e)) }
   }
 
@@ -192,6 +200,17 @@ export default function NewsSitePage() {
                     {canApproveCrawl && (
                       <button type="button" className="btn btn-primary" onClick={() => setPosting(a)}>
                         Đăng fanpage
+                      </button>
+                    )}
+                    {canManageCrawlSources && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => handleResendNewsletter(a)}
+                        disabled={resendNewsletter.isPending}
+                        title="Dùng khi lần gửi trước hỏng hết (vd sai cấu hình SMTP)"
+                      >
+                        Gửi lại email
                       </button>
                     )}
                     {canManageCrawlSources && (

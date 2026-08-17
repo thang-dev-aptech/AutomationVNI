@@ -381,7 +381,7 @@ public class PostController
         var guard = await EnsureGenerationPermissionAsync(id, ct);
         if (guard is not null) return guard;
 
-        await _generationPipeline.ConvertToReelsAsync(id, request?.MediaIds, ct);
+        await _generationPipeline.ConvertToReelsAsync(id, request?.MediaIds, ct, request?.MusicTrackId);
         await _workflow.ApproveAsync(id, ct);
 
         var post = await _workflow.GetPostAsync(id, ct);
@@ -519,7 +519,8 @@ public class PostController
         if (!_workflow.IsOwner(post) && !_workflow.IsInAnyRole("Admin", "ContentManager"))
             return StatusCode(403, ApiResponse.Fail("FORBIDDEN", "Bạn không có quyền thực hiện thao tác này"));
 
-        var result = await _workflow.ScheduleAsync(id, request.ScheduledAt, request.Timezone, ct);
+        var result = await _workflow.ScheduleAsync(
+            id, request.ScheduledAt, request.Timezone, ct, request.TikTokPostMode);
         return Ok(ApiResponse.Ok(ToResponse(result), "Lên lịch đăng thành công"));
     }
 
@@ -538,10 +539,10 @@ public class PostController
 
     [HttpPost("{id:guid}/publish-now")]
     [Authorize(Roles = "Admin,Reviewer,ContentManager")]
-    public async Task<IActionResult> PublishNow(Guid id, CancellationToken ct)
+    public async Task<IActionResult> PublishNow(Guid id, [FromBody] PublishNowRequest? request, CancellationToken ct)
     {
         // publish-now = đăng NGAY: chuyển Publishing + tạo log Pending, rồi xử lý luôn (mock/real).
-        await _workflow.PublishNowAsync(id, ct);
+        await _workflow.PublishNowAsync(id, ct, request?.TikTokPostMode);
 
         try
         {

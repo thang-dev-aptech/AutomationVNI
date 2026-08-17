@@ -5,8 +5,10 @@ public class SocialPublishOptions
     public string DefaultProvider { get; set; } = "facebook";
     public bool UseRealFacebook { get; set; }
     public bool UseRealThreads { get; set; }
+    public bool UseRealTikTok { get; set; }
     public FacebookPublishOptions Facebook { get; set; } = new();
     public ThreadsPublishOptions Threads { get; set; } = new();
+    public TikTokPublishOptions TikTok { get; set; } = new();
 }
 
 public class FacebookPublishOptions
@@ -60,4 +62,30 @@ public class ThreadsPublishOptions
 
     /// <summary>Giới hạn cứng của Threads. Caption dài hơn sẽ bị cắt kèm cảnh báo.</summary>
     public int MaxTextLength { get; set; } = 500;
+}
+
+public class TikTokPublishOptions
+{
+    public string ApiBaseUrl { get; set; } = "https://open.tiktokapis.com";
+    public string ApiVersion { get; set; } = "v2";
+    public int TimeoutSeconds { get; set; } = 90;
+
+    /// <summary>Chờ poll status/fetch tối đa bao lâu trước khi coi là timeout (video xử lý lâu hơn ảnh).</summary>
+    public int PublishTimeoutSeconds { get; set; } = 180;
+
+    /// <summary>
+    /// App chưa qua audit của TikTok CHỈ được đăng SELF_ONLY (riêng tư). Đổi thành
+    /// PUBLIC_TO_EVERYONE sau khi app được duyệt — không cần sửa code.
+    /// </summary>
+    public string DefaultPrivacyLevel { get; set; } = "SELF_ONLY";
+
+    /// <summary>
+    /// Base URL công khai của chính app này — TikTok Photo Post (PULL_FROM_URL) tự tải ảnh về
+    /// từ URL, giống lý do PublicBaseUrl tồn tại ở ThreadsPublishOptions. Để trống thì post ảnh
+    /// sẽ lỗi thay vì đăng thiếu ảnh.
+    /// </summary>
+    public string PublicBaseUrl { get; set; } = string.Empty;
+
+    /// <summary>Giới hạn cứng của TikTok cho title/caption. Dài hơn sẽ bị cắt kèm cảnh báo.</summary>
+    public int MaxCaptionLength { get; set; } = 2200;
 }

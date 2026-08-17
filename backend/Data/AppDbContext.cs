@@ -5,6 +5,7 @@ using Backend.Modules.GenerationJob;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaEmbedding;
 using Backend.Modules.MediaFolder;
+using Backend.Modules.MusicTrack;
 using Backend.Modules.PageContext;
 using Backend.Modules.PageMessage;
 using Backend.Modules.Post;
@@ -32,6 +33,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<MediaAssetModel> MediaAssets => Set<MediaAssetModel>();
     public DbSet<MediaFolderModel> MediaFolders => Set<MediaFolderModel>();
     public DbSet<PostMediaModel> PostMedias => Set<PostMediaModel>();
+    public DbSet<MusicTrackModel> MusicTracks => Set<MusicTrackModel>();
     public DbSet<GenerationJobModel> GenerationJobs => Set<GenerationJobModel>();
     public DbSet<PublishLogModel> PublishLogs => Set<PublishLogModel>();
     public DbSet<MediaEmbeddingModel> MediaEmbeddings => Set<MediaEmbeddingModel>();
@@ -193,6 +195,17 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasIndex(x => new { x.PostId, x.MediaId });
             e.HasIndex(x => x.PostId);
             e.HasIndex(x => x.MediaId);
+        });
+
+        modelBuilder.Entity<MusicTrackModel>(e =>
+        {
+            e.ToTable("MusicTracks");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.DisplayName).HasMaxLength(300);
+            e.Property(x => x.FileName).HasMaxLength(500);
+            e.Property(x => x.StoragePath).HasMaxLength(1000);
+            e.Property(x => x.MimeType).HasMaxLength(100);
         });
 
         modelBuilder.Entity<GenerationJobModel>(e =>

@@ -91,7 +91,14 @@ export default function MediaFolderFormModal({
           <select
             id="folder-page"
             value={socialChannelId}
-            onChange={(event) => setSocialChannelId(event.target.value)}
+            onChange={(event) => {
+              const id = event.target.value
+              setSocialChannelId(id)
+              // Chọn page thì lấy luôn tên page làm tên thư mục — đỡ phải gõ lại, tên vẫn sửa
+              // được bình thường sau đó nếu muốn đặt khác.
+              const channel = channels.find((c) => c.id === id)
+              if (channel) setName(channel.pageName)
+            }}
           >
             <option value="">— Không gắn page —</option>
             {channels.map((c) => (

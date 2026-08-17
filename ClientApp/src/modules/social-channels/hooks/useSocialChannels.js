@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { unwrapApiData } from '@/shared/utils/apiHelpers'
 import { metaApi } from '../services/metaApi'
 import { threadsApi } from '../services/threadsApi'
+import { tiktokApi } from '../services/tiktokApi'
 import { socialChannelApi, socialChannelQueryKeys } from '../services/socialChannelApi'
 import {
   socialConnectionApi,
@@ -76,5 +77,11 @@ export function useMetaConnectUrl() {
 export function useThreadsConnectUrl() {
   return useMutation({
     mutationFn: async () => unwrapApiData(await threadsApi.getConnectUrl()),
+  })
+}
+
+export function useTikTokConnectUrl() {
+  return useMutation({
+    mutationFn: async () => unwrapApiData(await tiktokApi.getConnectUrl()),
   })
 }

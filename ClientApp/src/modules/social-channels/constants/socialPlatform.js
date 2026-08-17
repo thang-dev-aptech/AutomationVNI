@@ -19,6 +19,7 @@ export const CHANNEL_TYPES = {
   2: { value: 2, label: 'Instagram', key: 'instagram' },
   3: { value: 3, label: 'Group', key: 'group' },
   4: { value: 4, label: 'Threads', key: 'threads' },
+  5: { value: 5, label: 'TikTok', key: 'tiktok' },
 }
 
 export function getChannelTypeLabel(value) {
@@ -30,6 +31,7 @@ export const SOCIAL_PROVIDERS = {
   1: { value: 1, label: 'Meta', key: 'meta' },
   2: { value: 2, label: 'LinkedIn', key: 'linkedin' },
   3: { value: 3, label: 'Threads', key: 'threads' },
+  4: { value: 4, label: 'TikTok', key: 'tiktok' },
 }
 
 export function getProviderLabel(value) {
@@ -63,6 +65,14 @@ export const PROVIDER_CATALOG = [
     description: 'Login tài khoản Threads → đồng bộ profile để đăng bài',
     provider: 3,
     connectAction: 'threads',
+    supported: true,
+  },
+  {
+    id: 'tiktok',
+    label: 'TikTok',
+    description: 'Login tài khoản TikTok → đồng bộ profile để đăng bài (app chưa qua audit chỉ đăng được ở chế độ riêng tư)',
+    provider: 4,
+    connectAction: 'tiktok',
     supported: true,
   },
   {

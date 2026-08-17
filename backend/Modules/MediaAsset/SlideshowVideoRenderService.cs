@@ -17,8 +17,13 @@ public class SlideshowVideoRenderService(
 {
     private static readonly string DefaultPadColor = "#0A2846";
 
+    /// <param name="audioTrackPathOverride">
+    /// Đường dẫn file nhạc tạm (từ thư viện nhạc, đã copy ra temp file) — có giá trị thì dùng thay
+    /// cho <see cref="ReelsOptions.AudioTrackPath"/> mặc định hệ thống. Null = giữ hành vi cũ.
+    /// </param>
     public async Task<byte[]> RenderAsync(
-        List<byte[]> frames, string? brandColorHex, CancellationToken ct = default)
+        List<byte[]> frames, string? brandColorHex, string? audioTrackPathOverride = null,
+        CancellationToken ct = default)
     {
         if (frames.Count == 0)
             throw new ArgumentException("Cần ít nhất 1 khung hình để dựng video", nameof(frames));
@@ -47,8 +52,11 @@ public class SlideshowVideoRenderService(
             var padColor = string.IsNullOrWhiteSpace(brandColorHex) ? DefaultPadColor : brandColorHex.Trim();
             var outputPath = Path.Combine(workDir, "output.mp4");
 
-            var hasAudio = !string.IsNullOrWhiteSpace(reels.AudioTrackPath)
-                && File.Exists(ResolveFfmpegPath(reels.AudioTrackPath));
+            var audioTrackPath = string.IsNullOrWhiteSpace(audioTrackPathOverride)
+                ? reels.AudioTrackPath
+                : audioTrackPathOverride;
+            var hasAudio = !string.IsNullOrWhiteSpace(audioTrackPath)
+                && File.Exists(ResolveFfmpegPath(audioTrackPath));
 
             var args = new List<string>
             {
@@ -57,7 +65,7 @@ public class SlideshowVideoRenderService(
             };
             if (hasAudio)
             {
-                args.AddRange(["-i", ResolveFfmpegPath(reels.AudioTrackPath!)]);
+                args.AddRange(["-i", ResolveFfmpegPath(audioTrackPath!)]);
             }
             args.AddRange([
                 "-vf", $"scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color={padColor}",

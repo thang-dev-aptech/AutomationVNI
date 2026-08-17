@@ -110,6 +110,7 @@ public class PublishPipelineService(
             MediaFileName = firstMedia?.FileName,
             MediaMimeType = firstMedia?.MimeType,
             MediaItems = mediaItems,
+            TikTokPostMode = post.TikTokPostMode,
             // Bài tin (TextOnly, không ảnh) đăng dạng nền màu cho nổi trên bảng tin.
             TextFormatPresetId = post.GenerationFlow == GenerationFlow.TextOnly
                                  && mediaItems.Count == 0
@@ -252,7 +253,8 @@ public class PublishPipelineService(
     /// </summary>
     private static bool IsTokenOrPermissionError(string errorCode)
         => errorCode is "FB_TOKEN_MISSING" or "FB_TOKEN_INVALID" or "FB_PERMISSION_DENIED"
-            or "THREADS_TOKEN_MISSING" or "THREADS_TOKEN_INVALID" or "THREADS_PERMISSION_DENIED";
+            or "THREADS_TOKEN_MISSING" or "THREADS_TOKEN_INVALID" or "THREADS_PERMISSION_DENIED"
+            or "TIKTOK_TOKEN_MISSING" or "TIKTOK_TOKEN_INVALID" or "TIKTOK_PERMISSION_DENIED";
 
     public async Task<PublishLogModel> FailAsync(
         Guid publishLogId, FailPublishLogRequest request, CancellationToken ct = default)

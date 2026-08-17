@@ -15,7 +15,10 @@ export const postApi = {
   reject: (id, payload) => axiosInstance.post(`/api/Post/${id}/reject`, payload),
   schedule: (id, payload) => axiosInstance.post(`/api/Post/${id}/schedule`, payload),
   cancelSchedule: (id) => axiosInstance.post(`/api/Post/${id}/cancel-schedule`),
-  publishNow: (id) => axiosInstance.post(`/api/Post/${id}/publish-now`),
+  publishNow: (id, tikTokPostMode) => axiosInstance.post(
+    `/api/Post/${id}/publish-now`,
+    tikTokPostMode ? { tikTokPostMode } : undefined,
+  ),
 
   queueTextGeneration: (id) => axiosInstance.post(`/api/Post/${id}/queue-text-generation`),
   queueImageGeneration: (id) => axiosInstance.post(`/api/Post/${id}/queue-image-generation`),
@@ -25,7 +28,10 @@ export const postApi = {
   regenerateText: (id) => axiosInstance.post(`/api/Post/${id}/regenerate-text`),
   regenerateImage: (id) => axiosInstance.post(`/api/Post/${id}/regenerate-image`),
   setReelsFrames: (id, mediaIds) => axiosInstance.put(`/api/Post/${id}/reels-frames`, { mediaIds }),
-  convertToReels: (id, mediaIds) => axiosInstance.post(`/api/Post/${id}/convert-to-reels`, mediaIds ? { mediaIds } : undefined),
+  convertToReels: (id, mediaIds, musicTrackId) => axiosInstance.post(
+    `/api/Post/${id}/convert-to-reels`,
+    (mediaIds || musicTrackId) ? { mediaIds, musicTrackId: musicTrackId || null } : undefined,
+  ),
 
   getGenerationStatus: (id) => axiosInstance.get(`/api/Post/${id}/generation-status`),
   getTimeline: (id) => axiosInstance.get(`/api/Post/${id}/timeline`),

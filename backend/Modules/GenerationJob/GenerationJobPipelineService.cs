@@ -6,6 +6,7 @@ using Backend.Modules.GenerationJob.Enums;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaAsset.Enums;
 using Backend.Modules.MediaFolder;
+using Backend.Modules.MusicTrack;
 using Backend.Modules.PageContext;
 using Backend.Modules.Post;
 using Backend.Modules.Post.Enums;
@@ -413,11 +414,11 @@ public class GenerationJobPipelineService(
     /// của post (không cần chỉnh tay — "biến ảnh đang có thành video").
     /// </param>
     public async Task<ProcessGenerationJobResponse> ConvertToReelsAsync(
-        Guid postId, List<Guid>? frameMediaIds, CancellationToken ct = default)
+        Guid postId, List<Guid>? frameMediaIds, CancellationToken ct = default, Guid? musicTrackId = null)
     {
         var queued = await QueueReelsRenderAsync(postId, ct);
         var job = await RequireJobAsync(queued.JobId, ct);
-        return await ProcessReelsRenderAsync(job, frameMediaIds, ct);
+        return await ProcessReelsRenderAsync(job, frameMediaIds, ct, musicTrackId);
     }
 
     public async Task<QueueMediaMatchResponse> QueueMediaMatchAsync(
@@ -1499,6 +1500,8 @@ public class GenerationJobPipelineService(
         float? safeTextRegionY = null;
         float? safeTextRegionWidth = null;
         float? safeTextRegionHeight = null;
+        string? logoShape = null;
+        string? colorSlot = null;
 
         if (!string.IsNullOrWhiteSpace(sourceMedia.Tags))
         {
@@ -1516,6 +1519,9 @@ public class GenerationJobPipelineService(
                     safeTextRegionWidth = (float?)safeRegion["width"];
                     safeTextRegionHeight = (float?)safeRegion["height"];
                 }
+
+                logoShape = tagsObj?["logoShape"]?.GetValue<string>();
+                colorSlot = tagsObj?["colorSlot"]?.GetValue<string>();
             }
             catch { }
         }
@@ -1537,7 +1543,9 @@ public class GenerationJobPipelineService(
             SafeTextRegionX = safeTextRegionX,
             SafeTextRegionY = safeTextRegionY,
             SafeTextRegionWidth = safeTextRegionWidth,
-            SafeTextRegionHeight = safeTextRegionHeight
+            SafeTextRegionHeight = safeTextRegionHeight,
+            LogoShape = logoShape,
+            ColorSlot = colorSlot
         }, ct);
 
         var renderedAsset = await mediaAssetRepository.CreateAsync(new CreateMediaAssetRequest
@@ -1565,6 +1573,10 @@ public class GenerationJobPipelineService(
     private Task<ProcessGenerationJobResponse> ProcessReelsRenderAsync(GenerationJobModel job, CancellationToken ct)
         => ProcessReelsRenderAsync(job, frameMediaIds: null, ct);
 
+    private Task<ProcessGenerationJobResponse> ProcessReelsRenderAsync(
+        GenerationJobModel job, List<Guid>? frameMediaIds, CancellationToken ct)
+        => ProcessReelsRenderAsync(job, frameMediaIds, ct, musicTrackId: null);
+
     /// <summary>
     /// Ghép khung hình thành 1 video slideshow bằng FFmpeg (SlideshowVideoRenderService) — bước
     /// cuối của "Đăng Reels". Dọn hết ảnh cũ sau khi ghép xong, chỉ giữ đúng 1 video làm Cover:
@@ -1579,7 +1591,7 @@ public class GenerationJobPipelineService(
     /// render qua RenderFrameAsync cho nhất quán thương hiệu trước khi ghép vào video.
     /// </summary>
     private async Task<ProcessGenerationJobResponse> ProcessReelsRenderAsync(
-        GenerationJobModel job, List<Guid>? frameMediaIds, CancellationToken ct)
+        GenerationJobModel job, List<Guid>? frameMediaIds, CancellationToken ct, Guid? musicTrackId)
     {
         var post = await RequirePostAsync(job.PostId, ct);
 
@@ -1657,7 +1669,21 @@ public class GenerationJobPipelineService(
         var pageContext = await pageContextRepository.GetByChannelAsync(post.SocialChannelId, ct);
         var brandColorHex = pageContext?.BrandColors?.Split(',').FirstOrDefault()?.Trim();
 
-        var videoBytes = await slideshowVideoRenderService.RenderAsync(frameBytesList, brandColorHex, ct);
+        byte[] videoBytes;
+        var audioOverridePath = await ResolveMusicTrackTempFileAsync(musicTrackId, ct);
+        try
+        {
+            videoBytes = await slideshowVideoRenderService.RenderAsync(
+                frameBytesList, brandColorHex, audioOverridePath, ct);
+        }
+        finally
+        {
+            if (audioOverridePath is not null)
+            {
+                try { File.Delete(audioOverridePath); }
+                catch (Exception ex) { logger.LogWarning(ex, "Không xoá được file nhạc tạm {Path}", audioOverridePath); }
+            }
+        }
 
         var saveResult = await fileStorageService.SaveBytesAsync(
             videoBytes, "rendered", ".mp4", "video/mp4", ct);
@@ -1707,6 +1733,26 @@ public class GenerationJobPipelineService(
             PostMediaId = postMedia.Id,
             PublicUrl = previewUrl
         };
+    }
+
+    /// <summary>
+    /// Copy nhạc từ thư viện (MusicTrackModel) ra 1 file tạm — SlideshowVideoRenderService chạy
+    /// FFmpeg qua Process.Start, cần đường dẫn file thật trên đĩa, không nhận stream/byte[] trực
+    /// tiếp. Null (không chọn nhạc, hoặc track không tồn tại) → giữ nguyên nhạc mặc định hệ thống.
+    /// </summary>
+    private async Task<string?> ResolveMusicTrackTempFileAsync(Guid? musicTrackId, CancellationToken ct)
+    {
+        if (musicTrackId is not Guid trackId) return null;
+
+        var track = await context.Set<MusicTrackModel>()
+            .FirstOrDefaultAsync(x => x.Id == trackId && !x.IsDeleted, ct);
+        if (track is null) return null;
+
+        var tempPath = Path.Combine(Path.GetTempPath(), $"music-{Guid.NewGuid():N}{Path.GetExtension(track.FileName)}");
+        await using var source = await fileStorageService.OpenReadAsync(track.StoragePath, ct);
+        await using var dest = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
+        await source.CopyToAsync(dest, ct);
+        return tempPath;
     }
 
     /// <summary>

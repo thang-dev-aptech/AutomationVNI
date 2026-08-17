@@ -98,6 +98,17 @@ public class NewsletterSendWorker(
                 }
             }
 
+            // Gửi hỏng HẾT (vd sai mật khẩu SMTP) khác với hỏng MỘT VÀI người — đừng đánh dấu đã
+            // gửi trong trường hợp đầu, để lượt quét sau còn thử lại (cùng cách "hoãn gửi" đang
+            // làm với PublicBaseUrl chưa cấu hình ở trên).
+            if (sent == 0 && failed > 0)
+            {
+                logger.LogWarning(
+                    "Gửi email bài {Id} ({Title}) thất bại toàn bộ ({Failed} người) — thử lại lượt sau",
+                    article.Id, article.Title, failed);
+                continue;
+            }
+
             await repository.MarkNewsletterSentAsync(article.Id, ct);
             logger.LogInformation(
                 "Đã gửi email bài {Id} ({Title}) tới {Sent}/{Total} subscriber ({Failed} lỗi)",

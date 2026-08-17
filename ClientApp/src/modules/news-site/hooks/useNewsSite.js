@@ -50,6 +50,12 @@ export function useRebuildSite() {
   })
 }
 
+export function useResendNewsletter() {
+  return useMutation({
+    mutationFn: async (id) => unwrapApiData(await newsSiteApi.resendNewsletter(id)),
+  })
+}
+
 export function useSubscribers(params) {
   return useQuery({
     queryKey: newsSiteQueryKeys.subscribers(params),

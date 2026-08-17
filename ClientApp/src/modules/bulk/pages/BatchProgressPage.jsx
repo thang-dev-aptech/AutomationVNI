@@ -126,7 +126,7 @@ export default function BatchProgressPage() {
       </div>
 
       {/* Danh sách bài */}
-      <div className="card">
+      <div className="card" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table>
           <thead>
             <tr><th>Tiêu đề</th><th>Trạng thái</th><th>Lịch đăng</th><th /></tr>

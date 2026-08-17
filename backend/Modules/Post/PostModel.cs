@@ -38,4 +38,11 @@ public class PostModel : BaseEntity
     public string? ApprovedBy { get; set; }
     public DateTime? ApprovedAt { get; set; }
     public Guid UserId { get; set; }
+
+    /// <summary>
+    /// Chỉ áp dụng khi SocialChannel là TikTok. Null = DirectPost (mặc định). Lưu bền (không chỉ
+    /// tham số lúc gọi API) vì lựa chọn lúc bấm nút và lúc thực sự publish có thể lệch nhau khi
+    /// bài được lên lịch — phải sống qua vòng đời GenerationJob/PublishLog.
+    /// </summary>
+    public TikTokPostMode? TikTokPostMode { get; set; }
 }

@@ -21,13 +21,19 @@ public class ImageOverlayRequest
     public string? LogoStorageKey { get; set; }
     
     // Layout Info
-    public string LayoutStyle { get; set; } = "TopBottomSplit"; // TopBottomSplit, SidebarLeft, SidebarRight, FreeText
-    
-    // AI Regions (percentage 0-100)
+    public string LayoutStyle { get; set; } = "TopBottomSplit"; // TopBottomSplit, FreeText, SolidPanelSplit
+
+    // AI Regions (percentage 0-100) — bỏ qua khi LayoutStyle = SolidPanelSplit (chữ không nằm trên ảnh).
     public float? SafeTextRegionX { get; set; }
     public float? SafeTextRegionY { get; set; }
     public float? SafeTextRegionWidth { get; set; }
     public float? SafeTextRegionHeight { get; set; }
+
+    /// <summary>Hình dạng khung logo — "Square" (mặc định) hoặc "Circle".</summary>
+    public string? LogoShape { get; set; }
+
+    /// <summary>Màu thương hiệu dùng cho scrim/panel/footer — "Primary" (mặc định), "Secondary" hoặc "Accent".</summary>
+    public string? ColorSlot { get; set; }
 }
 
 public class ImageOverlayResult
