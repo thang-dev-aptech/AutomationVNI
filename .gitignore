@@ -89,6 +89,13 @@ backend/backend.zip
 backend/Storage.zip
 backend/wwwroot/dist.zip
 
+# Bản CSDL/backup rời tải về gốc repo để đối chiếu/chỉnh sửa cục bộ — CHỨA BÍ MẬT y hệt
+# /Data/ ở trên (token fanpage Facebook, email subscriber), nhưng nằm ngoài thư mục đó nên
+# luật /Data/ không phủ tới.
+/Data.zip
+/vni_automation.db
+/vni_automation.db.zip
+
 # Gói publish/deploy dựng thủ công ngoài quy trình CI — không phải mã nguồn, rất nặng.
 publish_output/
 publish_output_sc/

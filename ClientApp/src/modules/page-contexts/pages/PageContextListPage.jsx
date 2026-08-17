@@ -38,7 +38,7 @@ export default function PageContextListPage() {
   const [importOpen, setImportOpen] = useState(false)
   const [importText, setImportText] = useState('')
 
-  const params = useMemo(() => ({ keyword, index: 1, size: 50 }), [keyword])
+  const params = useMemo(() => ({ keyword, index: 1, size: 200 }), [keyword])
   const { data, isLoading, isError, error, refetch } = usePageContextList(params)
   const { data: channels = [] } = useSocialChannelAll()
   const createMutation = useCreatePageContext()
