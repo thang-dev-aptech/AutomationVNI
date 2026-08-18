@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace Backend.Shared;
 
-public class GlobalExceptionFilter(IHostEnvironment environment) : IExceptionFilter
+public class GlobalExceptionFilter(
+    IHostEnvironment environment,
+    ILogger<GlobalExceptionFilter> logger) : IExceptionFilter
 {
     public void OnException(ExceptionContext context)
     {
@@ -18,6 +20,20 @@ public class GlobalExceptionFilter(IHostEnvironment environment) : IExceptionFil
                 ? ex.Message
                 : "Đã xảy ra lỗi hệ thống")
         };
+
+        // BẮT BUỘC phải log ở đây. Trước khi có đoạn này, filter nuốt trọn mọi exception mà không
+        // để lại dấu vết nào: production chỉ trả về câu "Đã xảy ra lỗi hệ thống" chung chung, còn
+        // log server thì sạch bong. Hậu quả thực tế: một sự cố render Reels đã mất nhiều lượt gửi
+        // log qua lại mà vẫn không tìm được nguyên nhân, vì exception thật không bao giờ được ghi.
+        //
+        // Lỗi 4xx là lỗi phía người dùng (nhập sai, không có quyền, không tìm thấy) — ghi mức
+        // Warning, không kèm stack trace cho đỡ nhiễu. Lỗi 5xx là bug/sự cố thật — ghi Error kèm
+        // nguyên exception để có stack trace.
+        var path = $"{context.HttpContext.Request.Method} {context.HttpContext.Request.Path}";
+        if (statusCode >= 500)
+            logger.LogError(ex, "Lỗi chưa xử lý khi {Path} → trả {StatusCode}", path, statusCode);
+        else
+            logger.LogWarning("{Path} → {StatusCode} {ErrorCode}: {Message}", path, statusCode, errorCode, ex.Message);
 
         context.Result = new ObjectResult(ApiResponse.Fail(errorCode, message))
         {

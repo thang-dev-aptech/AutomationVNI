@@ -142,6 +142,11 @@ public class SlideshowVideoRenderService(
         psi.ArgumentList.Add("-nostdin");
         foreach (var arg in args) psi.ArgumentList.Add(arg);
 
+        // Log nguyên lệnh sẽ chạy. Khi FFmpeg treo, đây là thứ duy nhất cho phép chạy lại y hệt
+        // bằng tay trên server để tái hiện — không có nó thì chỉ còn cách đoán tham số.
+        logger.LogInformation("Chạy FFmpeg: {Path} {Args}", ffmpegPath, string.Join(' ', psi.ArgumentList));
+
+        var startedAt = DateTime.UtcNow;
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("Không khởi động được tiến trình FFmpeg");
         process.StandardInput.Close();
@@ -160,6 +165,16 @@ public class SlideshowVideoRenderService(
             // Hết timeout riêng của FFmpeg (không phải job bị huỷ từ ngoài) — lưới an toàn thứ 2,
             // phòng FFmpeg treo vì lý do khác ngoài stdin (ảnh input hỏng, đĩa đầy...).
             TryKill(process);
+
+            // Vét stderr mà FFmpeg đã kịp in ra TRƯỚC khi treo — phần này chứa banner phiên bản,
+            // thông tin stream đã parse được và dòng tiến độ cuối cùng, tức là biết được nó đứng ở
+            // bước nào. Sau khi Kill thì pipe đóng nên ReadToEndAsync trả về ngay; vẫn bọc timeout
+            // ngắn phòng trường hợp pipe không đóng, để không treo tiếp ngay trong nhánh xử lý treo.
+            var partialStderr = await ReadWithGraceAsync(stderrTask);
+            logger.LogError(
+                "FFmpeg treo quá {Timeout}s — đã kill. stderr đọc được tới lúc treo: {Stderr}",
+                timeoutSeconds, string.IsNullOrWhiteSpace(partialStderr) ? "(rỗng)" : Limit(partialStderr, 4000));
+
             throw new InvalidOperationException(
                 $"FFmpeg không hoàn tất sau {timeoutSeconds}s — đã huỷ tiến trình");
         }
@@ -172,6 +187,16 @@ public class SlideshowVideoRenderService(
             logger.LogError("FFmpeg thoát với mã {ExitCode}: {Stderr}", process.ExitCode, Limit(stderr, 2000));
             throw new InvalidOperationException($"FFmpeg lỗi (exit code {process.ExitCode}) — xem log để biết chi tiết");
         }
+
+        logger.LogInformation(
+            "FFmpeg xong sau {Seconds:F1}s", (DateTime.UtcNow - startedAt).TotalSeconds);
+    }
+
+    /// <summary>Đọc nốt stream đã kill, tối đa 5s — không để nhánh xử lý treo lại treo tiếp.</summary>
+    private static async Task<string> ReadWithGraceAsync(Task<string> readTask)
+    {
+        var completed = await Task.WhenAny(readTask, Task.Delay(TimeSpan.FromSeconds(5)));
+        return completed == readTask ? await readTask : string.Empty;
     }
 
     private void TryKill(Process process)
