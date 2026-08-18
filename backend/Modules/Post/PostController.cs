@@ -572,4 +572,20 @@ public class PostController
             return NotFound(ApiResponse.Fail("NOT_FOUND", "Không tìm thấy bài viết"));
         }
     }
+
+    /// <summary>
+    /// Danh sách bài để dựng lưới lịch trong một khoảng thời gian (không phân trang).
+    /// Tách riêng khỏi <c>POST /filter</c> vì lịch lọc theo thời điểm đăng chứ không phải CreatedAt.
+    /// </summary>
+    [HttpPost("calendar")]
+    public async Task<IActionResult> Calendar(
+        [FromBody] PostCalendarRequest request, CancellationToken ct)
+    {
+        if (request.ToUtc <= request.FromUtc)
+            return BadRequest(ApiResponse.Fail(
+                "INVALID_RANGE", "Khoảng thời gian không hợp lệ"));
+
+        var items = await _repo.GetCalendarAsync(request, ct);
+        return Ok(ApiResponse.Ok(items));
+    }
 }

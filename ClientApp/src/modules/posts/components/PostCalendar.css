@@ -1,0 +1,207 @@
+.post-calendar {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.post-calendar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+
+.post-calendar-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.post-calendar-month {
+  min-width: 130px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--color-text);
+}
+
+.post-calendar-weekdays,
+.post-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.post-calendar-weekdays {
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.post-calendar-weekday {
+  padding: 8px 4px;
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.post-calendar-grid.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.post-calendar-cell {
+  min-height: 108px;
+  padding: 6px;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: background var(--ease-smooth);
+}
+
+/* Bỏ viền thừa ở cột cuối và hàng cuối của lưới 6x7. */
+.post-calendar-cell:nth-child(7n) {
+  border-right: none;
+}
+
+.post-calendar-cell:nth-child(n + 36) {
+  border-bottom: none;
+}
+
+.post-calendar-cell.is-outside {
+  background: var(--color-surface-muted);
+}
+
+.post-calendar-cell.is-outside .post-calendar-daynum {
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}
+
+.post-calendar-cell.is-drop-target {
+  background: var(--color-primary-soft);
+  box-shadow: inset 0 0 0 2px var(--color-primary);
+}
+
+.post-calendar-daynum {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  padding: 2px 4px;
+}
+
+.post-calendar-cell.is-today .post-calendar-daynum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.post-calendar-events {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.post-calendar-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  width: 100%;
+  padding: 3px 6px;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  transition: filter var(--ease-smooth);
+}
+
+.post-calendar-chip:hover {
+  filter: brightness(0.96);
+}
+
+.post-calendar-chip.is-draggable {
+  cursor: grab;
+}
+
+.post-calendar-chip.is-draggable:active {
+  cursor: grabbing;
+}
+
+.post-calendar-chip-time {
+  flex: none;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.post-calendar-chip-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.72rem;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.post-calendar-chip.tone-scheduled {
+  border-left-color: var(--color-warning);
+}
+
+.post-calendar-chip.tone-published {
+  border-left-color: var(--color-success);
+}
+
+.post-calendar-chip.tone-failed {
+  border-left-color: var(--color-danger);
+}
+
+/* Bài đã tới giờ mà vẫn chưa đăng — cảnh báo rõ, không lẫn với bài chờ bình thường. */
+.post-calendar-chip.tone-overdue {
+  border-left-color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
+.post-calendar-chip.tone-overdue .post-calendar-chip-time {
+  color: var(--color-danger-text, var(--color-danger));
+}
+
+.post-calendar-more {
+  align-self: flex-start;
+  padding: 1px 4px;
+  border: none;
+  background: none;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  cursor: pointer;
+}
+
+.post-calendar-more:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 720px) {
+  .post-calendar-cell {
+    min-height: 76px;
+  }
+
+  .post-calendar-chip-title {
+    display: none;
+  }
+}

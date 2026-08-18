@@ -58,6 +58,44 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         };
     }
 
+    /// <summary>
+    /// Lấy bài để dựng lưới lịch trong một khoảng thời gian.
+    ///
+    /// Một bài lọt vào lưới nếu MỘT TRONG HAI mốc rơi vào khoảng: <c>ScheduledPublishAt</c> (bài
+    /// sắp đăng) hoặc <c>PublishedAt</c> (bài đã đăng) — nên lịch hiển thị được cả kế hoạch lẫn
+    /// lịch sử. Không phân trang vì khoảng ngày đã tự giới hạn số lượng; vẫn chặn trần
+    /// <c>MaxCalendarItems</c> phòng dữ liệu bất thường làm phình response.
+    /// </summary>
+    public async Task<List<PostResponse>> GetCalendarAsync(
+        PostCalendarRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        const int MaxCalendarItems = 1000;
+
+        var from = request.FromUtc;
+        var to = request.ToUtc;
+
+        var query = QueryActive().Where(x =>
+            (x.ScheduledPublishAt != null
+                && x.ScheduledPublishAt >= from && x.ScheduledPublishAt < to)
+            || (x.PublishedAt != null
+                && x.PublishedAt >= from && x.PublishedAt < to));
+
+        if (request.Statuses is { Count: > 0 })
+            query = query.Where(x => request.Statuses.Contains(x.Status));
+
+        if (request.SocialChannelIds is { Count: > 0 })
+            query = query.Where(x => request.SocialChannelIds.Contains(x.SocialChannelId));
+
+        var items = await query
+            .OrderBy(x => x.ScheduledPublishAt ?? x.PublishedAt)
+            .Take(MaxCalendarItems)
+            .ToListAsync(cancellationToken);
+
+        var names = await LoadTemplateNamesAsync(items, cancellationToken);
+        return items.Select(e => ToResponse(e, ResolveTemplateName(e, names))).ToList();
+    }
+
     public async Task<PostResponse?> GetResponseByIdAsync(Guid id, CancellationToken ct = default)
     {
         var entity = await GetByIdAsync(id, ct);

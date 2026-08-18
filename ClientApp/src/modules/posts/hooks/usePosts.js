@@ -26,6 +26,18 @@ export function usePosts(params = { index: 1, size: 20 }) {
   })
 }
 
+/**
+ * Bài để dựng lưới lịch. Trả thẳng mảng (không phân trang) vì khoảng ngày đã giới hạn số lượng.
+ * Key nằm dưới prefix ['posts'] nên invalidatePostQueries() tự làm mới sau khi đổi lịch.
+ */
+export function usePostCalendar(params) {
+  return useQuery({
+    queryKey: postQueryKeys.calendar(params),
+    queryFn: async () => unwrapApiData(await postApi.calendar(params)),
+    enabled: Boolean(params?.fromUtc && params?.toUtc),
+  })
+}
+
 /** Các status đang sinh nội dung nền (Queued/Generating/GeneratingMedia/Rendering). */
 export const GENERATING_STATUSES = [2, 3, 12, 14]
 

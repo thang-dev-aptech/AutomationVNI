@@ -4,6 +4,7 @@ export const postApi = {
   getAll: () => axiosInstance.get('/api/Post'),
   getById: (id) => axiosInstance.get(`/api/Post/${id}`),
   filter: (params) => axiosInstance.post('/api/Post/filter', params),
+  calendar: (params) => axiosInstance.post('/api/Post/calendar', params),
   create: (payload) => axiosInstance.post('/api/Post', payload),
   recycle: (payload) => axiosInstance.post('/api/Post/recycle', payload),
   update: (id, payload) => axiosInstance.put(`/api/Post/${id}`, payload),
@@ -40,6 +41,7 @@ export const postApi = {
 export const postQueryKeys = {
   all: ['posts'],
   list: (params) => ['posts', 'list', params],
+  calendar: (params) => ['posts', 'calendar', params],
   detail: (id) => ['posts', 'detail', id],
   generationStatus: (id) => ['posts', 'generation-status', id],
   timeline: (id) => ['posts', 'timeline', id],

@@ -186,6 +186,27 @@ public class PostFilterRequest : PagedFilterRequest
     public bool? IsRecycled { get; set; }
 }
 
+/// <summary>
+/// Truy vấn cho lưới lịch đăng bài. KHÔNG dùng lại PostFilterRequest vì lịch cần những thứ
+/// bộ lọc kia không có: lọc theo thời điểm ĐĂNG (ScheduledPublishAt/PublishedAt) chứ không phải
+/// CreatedAt, nhận NHIỀU trạng thái/kênh cùng lúc, và không phân trang (khoảng ngày đã tự giới hạn
+/// số lượng — phân trang 20 dòng sẽ cắt mất bài của một tháng).
+/// </summary>
+public class PostCalendarRequest
+{
+    /// <summary>Mốc đầu khoảng, UTC. Thường là 00:00 ngày đầu lưới theo giờ VN đổi sang UTC.</summary>
+    public DateTime FromUtc { get; set; }
+
+    /// <summary>Mốc cuối khoảng, UTC, không bao gồm (nửa khoảng mở).</summary>
+    public DateTime ToUtc { get; set; }
+
+    /// <summary>Rỗng/null = không lọc theo trạng thái.</summary>
+    public List<PostStatus>? Statuses { get; set; }
+
+    /// <summary>Rỗng/null = không lọc theo kênh.</summary>
+    public List<Guid>? SocialChannelIds { get; set; }
+}
+
 public class PostResponse
 {
     public Guid Id { get; set; }

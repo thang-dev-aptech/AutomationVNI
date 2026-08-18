@@ -72,7 +72,10 @@ public class PostWorkflowService(
             throw new ArgumentException("Thời gian lên lịch phải lớn hơn thời điểm hiện tại (UTC)");
 
         var post = await RequirePostAsync(id, ct);
-        EnsureStatus(post, "lên lịch đăng", PostStatus.Approved);
+        // Nhận cả Scheduled để đổi lịch một bài đang chờ đăng (kéo-thả trên lịch) chỉ bằng
+        // MỘT lời gọi, thay vì bắt client chạy cancel-schedule rồi schedule (hỏng giữa chừng
+        // là mất lịch). Cùng cách PublishNowAsync bên dưới đã làm.
+        EnsureStatus(post, "lên lịch đăng", PostStatus.Approved, PostStatus.Scheduled);
 
         post.Status = PostStatus.Scheduled;
         post.ScheduledPublishAt = scheduledAt.ToUniversalTime();
@@ -81,6 +84,7 @@ public class PostWorkflowService(
         ApplyUpdate(post);
 
         await CancelPendingPublishAsync(post.Id, ct);
+        await FlushCancelledPublishAsync(ct);
         await CreatePendingPublishJobAsync(post, scheduledAt, ct);
         await CreatePendingPublishLogAsync(post, ct);
 
@@ -114,6 +118,7 @@ public class PostWorkflowService(
         ApplyUpdate(post);
 
         await CancelPendingPublishAsync(post.Id, ct);
+        await FlushCancelledPublishAsync(ct);
         await CreatePendingPublishJobAsync(post, DateTime.UtcNow, ct);
         await CreatePendingPublishLogAsync(post, ct);
 
@@ -275,6 +280,19 @@ public class PostWorkflowService(
             log.UpdatedBy = userContext.GetCurrentUserName();
         }
     }
+
+    /// <summary>
+    /// Ghi xuống DB các job/log vừa bị <see cref="CancelPendingPublishAsync"/> đánh dấu Cancelled,
+    /// TRƯỚC khi hai hàm Create* bên dưới chạy.
+    ///
+    /// Bắt buộc phải có: CancelPendingPublishAsync chỉ đổi Status trên entity đang được EF theo dõi
+    /// (chưa lưu), trong khi hai hàm Create* lại kiểm tra trùng bằng truy vấn DB thật (AnyAsync /
+    /// HasPendingAsync). EF Core KHÔNG tự flush trước khi query, nên nếu không lưu ở đây thì hai
+    /// truy vấn đó vẫn đọc thấy job/log cũ ở trạng thái Pending, kết luận "đã có rồi" và bỏ qua
+    /// việc tạo bản ghi mới — bài đổi lịch xong sẽ không còn job/log nào đi kèm.
+    /// </summary>
+    private async Task FlushCancelledPublishAsync(CancellationToken ct)
+        => await context.SaveChangesAsync(ct);
 
     private async Task CreatePendingPublishJobAsync(
         PostModel post, DateTime scheduledAt, CancellationToken ct)
