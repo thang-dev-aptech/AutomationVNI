@@ -37,6 +37,13 @@ public class ReelsOptions
     public string RuploadBaseUrl { get; set; } = "https://rupload.facebook.com";
 
     public int TimeoutSeconds { get; set; } = 180;
+
+    /// <summary>
+    /// Giới hạn thời gian chờ tiến trình FFmpeg dựng video (giây). Lưới an toàn thứ 2 — phòng khi
+    /// FFmpeg treo vì lý do khác ngoài stdin (ảnh input hỏng, đĩa đầy...) sau khi đã chặn nguyên nhân
+    /// chính (xem RunFfmpegAsync). Video thật render trong 1-10s theo log production, 300s đã rất dư.
+    /// </summary>
+    public int FfmpegTimeoutSeconds { get; set; } = 300;
 }
 
 public class ThreadsPublishOptions
