@@ -31,7 +31,9 @@ public class PublishLogRepository : GenericRepository<PublishLogModel>
             query = query.Where(x => x.CreatedAt <= request.ToDate.Value);
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
-            query = query.Where(x => x.ErrorMessage != null && x.ErrorMessage.Contains(request.Keyword));
+            query = query.Where(x =>
+                (x.ErrorMessage != null && x.ErrorMessage.Contains(request.Keyword)) ||
+                (x.ExternalPostId != null && x.ExternalPostId.Contains(request.Keyword)));
 
         var paged = await PaginateAsync(query, request.Index, request.Size, ct);
         return new PagedResult<PublishLogResponse>
