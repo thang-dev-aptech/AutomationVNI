@@ -18,10 +18,22 @@ export default function PublishLogTable({
   onRetry,
 }) {
   const [errorPanel, setErrorPanel] = useState(null)
+  const [copiedId, setCopiedId] = useState(null)
 
   if (isLoading) return <LoadingState />
   if (isError) return <ErrorState message={getErrorMessage(error)} onRetry={onRetry} />
   if (items.length === 0) return <EmptyState message="Không có publish log nào" />
+
+  async function handleCopyExternalId(externalPostId) {
+    if (!externalPostId) return
+    try {
+      await navigator.clipboard.writeText(externalPostId)
+      setCopiedId(externalPostId)
+      setTimeout(() => setCopiedId((prev) => (prev === externalPostId ? null : prev)), 1500)
+    } catch {
+      // Clipboard API có thể bị chặn (http không secure context) — vẫn xem được đầy đủ qua title khi hover.
+    }
+  }
 
   return (
     <>
@@ -53,8 +65,22 @@ export default function PublishLogTable({
                   {channelMap[log.socialChannelId] || shortId(log.socialChannelId)}
                 </td>
                 <td><PublishStatusBadge status={log.status} /></td>
-                <td title={log.externalPostId || ''}>
-                  {truncateText(log.externalPostId, 24) || '—'}
+                <td>
+                  {log.externalPostId ? (
+                    <button
+                      type="button"
+                      className="external-id-chip"
+                      title={log.externalPostId}
+                      onClick={() => handleCopyExternalId(log.externalPostId)}
+                    >
+                      <code>{truncateText(log.externalPostId, 28)}</code>
+                      <span className="external-id-copy-hint">
+                        {copiedId === log.externalPostId ? 'Đã copy' : 'Copy'}
+                      </span>
+                    </button>
+                  ) : (
+                    <span className="external-id-empty">—</span>
+                  )}
                 </td>
                 <td>{formatDateTime(log.publishedAt)}</td>
                 <td>{log.attemptNumber}</td>

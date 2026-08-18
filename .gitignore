@@ -103,6 +103,7 @@ publish_output_sc/
 publish_frontend/
 /publish_backend.zip
 /publish_frontend.zip
+backend/publish/
 
 # Project/script debug cá nhân, không thuộc source chính thức của repo.
 scratch/
