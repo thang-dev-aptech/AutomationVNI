@@ -54,6 +54,11 @@ ASP.NET Core nested config dùng `__`:
 export Jwt__SecretKey="YOUR_PRODUCTION_JWT_SECRET"
 export ConnectionStrings__Default="Data Source=/var/data/vni_automation.db"
 
+# Tài khoản demo role Viewer, tuỳ chọn — đưa cho bên thứ 3 audit (vd. TikTok App Review) thay
+# vì chia sẻ tài khoản Admin thật. Để trống thì bỏ qua, không lỗi.
+export Seed__ReviewerEmail="reviewer@yourdomain.com"
+export Seed__ReviewerPassword="YOUR_REVIEWER_PASSWORD"
+
 # AI (optional)
 export AiProviders__DefaultProvider="9router"
 export AiProviders__Providers__9router__ApiKey="YOUR_KEY"

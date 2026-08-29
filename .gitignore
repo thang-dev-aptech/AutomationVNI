@@ -96,14 +96,37 @@ backend/wwwroot/dist.zip
 /Data.zip
 /vni_automation.db
 /vni_automation.db.zip
+/vni_automation.db.bak*
 
 # Gói publish/deploy dựng thủ công ngoài quy trình CI — không phải mã nguồn, rất nặng.
 publish_output/
 publish_output_sc/
 publish_frontend/
 /publish_backend.zip
+/publish_backend*.zip
 /publish_frontend.zip
 backend/publish/
+
+# ffmpeg.rar/.zip tải nhầm vào Resources — không phải binary ffmpeg chuẩn (xem rule
+# backend/Resources/ffmpeg/ bên dưới), lọt vào đây do tải thủ công rồi quên xoá.
+backend/Resources/ffmpeg.rar
+backend/Resources/ffmpeg.zip
+
+# Video quay demo tay (vd. cho TikTok App Review) + tài liệu hướng dẫn quay đi kèm — không phải
+# mã nguồn, rất nặng, và có thể lộ dữ liệu thật hiện trên màn hình lúc quay.
+*.mp4
+Huong-dan-quay-video-huong-dan-su-dung.docx
+
+# Ảnh test/scratch dùng thử tính năng AI vision/overlay, không phải asset dự án.
+/healthcare.jpeg
+/test1.jpeg
+/test2.jpeg
+/test2-*.png
+
+# Bản proxy PHP thật đang chạy trên DirectAdmin — xem api-proxy.example.php để biết cấu trúc;
+# bản thật khác nhau theo từng máy/server nên không commit (không chứa secret nhưng là config
+# triển khai riêng của từng server, giống appsettings.Production.json).
+/proxy.php
 
 # Project/script debug cá nhân, không thuộc source chính thức của repo.
 scratch/

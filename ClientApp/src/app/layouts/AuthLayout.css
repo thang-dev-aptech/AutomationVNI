@@ -56,3 +56,22 @@
     padding: 28px 20px 24px;
   }
 }
+
+.auth-footer {
+  position: relative;
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.auth-footer a {
+  color: var(--color-text-muted);
+  text-decoration: underline;
+}
+
+.auth-footer a:hover {
+  color: var(--color-primary);
+}

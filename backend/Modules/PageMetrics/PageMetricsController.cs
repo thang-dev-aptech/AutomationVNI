@@ -100,6 +100,22 @@ public class PageMetricsController(
             .ToListAsync(ct);
         var byChannel = postsInWindow.ToDictionary(x => x.ChannelId, x => x);
 
+        // ─── Cùng số liệu đó nhưng của kỳ liền trước, cùng độ dài — để tính biến động tương tác.
+        // Followers có bảng mốc riêng nên so được với "trước cửa sổ"; tương tác thì cộng từ bài
+        // đăng trong cửa sổ nên phải tự dựng kỳ trước theo cách tương tự mới so được táo với táo.
+        var prevWindowStartUtc = windowStartUtc.AddDays(-days);
+        var prevWindowPosts = await db.SocialPosts
+            .Where(x => !x.IsDeleted && channelIds.Contains(x.SocialChannelId)
+                        && x.PostedAt != null && x.PostedAt >= prevWindowStartUtc && x.PostedAt < windowStartUtc)
+            .GroupBy(x => x.SocialChannelId)
+            .Select(g => new
+            {
+                ChannelId = g.Key,
+                Engagement = g.Sum(x => x.LikeCount) + g.Sum(x => x.PlatformCommentCount) + g.Sum(x => x.ShareCount),
+            })
+            .ToListAsync(ct);
+        var byChannelPrev = prevWindowPosts.ToDictionary(x => x.ChannelId, x => x.Engagement);
+
         // ═══ Chuỗi theo thời gian để vẽ biểu đồ ═══
         //
         // Dựng lại từ NGÀY ĐĂNG của từng bài, không phải từ bảng mốc ChannelMetricDaily.
@@ -196,6 +212,9 @@ public class PageMetricsController(
                 comments = w?.Comments ?? 0,
                 shares = w?.Shares ?? 0,
                 engagement,
+                // So với đúng {days} ngày liền trước — không phải null-khi-chưa-có-mốc như
+                // followersDelta, vì kỳ trước không có bài thì tương tác kỳ trước hợp lệ là 0.
+                engagementDelta = engagement - byChannelPrev.GetValueOrDefault(c.Id),
                 // Tương tác trung bình mỗi bài — con số so sánh được giữa page to và page nhỏ.
                 // Tổng tương tác thì page nào đăng nhiều cũng thắng, không nói lên chất lượng bài.
                 engagementPerPost = (w?.Posts ?? 0) == 0

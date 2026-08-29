@@ -63,8 +63,11 @@ public class GenerationJobPipelineService(
     private static readonly PostStatus[] QueueReelsRenderAllowedStatuses =
         [PostStatus.WaitingReview, PostStatus.Approved, PostStatus.NeedFix, PostStatus.Failed];
 
+    // Queued: PostRecycleService đặt bài Recycle+VectorSearch vào trạng thái này để hàm này xử lý
+    // (ImageTemplateId=Guid.Empty báo hiệu "cần tìm ảnh qua vector search") — thiếu Queued ở đây
+    // khiến MỌI bài recycle kiểu VectorSearch lập tức Failed ngay lượt sinh bài đầu tiên.
     private static readonly PostStatus[] QueueMediaMatchAllowedStatuses =
-        [PostStatus.WaitingReview, PostStatus.Approved, PostStatus.NeedMedia, PostStatus.GeneratingMedia];
+        [PostStatus.WaitingReview, PostStatus.Approved, PostStatus.NeedMedia, PostStatus.GeneratingMedia, PostStatus.Queued];
 
     /// <summary>
     /// Sinh trọn nội dung cho 1 post: text → image. Dùng chung cho create-and-generate (đồng bộ)

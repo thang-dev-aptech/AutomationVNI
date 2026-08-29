@@ -90,8 +90,8 @@ public class PostController
         var deleted = await _repo.SoftDeleteAllAsync(deleteAllUsers, ct);
         return Ok(ApiResponse.Ok(new { deleted },
             deleted == 0
-                ? "Không có bài viết nào để xóa (bài đang có lịch đăng được giữ lại)"
-                : $"Đã xóa {deleted} bài viết — bài đang có lịch đăng được giữ lại"));
+                ? "Không có bài viết nào để xóa (bài đang có lịch đăng và bài đã đăng được giữ lại)"
+                : $"Đã xóa {deleted} bài viết — bài đang có lịch đăng và bài đã đăng được giữ lại"));
     }
 
     // --- Generation pipeline ---

@@ -10,7 +10,7 @@ export default function PrivacyPolicyPage() {
           <img className="legal-logo" src="/app-mark.svg" alt="" />
           <h1 className="legal-title">Chính sách quyền riêng tư</h1>
           <p className="legal-subtitle">
-            Privacy Policy — Automation · Cập nhật ngày 21/07/2026
+            Privacy Policy — Automation · Cập nhật ngày 27/08/2026
           </p>
         </header>
 
@@ -18,7 +18,7 @@ export default function PrivacyPolicyPage() {
           <p>
             Chính sách này mô tả cách Automation thu thập, sử dụng, lưu trữ
             và bảo vệ dữ liệu khi bạn sử dụng ứng dụng hoặc kết nối tài khoản
-            Facebook, Instagram Business và Threads.
+            Facebook, Instagram Business, Threads và TikTok.
           </p>
         </section>
 
@@ -32,7 +32,7 @@ export default function PrivacyPolicyPage() {
             </li>
             <li>
               Token truy cập và các quyền do bạn cấp thông qua quy trình OAuth
-              của Meta.
+              của Meta hoặc TikTok.
             </li>
             <li>
               Bài viết, tệp media, bình luận, tin nhắn và dữ liệu tương tác cần
@@ -62,11 +62,11 @@ export default function PrivacyPolicyPage() {
         <section className="legal-section">
           <h2>3. Chia sẻ và nhà cung cấp dịch vụ</h2>
           <p>
-            Dữ liệu chỉ được chia sẻ khi cần thiết với Meta và các nhà cung cấp
-            hạ tầng, lưu trữ hoặc AI phục vụ chức năng bạn sử dụng. Các bên này
-            chỉ được xử lý dữ liệu trong phạm vi cung cấp dịch vụ và theo các
-            nghĩa vụ bảo mật áp dụng. Chúng tôi cũng có thể cung cấp dữ liệu khi
-            pháp luật yêu cầu.
+            Dữ liệu chỉ được chia sẻ khi cần thiết với Meta, TikTok và các nhà
+            cung cấp hạ tầng, lưu trữ hoặc AI phục vụ chức năng bạn sử dụng.
+            Các bên này chỉ được xử lý dữ liệu trong phạm vi cung cấp dịch vụ
+            và theo các nghĩa vụ bảo mật áp dụng. Chúng tôi cũng có thể cung
+            cấp dữ liệu khi pháp luật yêu cầu.
           </p>
         </section>
 

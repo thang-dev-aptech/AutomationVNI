@@ -10,7 +10,7 @@ export default function TermsPage() {
           <img className="legal-logo" src="/app-mark.svg" alt="" />
           <h1 className="legal-title">Điều khoản dịch vụ</h1>
           <p className="legal-subtitle">
-            Terms of Service — Automation · Cập nhật ngày 21/07/2026
+            Terms of Service — Automation · Cập nhật ngày 27/08/2026
           </p>
         </header>
 
@@ -37,7 +37,7 @@ export default function TermsPage() {
             Automation hỗ trợ tạo, quản lý, lên lịch và đăng nội dung; đồng
             thời hỗ trợ quản lý tương tác trên các nền tảng được tích hợp. Tính
             năng có thể phụ thuộc vào API, quyền truy cập và chính sách của nền
-            tảng bên thứ ba như Meta.
+            tảng bên thứ ba như Meta hoặc TikTok.
           </p>
         </section>
 
@@ -66,9 +66,10 @@ export default function TermsPage() {
         <section className="legal-section">
           <h2>5. Dịch vụ bên thứ ba</h2>
           <p>
-            Việc kết nối Facebook, Instagram hoặc Threads còn chịu điều khoản
-            và chính sách của Meta. Chúng tôi không kiểm soát sự sẵn sàng, thay
-            đổi API, giới hạn hoặc quyết định của các nền tảng này.
+            Việc kết nối Facebook, Instagram, Threads hoặc TikTok còn chịu
+            điều khoản và chính sách của Meta hoặc TikTok tương ứng. Chúng tôi
+            không kiểm soát sự sẵn sàng, thay đổi API, giới hạn hoặc quyết
+            định của các nền tảng này.
           </p>
         </section>
 

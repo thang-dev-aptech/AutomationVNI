@@ -5,7 +5,7 @@ export const CONFIRM_MESSAGES = {
     `Ngắt kết nối tài khoản "${name}"? Các kênh thuộc tài khoản sẽ bị tắt.`,
   deletePost: (title) => `Xóa bài viết "${title}"? Hành động này không thể hoàn tác.`,
   deleteAllPosts: () =>
-    'Xóa TẤT CẢ bài viết? Admin xóa toàn bộ hệ thống; ContentManager chỉ xóa bài của mình. Hành động này không thể hoàn tác.',
+    'Xóa TẤT CẢ bài viết (trừ bài đang có lịch đăng và bài đã đăng)? Admin xóa toàn bộ hệ thống; ContentManager chỉ xóa bài của mình. Hành động này không thể hoàn tác.',
   deleteMedia: (name) => `Xóa media "${name}"? Hành động này không thể hoàn tác.`,
   detachMedia: () => 'Gỡ media khỏi bài viết?',
   cancelJob: (id) => `Hủy job ${String(id).slice(0, 8)}…?`,

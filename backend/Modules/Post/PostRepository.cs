@@ -436,7 +436,9 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         }
 
         // Bỏ qua bài đang có lịch — xoá sẽ để lại bài mồ côi trên Facebook (xem PostController.SoftDelete).
-        query = query.Where(x => x.Status != PostStatus.Scheduled);
+        // Bỏ qua cả bài đã đăng (Published) — bài thật vẫn còn sống trên Facebook/TikTok/..., xoá bản ghi
+        // hệ thống chỉ làm mất lịch sử/số liệu mà không có cách khôi phục qua UI.
+        query = query.Where(x => x.Status != PostStatus.Scheduled && x.Status != PostStatus.Published);
 
         var posts = await query.ToListAsync(cancellationToken);
         if (posts.Count == 0)

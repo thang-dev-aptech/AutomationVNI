@@ -149,7 +149,10 @@ export default function CustomerOverview({ data, days, onChangeDays, onSync, syn
       <section className="card cust-panel">
         <header className="cust-panel-head">
           <h2>Từng page chạy thế nào</h2>
-          <p>Sắp theo tương tác nhận được trong {days} ngày</p>
+          <p>
+            Xếp hạng theo tương tác nhận được trong {days} ngày, page nhiều nhất lên đầu — kèm
+            biến động so với {days} ngày liền trước
+          </p>
         </header>
 
         {pages.length === 0 ? (
@@ -171,7 +174,8 @@ export default function CustomerOverview({ data, days, onChangeDays, onSync, syn
               </thead>
               <tbody>
                 {pages.map((p) => {
-                  const d = delta(p.followersDelta)
+                  const followersD = delta(p.followersDelta)
+                  const engagementD = delta(p.engagementDelta)
                   return (
                     <tr key={p.id} className={p.syncError ? 'is-stale' : undefined}>
                       <td>
@@ -182,12 +186,24 @@ export default function CustomerOverview({ data, days, onChangeDays, onSync, syn
                       </td>
                       <td className="lb-num">
                         {num(p.followers)}
-                        {d && d.tone !== 'flat' && (
-                          <span className={`lb-delta lb-delta--${d.tone}`}>{d.icon} {d.text}</span>
+                        {followersD && followersD.tone !== 'flat' && (
+                          <span className={`lb-delta lb-delta--${followersD.tone}`}>
+                            {followersD.icon} {followersD.text}
+                          </span>
                         )}
                       </td>
                       <td className="lb-num">{num(p.posts)}</td>
-                      <td className="lb-num lb-strong">{num(p.engagement)}</td>
+                      <td className="lb-num lb-strong">
+                        {num(p.engagement)}
+                        {engagementD && (
+                          <span
+                            className={`lb-delta lb-delta--${engagementD.tone}`}
+                            title={`So với ${days} ngày liền trước`}
+                          >
+                            {engagementD.icon} {engagementD.text}
+                          </span>
+                        )}
+                      </td>
                       <td className="lb-num">{p.engagementPerPost ?? '—'}</td>
                       <td className="lb-barcol"><Bar value={p.engagement} max={maxEngagement} /></td>
                     </tr>
