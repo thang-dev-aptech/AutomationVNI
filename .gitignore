@@ -134,6 +134,16 @@ test_api/
 test_find_inputs.js
 program_version_*.txt
 
+# ZaloBot ("AIBot/") — dự án .NET riêng, độc lập, KHÔNG tích hợp vào AutomationVNI (đã đánh giá
+# và quyết định không gộp: kiến trúc/mục tiêu bộ nhớ khác hẳn). Nằm tạm trong thư mục này để
+# tham khảo, không phải source của repo.
+/AIBot/
+
+# App icon + favicon 1024x1024 dựng riêng cho hồ sơ nộp TikTok App Review — deliverable rời nộp
+# qua form của TikTok, không phải asset được app dùng tới (không có chỗ nào trong code trỏ tới).
+/app-icon.png
+/favicon-icon.png
+
 # FFmpeg static binary cho SlideshowVideoRenderService (dựng video Reels) — ~80MB, tải về theo
 # hướng dẫn ở REELS_PLAN.md phần C4 (johnvansickle.com/ffmpeg), không commit để khỏi phình repo
 # vĩnh viễn. `dotnet publish`/build zip vẫn gắp được bình thường vì file nằm sẵn trên đĩa.

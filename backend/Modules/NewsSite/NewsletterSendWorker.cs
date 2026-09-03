@@ -34,7 +34,10 @@ public class NewsletterSendWorker(
             {
                 await SendPendingAsync(stoppingToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            // Lọc theo stoppingToken.IsCancellationRequested, không theo kiểu exception: timeout
+            // SMTP cũng ném TaskCanceledException (một OperationCanceledException) mà lọc theo kiểu
+            // sẽ vô tình để lọt ra ngoài ExecuteAsync, kéo sập cả app.
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "NewsletterSendWorker lỗi vòng lặp");
             }
@@ -89,7 +92,7 @@ public class NewsletterSendWorker(
                         sub.Email, article.Title, BuildHtml(article, articleUrl, sub.UnsubscribeToken), ct);
                     sent++;
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (Exception ex) when (!ct.IsCancellationRequested)
                 {
                     // Lỗi 1 người nhận không được dừng cả lô — log rồi đi tiếp, giống tinh thần
                     // NotificationService "không để lỗi phụ làm hỏng việc chính".

@@ -94,7 +94,9 @@ public class CrawlTelegramWorker(
                 await PushNotificationsAsync(stoppingToken);
                 await PublishApprovedAsync(stoppingToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            // Cùng bài học ở khối try phía trên (setup bot lúc khởi động): lọc theo
+            // stoppingToken.IsCancellationRequested, không theo kiểu exception.
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "Bot Telegram lỗi vòng lặp");
                 try { await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken); }
@@ -202,7 +204,7 @@ public class CrawlTelegramWorker(
                 "Nhớ lại chat Telegram {Chat} ({N} tin đã gửi) từ lần chạy trước", best.Chat, best.Count);
             return best.Chat;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Không đọc lại được chat Telegram");
             return 0;

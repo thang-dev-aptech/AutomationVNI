@@ -36,6 +36,14 @@ using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Mặc định .NET: 1 BackgroundService (crawl, gửi mail, đồng bộ comment, refresh token...) ném
+// exception chưa bắt là KÉO SẬP TOÀN BỘ app — kể cả API đăng nhập, không riêng gì worker đó.
+// Đã xảy ra thật: ContentCrawlWorker timeout gọi HTTP 20s, exception lọt qua catch lọc sai kiểu,
+// cả app tắt và không tự bật lại (log production 2026-08-30). Đã vá từng chỗ lọc sai, nhưng đây
+// là lưới an toàn cuối — lỗi nào sót/lỗi mới phát sinh chỉ dừng ĐÚNG worker đó, không giết cả app.
+builder.Services.Configure<HostOptions>(o =>
+    o.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore);
+
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<SeedSettings>(builder.Configuration.GetSection("Seed"));
 builder.Services.Configure<FileStorageOptions>(builder.Configuration.GetSection("FileStorage"));

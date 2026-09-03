@@ -51,6 +51,21 @@ public partial class NewsSiteRepository(
         => await context.Set<NewsArticleModel>().FirstOrDefaultAsync(x => x.Slug == slug && !x.IsDeleted, ct);
 
     /// <summary>
+    /// Cộng 1 lượt xem — dùng ExecuteUpdateAsync (UPDATE ... SET ViewCount = ViewCount + 1) thay vì
+    /// load entity rồi SaveChangesAsync, vì nhiều độc giả mở bài cùng lúc load-rồi-lưu sẽ mất lượt
+    /// (2 request cùng đọc ViewCount=5, cùng ghi lại 6, mất 1 lượt) — atomic ở tầng SQL thì không.
+    /// Trả về true nếu tăng được (đúng slug, đã Published) — false thì im lặng bỏ qua ở caller,
+    /// không phải lỗi đáng log (bot/crawler dò URL rác, hoặc bài chưa/không còn Published).
+    /// </summary>
+    public async Task<bool> IncrementViewCountAsync(string slug, CancellationToken ct = default)
+    {
+        var rows = await context.Set<NewsArticleModel>()
+            .Where(x => x.Slug == slug && !x.IsDeleted && x.Status == NewsArticleStatus.Published)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.ViewCount, x => x.ViewCount + 1), ct);
+        return rows > 0;
+    }
+
+    /// <summary>
     /// Danh sách cho MÀN QUẢN TRỊ — mọi trạng thái, mới trước.
     ///
     /// Khác GetPublishedAsync vốn chỉ trả bài đã lên web (dùng để dựng trang tĩnh). Màn quản

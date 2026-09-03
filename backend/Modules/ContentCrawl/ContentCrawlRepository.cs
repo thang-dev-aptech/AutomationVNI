@@ -294,6 +294,18 @@ public class ContentCrawlRepository(
             .Take(Math.Clamp(take, 1, 100))
             .ToListAsync(ct);
 
+    /// <summary>
+    /// Tin đang chờ duyệt tay nhưng đạt điểm ≥ ngưỡng tự duyệt — hàng tồn từ TRƯỚC lúc tính năng
+    /// tự duyệt (AutoApproveMinScore) được bật, vì tính năng đó chỉ chấm tin mới cào về, không
+    /// quét ngược lại tin cũ sẵn có. Dùng cho thao tác "quét 1 lần" xử lý nốt hàng tồn.
+    /// </summary>
+    public async Task<List<CrawledArticleModel>> GetPendingAboveScoreAsync(
+        int minScore, CancellationToken ct = default)
+        => await QueryActive()
+            .Where(x => x.Status == CrawledArticleStatus.Pending && x.QualityScore >= minScore)
+            .OrderBy(x => x.FetchedAt)
+            .ToListAsync(ct);
+
     /// <summary>Tin sạch, chờ duyệt, CHƯA báo Telegram lần nào (TelegramMessageId rỗng).</summary>
     public async Task<List<CrawledArticleModel>> GetUnnotifiedPendingAsync(int take, CancellationToken ct = default)
         => await QueryActive()

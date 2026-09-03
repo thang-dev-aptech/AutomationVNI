@@ -38,7 +38,10 @@ public class TikTokTokenRefreshService(
             {
                 await RefreshDueTokensAsync(settings, stoppingToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            // Lọc theo stoppingToken.IsCancellationRequested, không theo kiểu exception: timeout
+            // gọi API TikTok cũng ném TaskCanceledException, dễ lọt qua nếu lọc theo kiểu và kéo
+            // sập cả app (BackgroundServiceExceptionBehavior=StopHost mặc định).
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "TikTokTokenRefreshService loop error");
             }

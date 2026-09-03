@@ -1,7 +1,7 @@
-// Trang tin là site HTML tĩnh — file này là JS duy nhất, xử lý 2 việc CẦN động:
-// tìm kiếm (trang /tim-kiem/) và đăng ký nhận tin (form ở trang chủ).
+// Trang tin là site HTML tĩnh — file này là JS duy nhất, xử lý 3 việc CẦN động:
+// tìm kiếm (trang /tim-kiem/), đăng ký nhận tin (form ở trang chủ), báo lượt xem (trang bài viết).
 //
-// Cả 2 đều gọi qua "proxy.php" đặt CÙNG thư mục với site tĩnh này (vd public_html/news/),
+// Cả 3 đều gọi qua "proxy.php" đặt CÙNG thư mục với site tĩnh này (vd public_html/news/),
 // KHÔNG gọi thẳng sang domain backend — browser gọi cùng-origin nên không dính CORS; proxy.php
 // mới là bên gọi chéo domain, và đó là việc của PHP chạy trên server, không phải trình duyệt.
 (function () {
@@ -9,6 +9,22 @@
 
   var basePath = window.NEWS_BASE_PATH || "";
   var proxyUrl = basePath + "/api-proxy.php";
+
+  // ── Báo lượt xem (trang bài viết) ────────────────────────────────────────
+  //
+  // window.NEWS_ARTICLE_SLUG chỉ được set ở trang bài viết (xem NewsSiteRenderer.RenderArticle)
+  // — nhờ vậy trang chủ/danh mục/tìm kiếm không vô tình đếm nhầm lượt xem.
+  //
+  // Không xử lý lỗi/không quan tâm response: đây là số liệu phụ trợ, mạng chập chờn hay backend
+  // đang bảo trì thì độc giả vẫn đọc bài bình thường, không đáng để hiện cảnh báo hay chặn gì cả.
+  if (window.NEWS_ARTICLE_SLUG) {
+    fetch(proxyUrl + "?path=view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: window.NEWS_ARTICLE_SLUG }),
+      keepalive: true,
+    }).catch(function () {});
+  }
 
   function esc(s) {
     var div = document.createElement("div");

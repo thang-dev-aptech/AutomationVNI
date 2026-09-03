@@ -345,6 +345,14 @@ public class PublishPipelineService(
         return log;
     }
 
+    /// <summary>
+    /// Trễ hẹn quá ngưỡng này (kẹt do lỗi, downtime, hay backlog dồn lại) thì KHÔNG đăng ngay khi
+    /// vừa gỡ được nút thắt — dồn hàng chục bài cùng lúc lên 1 page trong vài phút là dấu hiệu
+    /// spam rõ với Facebook, dễ bị giảm phân phối hoặc khoá page. Bài trễ hẹn vượt ngưỡng được rải
+    /// lại sang các khung giờ vàng SẮP TỚI của đúng page đó thay vì publish ngay lúc đến lượt.
+    /// </summary>
+    private static readonly TimeSpan StaleScheduleThreshold = TimeSpan.FromHours(1);
+
     public async Task<ProcessDueScheduledResult> ProcessDueScheduledAsync(
         int batchSize, CancellationToken ct = default)
     {
@@ -360,6 +368,13 @@ public class PublishPipelineService(
 
         var result = new ProcessDueScheduledResult { Picked = posts.Count };
         logger.LogInformation("Scheduler picked {Count} scheduled post(s) due for publish", posts.Count);
+
+        var stale = posts.Where(p => now - p.ScheduledPublishAt!.Value > StaleScheduleThreshold).ToList();
+        if (stale.Count > 0)
+        {
+            await RescheduleStalePostsAsync(stale, now, result, ct);
+            posts = posts.Except(stale).ToList();
+        }
 
         foreach (var post in posts)
         {
@@ -413,6 +428,52 @@ public class PublishPipelineService(
         return result;
     }
 
+    /// <summary>
+    /// Rải lại bài trễ hẹn quá lâu sang khung giờ vàng sắp tới CỦA ĐÚNG PAGE đó — không đăng ngay.
+    /// Neo mốc bắt đầu vào lịch xa nhất page đó ĐANG có (không chỉ "now") để nhiều bài trễ hẹn của
+    /// cùng 1 page, dù rơi vào nhiều lượt gọi khác nhau (batch giới hạn theo <paramref
+    /// name="posts"/>.Count mỗi tick), vẫn nối tiếp nhau đúng nhịp khung giờ thay vì chồng lấn.
+    /// </summary>
+    private async Task RescheduleStalePostsAsync(
+        List<PostModel> posts, DateTime now, ProcessDueScheduledResult result, CancellationToken ct)
+    {
+        foreach (var group in posts.GroupBy(p => p.SocialChannelId))
+        {
+            var channelId = group.Key;
+            var lastScheduled = await context.Set<PostModel>()
+                .Where(x => !x.IsDeleted && x.SocialChannelId == channelId
+                    && x.Status == PostStatus.Scheduled && x.ScheduledPublishAt != null)
+                .MaxAsync(x => (DateTime?)x.ScheduledPublishAt, ct);
+            var anchor = lastScheduled.HasValue && lastScheduled.Value > now ? lastScheduled.Value : now;
+
+            var ordered = group.OrderBy(p => p.ScheduledPublishAt).ToList();
+            var slots = ScheduleSlotHelper.ComputeSlotTimesUtc(
+                anchor, ScheduleSlotHelper.DefaultSlots, ScheduleSlotHelper.DefaultTimezone,
+                ordered.Count, jitterMinutes: 20);
+
+            for (var i = 0; i < ordered.Count; i++)
+            {
+                var oldAt = ordered[i].ScheduledPublishAt;
+                ordered[i].ScheduledPublishAt = slots[i];
+                ApplyPostUpdate(ordered[i]);
+
+                result.Rescheduled++;
+                result.Items.Add(new ProcessDueScheduledItem
+                {
+                    PostId = ordered[i].Id,
+                    Outcome = "Rescheduled",
+                    Message = $"Trễ hẹn từ {oldAt:yyyy-MM-dd HH:mm} UTC — rải lại sang {slots[i]:yyyy-MM-dd HH:mm} UTC"
+                });
+            }
+
+            logger.LogInformation(
+                "Rải lại {Count} bài trễ hẹn quá {Hours}h của page {ChannelId} sang khung giờ vàng sắp tới",
+                ordered.Count, StaleScheduleThreshold.TotalHours, channelId);
+        }
+
+        await context.SaveChangesAsync(ct);
+    }
+
     private async Task<ProcessDueScheduledItem> ProcessScheduledPostAsync(
         PostModel post, CancellationToken ct)
     {
@@ -446,7 +507,17 @@ public class PublishPipelineService(
         var idempotencyKey = PublishIdempotency.BuildKey(post.Id, post.SocialChannelId, scheduledAt);
 
         var existing = await publishLogRepository.GetByIdempotencyKeyAsync(idempotencyKey, ct);
-        if (existing is not null)
+        // Log cũ CHƯA kết thúc (Pending/Processing) hoặc đã xong (Success) mới được dùng lại — khoá
+        // idempotency không đổi giữa các lần thử (cùng post+channel+giờ hẹn), nên nếu tái dùng cả
+        // log đã Failed/DeadLetter/Cancelled/RateLimited thì mọi lần thử sau sẽ luôn trúng đúng cái
+        // log chết đó: ExecutePublishAsync từ chối xử lý log không Pending, rồi FailAsync lại từ
+        // chối fail-lại một log đã Failed — post kẹt vĩnh viễn ở Scheduled, bị chọn lại và lặp lại
+        // đúng 2 lỗi đó mỗi tick, không bao giờ thoát (từng thấy thật trong log production: 1 post
+        // lặp lại hàng nghìn lần, chiếm trọn cả batch scheduler). Log đã kết thúc-không-thành-công
+        // thì phải rơi xuống dưới để tạo ATTEMPT MỚI — nhờ vậy AttemptNumber mới tăng đúng, và
+        // MaxPublishAttempts vẫn chặn được vòng lặp vô hạn như thiết kế ban đầu.
+        if (existing is not null
+            && existing.Status is PublishStatus.Pending or PublishStatus.Processing or PublishStatus.Success)
             return existing;
 
         if (await publishLogRepository.HasPendingAsync(post.Id, ct))
@@ -470,6 +541,18 @@ public class PublishPipelineService(
     {
         var log = await publishLogRepository.GetActiveAsync(post.Id, ct)
             ?? await EnsurePendingPublishLogAsync(post, ct);
+
+        // Phòng hờ ngoài dự liệu: nếu log resolve ra vẫn đã ở trạng thái kết thúc, gọi FailAsync sẽ
+        // ném tiếp (không "fail" lại được 1 log đã Failed) — khiến "Scheduled publish failed" lặp
+        // lại mỗi tick không bao giờ dừng (đã xảy ra thật trong production). Bỏ qua, chỉ ghi log,
+        // thay vì để ném lỗi tiếp làm post kẹt vĩnh viễn.
+        if (log.Status is not (PublishStatus.Pending or PublishStatus.Processing))
+        {
+            logger.LogWarning(
+                "Bỏ qua ghi lỗi scheduler cho post {PostId} — publish log {LogId} đã ở trạng thái kết thúc {Status}",
+                post.Id, log.Id, log.Status);
+            return;
+        }
 
         await FailAsync(log.Id, new FailPublishLogRequest
         {

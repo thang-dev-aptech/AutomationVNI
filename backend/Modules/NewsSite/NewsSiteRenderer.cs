@@ -438,6 +438,9 @@ public class NewsSiteRenderer(NewsSiteOptions options)
 
         var sb = new StringBuilder();
         sb.Append(Head($"{a.Title} — {SiteName}", a.Sapo, ogImage, NewsHtml.ArticlePath(a.Slug), "article"));
+        // Chỉ trang bài viết mới có global này — site.js dựa vào đó để biết "đang ở trang bài
+        // viết, cần báo lượt xem", không đếm nhầm lượt mở trang chủ/danh mục/tìm kiếm.
+        sb.AppendLine($"<script>window.NEWS_ARTICLE_SLUG={System.Text.Json.JsonSerializer.Serialize(a.Slug)};</script>");
         if (a.PublishedAt.HasValue)
             sb.AppendLine($"<meta property=\"article:published_time\" content=\"{NewsHtml.IsoDate(a.PublishedAt.Value)}\">");
         sb.AppendLine($"<meta property=\"article:section\" content=\"{NewsHtml.Esc(cat.Name)}\">");

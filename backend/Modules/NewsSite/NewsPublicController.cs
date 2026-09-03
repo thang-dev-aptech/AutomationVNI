@@ -11,6 +11,11 @@ public class SubscribeRequest
     public string? Email { get; set; }
 }
 
+public class RecordViewRequest
+{
+    public string? Slug { get; set; }
+}
+
 /// <summary>
 /// Mọi thứ CÔNG KHAI của trang tin — độc giả gọi thẳng, không đăng nhập. Tách khỏi
 /// <see cref="NewsSiteController"/> (100% admin/reviewer) để không phải rắc <c>[AllowAnonymous]</c>
@@ -44,6 +49,22 @@ public class NewsPublicController(
             a.CategorySlug,
             a.PublishedAt,
         }).ToList()));
+    }
+
+    /// <summary>
+    /// Cộng 1 lượt xem cho bài — trang tĩnh gọi qua proxy PHP lúc trang bài viết tải xong (xem
+    /// site.js). Slug nằm trong BODY (không phải path) để khớp đúng kiểu whitelist "path cố định"
+    /// của api-proxy.php — giống hệt subscribe, khác search (GET) chỉ vì HttpMethod. Luôn trả 200
+    /// dù slug sai/bài chưa Published, để JS phía trình duyệt không cần xử lý lỗi — đây là số liệu
+    /// phụ trợ, không đáng để lộ chi tiết lỗi hay làm rối console của độc giả.
+    /// </summary>
+    [HttpPost("view")]
+    public async Task<IActionResult> RecordView([FromBody] RecordViewRequest? request, CancellationToken ct)
+    {
+        var slug = request?.Slug?.Trim();
+        if (!string.IsNullOrEmpty(slug))
+            await repository.IncrementViewCountAsync(slug, ct);
+        return Ok(ApiResponse.Ok());
     }
 
     [HttpPost("subscribe")]

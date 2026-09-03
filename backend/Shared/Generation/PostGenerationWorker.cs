@@ -37,7 +37,7 @@ public class PostGenerationWorker(
             {
                 await ProcessQueuedAsync(settings, stoppingToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "PostGenerationWorker loop error");
             }

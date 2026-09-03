@@ -38,7 +38,11 @@ public class PostRecycleService(
             var sourcePosts = await context.Set<PostModel>()
                 .Where(p => !p.IsDeleted
                     && p.Status == PostStatus.Published
-                    && p.SocialChannelId == channelId)
+                    && p.SocialChannelId == channelId
+                    // Bài gốc từ tin tức (CỬA 2 — NewsFanpageService) không được nhân bản lại:
+                    // tin đã cũ mà đăng lại y nguyên nội dung, đội lốt bài mới, là sai bản chất
+                    // tin tức — khác nội dung quảng cáo/giới thiệu vốn hợp lý khi đăng lại.
+                    && p.GenerationFlow != GenerationFlow.TextOnly)
                 .OrderBy(_ => EF.Functions.Random()) // EF Core native random
                 .Take(request.Count)
                 .ToListAsync(ct);

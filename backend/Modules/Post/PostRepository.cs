@@ -334,6 +334,7 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         SourceArticleBrief? sourceArticle = null,
         int? imageCount = null,
         bool generateAsReels = false,
+        Guid? newsArticleId = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(title))
@@ -381,6 +382,7 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
                 ImageTemplateId = imageTpl,
                 ImageCount = imageCount,
                 BatchId = batchId,
+                NewsArticleId = newsArticleId,
                 UserId = userId,
                 Status = PostStatus.Queued
             };

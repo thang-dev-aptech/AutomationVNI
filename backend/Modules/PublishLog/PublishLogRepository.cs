@@ -118,7 +118,12 @@ public class PublishLogRepository : GenericRepository<PublishLogModel>
 
     public async Task<PublishLogModel?> GetByIdempotencyKeyAsync(string key, CancellationToken ct = default)
         => await QueryActive()
-            .FirstOrDefaultAsync(x => x.IdempotencyKey == key, ct);
+            .Where(x => x.IdempotencyKey == key)
+            // Cùng 1 khoá idempotency giờ có thể ứng với nhiều attempt (log Failed cũ + log mới tạo
+            // sau khi PublishPipelineService bỏ qua log đã kết thúc) — lấy log MỚI NHẤT, không để
+            // FirstOrDefault trả về log chết theo thứ tự ngẫu nhiên của DB.
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(ct);
 
     public static PublishLogResponse ToResponse(PublishLogModel e) => new()
     {

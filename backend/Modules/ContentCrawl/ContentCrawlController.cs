@@ -370,6 +370,22 @@ public class ContentCrawlController(
         return Ok(ApiResponse.Ok(new { recovered = n }, $"Đã đưa {n} tin quay lại hàng xử lý"));
     }
 
+    /// <summary>Quét 1 lượt: tự duyệt lên web (Cửa 1) mọi tin "chờ duyệt" đạt điểm ≥ ngưỡng — dọn
+    /// hàng tồn cào TRƯỚC lúc tính năng tự duyệt được bật.</summary>
+    [HttpPost("articles/sweep-auto-approve")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> SweepAutoApprove(CancellationToken ct)
+    {
+        try
+        {
+            var result = await pipeline.SweepAutoApproveBacklogAsync(ct);
+            return Ok(ApiResponse.Ok(result,
+                $"Đã tự duyệt {result.Approved}/{result.Total} tin tồn đọng lên hàng đợi viết bài"
+                + (result.Failed > 0 ? $" ({result.Failed} tin lỗi, để người duyệt tay)" : "")));
+        }
+        catch (ArgumentException ex) { return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", ex.Message)); }
+    }
+
     [HttpPost("articles/{id:guid}/approve")]
     [Authorize(Roles = "Admin,Reviewer")]
     public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveCrawledArticleRequest request, CancellationToken ct)

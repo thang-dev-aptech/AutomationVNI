@@ -41,7 +41,12 @@ public class ContentCrawlWorker(
                 await ProcessArticlesAsync(stoppingToken);
                 await ComposeQueuedArticlesAsync(stoppingToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            // Lọc theo stoppingToken.IsCancellationRequested, KHÔNG theo kiểu exception: HttpClient
+            // hết giờ (vd. FetchAsync 20s) cũng ném TaskCanceledException — một OperationCanceledException
+            // — mà "ex is not OperationCanceledException" sẽ vô tình bỏ qua đúng lỗi cần bắt, ném ra
+            // ngoài ExecuteAsync và kéo sập cả app (BackgroundServiceExceptionBehavior=StopHost mặc
+            // định giết TOÀN BỘ host, không riêng worker này — đã xảy ra thật, xem log production).
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "ContentCrawlWorker lỗi vòng lặp");
             }
@@ -80,7 +85,7 @@ public class ContentCrawlWorker(
                 var pipeline = scope.ServiceProvider.GetRequiredService<ContentCrawlPipelineService>();
                 await pipeline.RunSourceAsync(id, "worker", ct);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 // Một nguồn hỏng không được làm chết các nguồn còn lại.
                 logger.LogError(ex, "Cào nguồn {SourceId} thất bại", id);
@@ -131,7 +136,7 @@ public class ContentCrawlWorker(
                 var pipeline = scope.ServiceProvider.GetRequiredService<ContentCrawlPipelineService>();
                 await pipeline.ComposeQueuedAsync(newsId, ct);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 logger.LogError(ex, "Viết bài {Id} lỗi", newsId);
             }

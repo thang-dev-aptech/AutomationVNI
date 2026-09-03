@@ -14,7 +14,7 @@
  * site.js sẽ gọi "/news/api-proxy.php?...".
  *
  * Khác với proxy.php (forward mọi path/method — hợp lý cho frontend React đã có JWT sau lưng):
- * file này CHỈ forward đúng 2 đường dẫn backend được whitelist cứng dưới đây, vì đây là proxy
+ * file này CHỈ forward đúng 3 đường dẫn backend được whitelist cứng dưới đây, vì đây là proxy
  * PHÍA TRANG TIN CÔNG KHAI, không có lớp đăng nhập nào che — để không biến thành open proxy
  * bị lợi dụng gọi bừa sang các API admin khác của backend.
  */
@@ -24,6 +24,7 @@ $BACKEND_BASE = 'http://127.0.0.1:5000';
 $ALLOWED = [
     'search'    => ['method' => 'GET',  'path' => '/api/news-public/search'],
     'subscribe' => ['method' => 'POST', 'path' => '/api/news-public/subscribe'],
+    'view'      => ['method' => 'POST', 'path' => '/api/news-public/view'],
 ];
 
 $key = isset($_GET['path']) ? $_GET['path'] : '';

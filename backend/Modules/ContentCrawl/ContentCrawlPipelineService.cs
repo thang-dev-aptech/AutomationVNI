@@ -428,6 +428,31 @@ public class ContentCrawlPipelineService(
                 // bằng hai hệ mã khác nhau.
                 if (article.Status == CrawledArticleStatus.Pending)
                     await repository.EnsureShortCodesAsync(ct);
+
+                // Tự duyệt lên web (CỬA 1) cho tin điểm cao — xem AutoApproveMinScore. Đặt SAU
+                // bước chống trùng sự việc ở trên: tin vừa bị đánh Duplicate thì Status không
+                // còn Pending nữa, tự động bỏ qua đúng ý, không cần điều kiện lặp lại ở đây.
+                if (article.Status == CrawledArticleStatus.Pending
+                    && opt.AutoApproveMinScore > 0
+                    && article.QualityScore >= opt.AutoApproveMinScore)
+                {
+                    try
+                    {
+                        await ApproveAsync(
+                            article.Id, new ApproveCrawledArticleRequest(), ct,
+                            actorOverride: $"Tự động (điểm {article.QualityScore} ≥ {opt.AutoApproveMinScore})");
+                        logger.LogInformation(
+                            "Tự duyệt tin {Id} lên web — điểm {Score} ≥ ngưỡng {Min}",
+                            article.Id, article.QualityScore, opt.AutoApproveMinScore);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // Không cho lỗi tự duyệt cắt ngang cả lô — tin vẫn ở Pending, người
+                        // duyệt tay vẫn thấy và xử lý được bình thường, coi như tính năng này
+                        // chưa từng chạm vào tin đó.
+                        logger.LogWarning(ex, "Tự duyệt tin {Id} thất bại — để người duyệt tay", article.Id);
+                    }
+                }
                 processed++;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -439,6 +464,51 @@ public class ContentCrawlPipelineService(
         }
 
         return processed;
+    }
+
+    /// <summary>
+    /// Quét MỘT LƯỢT tin đang "chờ duyệt" nhưng đạt điểm ≥ AutoApproveMinScore — hàng tồn từ
+    /// TRƯỚC lúc tính năng tự duyệt được bật, vì ProcessPendingAsync chỉ chấm tin MỚI cào về tại
+    /// đúng thời điểm nó vào Pending, không quét ngược lại tin cũ sẵn có trong hàng chờ.
+    ///
+    /// Chỉ CỬA 1 (lên web) — ApproveAsync tự rẽ theo TwoGateFlow, nhưng chặn cứng ở đây để một
+    /// thao tác quét hàng loạt không bao giờ vô tình fan-out sang Facebook nếu ai đó tắt
+    /// TwoGateFlow sau này. Từng bài lỗi không cắt ngang cả lượt quét — tin đó ở nguyên Pending,
+    /// người duyệt tay vẫn xử lý được bình thường.
+    /// </summary>
+    public async Task<SweepAutoApproveResult> SweepAutoApproveBacklogAsync(CancellationToken ct = default)
+    {
+        var opt = options.Value;
+        if (opt.AutoApproveMinScore <= 0)
+            throw new ArgumentException("Tính năng tự duyệt đang tắt (AutoApproveMinScore = 0) — không có ngưỡng để quét");
+        if (!opt.TwoGateFlow)
+            throw new ArgumentException("Chỉ quét được khi đang bật TwoGateFlow (Cửa 1) — an toàn không đăng thẳng Facebook");
+
+        var backlog = await repository.GetPendingAboveScoreAsync(opt.AutoApproveMinScore, ct);
+        var result = new SweepAutoApproveResult { Total = backlog.Count };
+
+        foreach (var article in backlog)
+        {
+            try
+            {
+                await ApproveAsync(
+                    article.Id, new ApproveCrawledArticleRequest(), ct,
+                    actorOverride: $"Tự động (quét tồn đọng, điểm {article.QualityScore} ≥ {opt.AutoApproveMinScore})");
+                result.Approved++;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                result.Failed++;
+                if (result.FailedTitles.Count < 10)
+                    result.FailedTitles.Add($"{article.Title} — {ex.Message}");
+                logger.LogWarning(ex, "Quét tồn đọng: tự duyệt tin {Id} thất bại — để người duyệt tay", article.Id);
+            }
+        }
+
+        logger.LogInformation(
+            "Quét tồn đọng tự duyệt: {Approved}/{Total} tin lên hàng đợi viết bài (ngưỡng {Min})",
+            result.Approved, result.Total, opt.AutoApproveMinScore);
+        return result;
     }
 
     /// <summary>
@@ -613,8 +683,13 @@ public class ContentCrawlPipelineService(
 
     // ── Duyệt → fan-out ─────────────────────────────────────────────────────
 
+    /// <param name="actorOverride">
+    /// Ghi đè "người duyệt" — dùng khi gọi từ nơi không có HTTP context (vd tự động duyệt theo
+    /// điểm số, xem AutoApproveHighScoreAsync). Null thì lấy user đăng nhập như bình thường.
+    /// </param>
     public async Task<ApproveCrawledArticleResult> ApproveAsync(
-        Guid articleId, ApproveCrawledArticleRequest request, CancellationToken ct = default)
+        Guid articleId, ApproveCrawledArticleRequest request, CancellationToken ct = default,
+        string? actorOverride = null)
     {
         var article = await repository.GetByIdAsync(articleId, ct)
             ?? throw new KeyNotFoundException("Không tìm thấy tin");
@@ -630,7 +705,7 @@ public class ContentCrawlPipelineService(
         // trước thì lúc đăng Facebook chưa tồn tại URL nào trên tintuc.vni.edu.vn để trỏ về,
         // nên bình luận buộc phải dùng link báo gốc.
         if (options.Value.TwoGateFlow)
-            return await PublishToWebsiteAsync(article, source, ct);
+            return await PublishToWebsiteAsync(article, source, actorOverride, ct);
 
         var channelIds = request.ChannelIds is { Count: > 0 }
             ? request.ChannelIds
@@ -668,7 +743,7 @@ public class ContentCrawlPipelineService(
         if (request.AutoPublish) article.AutoPublishRequested = true;
         article.ResultBatchId = bulk.BatchId;
         article.ResultPostCount = bulk.Created;
-        article.ReviewedBy = userContext.GetCurrentUserName();
+        article.ReviewedBy = actorOverride ?? userContext.GetCurrentUserName();
         article.ReviewedAt = DateTime.UtcNow;
         article.UpdatedAt = DateTime.UtcNow;
         await UpsertArticleFingerprintAsync(article, ct);
@@ -717,14 +792,14 @@ public class ContentCrawlPipelineService(
     /// dựa vào đó để nói đúng với người dùng rằng bài mới lên web.
     /// </summary>
     private async Task<ApproveCrawledArticleResult> PublishToWebsiteAsync(
-        CrawledArticleModel article, CrawlSourceModel? source, CancellationToken ct)
+        CrawledArticleModel article, CrawlSourceModel? source, string? actorOverride, CancellationToken ct)
     {
         // Dẫn nguồn là điều kiện xuất bản, không phải tuỳ chọn.
         if (string.IsNullOrWhiteSpace(article.SourceUrl))
             throw new ArgumentException("Tin không có link nguồn — không đưa lên web được");
 
         article.Status = CrawledArticleStatus.Approved;
-        article.ReviewedBy = userContext.GetCurrentUserName();
+        article.ReviewedBy = actorOverride ?? userContext.GetCurrentUserName();
         article.ReviewedAt = DateTime.UtcNow;
         article.UpdatedAt = DateTime.UtcNow;
         await UpsertArticleFingerprintAsync(article, ct);

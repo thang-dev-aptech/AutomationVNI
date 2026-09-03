@@ -34,12 +34,6 @@ function defaultDateFrom() {
   return d.toISOString().slice(0, 10)
 }
 
-function defaultDateTo() {
-  const d = new Date()
-  d.setDate(d.getDate() + 6)
-  return d.toISOString().slice(0, 10)
-}
-
 function loadSkelChannelIds() {
   try {
     const raw = localStorage.getItem(SKEL_CHANNEL_IDS_KEY)
@@ -66,7 +60,7 @@ export default function BulkCreatePage() {
   const [imageCount, setImageCount] = useState('')
 
   const [skelFrom, setSkelFrom] = useState(defaultDateFrom)
-  const [skelTo, setSkelTo] = useState(defaultDateTo)
+  const [skelPostsPerPage, setSkelPostsPerPage] = useState(1)
   const [skelSlots, setSkelSlots] = useState('09:00,15:00')
   const [skelJitter, setSkelJitter] = useState(35)
   const [skelChannelIds, setSkelChannelIds] = useState(loadSkelChannelIds)
@@ -138,12 +132,13 @@ export default function BulkCreatePage() {
       const result = downloadBulkScheduleSkeleton({
         channels: skeletonChannels,
         dateFrom: skelFrom,
-        dateTo: skelTo,
+        postsPerPage: skelPostsPerPage,
         slotsText: skelSlots,
         jitterMinutes: Number(skelJitter) || 0,
       })
       toast.success(
-        `Đã xuất ${result.pageCount} page / ${result.rowCount} dòng (±${result.jitterMinutes} phút lệch giờ mỗi ngày).`,
+        `Đã xuất ${result.pageCount} page / ${result.rowCount} dòng, tự dùng ${result.daysUsed} ngày `
+        + `(±${result.jitterMinutes} phút lệch giờ mỗi ngày).`,
       )
     } catch (err) {
       toast.error(err?.message || 'Không xuất được khung')
@@ -471,9 +466,16 @@ export default function BulkCreatePage() {
                   <p className="bulk-field-hint">&nbsp;</p>
                 </div>
                 <div className="form-group">
-                  <label htmlFor="skel-to">Đến ngày</label>
-                  <input id="skel-to" type="date" value={skelTo} onChange={(e) => setSkelTo(e.target.value)} />
-                  <p className="bulk-field-hint">&nbsp;</p>
+                  <label htmlFor="skel-posts-per-page">Số bài / trang</label>
+                  <input
+                    id="skel-posts-per-page"
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={skelPostsPerPage}
+                    onChange={(e) => setSkelPostsPerPage(e.target.value)}
+                  />
+                  <p className="bulk-field-hint">Tự tính đủ số ngày cần dùng — không phải tự canh Đến ngày</p>
                 </div>
                 <div className="form-group">
                   <label htmlFor="skel-slots">Khung giờ / ngày</label>
