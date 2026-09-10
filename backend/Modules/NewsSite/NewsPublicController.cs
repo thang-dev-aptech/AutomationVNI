@@ -36,6 +36,47 @@ public class NewsPublicController(
     IOptions<NewsSiteOptions> newsOptions,
     ILogger<NewsPublicController> logger) : ControllerBase
 {
+    /// <summary>
+    /// Feed JSON cho bot Zalo (đọc để tự phát tin mới theo lịch) — xem
+    /// scratch/news-feed-contract.md để biết đúng hợp đồng bot đang đọc theo.
+    ///
+    /// Lọc CẢ hai đầu: chỉ Published (bài đang viết/hỏng/gỡ khỏi web không được lộ ra), VÀ chỉ 48
+    /// tiếng gần nhất — bot của nó cũng tự lọc theo MaxAgeHours, gửi thêm chỉ tốn băng thông vô
+    /// ích. Bỏ qua bài chưa có URL công khai (PublicUrlOf trả null khi chưa cấu hình
+    /// PublicBaseUrl) — thiếu "url" là bot coi cả lượt gọi hỏng, thà thiếu 1 bài còn hơn hỏng cả
+    /// batch.
+    ///
+    /// published_at PHẢI có offset giờ (spec bot từ chối chuỗi không offset) — SQLite trả về
+    /// DateTime Kind=Unspecified, "yyyy-MM-ddTHH:mm:ssZ" tự tay ép Kind=Utc mới ra đúng "Z" cuối
+    /// chuỗi thay vì bị serializer mặc định bỏ mất offset.
+    /// </summary>
+    [HttpGet("zalo-feed")]
+    public async Task<IActionResult> ZaloFeed(CancellationToken ct)
+    {
+        var token = newsOptions.Value.FeedToken;
+        if (!string.IsNullOrEmpty(token) && Request.Headers["X-Feed-Token"] != token)
+            return Unauthorized();
+
+        var since = DateTime.UtcNow.AddHours(-48);
+        var articles = await repository.GetPublishedAsync(take: 20, ct: ct);
+
+        var items = articles
+            .Where(a => a.PublishedAt.HasValue && a.PublishedAt.Value >= since)
+            .Select(a => new
+            {
+                id = a.Id.ToString(),
+                title = a.Title,
+                summary = string.IsNullOrWhiteSpace(a.Sapo) ? null : a.Sapo,
+                url = repository.PublicUrlOf(a.Slug),
+                published_at = DateTime.SpecifyKind(a.PublishedAt!.Value, DateTimeKind.Utc)
+                    .ToString("yyyy-MM-ddTHH:mm:ssZ"),
+            })
+            .Where(x => x.url is not null)
+            .ToList();
+
+        return Ok(new { items });
+    }
+
     [HttpGet("search")]
     public async Task<IActionResult> Search([FromQuery] string? q, [FromQuery] int take, CancellationToken ct)
     {

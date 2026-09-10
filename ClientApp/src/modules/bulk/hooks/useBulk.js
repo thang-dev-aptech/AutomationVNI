@@ -26,6 +26,12 @@ export function useBulkSchedule() {
   })
 }
 
+export function useBulkCancelSchedule() {
+  return useMutation({
+    mutationFn: async (payload) => unwrapApiData(await bulkApi.cancelSchedule(payload)),
+  })
+}
+
 export function useSuggestIdeas() {
   return useMutation({
     mutationFn: async (payload) => unwrapApiData(await bulkApi.suggestIdeas(payload)),

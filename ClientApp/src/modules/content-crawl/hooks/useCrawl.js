@@ -130,3 +130,11 @@ export function useRededupArticle() {
     onSuccess: () => invalidateCrawl(queryClient),
   })
 }
+
+export function useSweepAutoApprove() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => unwrapApiData(await crawlApi.sweepAutoApprove()),
+    onSuccess: () => invalidateCrawl(queryClient),
+  })
+}

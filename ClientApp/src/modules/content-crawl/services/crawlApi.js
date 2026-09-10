@@ -26,6 +26,9 @@ export const crawlApi = {
   reject: (id, payload) => axiosInstance.post(`/api/ContentCrawl/articles/${id}/reject`, payload),
   notDuplicate: (id) => axiosInstance.post(`/api/ContentCrawl/articles/${id}/not-duplicate`),
   rededup: (id) => axiosInstance.post(`/api/ContentCrawl/articles/${id}/rededup`),
+  /** Quét 1 lượt: tự duyệt lên web các tin "chờ duyệt" đạt điểm ≥ ngưỡng tự duyệt — dọn hàng tồn
+   * cào từ TRƯỚC lúc tính năng tự duyệt được bật. */
+  sweepAutoApprove: () => axiosInstance.post('/api/ContentCrawl/articles/sweep-auto-approve'),
 }
 
 export const crawlQueryKeys = {

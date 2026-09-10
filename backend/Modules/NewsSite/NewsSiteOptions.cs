@@ -123,6 +123,15 @@ public class NewsSiteOptions
     /// trên trang — thà thiếu icon còn hơn hiện link chết (trước đây cả 3 đều href="#").
     /// </summary>
     public NewsSocialLinks? SocialLinks { get; set; }
+
+    /// <summary>
+    /// Token cho endpoint feed JSON (<c>GET /api/news-public/zalo-feed</c>) dùng cho bot Zalo đọc
+    /// tin mới tự động phát. Để trống = không kiểm token, ai cũng gọi được (chấp nhận được vì
+    /// endpoint chỉ đọc, không sửa gì) — đặt giá trị thì bắt buộc client gửi đúng header
+    /// <c>X-Feed-Token</c>, sai/thiếu bị từ chối 401. Cùng tinh thần optional-by-default như
+    /// MetaWebhooks:VerifyToken.
+    /// </summary>
+    public string? FeedToken { get; set; }
 }
 
 public class NewsSocialLinks

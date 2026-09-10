@@ -17,6 +17,7 @@ import {
   useMarkNotDuplicate,
   useRededupArticle,
   useRejectArticle,
+  useSweepAutoApprove,
 } from '../hooks/useCrawl'
 import './CrawlInboxPage.css'
 
@@ -39,6 +40,7 @@ export default function CrawlInboxPage() {
   const reject = useRejectArticle()
   const notDuplicate = useMarkNotDuplicate()
   const rededup = useRededupArticle()
+  const sweep = useSweepAutoApprove()
 
   const busy = approve.isPending || reject.isPending || notDuplicate.isPending || rededup.isPending
 
@@ -75,6 +77,17 @@ export default function CrawlInboxPage() {
     } catch (e) { toast.error(getErrorMessage(e)) }
   }
 
+  const handleSweepAutoApprove = async () => {
+    if (!window.confirm(
+      'Quét toàn bộ tin "chờ duyệt" đạt điểm ≥ ngưỡng tự duyệt và đưa hàng loạt lên web?\n\n'
+      + 'Dùng cho tin cào TRƯỚC lúc bật tính năng tự duyệt — không đăng fanpage, chỉ lên web.'
+    )) return
+    try {
+      const result = await sweep.mutateAsync()
+      toast.success(result.message)
+    } catch (e) { toast.error(getErrorMessage(e)) }
+  }
+
   const items = data?.items ?? []
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / 20))
 
@@ -84,9 +97,22 @@ export default function CrawlInboxPage() {
         title="Tin đã cào"
         description="Tin từ báo giáo dục, AI đã xào bản nháp và chấm trùng. Duyệt một tin sẽ tạo bài cho từng page."
         actions={(
-          <button type="button" className="btn btn-ghost" onClick={() => setSourcesOpen(true)}>
-            Nguồn cào {summary?.totalActiveSources ? `(${summary.totalActiveSources})` : ''}
-          </button>
+          <>
+            {canManageCrawlSources && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={handleSweepAutoApprove}
+                disabled={sweep.isPending}
+                title="Tự duyệt lên web các tin chờ duyệt đạt điểm ≥ ngưỡng, cào từ trước lúc bật tính năng tự duyệt"
+              >
+                {sweep.isPending ? 'Đang quét…' : 'Quét tồn đọng'}
+              </button>
+            )}
+            <button type="button" className="btn btn-ghost" onClick={() => setSourcesOpen(true)}>
+              Nguồn cào {summary?.totalActiveSources ? `(${summary.totalActiveSources})` : ''}
+            </button>
+          </>
         )}
       />
 
