@@ -1,6 +1,7 @@
 using Backend.Data;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.SocialChannel;
+using Backend.Modules.SocialConnection;
 using Backend.Shared;
 using Backend.Shared.Repositories;
 using Backend.Shared.Text;
@@ -25,10 +26,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         if (request.SocialChannelId == Guid.Empty)
             throw new ArgumentException("SocialChannelId không được để trống.");
 
-        var channelExists = await Context.Set<SocialChannelModel>()
-            .AnyAsync(x => x.Id == request.SocialChannelId && !x.IsDeleted, ct);
-        if (!channelExists)
-            throw new KeyNotFoundException("Page/Kênh không tồn tại.");
+        await EnsureSocialChannelAccessAsync(request.SocialChannelId, ct);
 
         if (request.ParentFolderId.HasValue)
         {
@@ -146,7 +144,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         if (request.FolderId == Guid.Empty)
             throw new ArgumentException("FolderId không được để trống.");
 
-        await EnsureSocialChannelExistsAsync(request.SocialChannelId, ct);
+        await EnsureSocialChannelAccessAsync(request.SocialChannelId, ct);
 
         var pageFolders = await QueryActive()
             .Where(x => x.SocialChannelId == request.SocialChannelId)
@@ -200,7 +198,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         if (request.SocialChannelId == Guid.Empty)
             throw new ArgumentException("SocialChannelId không được để trống.");
 
-        await EnsureSocialChannelExistsAsync(request.SocialChannelId, ct);
+        await EnsureSocialChannelAccessAsync(request.SocialChannelId, ct);
 
         var keyword = request.Keyword?.Trim();
         if (string.IsNullOrWhiteSpace(keyword))
@@ -560,10 +558,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         if (request.SocialChannelId == Guid.Empty)
             throw new ArgumentException("SocialChannelId không được để trống.");
 
-        var channelExists = await Context.Set<SocialChannelModel>()
-            .AnyAsync(x => x.Id == request.SocialChannelId && !x.IsDeleted, ct);
-        if (!channelExists)
-            throw new KeyNotFoundException("Page/Kênh không tồn tại.");
+        await EnsureSocialChannelAccessAsync(request.SocialChannelId, ct);
 
         if (request.Folders == null || request.Folders.Count == 0)
             throw new ArgumentException("Danh sách thư mục không được để trống.");
@@ -840,12 +835,33 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         };
     }
 
-    private async Task EnsureSocialChannelExistsAsync(Guid socialChannelId, CancellationToken ct)
+    private async Task EnsureSocialChannelAccessAsync(Guid socialChannelId, CancellationToken ct)
     {
-        var channelExists = await Context.Set<SocialChannelModel>()
-            .AnyAsync(x => x.Id == socialChannelId && !x.IsDeleted, ct);
-        if (!channelExists)
-            throw new KeyNotFoundException("Page/Kênh không tồn tại.");
+        var roles = UserContext.GetCurrentUserRoles();
+        if (roles.Any(role => string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase)))
+        {
+            var adminCanAccess = await Context.Set<SocialChannelModel>()
+                .AnyAsync(x => x.Id == socialChannelId && !x.IsDeleted, ct);
+            if (adminCanAccess) return;
+        }
+        else
+        {
+            var userName = UserContext.GetCurrentUserName()?.Trim();
+            if (!string.IsNullOrWhiteSpace(userName))
+            {
+                var userCanAccess = await Context.Set<SocialChannelModel>()
+                    .AnyAsync(x => x.Id == socialChannelId
+                        && !x.IsDeleted
+                        && (x.CreatedBy == userName
+                            || (x.SocialConnectionId.HasValue
+                                && Context.Set<SocialConnectionModel>().Any(c => c.Id == x.SocialConnectionId.Value
+                                    && !c.IsDeleted
+                                    && c.CreatedBy == userName))), ct);
+                if (userCanAccess) return;
+            }
+        }
+
+        throw new KeyNotFoundException("Page/Kênh không tồn tại.");
     }
 
     private async Task<(Dictionary<Guid, int> DirectAssets, Dictionary<Guid, int> ChildFolders)> LoadDirectCountsAsync(

@@ -77,6 +77,33 @@ public class MediaFolderChildrenTests : IDisposable
         _connection.Dispose();
     }
 
+    [Fact]
+    public async Task GetChildren_PageAccess_AllowsOwnerAndHidesOtherPage()
+    {
+        _userContext.Roles = ["Viewer"];
+        _userContext.UserName = "page-a-owner";
+        var pageA = await _db.SocialChannels.FindAsync(_pageAId);
+        var pageB = await _db.SocialChannels.FindAsync(_pageBId);
+        pageA!.CreatedBy = _userContext.UserName;
+        pageB!.CreatedBy = "other-owner";
+        _db.MediaFolders.Add(new MediaFolderModel
+        {
+            Id = Guid.NewGuid(), Name = "Private Page B Folder", SocialChannelId = _pageBId
+        });
+        await _db.SaveChangesAsync();
+
+        var allowed = await _repo.GetChildrenAsync(new GetMediaFolderChildrenRequest
+        {
+            SocialChannelId = _pageAId
+        });
+        Assert.Empty(allowed.Items);
+
+        var denied = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            _repo.GetChildrenAsync(new GetMediaFolderChildrenRequest { SocialChannelId = _pageBId }));
+        Assert.Equal("Page/Kênh không tồn tại.", denied.Message);
+        Assert.DoesNotContain("Private Page B Folder", denied.Message);
+    }
+
     /// <summary>
     /// AC 1: Root chỉ thuộc Page yêu cầu. Không rò rỉ root của Page khác và không lẫn folder con.
     /// </summary>

@@ -93,6 +93,44 @@ public class MediaFolderBreadcrumbSearchTests : IDisposable
         _connection.Dispose();
     }
 
+    [Fact]
+    public async Task BreadcrumbAndSearch_PageAccess_HidesUnauthorizedMetadata()
+    {
+        _userContext.Roles = ["Viewer"];
+        _userContext.UserName = "page-a-owner";
+        var pageA = await _db.SocialChannels.FindAsync(_pageAId);
+        var pageB = await _db.SocialChannels.FindAsync(_pageBId);
+        pageA!.CreatedBy = _userContext.UserName;
+        pageB!.CreatedBy = "other-owner";
+        var secret = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(), Name = "Secret Page B", SocialChannelId = _pageBId
+        };
+        _db.MediaFolders.Add(secret);
+        await _db.SaveChangesAsync();
+
+        await _repo.SearchFoldersAsync(new SearchMediaFoldersRequest
+        {
+            SocialChannelId = _pageAId, Keyword = "anything"
+        });
+
+        var breadcrumbDenied = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            _repo.GetBreadcrumbAsync(new GetMediaFolderBreadcrumbRequest
+            {
+                SocialChannelId = _pageBId, FolderId = secret.Id
+            }));
+        var searchDenied = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            _repo.SearchFoldersAsync(new SearchMediaFoldersRequest
+            {
+                SocialChannelId = _pageBId, Keyword = "Secret"
+            }));
+
+        Assert.Equal("Page/Kênh không tồn tại.", breadcrumbDenied.Message);
+        Assert.Equal(breadcrumbDenied.Message, searchDenied.Message);
+        Assert.DoesNotContain(secret.Name, breadcrumbDenied.Message);
+        Assert.DoesNotContain(secret.Name, searchDenied.Message);
+    }
+
     /// <summary>AC 1: Breadcrumb đúng thứ tự root đến folder.</summary>
     [Fact]
     public async Task GetBreadcrumb_OrderIsRootToTarget_Inclusive()

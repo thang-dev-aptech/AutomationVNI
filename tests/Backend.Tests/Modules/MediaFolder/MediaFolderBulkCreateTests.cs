@@ -76,6 +76,37 @@ public class MediaFolderBulkCreateTests : IDisposable
         _connection.Dispose();
     }
 
+    [Fact]
+    public async Task BulkCreate_PageAccess_AllowsOwnerAndRejectsOtherPageAtomically()
+    {
+        _userContext.Roles = ["ContentManager"];
+        _userContext.UserName = "page-a-owner";
+        var pageA = await _db.SocialChannels.FindAsync(_pageAId);
+        var pageB = await _db.SocialChannels.FindAsync(_pageBId);
+        pageA!.CreatedBy = _userContext.UserName;
+        pageB!.CreatedBy = "other-owner";
+        await _db.SaveChangesAsync();
+
+        var allowed = await _repo.BulkCreateAsync(new BulkCreateMediaFolderRequest
+        {
+            SocialChannelId = _pageAId,
+            Folders = [new BulkCreateMediaFolderItem { ClientRef = "allowed", Name = "Allowed" }]
+        });
+        Assert.Equal(1, allowed.TotalCreated);
+
+        var countBefore = await _db.MediaFolders.CountAsync();
+        var denied = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            _repo.BulkCreateAsync(new BulkCreateMediaFolderRequest
+            {
+                SocialChannelId = _pageBId,
+                Folders = [new BulkCreateMediaFolderItem { ClientRef = "denied", Name = "Secret write" }]
+            }));
+
+        Assert.Equal("Page/Kênh không tồn tại.", denied.Message);
+        Assert.Equal(countBefore, await _db.MediaFolders.CountAsync());
+        Assert.False(await _db.MediaFolders.AnyAsync(x => x.Name == "Secret write"));
+    }
+
     /// <summary>
     /// AC 1: Tạo hierarchy đúng qua clientRef/parentRef (Level 1 -> Level 2 -> Level 3).
     /// </summary>
