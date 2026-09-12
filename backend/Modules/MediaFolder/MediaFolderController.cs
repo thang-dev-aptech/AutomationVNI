@@ -47,6 +47,62 @@ public class MediaFolderController
         return Ok(ApiResponse.Ok(result));
     }
 
+    /// <summary>
+    /// Breadcrumb từ gốc Page đến folder đích (MEDIA-02). Không đi xuyên Page; folder sai scope trả 404.
+    /// </summary>
+    [HttpGet("breadcrumb")]
+    public async Task<IActionResult> GetBreadcrumb(
+        [FromQuery] GetMediaFolderBreadcrumbRequest request,
+        CancellationToken ct)
+    {
+        var result = await _repo.GetBreadcrumbAsync(request, ct);
+        return Ok(ApiResponse.Ok(result));
+    }
+
+    [HttpPost("breadcrumb")]
+    public async Task<IActionResult> PostBreadcrumb(
+        [FromBody] GetMediaFolderBreadcrumbRequest request,
+        CancellationToken ct)
+    {
+        var result = await _repo.GetBreadcrumbAsync(request, ct);
+        return Ok(ApiResponse.Ok(result));
+    }
+
+    /// <summary>
+    /// Tìm folder toàn Page theo tên (có/không dấu), kèm full path và counts (MEDIA-02).
+    /// </summary>
+    [HttpGet("search")]
+    public async Task<IActionResult> SearchFolders(
+        [FromQuery] SearchMediaFoldersRequest request,
+        CancellationToken ct)
+    {
+        var result = await _repo.SearchFoldersAsync(request, ct);
+        return Ok(ApiResponse.Ok(result));
+    }
+
+    [HttpPost("search")]
+    public async Task<IActionResult> PostSearchFolders(
+        [FromBody] SearchMediaFoldersRequest request,
+        CancellationToken ct)
+    {
+        var result = await _repo.SearchFoldersAsync(request, ct);
+        return Ok(ApiResponse.Ok(result));
+    }
+
+    /// <summary>
+    /// Tạo thư mục hàng loạt trong một Page theo cấu trúc cây (clientRef/parentRef) (MEDIA-03).
+    /// Hỗ trợ validate-only/preview, xử lý duplicate và đảm bảo transaction nguyên tử.
+    /// </summary>
+    [HttpPost("bulk")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> BulkCreate(
+        [FromBody] BulkCreateMediaFolderRequest request,
+        CancellationToken ct)
+    {
+        var result = await _repo.BulkCreateAsync(request, ct);
+        return Ok(ApiResponse.Ok(result, result.ValidateOnly ? "Kiểm tra hợp lệ cấu trúc thư mục thành công" : "Tạo thư mục hàng loạt thành công"));
+    }
+
     [Authorize(Roles = "Admin,ContentManager")]
     protected override async Task<MediaFolderModel> CreateEntityAsync(CreateMediaFolderRequest request, CancellationToken ct)
     {

@@ -3,6 +3,7 @@ using Backend.Modules.MediaAsset;
 using Backend.Modules.SocialChannel;
 using Backend.Shared;
 using Backend.Shared.Repositories;
+using Backend.Shared.Text;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Modules.MediaFolder;
@@ -125,6 +126,172 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         }).ToList();
 
         return new PagedResult<MediaFolderResponse>
+        {
+            Items = responseItems,
+            Total = total,
+            Index = safeIndex,
+            Size = safeSize
+        };
+    }
+
+    /// <summary>
+    /// Breadcrumb từ gốc Page đến folder đích (MEDIA-02). Folder sai Page hoặc không tồn tại → KeyNotFound.
+    /// </summary>
+    public async Task<MediaFolderBreadcrumbResponse> GetBreadcrumbAsync(
+        GetMediaFolderBreadcrumbRequest request, CancellationToken ct = default)
+    {
+        if (request.SocialChannelId == Guid.Empty)
+            throw new ArgumentException("SocialChannelId không được để trống.");
+
+        if (request.FolderId == Guid.Empty)
+            throw new ArgumentException("FolderId không được để trống.");
+
+        await EnsureSocialChannelExistsAsync(request.SocialChannelId, ct);
+
+        var pageFolders = await QueryActive()
+            .Where(x => x.SocialChannelId == request.SocialChannelId)
+            .ToListAsync(ct);
+
+        var byId = pageFolders.ToDictionary(x => x.Id);
+        if (!byId.TryGetValue(request.FolderId, out var target))
+            throw new KeyNotFoundException("Không tìm thấy thư mục.");
+
+        var chain = new List<MediaFolderModel>();
+        var cursor = target;
+        var visited = new HashSet<Guid>();
+
+        while (true)
+        {
+            if (!visited.Add(cursor.Id))
+                throw new KeyNotFoundException("Không tìm thấy thư mục.");
+
+            if (cursor.SocialChannelId != request.SocialChannelId)
+                throw new KeyNotFoundException("Không tìm thấy thư mục.");
+
+            chain.Add(cursor);
+
+            if (!cursor.ParentFolderId.HasValue)
+                break;
+
+            if (!byId.TryGetValue(cursor.ParentFolderId.Value, out var parent))
+                throw new KeyNotFoundException("Không tìm thấy thư mục.");
+
+            cursor = parent;
+        }
+
+        chain.Reverse();
+
+        return new MediaFolderBreadcrumbResponse
+        {
+            Ancestors = chain.Select(f => new MediaFolderBreadcrumbItem
+            {
+                Id = f.Id,
+                Name = f.Name
+            }).ToList()
+        };
+    }
+
+    /// <summary>
+    /// Tìm folder trong một Page; hỗ trợ tên có/không dấu; trả full path và counts (MEDIA-02).
+    /// </summary>
+    public async Task<PagedResult<MediaFolderSearchResultItem>> SearchFoldersAsync(
+        SearchMediaFoldersRequest request, CancellationToken ct = default)
+    {
+        if (request.SocialChannelId == Guid.Empty)
+            throw new ArgumentException("SocialChannelId không được để trống.");
+
+        await EnsureSocialChannelExistsAsync(request.SocialChannelId, ct);
+
+        var keyword = request.Keyword?.Trim();
+        if (string.IsNullOrWhiteSpace(keyword))
+        {
+            var emptyIndex = request.Index < 1 ? 1 : request.Index;
+            var emptySize = request.Size < 1 ? 20 : (request.Size > 100 ? 100 : request.Size);
+            return new PagedResult<MediaFolderSearchResultItem>
+            {
+                Items = [],
+                Total = 0,
+                Index = emptyIndex,
+                Size = emptySize
+            };
+        }
+
+        var pageFolders = await QueryActive()
+            .Where(x => x.SocialChannelId == request.SocialChannelId)
+            .ToListAsync(ct);
+
+        var byId = pageFolders.ToDictionary(x => x.Id);
+        var matches = pageFolders
+            .Where(f => FolderNameMatchesKeyword(f.Name, keyword))
+            .ToList();
+
+        var isDesc = string.Equals(request.SortDirection, "desc", StringComparison.OrdinalIgnoreCase);
+        var sortBy = request.SortBy?.Trim().ToLowerInvariant();
+
+        IEnumerable<MediaFolderModel> ordered = sortBy switch
+        {
+            "createdat" => isDesc
+                ? matches.OrderByDescending(x => x.CreatedAt).ThenBy(x => x.Id)
+                : matches.OrderBy(x => x.CreatedAt).ThenBy(x => x.Id),
+            "updatedat" => isDesc
+                ? matches.OrderByDescending(x => x.UpdatedAt ?? x.CreatedAt).ThenBy(x => x.Id)
+                : matches.OrderBy(x => x.UpdatedAt ?? x.CreatedAt).ThenBy(x => x.Id),
+            "sortorder" => isDesc
+                ? matches.OrderByDescending(x => x.SortOrder).ThenBy(x => x.Name).ThenBy(x => x.Id)
+                : matches.OrderBy(x => x.SortOrder).ThenBy(x => x.Name).ThenBy(x => x.Id),
+            _ => isDesc
+                ? matches.OrderByDescending(x => x.Name).ThenBy(x => x.Id)
+                : matches.OrderBy(x => x.Name).ThenBy(x => x.Id),
+        };
+
+        var safeIndex = request.Index < 1 ? 1 : request.Index;
+        var safeSize = request.Size < 1 ? 20 : (request.Size > 100 ? 100 : request.Size);
+
+        var sorted = ordered.ToList();
+        var total = sorted.Count;
+        var pageItems = sorted
+            .Skip((safeIndex - 1) * safeSize)
+            .Take(safeSize)
+            .ToList();
+
+        if (pageItems.Count == 0)
+        {
+            return new PagedResult<MediaFolderSearchResultItem>
+            {
+                Items = [],
+                Total = total,
+                Index = safeIndex,
+                Size = safeSize
+            };
+        }
+
+        var folderIds = pageItems.Select(x => x.Id).ToList();
+        var (directAssetCounts, childFolderCounts) =
+            await LoadDirectCountsAsync(request.SocialChannelId, folderIds, ct);
+
+        var responseItems = pageItems.Select(f =>
+        {
+            var childCount = childFolderCounts.GetValueOrDefault(f.Id, 0);
+            var assetCount = directAssetCounts.GetValueOrDefault(f.Id, 0);
+            return new MediaFolderSearchResultItem
+            {
+                Id = f.Id,
+                Name = f.Name,
+                Description = f.Description,
+                ParentFolderId = f.ParentFolderId,
+                SocialChannelId = f.SocialChannelId,
+                SortOrder = f.SortOrder,
+                ChildFolderCount = childCount,
+                DirectAssetCount = assetCount,
+                AssetCount = assetCount,
+                HasChildren = childCount > 0,
+                FullPath = BuildFullPath(f.Id, byId),
+                CreatedAt = f.CreatedAt,
+                UpdatedAt = f.UpdatedAt
+            };
+        }).ToList();
+
+        return new PagedResult<MediaFolderSearchResultItem>
         {
             Items = responseItems,
             Total = total,
@@ -381,6 +548,362 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         CreatedAt = f.CreatedAt,
         UpdatedAt = f.UpdatedAt
     };
+
+    /// <summary>
+    /// Tạo thư mục hàng loạt theo Page (SocialChannelId) và optional ParentFolderId (MEDIA-03).
+    /// Hỗ trợ hierarchy thông qua clientRef/parentRef, preview/validate-only, cycle & duplicate check,
+    /// giới hạn batch (200)/depth (10)/name (200), và transaction nguyên tử (rollback nếu có lỗi).
+    /// </summary>
+    public async Task<BulkCreateMediaFolderResponse> BulkCreateAsync(
+        BulkCreateMediaFolderRequest request, CancellationToken ct = default)
+    {
+        if (request.SocialChannelId == Guid.Empty)
+            throw new ArgumentException("SocialChannelId không được để trống.");
+
+        var channelExists = await Context.Set<SocialChannelModel>()
+            .AnyAsync(x => x.Id == request.SocialChannelId && !x.IsDeleted, ct);
+        if (!channelExists)
+            throw new KeyNotFoundException("Page/Kênh không tồn tại.");
+
+        if (request.Folders == null || request.Folders.Count == 0)
+            throw new ArgumentException("Danh sách thư mục không được để trống.");
+
+        const int maxBatchSize = 200;
+        if (request.Folders.Count > maxBatchSize)
+            throw new ArgumentException($"Số lượng thư mục vượt quá giới hạn cho phép (tối đa {maxBatchSize}).");
+
+        int baseDepth = 0;
+        if (request.ParentFolderId.HasValue)
+        {
+            var baseParent = await QueryActive()
+                .FirstOrDefaultAsync(x => x.Id == request.ParentFolderId.Value, ct);
+            if (baseParent is null)
+                throw new KeyNotFoundException("Thư mục cha gốc không tồn tại.");
+
+            if (baseParent.SocialChannelId != request.SocialChannelId)
+                throw new ArgumentException("Thư mục cha không thuộc Page yêu cầu.");
+
+            baseDepth = 1;
+            var cursor = baseParent.ParentFolderId;
+            while (cursor.HasValue)
+            {
+                baseDepth++;
+                var p = await QueryActive().FirstOrDefaultAsync(x => x.Id == cursor.Value, ct);
+                if (p is null) break;
+                cursor = p.ParentFolderId;
+            }
+        }
+
+        var clientRefs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in request.Folders)
+        {
+            if (string.IsNullOrWhiteSpace(item.ClientRef))
+                throw new ArgumentException("clientRef không được để trống.");
+
+            var trimmedRef = item.ClientRef.Trim();
+            if (!clientRefs.Add(trimmedRef))
+                throw new ArgumentException($"clientRef '{trimmedRef}' bị trùng lặp trong batch.");
+
+            if (string.IsNullOrWhiteSpace(item.Name))
+                throw new ArgumentException($"Tên thư mục của node '{trimmedRef}' không được để trống.");
+
+            if (item.Name.Trim().Length > 200)
+                throw new ArgumentException($"Tên thư mục '{item.Name.Trim()}' vượt quá độ dài tối đa 200 ký tự.");
+
+            if (!string.IsNullOrWhiteSpace(item.ParentRef))
+            {
+                var trimmedParentRef = item.ParentRef.Trim();
+                if (string.Equals(trimmedRef, trimmedParentRef, StringComparison.OrdinalIgnoreCase))
+                    throw new ArgumentException($"Thư mục '{trimmedRef}' không thể tự làm cha của chính nó.");
+            }
+        }
+
+        foreach (var item in request.Folders)
+        {
+            if (!string.IsNullOrWhiteSpace(item.ParentRef))
+            {
+                var trimmedParentRef = item.ParentRef.Trim();
+                if (!clientRefs.Contains(trimmedParentRef))
+                    throw new ArgumentException($"parentRef '{trimmedParentRef}' của node '{item.ClientRef.Trim()}' không tồn tại trong batch.");
+            }
+        }
+
+        var itemMap = request.Folders.ToDictionary(x => x.ClientRef.Trim(), x => x, StringComparer.OrdinalIgnoreCase);
+        var childrenMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var inDegree = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var cRef in clientRefs)
+        {
+            childrenMap[cRef] = [];
+            inDegree[cRef] = 0;
+        }
+
+        var topLevelNodes = new List<string>();
+        foreach (var item in request.Folders)
+        {
+            var cRef = item.ClientRef.Trim();
+            if (!string.IsNullOrWhiteSpace(item.ParentRef))
+            {
+                var pRef = item.ParentRef.Trim();
+                childrenMap[pRef].Add(cRef);
+                inDegree[cRef]++;
+            }
+            else
+            {
+                topLevelNodes.Add(cRef);
+            }
+        }
+
+        var queue = new Queue<string>(topLevelNodes);
+        var topoOrder = new List<string>();
+        var depthMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var top in topLevelNodes)
+        {
+            depthMap[top] = baseDepth + 1;
+        }
+
+        const int maxDepth = 10;
+
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            topoOrder.Add(current);
+
+            var currDepth = depthMap[current];
+            if (currDepth > maxDepth)
+                throw new ArgumentException($"Độ sâu thư mục tại node '{current}' vượt quá giới hạn cho phép (tối đa {maxDepth} cấp).");
+
+            foreach (var childRef in childrenMap[current])
+            {
+                depthMap[childRef] = currDepth + 1;
+                inDegree[childRef]--;
+                if (inDegree[childRef] == 0)
+                {
+                    queue.Enqueue(childRef);
+                }
+            }
+        }
+
+        if (topoOrder.Count < clientRefs.Count)
+        {
+            throw new ArgumentException("Phát hiện vòng lặp (cycle) trong cấu trúc thư mục của batch.");
+        }
+
+        var groupedByParent = request.Folders
+            .GroupBy(x => x.ParentRef?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in groupedByParent)
+        {
+            var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in group)
+            {
+                var name = item.Name.Trim();
+                if (!seenNames.Add(name))
+                {
+                    if (request.DuplicatePolicy == BulkDuplicatePolicy.Error)
+                    {
+                        throw new ArgumentException($"Tên thư mục '{name}' bị trùng lặp dưới cùng thư mục cha trong batch.");
+                    }
+                }
+            }
+        }
+
+        if (request.ValidateOnly)
+        {
+            var previewItems = new List<BulkCreatedMediaFolderItem>();
+            foreach (var cRef in topoOrder)
+            {
+                var item = itemMap[cRef];
+                previewItems.Add(new BulkCreatedMediaFolderItem
+                {
+                    ClientRef = cRef,
+                    Id = Guid.NewGuid(),
+                    Name = item.Name.Trim(),
+                    ParentFolderId = request.ParentFolderId,
+                    SocialChannelId = request.SocialChannelId,
+                    Depth = depthMap[cRef],
+                    IsSkipped = false
+                });
+            }
+
+            return new BulkCreateMediaFolderResponse
+            {
+                Success = true,
+                ValidateOnly = true,
+                TotalRequested = request.Folders.Count,
+                TotalCreated = previewItems.Count,
+                TotalSkipped = 0,
+                Folders = previewItems,
+                Errors = []
+            };
+        }
+
+        var responseItems = new List<BulkCreatedMediaFolderItem>();
+        var idMap = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        int skippedCount = 0;
+
+        using var tx = await Context.Database.BeginTransactionAsync(ct);
+        try
+        {
+            foreach (var cRef in topoOrder)
+            {
+                var item = itemMap[cRef];
+                var name = item.Name.Trim();
+
+                Guid? actualParentId;
+                if (!string.IsNullOrWhiteSpace(item.ParentRef))
+                {
+                    var pRef = item.ParentRef.Trim();
+                    actualParentId = idMap.GetValueOrDefault(pRef);
+                }
+                else
+                {
+                    actualParentId = request.ParentFolderId;
+                }
+
+                var existingInDb = await QueryActive()
+                    .FirstOrDefaultAsync(x =>
+                        x.SocialChannelId == request.SocialChannelId &&
+                        x.ParentFolderId == actualParentId &&
+                        x.Name.ToLower() == name.ToLower(), ct);
+
+                if (existingInDb != null)
+                {
+                    if (request.DuplicatePolicy == BulkDuplicatePolicy.Error)
+                    {
+                        throw new ArgumentException($"Thư mục '{name}' đã tồn tại dưới cùng thư mục cha.");
+                    }
+                    else if (request.DuplicatePolicy == BulkDuplicatePolicy.Skip)
+                    {
+                        idMap[cRef] = existingInDb.Id;
+                        skippedCount++;
+                        responseItems.Add(new BulkCreatedMediaFolderItem
+                        {
+                            ClientRef = cRef,
+                            Id = existingInDb.Id,
+                            Name = existingInDb.Name,
+                            ParentFolderId = existingInDb.ParentFolderId,
+                            SocialChannelId = existingInDb.SocialChannelId,
+                            Depth = depthMap[cRef],
+                            IsSkipped = true
+                        });
+                        continue;
+                    }
+                }
+
+                var entity = new MediaFolderModel
+                {
+                    Id = Guid.NewGuid(),
+                    Name = name,
+                    Description = item.Description?.Trim(),
+                    ParentFolderId = actualParentId,
+                    SocialChannelId = request.SocialChannelId,
+                    SortOrder = item.SortOrder,
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = GetCurrentUserName()
+                };
+
+                Context.Set<MediaFolderModel>().Add(entity);
+                await Context.SaveChangesAsync(ct);
+
+                idMap[cRef] = entity.Id;
+                responseItems.Add(new BulkCreatedMediaFolderItem
+                {
+                    ClientRef = cRef,
+                    Id = entity.Id,
+                    Name = entity.Name,
+                    ParentFolderId = entity.ParentFolderId,
+                    SocialChannelId = entity.SocialChannelId,
+                    Depth = depthMap[cRef],
+                    IsSkipped = false
+                });
+            }
+
+            await tx.CommitAsync(ct);
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
+
+        return new BulkCreateMediaFolderResponse
+        {
+            Success = true,
+            ValidateOnly = false,
+            TotalRequested = request.Folders.Count,
+            TotalCreated = responseItems.Count(x => !x.IsSkipped),
+            TotalSkipped = skippedCount,
+            Folders = responseItems,
+            Errors = []
+        };
+    }
+
+    private async Task EnsureSocialChannelExistsAsync(Guid socialChannelId, CancellationToken ct)
+    {
+        var channelExists = await Context.Set<SocialChannelModel>()
+            .AnyAsync(x => x.Id == socialChannelId && !x.IsDeleted, ct);
+        if (!channelExists)
+            throw new KeyNotFoundException("Page/Kênh không tồn tại.");
+    }
+
+    private async Task<(Dictionary<Guid, int> DirectAssets, Dictionary<Guid, int> ChildFolders)> LoadDirectCountsAsync(
+        Guid socialChannelId, List<Guid> folderIds, CancellationToken ct)
+    {
+        var directAssetCounts = await Context.Set<MediaAssetModel>()
+            .Where(x => !x.IsDeleted && x.FolderId.HasValue && folderIds.Contains(x.FolderId.Value))
+            .GroupBy(x => x.FolderId!.Value)
+            .Select(g => new { FolderId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.FolderId, x => x.Count, ct);
+
+        var childFolderCounts = await QueryActive()
+            .Where(x => x.SocialChannelId == socialChannelId && x.ParentFolderId.HasValue && folderIds.Contains(x.ParentFolderId.Value))
+            .GroupBy(x => x.ParentFolderId!.Value)
+            .Select(g => new { FolderId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.FolderId, x => x.Count, ct);
+
+        return (directAssetCounts, childFolderCounts);
+    }
+
+    private static bool FolderNameMatchesKeyword(string name, string keyword)
+    {
+        if (name.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var normalizedName = VietnameseTextHelper.StripDiacritics(name);
+        var normalizedKeyword = VietnameseTextHelper.StripDiacritics(keyword);
+        return normalizedName.Contains(normalizedKeyword, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildFullPath(Guid folderId, IReadOnlyDictionary<Guid, MediaFolderModel> foldersById)
+    {
+        if (!foldersById.TryGetValue(folderId, out var folder))
+            return string.Empty;
+
+        var segments = new List<string>();
+        var cursor = folder;
+        var visited = new HashSet<Guid>();
+
+        while (true)
+        {
+            if (!visited.Add(cursor.Id))
+                break;
+
+            segments.Add(cursor.Name);
+
+            if (!cursor.ParentFolderId.HasValue)
+                break;
+
+            if (!foldersById.TryGetValue(cursor.ParentFolderId.Value, out var parent))
+                break;
+
+            cursor = parent;
+        }
+
+        segments.Reverse();
+        return string.Join(" / ", segments);
+    }
 
     private async Task EnsureNoCycleAsync(Guid folderId, Guid newParentId, CancellationToken ct)
     {
