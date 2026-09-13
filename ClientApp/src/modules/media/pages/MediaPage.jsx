@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import PageHeader from '@/shared/components/PageHeader'
 import Modal from '@/shared/components/Modal'
 import StatusBadge from '@/shared/components/StatusBadge'
@@ -8,7 +8,7 @@ import { confirmAction, CONFIRM_MESSAGES } from '@/shared/utils/confirmAction'
 import { toast } from '@/shared/stores/toastStore'
 import MediaGrid from '../components/MediaGrid'
 import MediaUploadForm from '../components/MediaUploadForm'
-import MediaFolderTree from '../components/MediaFolderTree'
+import MediaFolderExplorer from '../components/MediaFolderExplorer'
 import MediaFolderFormModal from '../components/MediaFolderFormModal'
 import AiBackgroundPromptModal from '../components/AiBackgroundPromptModal'
 import {
@@ -25,12 +25,13 @@ import {
   useAnalyzeLayout,
 } from '../hooks/useMediaAssets'
 import { useCategoryList } from '@/modules/categories/hooks/useCategories'
+import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import {
   useCreateMediaFolder,
   useDeleteMediaFolder,
-  useMediaFolderTree,
   useUpdateMediaFolder,
 } from '../hooks/useMediaFolders'
+import { useMediaFolderExplorer } from '../hooks/useMediaFolderExplorer'
 import {
   MEDIA_SOURCE_OPTIONS,
   getMediaSourceMeta,
@@ -50,9 +51,11 @@ export default function MediaPage() {
   const [detailsAsset, setDetailsAsset] = useState(null)
   const [formError, setFormError] = useState('')
 
-  // Folder: selection = 'all' | 'unassigned' | <folderId>
-  const [selection, setSelection] = useState('all')
+  const [socialChannelId, setSocialChannelId] = useState('')
   const [folderModal, setFolderModal] = useState(null) // { editing, defaultParentId } | null
+  const { data: channels = [] } = useSocialChannelAll()
+  const explorer = useMediaFolderExplorer({ socialChannelId })
+  const { selection, currentFolderId } = explorer
 
   const params = useMemo(
     () => ({
@@ -67,7 +70,6 @@ export default function MediaPage() {
   )
 
   const { data, isLoading, isError, error, refetch } = useMediaAssets(params)
-  const { data: folders = [] } = useMediaFolderTree()
   const createMutation = useCreateMediaAsset()
   const uploadMutation = useUploadMediaAsset()
   const uploadBatchMutation = useUploadMediaBatch()
@@ -87,7 +89,13 @@ export default function MediaPage() {
   const [analyzingLayoutId, setAnalyzingLayoutId] = useState(null)
 
   const items = data?.items ?? []
-  const currentFolderId = selection !== 'all' && selection !== 'unassigned' ? selection : null
+  const folders = explorer.folderOptions
+
+  useEffect(() => {
+    if (socialChannelId) return
+    const firstId = channels[0]?.id
+    if (firstId) setSocialChannelId(firstId)
+  }, [channels, socialChannelId])
 
   const handleCreate = async (payload) => {
     try {
@@ -217,17 +225,22 @@ export default function MediaPage() {
     }
   }
 
-  const handleFolderSubmit = async ({ name, parentFolderId, socialChannelId }) => {
+  const handleFolderSubmit = async ({ name, parentFolderId, socialChannelId: pageId }) => {
     try {
       setFormError('')
+      const scopedPageId = socialChannelId || pageId
       if (folderModal?.editing) {
         await updateFolderMutation.mutateAsync({
           id: folderModal.editing.id,
-          payload: { name, parentFolderId, socialChannelId },
+          payload: { name, parentFolderId, socialChannelId: scopedPageId },
         })
         toast.success('Đã cập nhật thư mục')
       } else {
-        await createFolderMutation.mutateAsync({ name, parentFolderId, socialChannelId })
+        await createFolderMutation.mutateAsync({
+          name,
+          parentFolderId,
+          socialChannelId: scopedPageId,
+        })
         toast.success('Đã tạo thư mục')
       }
       setFolderModal(null)
@@ -241,7 +254,7 @@ export default function MediaPage() {
     try {
       await deleteFolderMutation.mutateAsync(folder.id)
       toast.success('Đã xóa thư mục')
-      if (selection === folder.id) setSelection('all')
+      if (selection === folder.id || currentFolderId === folder.id) explorer.resetToRoot()
     } catch (folderError) {
       toast.error(getErrorMessage(folderError))
     }
@@ -292,15 +305,16 @@ export default function MediaPage() {
       <div className="media-layout">
         <aside className="card card-body media-sidebar">
           <h3 className="media-sidebar-title">Thư mục</h3>
-          <MediaFolderTree
-            folders={folders}
-            selection={selection}
-            onSelect={setSelection}
+          <MediaFolderExplorer
+            channels={channels}
+            onSocialChannelChange={setSocialChannelId}
             canManage={canManageMedia}
             onMoveAsset={handleMoveAsset}
             onCreateChild={(parentId) => { setFormError(''); setFolderModal({ editing: null, defaultParentId: parentId }) }}
             onRename={(folder) => { setFormError(''); setFolderModal({ editing: folder, defaultParentId: null }) }}
             onDelete={handleDeleteFolder}
+            onRetry={explorer.refetch}
+            {...explorer}
           />
         </aside>
 
@@ -376,6 +390,7 @@ export default function MediaPage() {
         editing={folderModal?.editing ?? null}
         defaultParentId={folderModal?.defaultParentId ?? null}
         parentOptions={folders}
+        defaultSocialChannelId={socialChannelId || null}
         onClose={() => setFolderModal(null)}
         onSubmit={handleFolderSubmit}
         isSubmitting={createFolderMutation.isPending || updateFolderMutation.isPending}

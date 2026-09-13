@@ -10,6 +10,7 @@ export default function MediaFolderFormModal({
   open,
   editing = null,
   defaultParentId = null,
+  defaultSocialChannelId = null,
   parentOptions = [],
   onClose,
   onSubmit,
@@ -26,8 +27,8 @@ export default function MediaFolderFormModal({
     if (!open) return
     setName(editing?.name ?? '')
     setParentFolderId(editing?.parentFolderId ?? defaultParentId ?? '')
-    setSocialChannelId(editing?.socialChannelId ?? '')
-  }, [open, editing, defaultParentId])
+    setSocialChannelId(editing?.socialChannelId ?? defaultSocialChannelId ?? '')
+  }, [open, editing, defaultParentId, defaultSocialChannelId])
 
   const handleSubmit = (event) => {
     event.preventDefault()
