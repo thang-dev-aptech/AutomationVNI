@@ -358,10 +358,11 @@ public class MediaFolderChildrenTests : IDisposable
     }
 
     /// <summary>
-    /// AC 6: Parent thuộc Page khác bị từ chối với ArgumentException (400 Bad Request).
+    /// AC 6: Parent thuộc Page khác dùng cùng not-found semantics với ID không tồn tại,
+    /// không để lộ sự tồn tại, tên hoặc ID của folder ngoài Page.
     /// </summary>
     [Fact]
-    public async Task GetChildren_ParentBelongingToDifferentPage_IsRejected()
+    public async Task GetChildren_ParentBelongingToDifferentPage_IsIndistinguishableFromMissing()
     {
         // Arrange: Tạo thư mục cha thuộc Page B
         var parentB = new MediaFolderModel
@@ -374,15 +375,25 @@ public class MediaFolderChildrenTests : IDisposable
         _db.MediaFolders.Add(parentB);
         await _db.SaveChangesAsync();
 
-        // Act & Assert: Yêu cầu lấy con của parentB nhưng truyền SocialChannelId = Page A
-        var request = new GetMediaFolderChildrenRequest
-        {
-            SocialChannelId = _pageAId,
-            ParentFolderId = parentB.Id
-        };
+        // Act: dùng Page A để truy cập parent Page B và một ID hoàn toàn không tồn tại.
+        var crossPage = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            _repo.GetChildrenAsync(new GetMediaFolderChildrenRequest
+            {
+                SocialChannelId = _pageAId,
+                ParentFolderId = parentB.Id
+            }));
 
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() => _repo.GetChildrenAsync(request));
-        Assert.Contains("không thuộc Page", ex.Message);
+        var missing = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            _repo.GetChildrenAsync(new GetMediaFolderChildrenRequest
+            {
+                SocialChannelId = _pageAId,
+                ParentFolderId = Guid.NewGuid()
+            }));
+
+        // Assert: hai trường hợp không thể phân biệt qua loại lỗi hoặc nội dung lỗi.
+        Assert.Equal(missing.Message, crossPage.Message);
+        Assert.DoesNotContain(parentB.Id.ToString(), crossPage.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(parentB.Name, crossPage.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

@@ -31,12 +31,11 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         if (request.ParentFolderId.HasValue)
         {
             var parent = await QueryActive()
-                .FirstOrDefaultAsync(x => x.Id == request.ParentFolderId.Value, ct);
+                .FirstOrDefaultAsync(x =>
+                    x.Id == request.ParentFolderId.Value &&
+                    x.SocialChannelId == request.SocialChannelId, ct);
             if (parent is null)
                 throw new KeyNotFoundException("Thư mục cha không tồn tại.");
-
-            if (parent.SocialChannelId != request.SocialChannelId)
-                throw new ArgumentException("Thư mục cha không thuộc Page yêu cầu.");
         }
 
         var query = QueryActive()
