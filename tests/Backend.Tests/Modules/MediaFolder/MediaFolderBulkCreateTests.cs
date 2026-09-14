@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Xunit;
 
 namespace Backend.Tests.Modules.MediaFolder;
@@ -490,7 +491,7 @@ public class MediaFolderBulkCreateTests : IDisposable
     }
 
     /// <summary>
-    /// AC 12: Validate-only (Preview) kiểm tra hợp lệ mà không ghi DB.
+    /// MEDIA-03-AC1: ValidateOnly hierarchy nhiều cấp — DB không đổi và ParentFolderId preview đúng clientRef/parentRef.
     /// </summary>
     [Fact]
     public async Task BulkCreate_ValidateOnly_ReturnsPreviewWithoutSaving()
@@ -504,7 +505,8 @@ public class MediaFolderBulkCreateTests : IDisposable
             Folders =
             [
                 new BulkCreateMediaFolderItem { ClientRef = "p1", Name = "Preview 1" },
-                new BulkCreateMediaFolderItem { ClientRef = "p2", Name = "Preview 2", ParentRef = "p1" }
+                new BulkCreateMediaFolderItem { ClientRef = "p2", Name = "Preview 2", ParentRef = "p1" },
+                new BulkCreateMediaFolderItem { ClientRef = "p3", Name = "Preview 3", ParentRef = "p2" }
             ]
         };
 
@@ -512,11 +514,183 @@ public class MediaFolderBulkCreateTests : IDisposable
 
         Assert.True(response.Success);
         Assert.True(response.ValidateOnly);
-        Assert.Equal(2, response.TotalCreated);
-        Assert.Equal(2, response.Folders.Count);
+        Assert.Equal(3, response.TotalCreated);
+        Assert.Equal(0, response.TotalSkipped);
+        Assert.Equal(3, response.Folders.Count);
 
-        // Database không tăng thêm bản ghi nào
-        var countAfter = await _db.MediaFolders.CountAsync();
-        Assert.Equal(countBefore, countAfter);
+        var p1 = response.Folders.First(x => x.ClientRef == "p1");
+        var p2 = response.Folders.First(x => x.ClientRef == "p2");
+        var p3 = response.Folders.First(x => x.ClientRef == "p3");
+
+        Assert.Null(p1.ParentFolderId);
+        Assert.Equal(p1.Id, p2.ParentFolderId);
+        Assert.Equal(p2.Id, p3.ParentFolderId);
+        Assert.All(response.Folders, x => Assert.Equal(_pageAId, x.SocialChannelId));
+        Assert.Equal(countBefore, await _db.MediaFolders.CountAsync());
+        Assert.False(await _db.MediaFolders.AnyAsync(x => x.Name.StartsWith("Preview ")));
+    }
+
+    /// <summary>
+    /// MEDIA-03-AC1: ValidateOnly + DuplicatePolicy.Error với folder đã có trong DB → từ chối, DB không đổi.
+    /// </summary>
+    [Fact]
+    public async Task BulkCreate_ValidateOnly_DuplicatePolicy_Error_RejectsExistingWithoutSaving()
+    {
+        _db.MediaFolders.Add(new MediaFolderModel
+        {
+            Id = Guid.NewGuid(),
+            Name = "Marketing",
+            SocialChannelId = _pageAId,
+            ParentFolderId = null
+        });
+        await _db.SaveChangesAsync();
+        var countBefore = await _db.MediaFolders.CountAsync();
+
+        var request = new BulkCreateMediaFolderRequest
+        {
+            SocialChannelId = _pageAId,
+            ValidateOnly = true,
+            DuplicatePolicy = BulkDuplicatePolicy.Error,
+            Folders =
+            [
+                new BulkCreateMediaFolderItem { ClientRef = "1", Name = "Marketing" },
+                new BulkCreateMediaFolderItem { ClientRef = "2", Name = "Child", ParentRef = "1" }
+            ]
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => _repo.BulkCreateAsync(request));
+        Assert.Contains("đã tồn tại", ex.Message);
+        Assert.Equal(countBefore, await _db.MediaFolders.CountAsync());
+        Assert.False(await _db.MediaFolders.AnyAsync(x => x.Name == "Child"));
+    }
+
+    /// <summary>
+    /// MEDIA-03-AC1: ValidateOnly + DuplicatePolicy.Skip tái sử dụng existing ID; descendants trỏ đúng; DB không đổi.
+    /// </summary>
+    [Fact]
+    public async Task BulkCreate_ValidateOnly_DuplicatePolicy_Skip_ReusesExistingIdsWithoutSaving()
+    {
+        var existing = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(),
+            Name = "Marketing",
+            SocialChannelId = _pageAId,
+            ParentFolderId = null
+        };
+        _db.MediaFolders.Add(existing);
+        await _db.SaveChangesAsync();
+        var countBefore = await _db.MediaFolders.CountAsync();
+
+        var request = new BulkCreateMediaFolderRequest
+        {
+            SocialChannelId = _pageAId,
+            ValidateOnly = true,
+            DuplicatePolicy = BulkDuplicatePolicy.Skip,
+            Folders =
+            [
+                new BulkCreateMediaFolderItem { ClientRef = "ref_existing", Name = "Marketing" },
+                new BulkCreateMediaFolderItem { ClientRef = "ref_new_child", Name = "Sub Marketing", ParentRef = "ref_existing" }
+            ]
+        };
+
+        var response = await _repo.BulkCreateAsync(request);
+
+        Assert.True(response.Success);
+        Assert.True(response.ValidateOnly);
+        Assert.Equal(1, response.TotalCreated);
+        Assert.Equal(1, response.TotalSkipped);
+
+        var skipped = response.Folders.First(x => x.ClientRef == "ref_existing");
+        Assert.True(skipped.IsSkipped);
+        Assert.Equal(existing.Id, skipped.Id);
+
+        var child = response.Folders.First(x => x.ClientRef == "ref_new_child");
+        Assert.False(child.IsSkipped);
+        Assert.Equal(existing.Id, child.ParentFolderId);
+        Assert.Equal(_pageAId, child.SocialChannelId);
+
+        Assert.Equal(countBefore, await _db.MediaFolders.CountAsync());
+        Assert.False(await _db.MediaFolders.AnyAsync(x => x.Name == "Sub Marketing"));
+    }
+
+    /// <summary>
+    /// MEDIA-03-AC1: persistence failure giữa transaction phải rollback toàn bộ (không chỉ lỗi validation trước khi ghi).
+    /// </summary>
+    [Fact]
+    public async Task BulkCreate_PersistenceFailure_RollsBackEntireBatch()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var interceptor = new FailAfterFirstSaveInterceptor();
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(connection)
+            .AddInterceptors(interceptor)
+            .Options;
+
+        await using var db = new AppDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        db.SocialChannels.Add(new SocialChannelModel
+        {
+            Id = _pageAId,
+            Platform = SocialPlatform.Facebook,
+            ChannelType = SocialChannelType.Page,
+            PageName = "Page A",
+            ExternalPageId = "fb-page-a-persist",
+            AccessToken = "token-a",
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+        interceptor.Reset();
+
+        var repo = new MediaFolderRepository(db, _userContext);
+        var countBefore = await db.MediaFolders.CountAsync();
+
+        var request = new BulkCreateMediaFolderRequest
+        {
+            SocialChannelId = _pageAId,
+            Folders =
+            [
+                new BulkCreateMediaFolderItem { ClientRef = "good_1", Name = "Persist Good" },
+                new BulkCreateMediaFolderItem { ClientRef = "good_2", Name = "Persist Also", ParentRef = "good_1" }
+            ]
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => repo.BulkCreateAsync(request));
+
+        Assert.Equal(countBefore, await db.MediaFolders.CountAsync());
+        Assert.False(await db.MediaFolders.AnyAsync(x => x.Name == "Persist Good"));
+        Assert.False(await db.MediaFolders.AnyAsync(x => x.Name == "Persist Also"));
+    }
+}
+
+/// <summary>
+/// Gây lỗi persistence thật ở lần SaveChanges thứ N trong batch (sau khi node trước đã Add).
+/// </summary>
+file sealed class FailAfterFirstSaveInterceptor : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+{
+    private int _saves;
+
+    public void Reset() => _saves = 0;
+
+    public override InterceptionResult<int> SavingChanges(
+        DbContextEventData eventData,
+        InterceptionResult<int> result)
+    {
+        _saves++;
+        if (_saves > 1)
+            throw new InvalidOperationException("Simulated persistence failure after first SaveChanges.");
+        return base.SavingChanges(eventData, result);
+    }
+
+    public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+        DbContextEventData eventData,
+        InterceptionResult<int> result,
+        CancellationToken cancellationToken = default)
+    {
+        _saves++;
+        if (_saves > 1)
+            throw new InvalidOperationException("Simulated persistence failure after first SaveChanges.");
+        return base.SavingChangesAsync(eventData, result, cancellationToken);
     }
 }

@@ -704,92 +704,156 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
             }
         }
 
+        // ValidateOnly và create thật dùng chung lập kế hoạch hierarchy + duplicate DB
+        // (Error/Skip) để preview phản ánh đúng clientRef/parentRef và không báo hợp lệ sai.
         if (request.ValidateOnly)
         {
-            var previewItems = new List<BulkCreatedMediaFolderItem>();
-            foreach (var cRef in topoOrder)
-            {
-                var item = itemMap[cRef];
-                previewItems.Add(new BulkCreatedMediaFolderItem
-                {
-                    ClientRef = cRef,
-                    Id = Guid.NewGuid(),
-                    Name = item.Name.Trim(),
-                    ParentFolderId = request.ParentFolderId,
-                    SocialChannelId = request.SocialChannelId,
-                    Depth = depthMap[cRef],
-                    IsSkipped = false
-                });
-            }
-
-            return new BulkCreateMediaFolderResponse
-            {
-                Success = true,
-                ValidateOnly = true,
-                TotalRequested = request.Folders.Count,
-                TotalCreated = previewItems.Count,
-                TotalSkipped = 0,
-                Folders = previewItems,
-                Errors = []
-            };
+            var preview = await MaterializeBulkBatchAsync(
+                request,
+                itemMap,
+                topoOrder,
+                depthMap,
+                persist: false,
+                ct);
+            return BuildBulkResponse(request, preview.Items, preview.SkippedCount, validateOnly: true);
         }
-
-        var responseItems = new List<BulkCreatedMediaFolderItem>();
-        var idMap = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
-        int skippedCount = 0;
 
         using var tx = await Context.Database.BeginTransactionAsync(ct);
         try
         {
-            foreach (var cRef in topoOrder)
+            var created = await MaterializeBulkBatchAsync(
+                request,
+                itemMap,
+                topoOrder,
+                depthMap,
+                persist: true,
+                ct);
+            await tx.CommitAsync(ct);
+            return BuildBulkResponse(request, created.Items, created.SkippedCount, validateOnly: false);
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
+    }
+
+    private sealed record BulkBatchMaterialization(
+        List<BulkCreatedMediaFolderItem> Items,
+        int SkippedCount);
+
+    private static BulkCreateMediaFolderResponse BuildBulkResponse(
+        BulkCreateMediaFolderRequest request,
+        List<BulkCreatedMediaFolderItem> items,
+        int skippedCount,
+        bool validateOnly)
+        => new()
+        {
+            Success = true,
+            ValidateOnly = validateOnly,
+            TotalRequested = request.Folders.Count,
+            TotalCreated = items.Count(x => !x.IsSkipped),
+            TotalSkipped = skippedCount,
+            Folders = items,
+            Errors = []
+        };
+
+    /// <summary>
+    /// Áp dụng cùng semantics hierarchy/duplicate cho preview và create.
+    /// persist=false: không Add/SaveChanges; persist=true: ghi từng node trong transaction của caller.
+    /// </summary>
+    private async Task<BulkBatchMaterialization> MaterializeBulkBatchAsync(
+        BulkCreateMediaFolderRequest request,
+        IReadOnlyDictionary<string, BulkCreateMediaFolderItem> itemMap,
+        IReadOnlyList<string> topoOrder,
+        IReadOnlyDictionary<string, int> depthMap,
+        bool persist,
+        CancellationToken ct)
+    {
+        var responseItems = new List<BulkCreatedMediaFolderItem>();
+        var idMap = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        // Overlay tên đã lập kế hoạch trong batch (cần cho ValidateOnly vì không ghi DB,
+        // và giữ Skip in-batch nhất quán với create thật nhìn thấy entity vừa Add).
+        var plannedNames = new Dictionary<(Guid? ParentId, string Name), (Guid Id, string DisplayName, Guid? ParentFolderId, Guid? SocialChannelId)>();
+        var skippedCount = 0;
+
+        foreach (var cRef in topoOrder)
+        {
+            var item = itemMap[cRef];
+            var name = item.Name.Trim();
+            var nameKey = name.ToLowerInvariant();
+
+            Guid? actualParentId;
+            if (!string.IsNullOrWhiteSpace(item.ParentRef))
             {
-                var item = itemMap[cRef];
-                var name = item.Name.Trim();
+                var pRef = item.ParentRef.Trim();
+                if (!idMap.TryGetValue(pRef, out var mappedParentId))
+                    throw new ArgumentException($"parentRef '{pRef}' của node '{cRef}' chưa được resolve trong batch.");
+                actualParentId = mappedParentId;
+            }
+            else
+            {
+                actualParentId = request.ParentFolderId;
+            }
 
-                Guid? actualParentId;
-                if (!string.IsNullOrWhiteSpace(item.ParentRef))
-                {
-                    var pRef = item.ParentRef.Trim();
-                    actualParentId = idMap.GetValueOrDefault(pRef);
-                }
-                else
-                {
-                    actualParentId = request.ParentFolderId;
-                }
+            var planKey = (actualParentId, nameKey);
+            Guid? existingId = null;
+            string? existingName = null;
+            Guid? existingParentId = null;
+            Guid? existingSocialChannelId = null;
 
+            if (plannedNames.TryGetValue(planKey, out var planned))
+            {
+                existingId = planned.Id;
+                existingName = planned.DisplayName;
+                existingParentId = planned.ParentFolderId;
+                existingSocialChannelId = planned.SocialChannelId;
+            }
+            else
+            {
                 var existingInDb = await QueryActive()
                     .FirstOrDefaultAsync(x =>
                         x.SocialChannelId == request.SocialChannelId &&
                         x.ParentFolderId == actualParentId &&
-                        x.Name.ToLower() == name.ToLower(), ct);
-
+                        x.Name.ToLower() == nameKey, ct);
                 if (existingInDb != null)
                 {
-                    if (request.DuplicatePolicy == BulkDuplicatePolicy.Error)
-                    {
-                        throw new ArgumentException($"Thư mục '{name}' đã tồn tại dưới cùng thư mục cha.");
-                    }
-                    else if (request.DuplicatePolicy == BulkDuplicatePolicy.Skip)
-                    {
-                        idMap[cRef] = existingInDb.Id;
-                        skippedCount++;
-                        responseItems.Add(new BulkCreatedMediaFolderItem
-                        {
-                            ClientRef = cRef,
-                            Id = existingInDb.Id,
-                            Name = existingInDb.Name,
-                            ParentFolderId = existingInDb.ParentFolderId,
-                            SocialChannelId = existingInDb.SocialChannelId,
-                            Depth = depthMap[cRef],
-                            IsSkipped = true
-                        });
-                        continue;
-                    }
+                    existingId = existingInDb.Id;
+                    existingName = existingInDb.Name;
+                    existingParentId = existingInDb.ParentFolderId;
+                    existingSocialChannelId = existingInDb.SocialChannelId;
                 }
+            }
 
+            if (existingId.HasValue)
+            {
+                if (request.DuplicatePolicy == BulkDuplicatePolicy.Error)
+                    throw new ArgumentException($"Thư mục '{name}' đã tồn tại dưới cùng thư mục cha.");
+
+                if (request.DuplicatePolicy == BulkDuplicatePolicy.Skip)
+                {
+                    idMap[cRef] = existingId.Value;
+                    skippedCount++;
+                    responseItems.Add(new BulkCreatedMediaFolderItem
+                    {
+                        ClientRef = cRef,
+                        Id = existingId.Value,
+                        Name = existingName ?? name,
+                        ParentFolderId = existingParentId,
+                        SocialChannelId = existingSocialChannelId ?? request.SocialChannelId,
+                        Depth = depthMap[cRef],
+                        IsSkipped = true
+                    });
+                    continue;
+                }
+            }
+
+            var entityId = Guid.NewGuid();
+            if (persist)
+            {
                 var entity = new MediaFolderModel
                 {
-                    Id = Guid.NewGuid(),
+                    Id = entityId,
                     Name = name,
                     Description = item.Description?.Trim(),
                     ParentFolderId = actualParentId,
@@ -801,38 +865,24 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
 
                 Context.Set<MediaFolderModel>().Add(entity);
                 await Context.SaveChangesAsync(ct);
-
-                idMap[cRef] = entity.Id;
-                responseItems.Add(new BulkCreatedMediaFolderItem
-                {
-                    ClientRef = cRef,
-                    Id = entity.Id,
-                    Name = entity.Name,
-                    ParentFolderId = entity.ParentFolderId,
-                    SocialChannelId = entity.SocialChannelId,
-                    Depth = depthMap[cRef],
-                    IsSkipped = false
-                });
+                entityId = entity.Id;
             }
 
-            await tx.CommitAsync(ct);
-        }
-        catch
-        {
-            await tx.RollbackAsync(ct);
-            throw;
+            idMap[cRef] = entityId;
+            plannedNames[planKey] = (entityId, name, actualParentId, request.SocialChannelId);
+            responseItems.Add(new BulkCreatedMediaFolderItem
+            {
+                ClientRef = cRef,
+                Id = entityId,
+                Name = name,
+                ParentFolderId = actualParentId,
+                SocialChannelId = request.SocialChannelId,
+                Depth = depthMap[cRef],
+                IsSkipped = false
+            });
         }
 
-        return new BulkCreateMediaFolderResponse
-        {
-            Success = true,
-            ValidateOnly = false,
-            TotalRequested = request.Folders.Count,
-            TotalCreated = responseItems.Count(x => !x.IsSkipped),
-            TotalSkipped = skippedCount,
-            Folders = responseItems,
-            Errors = []
-        };
+        return new BulkBatchMaterialization(responseItems, skippedCount);
     }
 
     private async Task EnsureSocialChannelAccessAsync(Guid socialChannelId, CancellationToken ct)
