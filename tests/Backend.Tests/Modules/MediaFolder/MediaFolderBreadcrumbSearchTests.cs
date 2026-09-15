@@ -152,11 +152,14 @@ public class MediaFolderBreadcrumbSearchTests : IDisposable
         Assert.Equal(leaf.Id, result.Ancestors[^1].Id);
     }
 
-    /// <summary>AC 2: Breadcrumb không đi xuyên Page (parent thuộc Page khác → 404).</summary>
+    /// <summary>
+    /// AC 2: Parent chain sang Page khác dùng cùng not-found với folder thiếu;
+    /// message không lộ tên/ID của parent ngoài Page.
+    /// </summary>
     [Fact]
-    public async Task GetBreadcrumb_DoesNotCrossPage_WhenParentOnOtherPage()
+    public async Task GetBreadcrumb_BrokenCrossPageParentChain_IsIndistinguishableFromMissing()
     {
-        var rootB = new MediaFolderModel { Id = Guid.NewGuid(), Name = "Root B", SocialChannelId = _pageBId, ParentFolderId = null };
+        var rootB = new MediaFolderModel { Id = Guid.NewGuid(), Name = "Root B Secret", SocialChannelId = _pageBId, ParentFolderId = null };
         var orphanOnA = new MediaFolderModel
         {
             Id = Guid.NewGuid(),
@@ -167,11 +170,23 @@ public class MediaFolderBreadcrumbSearchTests : IDisposable
         _db.MediaFolders.AddRange(rootB, orphanOnA);
         await _db.SaveChangesAsync();
 
-        await Assert.ThrowsAsync<KeyNotFoundException>(() => _repo.GetBreadcrumbAsync(new GetMediaFolderBreadcrumbRequest
+        var missing = await Assert.ThrowsAsync<KeyNotFoundException>(() => _repo.GetBreadcrumbAsync(new GetMediaFolderBreadcrumbRequest
+        {
+            SocialChannelId = _pageAId,
+            FolderId = Guid.NewGuid()
+        }));
+
+        var brokenChain = await Assert.ThrowsAsync<KeyNotFoundException>(() => _repo.GetBreadcrumbAsync(new GetMediaFolderBreadcrumbRequest
         {
             SocialChannelId = _pageAId,
             FolderId = orphanOnA.Id
         }));
+
+        Assert.Equal(missing.Message, brokenChain.Message);
+        Assert.DoesNotContain(rootB.Name, brokenChain.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(rootB.Id.ToString(), brokenChain.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(orphanOnA.Name, brokenChain.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(orphanOnA.Id.ToString(), brokenChain.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>AC 3: Search chỉ trả folder trong Page được phép.</summary>
@@ -288,17 +303,42 @@ public class MediaFolderBreadcrumbSearchTests : IDisposable
         Assert.DoesNotContain(page2.Items, x => page1Ids.Contains(x.Id));
     }
 
-    /// <summary>AC 7: Counts nhất quán với MEDIA-01.</summary>
+    /// <summary>AC 7: Counts nhất quán với MEDIA-01; bỏ soft-deleted và chỉ quan hệ trực tiếp.</summary>
     [Fact]
-    public async Task SearchFolders_CountsMatchChildrenApi()
+    public async Task SearchFolders_CountsMatchChildrenApi_ExcludingSoftDeleted()
     {
         var root = new MediaFolderModel { Id = Guid.NewGuid(), Name = "Root", SocialChannelId = _pageAId, ParentFolderId = null };
         var child = new MediaFolderModel { Id = Guid.NewGuid(), Name = "Child", SocialChannelId = _pageAId, ParentFolderId = root.Id };
         var grand = new MediaFolderModel { Id = Guid.NewGuid(), Name = "Grand", SocialChannelId = _pageAId, ParentFolderId = child.Id };
-        _db.MediaFolders.AddRange(root, child, grand);
+        var deletedChild = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(),
+            Name = "Deleted Child",
+            SocialChannelId = _pageAId,
+            ParentFolderId = root.Id,
+            IsDeleted = true
+        };
+        _db.MediaFolders.AddRange(root, child, grand, deletedChild);
         _db.MediaAssets.AddRange(
             new MediaAssetModel { Id = Guid.NewGuid(), FolderId = root.Id, FileName = "a.jpg", StoragePath = "p", PublicUrl = "u" },
-            new MediaAssetModel { Id = Guid.NewGuid(), FolderId = root.Id, FileName = "b.jpg", StoragePath = "p2", PublicUrl = "u2" }
+            new MediaAssetModel { Id = Guid.NewGuid(), FolderId = root.Id, FileName = "b.jpg", StoragePath = "p2", PublicUrl = "u2" },
+            new MediaAssetModel
+            {
+                Id = Guid.NewGuid(),
+                FolderId = root.Id,
+                FileName = "gone.jpg",
+                StoragePath = "pd",
+                PublicUrl = "ud",
+                IsDeleted = true
+            },
+            new MediaAssetModel
+            {
+                Id = Guid.NewGuid(),
+                FolderId = child.Id,
+                FileName = "nested.jpg",
+                StoragePath = "pn",
+                PublicUrl = "un"
+            }
         );
         await _db.SaveChangesAsync();
 
@@ -316,17 +356,27 @@ public class MediaFolderBreadcrumbSearchTests : IDisposable
         var fromChildren = children.Items.First(x => x.Id == root.Id);
         var fromSearch = search.Items.First(x => x.Id == root.Id);
 
+        Assert.Equal(1, fromSearch.ChildFolderCount);
+        Assert.Equal(2, fromSearch.DirectAssetCount);
         Assert.Equal(fromChildren.ChildFolderCount, fromSearch.ChildFolderCount);
         Assert.Equal(fromChildren.DirectAssetCount, fromSearch.DirectAssetCount);
         Assert.Equal(fromChildren.HasChildren, fromSearch.HasChildren);
+        Assert.DoesNotContain(search.Items, x => x.Id == deletedChild.Id || x.Name.Contains("Deleted", StringComparison.Ordinal));
     }
 
-    /// <summary>AC 8: Folder không tồn tại hoặc sai Page không làm lộ metadata.</summary>
+    /// <summary>AC 8: Folder không tồn tại, sai Page hoặc soft-deleted đều cùng not-found, không lộ metadata.</summary>
     [Fact]
-    public async Task GetBreadcrumb_MissingOrCrossPage_ReturnsNotFoundWithoutLeak()
+    public async Task GetBreadcrumb_MissingCrossPageOrSoftDeleted_ReturnsNotFoundWithoutLeak()
     {
         var folderB = new MediaFolderModel { Id = Guid.NewGuid(), Name = "Secret B", SocialChannelId = _pageBId };
-        _db.MediaFolders.Add(folderB);
+        var softDeleted = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(),
+            Name = "Soft Deleted A",
+            SocialChannelId = _pageAId,
+            IsDeleted = true
+        };
+        _db.MediaFolders.AddRange(folderB, softDeleted);
         await _db.SaveChangesAsync();
 
         var missing = await Assert.ThrowsAsync<KeyNotFoundException>(() => _repo.GetBreadcrumbAsync(new GetMediaFolderBreadcrumbRequest
@@ -341,9 +391,52 @@ public class MediaFolderBreadcrumbSearchTests : IDisposable
             FolderId = folderB.Id
         }));
 
+        var softDeletedTarget = await Assert.ThrowsAsync<KeyNotFoundException>(() => _repo.GetBreadcrumbAsync(new GetMediaFolderBreadcrumbRequest
+        {
+            SocialChannelId = _pageAId,
+            FolderId = softDeleted.Id
+        }));
+
         Assert.Equal(missing.Message, crossPage.Message);
-        Assert.DoesNotContain("Secret", missing.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Secret", crossPage.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(missing.Message, softDeletedTarget.Message);
+        Assert.DoesNotContain(folderB.Name, crossPage.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(folderB.Id.ToString(), crossPage.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(softDeleted.Name, softDeletedTarget.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(softDeleted.Id.ToString(), softDeletedTarget.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>AC 8b: Search không trả folder soft-deleted; soft-deleted parent chain không làm lộ metadata Page khác.</summary>
+    [Fact]
+    public async Task SearchFolders_ExcludesSoftDeletedAndDoesNotLeakCrossPageParent()
+    {
+        var rootB = new MediaFolderModel { Id = Guid.NewGuid(), Name = "Hidden Parent B", SocialChannelId = _pageBId };
+        var softDeleted = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(),
+            Name = "Ảnh đã xóa",
+            SocialChannelId = _pageAId,
+            IsDeleted = true
+        };
+        var active = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(),
+            Name = "Ảnh còn",
+            SocialChannelId = _pageAId,
+            ParentFolderId = rootB.Id
+        };
+        _db.MediaFolders.AddRange(rootB, softDeleted, active);
+        await _db.SaveChangesAsync();
+
+        var result = await _repo.SearchFoldersAsync(new SearchMediaFoldersRequest
+        {
+            SocialChannelId = _pageAId,
+            Keyword = "anh"
+        });
+
+        Assert.Single(result.Items);
+        Assert.Equal(active.Id, result.Items[0].Id);
+        Assert.DoesNotContain(rootB.Name, result.Items[0].FullPath, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(active.Name, result.Items[0].FullPath);
     }
 
     [Fact]
