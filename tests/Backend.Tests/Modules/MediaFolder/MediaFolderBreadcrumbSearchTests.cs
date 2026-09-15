@@ -405,9 +405,12 @@ public class MediaFolderBreadcrumbSearchTests : IDisposable
         Assert.DoesNotContain(softDeleted.Id.ToString(), softDeletedTarget.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>AC 8b: Search không trả folder soft-deleted; soft-deleted parent chain không làm lộ metadata Page khác.</summary>
+    /// <summary>
+    /// AC 8b: Search không trả soft-deleted; folder Page A có parent chain sang Page B
+    /// bị loại khỏi kết quả (cùng semantics breadcrumb not-found), không lộ tên/ID parent Page B.
+    /// </summary>
     [Fact]
-    public async Task SearchFolders_ExcludesSoftDeletedAndDoesNotLeakCrossPageParent()
+    public async Task SearchFolders_ExcludesSoftDeletedAndBrokenCrossPageParentChain()
     {
         var rootB = new MediaFolderModel { Id = Guid.NewGuid(), Name = "Hidden Parent B", SocialChannelId = _pageBId };
         var softDeleted = new MediaFolderModel
@@ -417,14 +420,21 @@ public class MediaFolderBreadcrumbSearchTests : IDisposable
             SocialChannelId = _pageAId,
             IsDeleted = true
         };
-        var active = new MediaFolderModel
+        var brokenChain = new MediaFolderModel
         {
             Id = Guid.NewGuid(),
             Name = "Ảnh còn",
             SocialChannelId = _pageAId,
             ParentFolderId = rootB.Id
         };
-        _db.MediaFolders.AddRange(rootB, softDeleted, active);
+        var intact = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(),
+            Name = "Ảnh sạch",
+            SocialChannelId = _pageAId,
+            ParentFolderId = null
+        };
+        _db.MediaFolders.AddRange(rootB, softDeleted, brokenChain, intact);
         await _db.SaveChangesAsync();
 
         var result = await _repo.SearchFoldersAsync(new SearchMediaFoldersRequest
@@ -434,9 +444,28 @@ public class MediaFolderBreadcrumbSearchTests : IDisposable
         });
 
         Assert.Single(result.Items);
-        Assert.Equal(active.Id, result.Items[0].Id);
-        Assert.DoesNotContain(rootB.Name, result.Items[0].FullPath, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(active.Name, result.Items[0].FullPath);
+        Assert.Equal(intact.Id, result.Items[0].Id);
+        Assert.Equal(intact.Name, result.Items[0].FullPath);
+        Assert.DoesNotContain(result.Items, x => x.Id == brokenChain.Id || x.Id == softDeleted.Id);
+        Assert.DoesNotContain(result.Items, x =>
+            (x.FullPath ?? string.Empty).Contains(rootB.Name, StringComparison.OrdinalIgnoreCase));
+
+        // Breadcrumb của broken chain vẫn cùng not-found với missing, không lộ parent Page B.
+        var missing = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            _repo.GetBreadcrumbAsync(new GetMediaFolderBreadcrumbRequest
+            {
+                SocialChannelId = _pageAId,
+                FolderId = Guid.NewGuid()
+            }));
+        var breadcrumbBroken = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            _repo.GetBreadcrumbAsync(new GetMediaFolderBreadcrumbRequest
+            {
+                SocialChannelId = _pageAId,
+                FolderId = brokenChain.Id
+            }));
+        Assert.Equal(missing.Message, breadcrumbBroken.Message);
+        Assert.DoesNotContain(rootB.Name, breadcrumbBroken.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(rootB.Id.ToString(), breadcrumbBroken.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

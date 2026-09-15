@@ -218,8 +218,10 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
             .ToListAsync(ct);
 
         var byId = pageFolders.ToDictionary(x => x.Id);
+        // Chỉ trả folder có ancestor chain nguyên vẹn trong Page (MEDIA-02).
+        // Parent thiếu / soft-deleted / thuộc Page khác → cùng semantics breadcrumb not-found: không lộ trong kết quả.
         var matches = pageFolders
-            .Where(f => FolderNameMatchesKeyword(f.Name, keyword))
+            .Where(f => FolderNameMatchesKeyword(f.Name, keyword) && HasIntactPageAncestorChain(f, byId))
             .ToList();
 
         var isDesc = string.Equals(request.SortDirection, "desc", StringComparison.OrdinalIgnoreCase);
@@ -941,9 +943,38 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         return normalizedName.Contains(normalizedKeyword, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// True khi mọi ancestor tới root đều thuộc map folder active của cùng Page.
+    /// Parent thiếu, soft-deleted hoặc thuộc Page khác → false (đồng bộ breadcrumb not-found).
+    /// </summary>
+    private static bool HasIntactPageAncestorChain(
+        MediaFolderModel folder,
+        IReadOnlyDictionary<Guid, MediaFolderModel> foldersById)
+    {
+        var cursor = folder;
+        var visited = new HashSet<Guid>();
+
+        while (true)
+        {
+            if (!visited.Add(cursor.Id))
+                return false;
+
+            if (!cursor.ParentFolderId.HasValue)
+                return true;
+
+            if (!foldersById.TryGetValue(cursor.ParentFolderId.Value, out var parent))
+                return false;
+
+            cursor = parent;
+        }
+    }
+
     private static string BuildFullPath(Guid folderId, IReadOnlyDictionary<Guid, MediaFolderModel> foldersById)
     {
         if (!foldersById.TryGetValue(folderId, out var folder))
+            return string.Empty;
+
+        if (!HasIntactPageAncestorChain(folder, foldersById))
             return string.Empty;
 
         var segments = new List<string>();
@@ -953,7 +984,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         while (true)
         {
             if (!visited.Add(cursor.Id))
-                break;
+                return string.Empty;
 
             segments.Add(cursor.Name);
 
@@ -961,7 +992,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
                 break;
 
             if (!foldersById.TryGetValue(cursor.ParentFolderId.Value, out var parent))
-                break;
+                return string.Empty;
 
             cursor = parent;
         }
