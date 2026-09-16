@@ -26,6 +26,17 @@ export const mediaFolderApi = {
     axiosInstance.get('/api/MediaFolder/breadcrumb', {
       params: { socialChannelId, folderId },
     }),
+  search: ({
+    socialChannelId,
+    keyword,
+    index = 1,
+    size = 20,
+    sortBy = 'name',
+    sortDirection = 'asc',
+  }) =>
+    axiosInstance.get('/api/MediaFolder/search', {
+      params: { socialChannelId, keyword, index, size, sortBy, sortDirection },
+    }),
   filter: (params) => axiosInstance.post('/api/MediaFolder/filter', params),
   bulkCreate: (payload) => axiosInstance.post('/api/MediaFolder/bulk', payload),
   create: (payload) => axiosInstance.post('/api/MediaFolder', payload),
@@ -49,6 +60,14 @@ export const mediaFolderQueryKeys = {
     'breadcrumb',
     socialChannelId ?? 'none',
     folderId ?? 'none',
+  ],
+  search: (socialChannelId, keyword, index = 1, size = 20) => [
+    'media-folders',
+    'search',
+    socialChannelId ?? 'none',
+    keyword ?? '',
+    index,
+    size,
   ],
 }
 

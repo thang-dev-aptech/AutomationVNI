@@ -48,6 +48,23 @@ export function useMediaFolderBreadcrumb({ socialChannelId, folderId } = {}) {
   })
 }
 
+export function useMediaFolderSearch({
+  socialChannelId,
+  keyword,
+  index = 1,
+  size = 20,
+  enabled = true,
+} = {}) {
+  const trimmed = keyword?.trim() ?? ''
+  return useQuery({
+    queryKey: mediaFolderQueryKeys.search(socialChannelId, trimmed, index, size),
+    queryFn: async () =>
+      unwrapApiData(await mediaFolderApi.search({ socialChannelId, keyword: trimmed, index, size })),
+    enabled: enabled && Boolean(socialChannelId) && Boolean(trimmed),
+    retry: false,
+  })
+}
+
 /** MEDIA-06: preview (validateOnly) và submit dùng chung mutation; chỉ invalidate cache khi submit thật thành công. */
 export function useBulkCreateMediaFolder() {
   const queryClient = useQueryClient()

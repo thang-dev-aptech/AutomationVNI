@@ -9,6 +9,7 @@ import { toast } from '@/shared/stores/toastStore'
 import MediaGrid from '../components/MediaGrid'
 import MediaUploadForm from '../components/MediaUploadForm'
 import MediaFolderExplorer from '../components/MediaFolderExplorer'
+import MediaFolderSearchBox from '../components/MediaFolderSearchBox'
 import MediaFolderFormModal from '../components/MediaFolderFormModal'
 import MediaFolderBulkCreateModal from '../components/MediaFolderBulkCreateModal'
 import AiBackgroundPromptModal from '../components/AiBackgroundPromptModal'
@@ -314,6 +315,10 @@ export default function MediaPage() {
       <div className="media-layout">
         <aside className="card card-body media-sidebar">
           <h3 className="media-sidebar-title">Thư mục</h3>
+          <MediaFolderSearchBox
+            socialChannelId={socialChannelId || null}
+            onOpenFolder={explorer.openFolder}
+          />
           <MediaFolderExplorer
             channels={channels}
             onSocialChannelChange={setSocialChannelId}
