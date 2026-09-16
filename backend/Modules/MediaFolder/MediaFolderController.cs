@@ -103,19 +103,31 @@ public class MediaFolderController
         return Ok(ApiResponse.Ok(result, result.ValidateOnly ? "Kiểm tra hợp lệ cấu trúc thư mục thành công" : "Tạo thư mục hàng loạt thành công"));
     }
 
-    [Authorize(Roles = "Admin,ContentManager")]
     protected override async Task<MediaFolderModel> CreateEntityAsync(CreateMediaFolderRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Name)) throw new ArgumentException("Tên thư mục không được để trống");
         return await _repo.CreateAsync(request, ct);
     }
 
-    [Authorize(Roles = "Admin,ContentManager")]
     protected override Task<MediaFolderModel?> UpdateEntityAsync(Guid id, UpdateMediaFolderRequest request, CancellationToken ct)
         => _repo.UpdateAsync(id, request, ct);
 
     protected override Task<PagedResult<MediaFolderResponse>> FilterEntitiesAsync(MediaFolderFilterRequest request, CancellationToken ct)
         => _repo.FilterAsync(request, ct);
+
+    // [Authorize] trên CreateEntityAsync/UpdateEntityAsync (protected, không phải action) không được
+    // MVC pipeline áp dụng — phải override đúng action Create/Update/SoftDelete của BaseController.
+    [Authorize(Roles = "Admin,ContentManager")]
+    public override Task<IActionResult> Create([FromBody] CreateMediaFolderRequest request, CancellationToken ct)
+        => base.Create(request, ct);
+
+    [Authorize(Roles = "Admin,ContentManager")]
+    public override Task<IActionResult> Update(Guid id, [FromBody] UpdateMediaFolderRequest request, CancellationToken ct)
+        => base.Update(id, request, ct);
+
+    [Authorize(Roles = "Admin,ContentManager")]
+    public override Task<IActionResult> SoftDelete(Guid id, CancellationToken ct)
+        => base.SoftDelete(id, ct);
 
     /// <summary>Toàn bộ cây folder cho sidebar (kèm số ảnh + cờ có thư mục con).</summary>
     [HttpGet("tree")]
