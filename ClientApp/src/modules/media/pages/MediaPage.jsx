@@ -389,7 +389,6 @@ export default function MediaPage() {
         open={Boolean(folderModal)}
         editing={folderModal?.editing ?? null}
         defaultParentId={folderModal?.defaultParentId ?? null}
-        parentOptions={folders}
         defaultSocialChannelId={socialChannelId || null}
         onClose={() => setFolderModal(null)}
         onSubmit={handleFolderSubmit}

@@ -3,7 +3,7 @@ import { unwrapApiData } from '@/shared/utils/apiHelpers'
 import { mediaFolderApi, mediaFolderQueryKeys } from '../services/mediaFolderApi'
 import { mediaAssetQueryKeys } from '../services/mediaAssetApi'
 
-/** Kept for PageContext logo picker and MEDIA-07 position modal. Explorer must not use this. */
+/** Kept for PageContext logo picker (flat filter, not a hierarchy pick — out of MEDIA-07 scope). */
 export function useMediaFolderTree() {
   return useQuery({
     queryKey: mediaFolderQueryKeys.tree,
@@ -18,6 +18,7 @@ export function useMediaFolderChildren({
   size = 20,
   sortBy = 'sortOrder',
   sortDirection = 'asc',
+  enabled = true,
 } = {}) {
   return useQuery({
     queryKey: mediaFolderQueryKeys.children(socialChannelId, parentFolderId, index, size),
@@ -32,7 +33,7 @@ export function useMediaFolderChildren({
           sortDirection,
         }),
       ),
-    enabled: Boolean(socialChannelId),
+    enabled: enabled && Boolean(socialChannelId),
     retry: false,
   })
 }

@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react'
 import Modal from '@/shared/components/Modal'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
+import MediaFolderPickerTree from './MediaFolderPickerTree'
 
 /**
  * Tạo mới / đổi tên thư mục media. Khi `editing` có giá trị → chế độ sửa.
- * `parentOptions` là danh sách folder phẳng để chọn thư mục cha.
+ * Thư mục cha chọn qua MediaFolderPickerTree (MEDIA-07): lazy-load theo Page hiện chọn
+ * trong modal, không còn danh sách phẳng giới hạn ở cấp đang xem trong Explorer.
  */
 export default function MediaFolderFormModal({
   open,
   editing = null,
   defaultParentId = null,
   defaultSocialChannelId = null,
-  parentOptions = [],
   onClose,
   onSubmit,
   isSubmitting = false,
@@ -39,9 +40,6 @@ export default function MediaFolderFormModal({
       socialChannelId: socialChannelId || null,
     })
   }
-
-  // Không cho chọn chính nó làm cha (khi đang sửa).
-  const options = parentOptions.filter((f) => f.id !== editing?.id)
 
   return (
     <Modal
@@ -76,16 +74,12 @@ export default function MediaFolderFormModal({
         </div>
         <div className="form-group">
           <label htmlFor="folder-parent">Thư mục cha</label>
-          <select
-            id="folder-parent"
-            value={parentFolderId}
-            onChange={(event) => setParentFolderId(event.target.value)}
-          >
-            <option value="">— Thư mục gốc —</option>
-            {options.map((f) => (
-              <option key={f.id} value={f.id}>{f.name}</option>
-            ))}
-          </select>
+          <MediaFolderPickerTree
+            socialChannelId={socialChannelId || defaultSocialChannelId}
+            value={parentFolderId || null}
+            onChange={(id) => setParentFolderId(id || '')}
+            excludeFolderId={editing?.id ?? null}
+          />
         </div>
         <div className="form-group">
           <label htmlFor="folder-page">Gắn với Page (Tùy chọn)</label>
