@@ -99,8 +99,7 @@ public class MediaFolderCreateAcrossPagesAuthPipelineTests : IAsyncLifetime
         {
             Content = JsonContent.Create(new CreateMediaFolderAcrossPagesRequest
             {
-                Name = "Campaign X",
-                SocialChannelIds = [_pageId],
+                Items = [new CreateMediaFolderAcrossPagesItem { SocialChannelId = _pageId, Name = "Campaign X" }],
             }),
         };
         request.Headers.Authorization = new AuthenticationHeaderValue(TestAuthHandler.SchemeName, $"{role}:{userName}");
@@ -134,7 +133,10 @@ public class MediaFolderCreateAcrossPagesAuthPipelineTests : IAsyncLifetime
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/MediaFolder/create-across-pages")
         {
-            Content = JsonContent.Create(new CreateMediaFolderAcrossPagesRequest { Name = "X", SocialChannelIds = [_pageId] }),
+            Content = JsonContent.Create(new CreateMediaFolderAcrossPagesRequest
+            {
+                Items = [new CreateMediaFolderAcrossPagesItem { SocialChannelId = _pageId, Name = "X" }],
+            }),
         };
         var response = await _client.SendAsync(request);
 

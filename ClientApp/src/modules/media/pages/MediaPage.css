@@ -199,12 +199,8 @@
 }
 
 .media-folder-tools {
-  display: none;
-  gap: 2px;
-}
-
-.media-folder-row:hover .media-folder-tools {
   display: inline-flex;
+  gap: 2px;
 }
 
 .media-folder-tools button {

@@ -29,16 +29,22 @@ public class MediaFolderFilterRequest : PagedFilterRequest
 }
 
 /// <summary>
-/// MEDIA-06 (đã sửa lại): tạo cùng một folder gốc, cùng tên, ở nhiều Page cùng lúc
-/// (vd: 100 Page → mỗi Page có 1 folder "Campaign X" ở gốc). Best-effort: Page này lỗi
-/// không chặn Page khác — khác với BulkCreateMediaFolderRequest (MEDIA-03, hierarchy
-/// trong MỘT Page, nguyên tử cả batch).
+/// MEDIA-06 (đã sửa lại lần 2): tạo 1 folder gốc ở nhiều Page cùng lúc, MỖI Page có tên
+/// riêng (thường là tên Page đó — frontend tự điền, nhưng backend nhận tên tường minh cho
+/// từng Page để không cứng logic "luôn = tên Page" vào server). Best-effort: Page này lỗi
+/// (tên trống, không có quyền, v.v.) không chặn Page khác — khác với BulkCreateMediaFolderRequest
+/// (MEDIA-03, hierarchy trong MỘT Page, nguyên tử cả batch).
 /// </summary>
+public class CreateMediaFolderAcrossPagesItem
+{
+    public Guid SocialChannelId { get; set; }
+    public string Name { get; set; } = string.Empty;
+}
+
 public class CreateMediaFolderAcrossPagesRequest
 {
-    public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
-    public List<Guid> SocialChannelIds { get; set; } = [];
+    public List<CreateMediaFolderAcrossPagesItem> Items { get; set; } = [];
 }
 
 public class CreateMediaFolderAcrossPagesResultItem

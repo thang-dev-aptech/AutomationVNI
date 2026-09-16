@@ -475,42 +475,41 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
     }
 
     /// <summary>
-    /// MEDIA-06: tạo 1 folder gốc cùng tên ở nhiều Page (vd 100 Page → 100 folder "Campaign X").
-    /// Best-effort per Page — Page này lỗi (tên trống, Page không tồn tại/không có quyền, v.v.)
-    /// không chặn các Page khác; mỗi Page tạo/lưu độc lập (không dùng transaction chung).
+    /// MEDIA-06: tạo 1 folder gốc ở nhiều Page cùng lúc, mỗi Page có tên riêng (frontend thường
+    /// điền = tên Page). Best-effort per Page — Page này lỗi (tên trống, Page không tồn tại/không
+    /// có quyền, v.v.) không chặn các Page khác; mỗi Page tạo/lưu độc lập (không transaction chung).
     /// </summary>
     public async Task<CreateMediaFolderAcrossPagesResponse> CreateAcrossPagesAsync(
         CreateMediaFolderAcrossPagesRequest request, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(request.Name))
-            throw new ArgumentException("Tên thư mục không được để trống.");
-
-        if (request.SocialChannelIds == null || request.SocialChannelIds.Count == 0)
+        if (request.Items == null || request.Items.Count == 0)
             throw new ArgumentException("Danh sách Page không được để trống.");
 
         const int maxPages = 200;
-        var pageIds = request.SocialChannelIds.Distinct().ToList();
-        if (pageIds.Count > maxPages)
+        if (request.Items.Count > maxPages)
             throw new ArgumentException($"Số lượng Page vượt quá giới hạn cho phép (tối đa {maxPages}).");
 
         var results = new List<CreateMediaFolderAcrossPagesResultItem>();
-        foreach (var pageId in pageIds)
+        foreach (var item in request.Items)
         {
             try
             {
-                await EnsureSocialChannelAccessAsync(pageId, ct);
+                if (string.IsNullOrWhiteSpace(item.Name))
+                    throw new ArgumentException("Tên thư mục không được để trống.");
+
+                await EnsureSocialChannelAccessAsync(item.SocialChannelId, ct);
 
                 var entity = await CreateAsync(new CreateMediaFolderRequest
                 {
-                    Name = request.Name,
+                    Name = item.Name,
                     Description = request.Description,
-                    SocialChannelId = pageId,
+                    SocialChannelId = item.SocialChannelId,
                     ParentFolderId = null,
                 }, ct);
 
                 results.Add(new CreateMediaFolderAcrossPagesResultItem
                 {
-                    SocialChannelId = pageId,
+                    SocialChannelId = item.SocialChannelId,
                     Success = true,
                     FolderId = entity.Id,
                 });
@@ -519,7 +518,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
             {
                 results.Add(new CreateMediaFolderAcrossPagesResultItem
                 {
-                    SocialChannelId = pageId,
+                    SocialChannelId = item.SocialChannelId,
                     Success = false,
                     ErrorMessage = ex.Message,
                 });

@@ -6,11 +6,12 @@ import MediaFolderPickerTree from './MediaFolderPickerTree'
 /**
  * Tạo mới / đổi tên thư mục media. Khi `editing` có giá trị → chế độ sửa (1 Page, không đổi).
  *
- * Khi tạo mới, "Gắn với Page" là multi-select: chọn 0 hoặc 1 Page giữ nguyên hành vi cũ
- * (tạo 1 thư mục, có thể chọn thư mục cha qua MediaFolderPickerTree); chọn từ 2 Page trở lên
- * tạo cùng tên thư mục ở gốc MỖI Page đã chọn (không chọn được thư mục cha lúc này vì một
- * ParentFolderId chỉ thuộc đúng 1 Page) — payload gửi `socialChannelIds` thay vì
- * `socialChannelId` để component cha (MediaPage) biết gọi mutation nào.
+ * Khi tạo mới, "Gắn với Page" là multi-select:
+ * - Chọn 0 hoặc 1 Page: hành vi cũ — 1 ô Tên thư mục (chọn đúng 1 Page tự điền tên = tên
+ *   Page, vẫn sửa được), có thể chọn thư mục cha qua MediaFolderPickerTree.
+ * - Chọn từ 2 Page trở lên: ẩn ô Tên thư mục và thư mục cha (một ParentFolderId chỉ thuộc
+ *   đúng 1 Page) — MỖI folder tự lấy tên theo đúng tên Page tương ứng. Payload gửi
+ *   `items: [{socialChannelId, name}]` để component cha (MediaPage) biết gọi mutation nào.
  */
 export default function MediaFolderFormModal({
   open,
@@ -48,6 +49,11 @@ export default function MediaFolderFormModal({
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
+      // Vừa chọn đúng 1 Page: tự điền tên = tên Page (như <select> đơn trước đây), vẫn sửa được.
+      if (next.size === 1) {
+        const channel = channels.find((c) => c.id === [...next][0])
+        if (channel) setName(channel.pageName)
+      }
       return next
     })
 
@@ -56,9 +62,9 @@ export default function MediaFolderFormModal({
 
   const handleSubmit = (event) => {
     event.preventDefault()
-    if (!name.trim()) return
 
     if (editing) {
+      if (!name.trim()) return
       onSubmit({
         name: name.trim(),
         parentFolderId: parentFolderId || null,
@@ -69,16 +75,24 @@ export default function MediaFolderFormModal({
 
     const pageIds = [...selectedPageIds]
     if (pageIds.length <= 1) {
+      if (!name.trim()) return
       onSubmit({
         name: name.trim(),
         parentFolderId: parentFolderId || null,
         socialChannelId: pageIds[0] || null,
       })
-    } else {
-      onSubmit({ name: name.trim(), socialChannelIds: pageIds })
+      return
     }
+
+    // 2+ Page: mỗi folder tự lấy tên theo đúng Page của nó, không dùng ô Tên thư mục chung.
+    const items = pageIds.map((id) => ({
+      socialChannelId: id,
+      name: channels.find((c) => c.id === id)?.pageName ?? id,
+    }))
+    onSubmit({ items })
   }
 
+  const isMultiPage = !editing && selectedPageIds.size > 1
   const pickerSocialChannelId = editing
     ? (socialChannelId || defaultSocialChannelId)
     : ([...selectedPageIds][0] || defaultSocialChannelId)
@@ -104,16 +118,19 @@ export default function MediaFolderFormModal({
     >
       <form id="media-folder-form" onSubmit={handleSubmit}>
         {errorMessage && <div className="alert alert-error">{errorMessage}</div>}
-        <div className="form-group">
-          <label htmlFor="folder-name">Tên thư mục</label>
-          <input
-            id="folder-name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="VD: Logo, Banner, Sản phẩm..."
-            autoFocus
-          />
-        </div>
+
+        {!isMultiPage && (
+          <div className="form-group">
+            <label htmlFor="folder-name">Tên thư mục</label>
+            <input
+              id="folder-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="VD: Logo, Banner, Sản phẩm..."
+              autoFocus
+            />
+          </div>
+        )}
 
         {(editing || selectedPageIds.size <= 1) && (
           <div className="form-group">
@@ -126,9 +143,9 @@ export default function MediaFolderFormModal({
             />
           </div>
         )}
-        {!editing && selectedPageIds.size > 1 && (
+        {isMultiPage && (
           <p className="form-hint">
-            Sẽ tạo ở thư mục gốc của mỗi Page đã chọn bên dưới (không chọn được thư mục cha khi chọn nhiều Page).
+            Mỗi Page đã chọn sẽ có 1 thư mục gốc, tên trùng tên Page đó (không chọn được thư mục cha khi chọn nhiều Page).
           </p>
         )}
 
@@ -149,7 +166,7 @@ export default function MediaFolderFormModal({
         ) : (
           <div className="form-group">
             <div className="media-folder-page-multiselect-header">
-              <label>Gắn với Page (Tùy chọn — chọn nhiều để tạo cùng thư mục ở mỗi Page)</label>
+              <label>Gắn với Page (Tùy chọn — chọn nhiều để tạo 1 thư mục cùng tên Page ở mỗi Page)</label>
               {channels.length > 0 && (
                 <button type="button" className="btn btn-ghost btn-sm" onClick={toggleAllPages}>
                   {selectedPageIds.size === channels.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}

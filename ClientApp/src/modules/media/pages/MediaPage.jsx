@@ -238,12 +238,11 @@ export default function MediaPage() {
           payload: { name: payload.name, parentFolderId: payload.parentFolderId, socialChannelId: scopedPageId },
         })
         toast.success('Đã cập nhật thư mục')
-      } else if (payload.socialChannelIds) {
-        // Nhiều Page được chọn: tạo cùng tên thư mục ở gốc mỗi Page, best-effort per-Page.
+      } else if (payload.items) {
+        // Nhiều Page được chọn: mỗi folder tự lấy tên theo Page tương ứng, best-effort per-Page.
         const result = await createFolderAcrossPagesMutation.mutateAsync({
-          name: payload.name,
           description: null,
-          socialChannelIds: payload.socialChannelIds,
+          items: payload.items,
         })
         if (result.totalFailed > 0) {
           toast.warning(`Đã tạo ${result.totalSucceeded}/${result.totalRequested} thư mục — ${result.totalFailed} Page lỗi`)

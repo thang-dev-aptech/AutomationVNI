@@ -22,8 +22,8 @@ function renderModal(props = {}) {
   return { user, onSubmit, onClose, ...view }
 }
 
-describe('MEDIA-06 MediaFolderFormModal (create: multi-Page select)', () => {
-  it('create mode with 0 Pages selected: submits a single-folder payload with socialChannelId null', async () => {
+describe('MEDIA-06 MediaFolderFormModal (create: multi-Page select, name = Page name)', () => {
+  it('create mode with 0 Pages selected: submits a single-folder payload with the typed name and socialChannelId null', async () => {
     const { user, onSubmit } = renderModal()
 
     await user.type(screen.getByLabelText('Tên thư mục'), 'Logo')
@@ -32,33 +32,50 @@ describe('MEDIA-06 MediaFolderFormModal (create: multi-Page select)', () => {
     expect(onSubmit).toHaveBeenCalledWith({ name: 'Logo', parentFolderId: null, socialChannelId: null })
   })
 
-  it('create mode with exactly 1 Page checked: shows the parent picker scoped to it, submits single-folder shape', async () => {
+  it('checking exactly 1 Page auto-fills the name with that Page\'s name, shows the parent picker scoped to it', async () => {
     const { user, onSubmit } = renderModal()
 
-    await user.type(screen.getByLabelText('Tên thư mục'), 'Logo')
     await user.click(screen.getByLabelText(CHANNELS[0].pageName))
 
+    expect(screen.getByLabelText('Tên thư mục')).toHaveValue(CHANNELS[0].pageName)
     expect(screen.getByTestId('picker-mock')).toHaveAttribute('data-social-channel-id', PAGE_A)
 
     await user.click(screen.getByRole('button', { name: 'Lưu' }))
-    expect(onSubmit).toHaveBeenCalledWith({ name: 'Logo', parentFolderId: null, socialChannelId: PAGE_A })
+    expect(onSubmit).toHaveBeenCalledWith({ name: CHANNELS[0].pageName, parentFolderId: null, socialChannelId: PAGE_A })
   })
 
-  it('create mode with 2+ Pages checked: hides the parent picker and submits socialChannelIds instead', async () => {
+  it('the auto-filled name can still be edited by hand before submitting', async () => {
     const { user, onSubmit } = renderModal()
 
-    await user.type(screen.getByLabelText('Tên thư mục'), 'Logo')
+    await user.click(screen.getByLabelText(CHANNELS[0].pageName))
+    const nameInput = screen.getByLabelText('Tên thư mục')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Custom Name')
+    await user.click(screen.getByRole('button', { name: 'Lưu' }))
+
+    expect(onSubmit).toHaveBeenCalledWith({ name: 'Custom Name', parentFolderId: null, socialChannelId: PAGE_A })
+  })
+
+  it('checking 2+ Pages hides the name field and the parent picker, and submits one item per Page named after it', async () => {
+    const { user, onSubmit } = renderModal()
+
     await user.click(screen.getByLabelText(CHANNELS[0].pageName))
     await user.click(screen.getByLabelText(CHANNELS[1].pageName))
 
+    expect(screen.queryByLabelText('Tên thư mục')).not.toBeInTheDocument()
     expect(screen.queryByTestId('picker-mock')).not.toBeInTheDocument()
-    expect(screen.getByText(/không chọn được thư mục cha khi chọn nhiều Page/)).toBeInTheDocument()
+    expect(screen.getByText(/mỗi Page đã chọn sẽ có 1 thư mục gốc, tên trùng tên Page đó/i)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Lưu' }))
-    expect(onSubmit).toHaveBeenCalledWith({ name: 'Logo', socialChannelIds: [PAGE_A, PAGE_B] })
+    expect(onSubmit).toHaveBeenCalledWith({
+      items: [
+        { socialChannelId: PAGE_A, name: CHANNELS[0].pageName },
+        { socialChannelId: PAGE_B, name: CHANNELS[1].pageName },
+      ],
+    })
   })
 
-  it('unchecking back down to 1 Page brings the parent picker back', async () => {
+  it('unchecking back down to 1 Page brings the name field and parent picker back', async () => {
     const { user } = renderModal()
 
     await user.click(screen.getByLabelText(CHANNELS[0].pageName))
@@ -67,6 +84,7 @@ describe('MEDIA-06 MediaFolderFormModal (create: multi-Page select)', () => {
 
     await user.click(screen.getByLabelText(CHANNELS[1].pageName))
     expect(screen.getByTestId('picker-mock')).toBeInTheDocument()
+    expect(screen.getByLabelText('Tên thư mục')).toBeInTheDocument()
   })
 
   it('"Chọn tất cả" selects every Page and toggles to "Bỏ chọn tất cả"', async () => {

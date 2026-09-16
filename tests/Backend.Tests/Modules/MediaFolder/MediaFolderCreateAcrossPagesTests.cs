@@ -9,9 +9,10 @@ using Xunit;
 namespace Backend.Tests.Modules.MediaFolder;
 
 /// <summary>
-/// MEDIA-06 (đã sửa lại sau khi làm rõ với người dùng): tạo 1 folder gốc cùng tên ở nhiều
-/// Page cùng lúc, best-effort — Page lỗi không chặn Page khác. Đây KHÔNG phải hierarchy
-/// trong một Page (đó là MEDIA-03/BulkCreateAsync, vẫn giữ nguyên, không đổi).
+/// MEDIA-06 (đã sửa lại lần 2 sau khi làm rõ với người dùng): tạo 1 folder gốc ở nhiều Page
+/// cùng lúc, MỖI Page có tên riêng (frontend thường điền = tên Page), best-effort — Page lỗi
+/// không chặn Page khác. Đây KHÔNG phải hierarchy trong một Page (đó là MEDIA-03/BulkCreateAsync,
+/// vẫn giữ nguyên, không đổi).
 /// </summary>
 public class MediaFolderCreateAcrossPagesTests : IDisposable
 {
@@ -53,12 +54,15 @@ public class MediaFolderCreateAcrossPagesTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateAcrossPages_MultiplePages_CreatesRootFolderInEach()
+    public async Task CreateAcrossPages_MultiplePages_CreatesRootFolderNamedPerPage()
     {
         var result = await _repo.CreateAcrossPagesAsync(new CreateMediaFolderAcrossPagesRequest
         {
-            Name = "Campaign X",
-            SocialChannelIds = [_pageAId, _pageBId],
+            Items =
+            [
+                new CreateMediaFolderAcrossPagesItem { SocialChannelId = _pageAId, Name = "Page A" },
+                new CreateMediaFolderAcrossPagesItem { SocialChannelId = _pageBId, Name = "Page B" },
+            ],
         });
 
         Assert.Equal(2, result.TotalRequested);
@@ -68,9 +72,9 @@ public class MediaFolderCreateAcrossPagesTests : IDisposable
 
         var folderA = await _db.MediaFolders.SingleAsync(f => f.SocialChannelId == _pageAId);
         var folderB = await _db.MediaFolders.SingleAsync(f => f.SocialChannelId == _pageBId);
-        Assert.Equal("Campaign X", folderA.Name);
+        Assert.Equal("Page A", folderA.Name);
         Assert.Null(folderA.ParentFolderId);
-        Assert.Equal("Campaign X", folderB.Name);
+        Assert.Equal("Page B", folderB.Name);
         Assert.Null(folderB.ParentFolderId);
     }
 
@@ -79,8 +83,11 @@ public class MediaFolderCreateAcrossPagesTests : IDisposable
     {
         var result = await _repo.CreateAcrossPagesAsync(new CreateMediaFolderAcrossPagesRequest
         {
-            Name = "Campaign X",
-            SocialChannelIds = [_pageAId, _pageCId],
+            Items =
+            [
+                new CreateMediaFolderAcrossPagesItem { SocialChannelId = _pageAId, Name = "Page A" },
+                new CreateMediaFolderAcrossPagesItem { SocialChannelId = _pageCId, Name = "Page C" },
+            ],
         });
 
         Assert.Equal(1, result.TotalSucceeded);
@@ -98,6 +105,24 @@ public class MediaFolderCreateAcrossPagesTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateAcrossPages_OneItemHasEmptyName_FailsThatItemOnly_DoesNotBlockOthers()
+    {
+        var result = await _repo.CreateAcrossPagesAsync(new CreateMediaFolderAcrossPagesRequest
+        {
+            Items =
+            [
+                new CreateMediaFolderAcrossPagesItem { SocialChannelId = _pageAId, Name = "Page A" },
+                new CreateMediaFolderAcrossPagesItem { SocialChannelId = _pageBId, Name = "   " },
+            ],
+        });
+
+        Assert.Equal(1, result.TotalSucceeded);
+        Assert.Equal(1, result.TotalFailed);
+        Assert.True(await _db.MediaFolders.AnyAsync(f => f.SocialChannelId == _pageAId));
+        Assert.False(await _db.MediaFolders.AnyAsync(f => f.SocialChannelId == _pageBId));
+    }
+
+    [Fact]
     public async Task CreateAcrossPages_AdminRole_CanTargetAnyExistingPage()
     {
         _userContext.Roles = ["Admin"];
@@ -105,8 +130,7 @@ public class MediaFolderCreateAcrossPagesTests : IDisposable
 
         var result = await _repo.CreateAcrossPagesAsync(new CreateMediaFolderAcrossPagesRequest
         {
-            Name = "Campaign X",
-            SocialChannelIds = [_pageCId],
+            Items = [new CreateMediaFolderAcrossPagesItem { SocialChannelId = _pageCId, Name = "Page C" }],
         });
 
         Assert.Equal(1, result.TotalSucceeded);
@@ -114,49 +138,24 @@ public class MediaFolderCreateAcrossPagesTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateAcrossPages_EmptyName_ThrowsBeforeTouchingAnyPage()
+    public async Task CreateAcrossPages_EmptyItemList_Throws()
     {
         await Assert.ThrowsAsync<ArgumentException>(() => _repo.CreateAcrossPagesAsync(new CreateMediaFolderAcrossPagesRequest
         {
-            Name = "   ",
-            SocialChannelIds = [_pageAId, _pageBId],
-        }));
-
-        Assert.False(await _db.MediaFolders.AnyAsync());
-    }
-
-    [Fact]
-    public async Task CreateAcrossPages_EmptyPageList_Throws()
-    {
-        await Assert.ThrowsAsync<ArgumentException>(() => _repo.CreateAcrossPagesAsync(new CreateMediaFolderAcrossPagesRequest
-        {
-            Name = "Campaign X",
-            SocialChannelIds = [],
+            Items = [],
         }));
     }
 
     [Fact]
     public async Task CreateAcrossPages_ExceedsMaxPages_Throws()
     {
-        var tooMany = Enumerable.Range(0, 201).Select(_ => Guid.NewGuid()).ToList();
+        var tooMany = Enumerable.Range(0, 201)
+            .Select(i => new CreateMediaFolderAcrossPagesItem { SocialChannelId = Guid.NewGuid(), Name = $"Page {i}" })
+            .ToList();
 
         await Assert.ThrowsAsync<ArgumentException>(() => _repo.CreateAcrossPagesAsync(new CreateMediaFolderAcrossPagesRequest
         {
-            Name = "Campaign X",
-            SocialChannelIds = tooMany,
+            Items = tooMany,
         }));
-    }
-
-    [Fact]
-    public async Task CreateAcrossPages_DeduplicatesRepeatedPageIds_OnlyCreatesOnce()
-    {
-        var result = await _repo.CreateAcrossPagesAsync(new CreateMediaFolderAcrossPagesRequest
-        {
-            Name = "Campaign X",
-            SocialChannelIds = [_pageAId, _pageAId],
-        });
-
-        Assert.Equal(1, result.TotalRequested);
-        Assert.Equal(1, await _db.MediaFolders.CountAsync(f => f.SocialChannelId == _pageAId));
     }
 }
