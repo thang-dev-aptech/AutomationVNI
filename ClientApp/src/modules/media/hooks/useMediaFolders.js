@@ -48,6 +48,18 @@ export function useMediaFolderBreadcrumb({ socialChannelId, folderId } = {}) {
   })
 }
 
+/** MEDIA-06: preview (validateOnly) và submit dùng chung mutation; chỉ invalidate cache khi submit thật thành công. */
+export function useBulkCreateMediaFolder() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload) => unwrapApiData(await mediaFolderApi.bulkCreate(payload)),
+    onSuccess: (_data, variables) => {
+      if (variables.validateOnly) return
+      queryClient.invalidateQueries({ queryKey: mediaFolderQueryKeys.all })
+    },
+  })
+}
+
 export function useCreateMediaFolder() {
   const queryClient = useQueryClient()
   return useMutation({

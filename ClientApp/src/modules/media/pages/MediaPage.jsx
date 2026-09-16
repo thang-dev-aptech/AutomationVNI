@@ -10,6 +10,7 @@ import MediaGrid from '../components/MediaGrid'
 import MediaUploadForm from '../components/MediaUploadForm'
 import MediaFolderExplorer from '../components/MediaFolderExplorer'
 import MediaFolderFormModal from '../components/MediaFolderFormModal'
+import MediaFolderBulkCreateModal from '../components/MediaFolderBulkCreateModal'
 import AiBackgroundPromptModal from '../components/AiBackgroundPromptModal'
 import {
   useAnalyzeAllMediaAssets,
@@ -53,6 +54,7 @@ export default function MediaPage() {
 
   const [socialChannelId, setSocialChannelId] = useState('')
   const [folderModal, setFolderModal] = useState(null) // { editing, defaultParentId } | null
+  const [bulkFolderModalOpen, setBulkFolderModalOpen] = useState(false)
   const { data: channels = [] } = useSocialChannelAll()
   const explorer = useMediaFolderExplorer({ socialChannelId })
   const { selection, currentFolderId } = explorer
@@ -286,6 +288,13 @@ export default function MediaPage() {
               <button
                 type="button"
                 className="btn btn-secondary"
+                onClick={() => setBulkFolderModalOpen(true)}
+              >
+                📚 Tạo hàng loạt
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
                 onClick={() => setAiPromptOpen(true)}
               >
                 ✨ Tạo prompt ảnh nền AI
@@ -394,6 +403,14 @@ export default function MediaPage() {
         onSubmit={handleFolderSubmit}
         isSubmitting={createFolderMutation.isPending || updateFolderMutation.isPending}
         errorMessage={formError}
+      />
+
+      <MediaFolderBulkCreateModal
+        open={bulkFolderModalOpen}
+        socialChannelId={socialChannelId || null}
+        parentFolderId={currentFolderId}
+        onClose={() => setBulkFolderModalOpen(false)}
+        onSuccess={() => toast.success('Đã tạo thư mục hàng loạt')}
       />
 
       <AiBackgroundPromptModal
