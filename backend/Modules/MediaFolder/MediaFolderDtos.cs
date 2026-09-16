@@ -28,6 +28,35 @@ public class MediaFolderFilterRequest : PagedFilterRequest
     public string? SortDirection { get; set; }
 }
 
+/// <summary>
+/// MEDIA-06 (đã sửa lại): tạo cùng một folder gốc, cùng tên, ở nhiều Page cùng lúc
+/// (vd: 100 Page → mỗi Page có 1 folder "Campaign X" ở gốc). Best-effort: Page này lỗi
+/// không chặn Page khác — khác với BulkCreateMediaFolderRequest (MEDIA-03, hierarchy
+/// trong MỘT Page, nguyên tử cả batch).
+/// </summary>
+public class CreateMediaFolderAcrossPagesRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public List<Guid> SocialChannelIds { get; set; } = [];
+}
+
+public class CreateMediaFolderAcrossPagesResultItem
+{
+    public Guid SocialChannelId { get; set; }
+    public bool Success { get; set; }
+    public Guid? FolderId { get; set; }
+    public string? ErrorMessage { get; set; }
+}
+
+public class CreateMediaFolderAcrossPagesResponse
+{
+    public int TotalRequested { get; set; }
+    public int TotalSucceeded { get; set; }
+    public int TotalFailed { get; set; }
+    public List<CreateMediaFolderAcrossPagesResultItem> Results { get; set; } = [];
+}
+
 public class GetMediaFolderChildrenRequest
 {
     public Guid SocialChannelId { get; set; }

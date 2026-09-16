@@ -89,7 +89,7 @@ describe('MEDIA-06-AC1 bulk-create trigger visibility', () => {
     usePermissions.mockReturnValue({ canManageMedia: true })
     renderMediaPage()
 
-    expect(await screen.findByRole('button', { name: /Tạo hàng loạt/ })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /Tạo theo nhiều Page/ })).toBeInTheDocument()
   })
 
   it('Viewer/Reviewer (not canManageMedia) never sees or can activate the bulk-create trigger', async () => {
@@ -97,7 +97,7 @@ describe('MEDIA-06-AC1 bulk-create trigger visibility', () => {
     renderMediaPage()
 
     await screen.findByRole('button', { name: /Campaign A/ })
-    expect(screen.queryByRole('button', { name: /Tạo hàng loạt/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Tạo theo nhiều Page/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Tạo thư mục/ })).not.toBeInTheDocument()
   })
 })

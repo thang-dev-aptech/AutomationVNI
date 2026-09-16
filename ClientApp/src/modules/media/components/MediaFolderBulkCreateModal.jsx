@@ -1,211 +1,148 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Modal from '@/shared/components/Modal'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
-import { useBulkCreateMediaFolder } from '../hooks/useMediaFolders'
-
-/** Khớp backend BulkDuplicatePolicy (MediaFolderDtos.cs): Error = 0, Skip = 1. */
-const DUPLICATE_POLICY = { ERROR: 0, SKIP: 1 }
-
-function buildPayload({ socialChannelId, parentFolderId, duplicatePolicy, rows, validateOnly }) {
-  return {
-    socialChannelId,
-    parentFolderId: parentFolderId || null,
-    duplicatePolicy: Number(duplicatePolicy),
-    validateOnly,
-    folders: rows.map((r) => ({
-      clientRef: r.ref,
-      name: r.name.trim(),
-      parentRef: r.parentRef || null,
-      sortOrder: 0,
-    })),
-  }
-}
-
-function snapshotKey(duplicatePolicy, rows) {
-  return JSON.stringify({
-    duplicatePolicy,
-    rows: rows.map((r) => ({ name: r.name.trim(), parentRef: r.parentRef })),
-  })
-}
+import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
+import { useCreateMediaFolderAcrossPages } from '../hooks/useMediaFolders'
 
 /**
- * MEDIA-06: modal tạo nhiều MediaFolder cùng lúc theo hierarchy (clientRef/parentRef),
- * dùng chung endpoint bulk của MEDIA-03. Luôn bắt buộc Preview (validateOnly) khớp với
- * input hiện tại trước khi cho Submit — sửa bất kỳ dòng nào sau khi preview sẽ vô hiệu
- * preview cũ (so theo snapshot), không cho submit dữ liệu chưa được xem trước.
+ * MEDIA-06: tạo 1 folder gốc cùng tên ở nhiều Page cùng lúc (vd 100 Page → 100 folder).
+ * Best-effort: bấm nút một lần, mỗi Page tạo/lưu độc lập — một Page lỗi (không có quyền,
+ * tên trống, v.v.) không chặn các Page khác. Sau khi chạy xong hiển thị kết quả từng Page
+ * (thành công/lỗi) thay vì tự đóng modal, vì ngay cả kết quả "thành công" cũng chỉ đúng
+ * một phần khi có Page lỗi.
  */
-export default function MediaFolderBulkCreateModal({
-  open,
-  socialChannelId,
-  parentFolderId = null,
-  onClose,
-  onSuccess,
-}) {
-  const refCounter = useRef(1)
-  const makeRow = () => ({ ref: `n${refCounter.current++}`, name: '', parentRef: '' })
-
-  const [rows, setRows] = useState(() => [makeRow()])
-  const [duplicatePolicy, setDuplicatePolicy] = useState(DUPLICATE_POLICY.ERROR)
-  const [preview, setPreview] = useState(null)
-  const [previewSnapshot, setPreviewSnapshot] = useState('')
-  const [previewError, setPreviewError] = useState('')
+export default function MediaFolderBulkCreateModal({ open, onClose, onSuccess }) {
+  const { data: channels = [] } = useSocialChannelAll()
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [submitError, setSubmitError] = useState('')
+  const [result, setResult] = useState(null)
 
-  const bulkCreateMutation = useBulkCreateMediaFolder()
+  const mutation = useCreateMediaFolderAcrossPages()
 
   useEffect(() => {
     if (!open) return
-    refCounter.current = 1
-    setRows([makeRow()])
-    setDuplicatePolicy(DUPLICATE_POLICY.ERROR)
-    setPreview(null)
-    setPreviewSnapshot('')
-    setPreviewError('')
+    setName('')
+    setDescription('')
+    setSelectedIds(new Set())
     setSubmitError('')
+    setResult(null)
   }, [open])
 
-  const hasEmptyName = rows.some((r) => !r.name.trim())
-  const isPreviewFresh = Boolean(preview) && previewSnapshot === snapshotKey(duplicatePolicy, rows)
+  const toggleChannel = (id) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
 
-  const addRow = () => setRows((prev) => [...prev, makeRow()])
-
-  const updateRow = (ref, patch) =>
-    setRows((prev) => prev.map((r) => (r.ref === ref ? { ...r, ...patch } : r)))
-
-  const removeRow = (ref) =>
-    setRows((prev) =>
-      prev
-        .filter((r) => r.ref !== ref)
-        .map((r) => (r.parentRef === ref ? { ...r, parentRef: '' } : r)),
-    )
-
-  const handlePreview = async () => {
-    setPreviewError('')
-    try {
-      const result = await bulkCreateMutation.mutateAsync(
-        buildPayload({ socialChannelId, parentFolderId, duplicatePolicy, rows, validateOnly: true }),
-      )
-      setPreview(result)
-      setPreviewSnapshot(snapshotKey(duplicatePolicy, rows))
-    } catch (err) {
-      setPreview(null)
-      setPreviewSnapshot('')
-      setPreviewError(getErrorMessage(err))
-    }
-  }
+  const toggleAll = () =>
+    setSelectedIds((prev) => (prev.size === channels.length ? new Set() : new Set(channels.map((c) => c.id))))
 
   const handleSubmit = async () => {
     setSubmitError('')
     try {
-      await bulkCreateMutation.mutateAsync(
-        buildPayload({ socialChannelId, parentFolderId, duplicatePolicy, rows, validateOnly: false }),
-      )
-      onSuccess?.()
-      onClose()
+      const response = await mutation.mutateAsync({
+        name: name.trim(),
+        description: description.trim() || null,
+        socialChannelIds: [...selectedIds],
+      })
+      setResult(response)
+      onSuccess?.(response)
     } catch (err) {
-      // Batch nguyên tử: lỗi = không gì được tạo. Giữ nguyên rows để sửa, không đóng
-      // modal, không báo thành công một phần (MEDIA-06-AC2).
       setSubmitError(getErrorMessage(err))
     }
   }
 
+  const canSubmit = Boolean(name.trim()) && selectedIds.size > 0 && !mutation.isPending
+  const channelName = (id) => channels.find((c) => c.id === id)?.pageName ?? id
+
   return (
     <Modal
       open={open}
-      title="Tạo thư mục hàng loạt"
+      title="Tạo thư mục hàng loạt theo Page"
       onClose={onClose}
-      footer={(
+      footer={result ? (
+        <button type="button" className="btn btn-primary" onClick={onClose}>Đóng</button>
+      ) : (
         <>
           <button type="button" className="btn btn-secondary" onClick={onClose}>Hủy</button>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={hasEmptyName || bulkCreateMutation.isPending}
-            onClick={handlePreview}
-          >
-            {bulkCreateMutation.isPending && !isPreviewFresh ? 'Đang xem trước...' : 'Xem trước'}
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!isPreviewFresh || bulkCreateMutation.isPending}
-            onClick={handleSubmit}
-          >
-            {bulkCreateMutation.isPending && isPreviewFresh
+          <button type="button" className="btn btn-primary" disabled={!canSubmit} onClick={handleSubmit}>
+            {mutation.isPending
               ? 'Đang tạo...'
-              : `Tạo ${preview?.totalRequested ?? rows.length} thư mục`}
+              : `Tạo trong ${selectedIds.size || 0} Page`}
           </button>
         </>
       )}
     >
       {submitError && <div className="alert alert-error">{submitError}</div>}
-      <p className="form-hint">
-        Tạo nhiều thư mục cùng lúc trong Page hiện tại
-        {parentFolderId ? ', dưới thư mục đang mở' : ', ở thư mục gốc'}. Mỗi dòng có thể chọn
-        làm con của một dòng khác trong danh sách để dựng hierarchy nhiều cấp.
-      </p>
 
-      <div className="form-group">
-        <label htmlFor="bulk-duplicate-policy">Trùng tên trong cùng thư mục cha</label>
-        <select
-          id="bulk-duplicate-policy"
-          value={duplicatePolicy}
-          onChange={(event) => setDuplicatePolicy(Number(event.target.value))}
-        >
-          <option value={DUPLICATE_POLICY.ERROR}>Báo lỗi</option>
-          <option value={DUPLICATE_POLICY.SKIP}>Bỏ qua — dùng thư mục có sẵn</option>
-        </select>
-      </div>
-
-      <div className="bulk-folder-rows">
-        {rows.map((row) => (
-          <div className="bulk-folder-row" key={row.ref}>
-            <input
-              value={row.name}
-              placeholder="Tên thư mục"
-              aria-label="Tên thư mục"
-              onChange={(event) => updateRow(row.ref, { name: event.target.value })}
-            />
-            <select
-              value={row.parentRef}
-              aria-label="Thư mục cha trong batch"
-              onChange={(event) => updateRow(row.ref, { parentRef: event.target.value })}
-            >
-              <option value="">— Gốc của batch —</option>
-              {rows.filter((r) => r.ref !== row.ref).map((r) => (
-                <option key={r.ref} value={r.ref}>{r.name.trim() || '(chưa đặt tên)'}</option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              title="Xóa dòng"
-              disabled={rows.length <= 1}
-              onClick={() => removeRow(row.ref)}
-            >
-              🗑
-            </button>
-          </div>
-        ))}
-      </div>
-      <button type="button" className="btn btn-secondary btn-sm" onClick={addRow}>+ Thêm dòng</button>
-
-      {previewError && <div className="alert alert-error" style={{ marginTop: 12 }}>{previewError}</div>}
-
-      {isPreviewFresh && preview && (
-        <div className="bulk-folder-preview">
+      {result ? (
+        <div className="bulk-across-pages-result">
           <p className="form-hint">
-            Sẽ tạo {preview.totalCreated} thư mục mới
-            {preview.totalSkipped > 0 ? `, dùng lại ${preview.totalSkipped} thư mục có sẵn` : ''}.
+            Đã tạo {result.totalSucceeded}/{result.totalRequested} thư mục
+            {result.totalFailed > 0 ? `, ${result.totalFailed} Page lỗi` : ''}.
           </p>
           <ul>
-            {preview.folders.map((f) => (
-              <li key={f.clientRef} style={{ paddingLeft: 8 + f.depth * 16 }}>
-                📁 {f.name} {f.isSkipped && <span className="badge">dùng lại</span>}
+            {result.results.map((r) => (
+              <li key={r.socialChannelId} className={r.success ? 'is-success' : 'is-error'}>
+                {r.success ? '✅' : '❌'} {channelName(r.socialChannelId)}
+                {!r.success && r.errorMessage ? ` — ${r.errorMessage}` : ''}
               </li>
             ))}
           </ul>
         </div>
+      ) : (
+        <>
+          <p className="form-hint">
+            Tạo cùng một thư mục gốc, cùng tên, ở tất cả Page được chọn bên dưới. Mỗi Page
+            được xử lý độc lập — một Page lỗi không ảnh hưởng các Page khác.
+          </p>
+
+          <div className="form-group">
+            <label htmlFor="bulk-across-name">Tên thư mục</label>
+            <input
+              id="bulk-across-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="VD: Campaign Tháng 10"
+              autoFocus
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="bulk-across-description">Mô tả (tùy chọn)</label>
+            <textarea
+              id="bulk-across-description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              rows={2}
+            />
+          </div>
+
+          <div className="form-group">
+            <div className="bulk-across-pages-header">
+              <label>Chọn Page ({selectedIds.size}/{channels.length})</label>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={toggleAll}>
+                {selectedIds.size === channels.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+              </button>
+            </div>
+            <div className="bulk-across-pages-list">
+              {channels.map((channel) => (
+                <label key={channel.id} className="bulk-across-pages-item">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(channel.id)}
+                    onChange={() => toggleChannel(channel.id)}
+                  />
+                  {channel.pageName}
+                </label>
+              ))}
+            </div>
+          </div>
+        </>
       )}
     </Modal>
   )

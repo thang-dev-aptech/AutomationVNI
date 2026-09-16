@@ -103,6 +103,20 @@ public class MediaFolderController
         return Ok(ApiResponse.Ok(result, result.ValidateOnly ? "Kiểm tra hợp lệ cấu trúc thư mục thành công" : "Tạo thư mục hàng loạt thành công"));
     }
 
+    /// <summary>
+    /// MEDIA-06: tạo 1 folder gốc cùng tên ở nhiều Page cùng lúc (vd 100 Page → 100 folder).
+    /// Best-effort per Page — trả kết quả từng Page, một Page lỗi không chặn các Page khác.
+    /// </summary>
+    [HttpPost("create-across-pages")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> CreateAcrossPages(
+        [FromBody] CreateMediaFolderAcrossPagesRequest request,
+        CancellationToken ct)
+    {
+        var result = await _repo.CreateAcrossPagesAsync(request, ct);
+        return Ok(ApiResponse.Ok(result, $"Đã tạo {result.TotalSucceeded}/{result.TotalRequested} thư mục"));
+    }
+
     protected override async Task<MediaFolderModel> CreateEntityAsync(CreateMediaFolderRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Name)) throw new ArgumentException("Tên thư mục không được để trống");

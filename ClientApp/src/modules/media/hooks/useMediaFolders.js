@@ -65,7 +65,12 @@ export function useMediaFolderSearch({
   })
 }
 
-/** MEDIA-06: preview (validateOnly) và submit dùng chung mutation; chỉ invalidate cache khi submit thật thành công. */
+/**
+ * MEDIA-03: tạo hierarchy folder (clientRef/parentRef) trong MỘT Page, nguyên tử cả batch.
+ * Preview (validateOnly) và submit dùng chung mutation; chỉ invalidate cache khi submit
+ * thật thành công. Không có UI nào gọi hook này hiện tại — MEDIA-06 (nút "Tạo hàng loạt")
+ * dùng useCreateMediaFolderAcrossPages bên dưới thay vì hierarchy-trong-1-Page.
+ */
 export function useBulkCreateMediaFolder() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -74,6 +79,19 @@ export function useBulkCreateMediaFolder() {
       if (variables.validateOnly) return
       queryClient.invalidateQueries({ queryKey: mediaFolderQueryKeys.all })
     },
+  })
+}
+
+/**
+ * MEDIA-06: tạo 1 folder gốc cùng tên ở nhiều Page cùng lúc (best-effort — Page lỗi không
+ * chặn Page khác). Luôn invalidate cache vì ngay cả khi có Page lỗi, các Page thành công
+ * đã ghi dữ liệu thật.
+ */
+export function useCreateMediaFolderAcrossPages() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload) => unwrapApiData(await mediaFolderApi.createAcrossPages(payload)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: mediaFolderQueryKeys.all }),
   })
 }
 

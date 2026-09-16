@@ -291,7 +291,7 @@ export default function MediaPage() {
                 className="btn btn-secondary"
                 onClick={() => setBulkFolderModalOpen(true)}
               >
-                📚 Tạo hàng loạt
+                📚 Tạo theo nhiều Page
               </button>
               <button
                 type="button"
@@ -412,10 +412,8 @@ export default function MediaPage() {
 
       <MediaFolderBulkCreateModal
         open={bulkFolderModalOpen}
-        socialChannelId={socialChannelId || null}
-        parentFolderId={currentFolderId}
         onClose={() => setBulkFolderModalOpen(false)}
-        onSuccess={() => toast.success('Đã tạo thư mục hàng loạt')}
+        onSuccess={(response) => toast.success(`Đã tạo ${response.totalSucceeded}/${response.totalRequested} thư mục`)}
       />
 
       <AiBackgroundPromptModal

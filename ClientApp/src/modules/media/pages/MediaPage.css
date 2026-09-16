@@ -270,45 +270,33 @@
   margin: 4px 0;
 }
 
-/* MediaFolderBulkCreateModal (MEDIA-06) */
-.bulk-folder-rows {
+/* MediaFolderBulkCreateModal (MEDIA-06): tạo 1 folder ở nhiều Page cùng lúc */
+.bulk-across-pages-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bulk-across-pages-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.bulk-folder-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.bulk-folder-row input,
-.bulk-folder-row select {
-  min-height: 42px;
-  padding: 10px 14px;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
+  padding: 8px;
 }
 
-.bulk-folder-row input:focus,
-.bulk-folder-row select:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 4px rgba(45, 108, 182, 0.12);
+.bulk-across-pages-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
 }
 
-.bulk-folder-preview {
-  margin-top: 12px;
-  border-top: 1px solid var(--color-border);
-  padding-top: 8px;
-}
-
-.bulk-folder-preview ul {
+.bulk-across-pages-result ul {
   list-style: none;
   margin: 8px 0 0;
   padding: 0;
@@ -316,4 +304,10 @@
   flex-direction: column;
   gap: 4px;
   font-size: 0.85rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.bulk-across-pages-result li.is-error {
+  color: var(--color-danger);
 }

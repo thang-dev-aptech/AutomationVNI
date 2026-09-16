@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MediaFolderBulkCreateModal from '../components/MediaFolderBulkCreateModal'
 import { mediaFolderApi } from '../services/mediaFolderApi'
-import { PAGE_A, wrapApiData } from './mediaFolderExplorerFixtures'
+import { CHANNELS, PAGE_A, PAGE_B, wrapApiData } from './mediaFolderExplorerFixtures'
 
 vi.mock('../services/mediaFolderApi', async (importOriginal) => {
   const actual = await importOriginal()
@@ -12,20 +12,25 @@ vi.mock('../services/mediaFolderApi', async (importOriginal) => {
     ...actual,
     mediaFolderApi: {
       ...actual.mediaFolderApi,
-      bulkCreate: vi.fn(),
+      createAcrossPages: vi.fn(),
     },
   }
 })
 
-function bulkResponse({ totalCreated = 1, totalSkipped = 0, folders = [] } = {}) {
+vi.mock('@/modules/social-channels/hooks/useSocialChannels', () => ({
+  useSocialChannelAll: () => ({ data: CHANNELS }),
+}))
+
+function acrossPagesResponse({ succeeded = [], failed = [] } = {}) {
+  const results = [
+    ...succeeded.map((id) => ({ socialChannelId: id, success: true, folderId: `folder-${id}`, errorMessage: null })),
+    ...failed.map(({ id, message }) => ({ socialChannelId: id, success: false, folderId: null, errorMessage: message })),
+  ]
   return wrapApiData({
-    success: true,
-    validateOnly: false,
-    totalRequested: folders.length,
-    totalCreated,
-    totalSkipped,
-    folders,
-    errors: [],
+    totalRequested: results.length,
+    totalSucceeded: succeeded.length,
+    totalFailed: failed.length,
+    results,
   })
 }
 
@@ -43,176 +48,129 @@ function renderModal(props = {}) {
   const onSuccess = props.onSuccess ?? vi.fn()
   const view = render(
     <QueryClientProvider client={queryClient}>
-      <MediaFolderBulkCreateModal
-        open
-        socialChannelId={PAGE_A}
-        parentFolderId={null}
-        onClose={onClose}
-        onSuccess={onSuccess}
-        {...props}
-      />
+      <MediaFolderBulkCreateModal open onClose={onClose} onSuccess={onSuccess} {...props} />
     </QueryClientProvider>,
   )
-  return { user, onClose, onSuccess, invalidateSpy, queryClient, ...view }
+  return { user, onClose, onSuccess, invalidateSpy, ...view }
 }
 
-describe('MEDIA-06 MediaFolderBulkCreateModal', () => {
+describe('MEDIA-06 MediaFolderBulkCreateModal (create-across-pages)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('disables Preview while a row has an empty name, and disables Submit until a fresh preview exists', async () => {
+  it('disables submit until a name is entered and at least one Page is selected', async () => {
     const { user } = renderModal()
 
-    expect(screen.getByRole('button', { name: 'Xem trước' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /Tạo \d+ thư mục/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Tạo trong/ })).toBeDisabled()
 
-    await user.type(screen.getByPlaceholderText('Tên thư mục'), 'Chiến dịch A')
-    expect(screen.getByRole('button', { name: 'Xem trước' })).toBeEnabled()
+    await user.type(screen.getByLabelText('Tên thư mục'), 'Campaign X')
+    expect(screen.getByRole('button', { name: /Tạo trong 0 Page/ })).toBeDisabled()
 
-    mediaFolderApi.bulkCreate.mockResolvedValueOnce(bulkResponse({
-      folders: [{ clientRef: 'n1', id: 'x', name: 'Chiến dịch A', parentFolderId: null, socialChannelId: PAGE_A, depth: 1, isSkipped: false }],
-    }))
-    await user.click(screen.getByRole('button', { name: 'Xem trước' }))
-
-    await waitFor(() => expect(screen.getByRole('button', { name: /Tạo 1 thư mục/ })).toBeEnabled())
-    expect(mediaFolderApi.bulkCreate).toHaveBeenCalledWith(expect.objectContaining({ validateOnly: true }))
+    await user.click(screen.getByLabelText(CHANNELS[0].pageName))
+    expect(screen.getByRole('button', { name: /Tạo trong 1 Page/ })).toBeEnabled()
   })
 
-  it('invalidates a stale preview when a row is edited afterwards, disabling Submit again', async () => {
+  it('"Chọn tất cả" toggles every Page, and toggles back to "Bỏ chọn tất cả"', async () => {
     const { user } = renderModal()
-    await user.type(screen.getByPlaceholderText('Tên thư mục'), 'Chiến dịch A')
 
-    mediaFolderApi.bulkCreate.mockResolvedValueOnce(bulkResponse({
-      folders: [{ clientRef: 'n1', id: 'x', name: 'Chiến dịch A', parentFolderId: null, socialChannelId: PAGE_A, depth: 1, isSkipped: false }],
-    }))
-    await user.click(screen.getByRole('button', { name: 'Xem trước' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: /Tạo 1 thư mục/ })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
+    expect(screen.getByLabelText(CHANNELS[0].pageName)).toBeChecked()
+    expect(screen.getByLabelText(CHANNELS[1].pageName)).toBeChecked()
+    expect(screen.getByText(`Chọn Page (${CHANNELS.length}/${CHANNELS.length})`)).toBeInTheDocument()
 
-    await user.type(screen.getByPlaceholderText('Tên thư mục'), ' đổi')
-    expect(screen.getByRole('button', { name: /Tạo \d+ thư mục/ })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Bỏ chọn tất cả' }))
+    expect(screen.getByLabelText(CHANNELS[0].pageName)).not.toBeChecked()
   })
 
-  it('shows the per-node preview with depth and skip badges', async () => {
+  it('submits name + selected Page ids to createAcrossPages', async () => {
+    mediaFolderApi.createAcrossPages.mockResolvedValue(acrossPagesResponse({ succeeded: [PAGE_A] }))
     const { user } = renderModal()
-    await user.type(screen.getByPlaceholderText('Tên thư mục'), 'Marketing')
 
-    mediaFolderApi.bulkCreate.mockResolvedValueOnce(bulkResponse({
-      totalCreated: 1,
-      totalSkipped: 1,
-      folders: [
-        { clientRef: 'n1', id: 'x1', name: 'Marketing', parentFolderId: null, socialChannelId: PAGE_A, depth: 1, isSkipped: false },
-        { clientRef: 'n2', id: 'x2', name: 'Existing', parentFolderId: 'x1', socialChannelId: PAGE_A, depth: 2, isSkipped: true },
-      ],
+    await user.type(screen.getByLabelText('Tên thư mục'), 'Campaign X')
+    await user.click(screen.getByLabelText(CHANNELS[0].pageName))
+    await user.click(screen.getByRole('button', { name: /Tạo trong 1 Page/ }))
+
+    await waitFor(() => expect(mediaFolderApi.createAcrossPages).toHaveBeenCalledWith({
+      name: 'Campaign X',
+      description: null,
+      socialChannelIds: [PAGE_A],
     }))
-    await user.click(screen.getByRole('button', { name: 'Xem trước' }))
-
-    expect(await screen.findByText(/Sẽ tạo 1 thư mục mới, dùng lại 1 thư mục có sẵn/)).toBeInTheDocument()
-    expect(screen.getByText(/Existing/)).toBeInTheDocument()
-    expect(screen.getByText('dùng lại')).toBeInTheDocument()
   })
 
-  it('on submit failure, keeps the modal open, keeps row data, and shows the error without reporting partial success', async () => {
+  it('shows a per-Page success/failure report after submit, without auto-closing', async () => {
+    mediaFolderApi.createAcrossPages.mockResolvedValue(acrossPagesResponse({
+      succeeded: [PAGE_A],
+      failed: [{ id: PAGE_B, message: 'Page/Kênh không tồn tại.' }],
+    }))
     const { user, onClose, onSuccess } = renderModal()
-    await user.type(screen.getByPlaceholderText('Tên thư mục'), 'Trùng tên')
 
-    mediaFolderApi.bulkCreate.mockResolvedValueOnce(bulkResponse({
-      folders: [{ clientRef: 'n1', id: 'x', name: 'Trùng tên', parentFolderId: null, socialChannelId: PAGE_A, depth: 1, isSkipped: false }],
-    }))
-    await user.click(screen.getByRole('button', { name: 'Xem trước' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: /Tạo 1 thư mục/ })).toBeEnabled())
+    await user.type(screen.getByLabelText('Tên thư mục'), 'Campaign X')
+    await user.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
+    await user.click(screen.getByRole('button', { name: /Tạo trong 2 Page/ }))
 
-    mediaFolderApi.bulkCreate.mockRejectedValueOnce({ response: { data: { message: 'Thư mục đã tồn tại' } } })
-    await user.click(screen.getByRole('button', { name: /Tạo 1 thư mục/ }))
-
-    expect(await screen.findByText('Thư mục đã tồn tại')).toBeInTheDocument()
+    expect(await screen.findByText(/Đã tạo 1\/2 thư mục, 1 Page lỗi/)).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(`✅ ${CHANNELS[0].pageName}`))).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(`❌ ${CHANNELS[1].pageName} — Page/Kênh không tồn tại\\.`))).toBeInTheDocument()
     expect(onClose).not.toHaveBeenCalled()
-    expect(onSuccess).not.toHaveBeenCalled()
-    expect(screen.getByPlaceholderText('Tên thư mục')).toHaveValue('Trùng tên')
-  })
+    expect(onSuccess).toHaveBeenCalledTimes(1)
 
-  it('on submit success, closes the modal, calls onSuccess, and invalidates the folder cache for refresh', async () => {
-    const { user, onClose, onSuccess, invalidateSpy } = renderModal()
-    await user.type(screen.getByPlaceholderText('Tên thư mục'), 'Chiến dịch B')
-
-    mediaFolderApi.bulkCreate.mockResolvedValueOnce(bulkResponse({
-      folders: [{ clientRef: 'n1', id: 'x', name: 'Chiến dịch B', parentFolderId: null, socialChannelId: PAGE_A, depth: 1, isSkipped: false }],
-    }))
-    await user.click(screen.getByRole('button', { name: 'Xem trước' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: /Tạo 1 thư mục/ })).toBeEnabled())
-
-    mediaFolderApi.bulkCreate.mockResolvedValueOnce(bulkResponse({
-      folders: [{ clientRef: 'n1', id: 'x', name: 'Chiến dịch B', parentFolderId: null, socialChannelId: PAGE_A, depth: 1, isSkipped: false }],
-    }))
-    await user.click(screen.getByRole('button', { name: /Tạo 1 thư mục/ }))
-
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByRole('button', { name: 'Đóng' }))
     expect(onClose).toHaveBeenCalledTimes(1)
-    expect(mediaFolderApi.bulkCreate).toHaveBeenLastCalledWith(expect.objectContaining({ validateOnly: false }))
-    expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['media-folders'] }))
   })
 
-  it('builds a multi-row hierarchy, excludes a row from its own parent options, and resets a child when its parent row is removed', async () => {
-    const { user } = renderModal()
-    await user.type(screen.getByPlaceholderText('Tên thư mục'), 'Root')
-    await user.click(screen.getByRole('button', { name: '+ Thêm dòng' }))
+  it('invalidates the folder cache after a run so other Pages still refresh', async () => {
+    mediaFolderApi.createAcrossPages.mockResolvedValue(acrossPagesResponse({ succeeded: [PAGE_A] }))
+    const { user, invalidateSpy } = renderModal()
 
-    const nameInputs = screen.getAllByPlaceholderText('Tên thư mục')
-    await user.type(nameInputs[1], 'Child')
+    await user.type(screen.getByLabelText('Tên thư mục'), 'Campaign X')
+    await user.click(screen.getByLabelText(CHANNELS[0].pageName))
+    await user.click(screen.getByRole('button', { name: /Tạo trong 1 Page/ }))
 
-    const parentSelects = screen.getAllByRole('combobox', { name: 'Thư mục cha trong batch' })
-    expect(parentSelects[0].querySelectorAll('option')).toHaveLength(2) // root pseudo-option + the other row only
-    await user.selectOptions(parentSelects[1], 'n1')
-
-    mediaFolderApi.bulkCreate.mockResolvedValueOnce(bulkResponse({
-      folders: [
-        { clientRef: 'n1', id: 'x1', name: 'Root', parentFolderId: null, socialChannelId: PAGE_A, depth: 1, isSkipped: false },
-        { clientRef: 'n2', id: 'x2', name: 'Child', parentFolderId: 'x1', socialChannelId: PAGE_A, depth: 2, isSkipped: false },
-      ],
-    }))
-    await user.click(screen.getByRole('button', { name: 'Xem trước' }))
-    await waitFor(() => expect(mediaFolderApi.bulkCreate).toHaveBeenCalledWith(expect.objectContaining({
-      folders: [
-        expect.objectContaining({ clientRef: 'n1', name: 'Root', parentRef: null }),
-        expect.objectContaining({ clientRef: 'n2', name: 'Child', parentRef: 'n1' }),
-      ],
-    })))
-
-    const removeButtons = screen.getAllByTitle('Xóa dòng')
-    await user.click(removeButtons[0])
-
-    expect(screen.getByRole('combobox', { name: 'Thư mục cha trong batch' })).toHaveValue('')
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['media-folders'] })))
   })
 
-  it('resets all fields (rows, policy, preview) every time the modal is reopened', async () => {
+  it('on total failure (e.g. validation error), shows the error and keeps the form for retry', async () => {
+    mediaFolderApi.createAcrossPages.mockRejectedValue({ response: { data: { message: 'Tên thư mục không được để trống.' } } })
+    const { user, onSuccess } = renderModal()
+
+    await user.type(screen.getByLabelText('Tên thư mục'), 'Campaign X')
+    await user.click(screen.getByLabelText(CHANNELS[0].pageName))
+    await user.click(screen.getByRole('button', { name: /Tạo trong 1 Page/ }))
+
+    expect(await screen.findByText('Tên thư mục không được để trống.')).toBeInTheDocument()
+    expect(onSuccess).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Tên thư mục')).toHaveValue('Campaign X')
+  })
+
+  it('resets all fields every time the modal is reopened', async () => {
+    mediaFolderApi.createAcrossPages.mockResolvedValue(acrossPagesResponse({ succeeded: [PAGE_A] }))
     const queryClient = createQueryClient()
     const user = userEvent.setup()
     const { rerender } = render(
       <QueryClientProvider client={queryClient}>
-        <MediaFolderBulkCreateModal open socialChannelId={PAGE_A} parentFolderId={null} onClose={vi.fn()} />
+        <MediaFolderBulkCreateModal open onClose={vi.fn()} />
       </QueryClientProvider>,
     )
 
-    await user.type(screen.getByPlaceholderText('Tên thư mục'), 'Sẽ bị xóa')
-    mediaFolderApi.bulkCreate.mockResolvedValueOnce(bulkResponse({
-      folders: [{ clientRef: 'n1', id: 'x', name: 'Sẽ bị xóa', parentFolderId: null, socialChannelId: PAGE_A, depth: 1, isSkipped: false }],
-    }))
-    await user.click(screen.getByRole('button', { name: 'Xem trước' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: /Tạo 1 thư mục/ })).toBeEnabled())
+    await user.type(screen.getByLabelText('Tên thư mục'), 'Sẽ bị xóa')
+    await user.click(screen.getByLabelText(CHANNELS[0].pageName))
+    await user.click(screen.getByRole('button', { name: /Tạo trong 1 Page/ }))
+    await screen.findByText(/Đã tạo/)
 
     rerender(
       <QueryClientProvider client={queryClient}>
-        <MediaFolderBulkCreateModal open={false} socialChannelId={PAGE_A} parentFolderId={null} onClose={vi.fn()} />
+        <MediaFolderBulkCreateModal open={false} onClose={vi.fn()} />
       </QueryClientProvider>,
     )
     rerender(
       <QueryClientProvider client={queryClient}>
-        <MediaFolderBulkCreateModal open socialChannelId={PAGE_A} parentFolderId={null} onClose={vi.fn()} />
+        <MediaFolderBulkCreateModal open onClose={vi.fn()} />
       </QueryClientProvider>,
     )
 
-    expect(screen.getByPlaceholderText('Tên thư mục')).toHaveValue('')
-    expect(screen.getByRole('button', { name: /Tạo \d+ thư mục/ })).toBeDisabled()
-    expect(screen.queryByText(/Sẽ tạo/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Tên thư mục')).toHaveValue('')
+    expect(screen.queryByText(/Đã tạo/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(CHANNELS[0].pageName)).not.toBeChecked()
   })
 })

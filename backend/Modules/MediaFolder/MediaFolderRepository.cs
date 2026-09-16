@@ -474,6 +474,67 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         return await base.CreateAsync(entity, ct);
     }
 
+    /// <summary>
+    /// MEDIA-06: tạo 1 folder gốc cùng tên ở nhiều Page (vd 100 Page → 100 folder "Campaign X").
+    /// Best-effort per Page — Page này lỗi (tên trống, Page không tồn tại/không có quyền, v.v.)
+    /// không chặn các Page khác; mỗi Page tạo/lưu độc lập (không dùng transaction chung).
+    /// </summary>
+    public async Task<CreateMediaFolderAcrossPagesResponse> CreateAcrossPagesAsync(
+        CreateMediaFolderAcrossPagesRequest request, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name))
+            throw new ArgumentException("Tên thư mục không được để trống.");
+
+        if (request.SocialChannelIds == null || request.SocialChannelIds.Count == 0)
+            throw new ArgumentException("Danh sách Page không được để trống.");
+
+        const int maxPages = 200;
+        var pageIds = request.SocialChannelIds.Distinct().ToList();
+        if (pageIds.Count > maxPages)
+            throw new ArgumentException($"Số lượng Page vượt quá giới hạn cho phép (tối đa {maxPages}).");
+
+        var results = new List<CreateMediaFolderAcrossPagesResultItem>();
+        foreach (var pageId in pageIds)
+        {
+            try
+            {
+                await EnsureSocialChannelAccessAsync(pageId, ct);
+
+                var entity = await CreateAsync(new CreateMediaFolderRequest
+                {
+                    Name = request.Name,
+                    Description = request.Description,
+                    SocialChannelId = pageId,
+                    ParentFolderId = null,
+                }, ct);
+
+                results.Add(new CreateMediaFolderAcrossPagesResultItem
+                {
+                    SocialChannelId = pageId,
+                    Success = true,
+                    FolderId = entity.Id,
+                });
+            }
+            catch (Exception ex)
+            {
+                results.Add(new CreateMediaFolderAcrossPagesResultItem
+                {
+                    SocialChannelId = pageId,
+                    Success = false,
+                    ErrorMessage = ex.Message,
+                });
+            }
+        }
+
+        return new CreateMediaFolderAcrossPagesResponse
+        {
+            TotalRequested = results.Count,
+            TotalSucceeded = results.Count(r => r.Success),
+            TotalFailed = results.Count(r => !r.Success),
+            Results = results,
+        };
+    }
+
     public async Task<MediaFolderModel?> UpdateAsync(
         Guid id, UpdateMediaFolderRequest request, CancellationToken ct = default)
     {

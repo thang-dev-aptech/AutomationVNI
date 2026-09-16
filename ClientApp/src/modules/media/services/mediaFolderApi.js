@@ -39,6 +39,7 @@ export const mediaFolderApi = {
     }),
   filter: (params) => axiosInstance.post('/api/MediaFolder/filter', params),
   bulkCreate: (payload) => axiosInstance.post('/api/MediaFolder/bulk', payload),
+  createAcrossPages: (payload) => axiosInstance.post('/api/MediaFolder/create-across-pages', payload),
   create: (payload) => axiosInstance.post('/api/MediaFolder', payload),
   update: (id, payload) => axiosInstance.put(`/api/MediaFolder/${id}`, payload),
   softDelete: (id) => axiosInstance.delete(`/api/MediaFolder/${id}`),
