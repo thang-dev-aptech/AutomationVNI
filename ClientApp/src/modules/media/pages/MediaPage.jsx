@@ -11,7 +11,6 @@ import MediaUploadForm from '../components/MediaUploadForm'
 import MediaFolderExplorer from '../components/MediaFolderExplorer'
 import MediaFolderSearchBox from '../components/MediaFolderSearchBox'
 import MediaFolderFormModal from '../components/MediaFolderFormModal'
-import MediaFolderBulkCreateModal from '../components/MediaFolderBulkCreateModal'
 import AiBackgroundPromptModal from '../components/AiBackgroundPromptModal'
 import {
   useAnalyzeAllMediaAssets,
@@ -30,6 +29,7 @@ import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import {
   useCreateMediaFolder,
+  useCreateMediaFolderAcrossPages,
   useDeleteMediaFolder,
   useUpdateMediaFolder,
 } from '../hooks/useMediaFolders'
@@ -55,7 +55,6 @@ export default function MediaPage() {
 
   const [socialChannelId, setSocialChannelId] = useState('')
   const [folderModal, setFolderModal] = useState(null) // { editing, defaultParentId } | null
-  const [bulkFolderModalOpen, setBulkFolderModalOpen] = useState(false)
   const { data: channels = [] } = useSocialChannelAll()
   const explorer = useMediaFolderExplorer({ socialChannelId })
   const { selection, currentFolderId } = explorer
@@ -84,6 +83,7 @@ export default function MediaPage() {
   const analyzeMutation = useAnalyzeMediaAsset()
   const analyzeAllMutation = useAnalyzeAllMediaAssets()
   const createFolderMutation = useCreateMediaFolder()
+  const createFolderAcrossPagesMutation = useCreateMediaFolderAcrossPages()
   const updateFolderMutation = useUpdateMediaFolder()
   const deleteFolderMutation = useDeleteMediaFolder()
   const analyzeLayoutMutation = useAnalyzeLayoutFolder()
@@ -228,20 +228,33 @@ export default function MediaPage() {
     }
   }
 
-  const handleFolderSubmit = async ({ name, parentFolderId, socialChannelId: pageId }) => {
+  const handleFolderSubmit = async (payload) => {
     try {
       setFormError('')
-      const scopedPageId = socialChannelId || pageId
       if (folderModal?.editing) {
+        const scopedPageId = socialChannelId || payload.socialChannelId
         await updateFolderMutation.mutateAsync({
           id: folderModal.editing.id,
-          payload: { name, parentFolderId, socialChannelId: scopedPageId },
+          payload: { name: payload.name, parentFolderId: payload.parentFolderId, socialChannelId: scopedPageId },
         })
         toast.success('Đã cập nhật thư mục')
+      } else if (payload.socialChannelIds) {
+        // Nhiều Page được chọn: tạo cùng tên thư mục ở gốc mỗi Page, best-effort per-Page.
+        const result = await createFolderAcrossPagesMutation.mutateAsync({
+          name: payload.name,
+          description: null,
+          socialChannelIds: payload.socialChannelIds,
+        })
+        if (result.totalFailed > 0) {
+          toast.warning(`Đã tạo ${result.totalSucceeded}/${result.totalRequested} thư mục — ${result.totalFailed} Page lỗi`)
+        } else {
+          toast.success(`Đã tạo ${result.totalSucceeded} thư mục`)
+        }
       } else {
+        const scopedPageId = socialChannelId || payload.socialChannelId
         await createFolderMutation.mutateAsync({
-          name,
-          parentFolderId,
+          name: payload.name,
+          parentFolderId: payload.parentFolderId,
           socialChannelId: scopedPageId,
         })
         toast.success('Đã tạo thư mục')
@@ -285,13 +298,6 @@ export default function MediaPage() {
                 onClick={() => { setFormError(''); setFolderModal({ editing: null, defaultParentId: currentFolderId }) }}
               >
                 📁 Tạo thư mục
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => setBulkFolderModalOpen(true)}
-              >
-                📚 Tạo theo nhiều Page
               </button>
               <button
                 type="button"
@@ -406,15 +412,10 @@ export default function MediaPage() {
         defaultSocialChannelId={socialChannelId || null}
         onClose={() => setFolderModal(null)}
         onSubmit={handleFolderSubmit}
-        isSubmitting={createFolderMutation.isPending || updateFolderMutation.isPending}
+        isSubmitting={createFolderMutation.isPending || createFolderAcrossPagesMutation.isPending || updateFolderMutation.isPending}
         errorMessage={formError}
       />
 
-      <MediaFolderBulkCreateModal
-        open={bulkFolderModalOpen}
-        onClose={() => setBulkFolderModalOpen(false)}
-        onSuccess={(response) => toast.success(`Đã tạo ${response.totalSucceeded}/${response.totalRequested} thư mục`)}
-      />
 
       <AiBackgroundPromptModal
         open={aiPromptOpen}

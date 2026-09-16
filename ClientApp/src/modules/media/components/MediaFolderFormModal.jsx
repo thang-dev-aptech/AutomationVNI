@@ -4,9 +4,13 @@ import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialCh
 import MediaFolderPickerTree from './MediaFolderPickerTree'
 
 /**
- * Tạo mới / đổi tên thư mục media. Khi `editing` có giá trị → chế độ sửa.
- * Thư mục cha chọn qua MediaFolderPickerTree (MEDIA-07): lazy-load theo Page hiện chọn
- * trong modal, không còn danh sách phẳng giới hạn ở cấp đang xem trong Explorer.
+ * Tạo mới / đổi tên thư mục media. Khi `editing` có giá trị → chế độ sửa (1 Page, không đổi).
+ *
+ * Khi tạo mới, "Gắn với Page" là multi-select: chọn 0 hoặc 1 Page giữ nguyên hành vi cũ
+ * (tạo 1 thư mục, có thể chọn thư mục cha qua MediaFolderPickerTree); chọn từ 2 Page trở lên
+ * tạo cùng tên thư mục ở gốc MỖI Page đã chọn (không chọn được thư mục cha lúc này vì một
+ * ParentFolderId chỉ thuộc đúng 1 Page) — payload gửi `socialChannelIds` thay vì
+ * `socialChannelId` để component cha (MediaPage) biết gọi mutation nào.
  */
 export default function MediaFolderFormModal({
   open,
@@ -21,6 +25,7 @@ export default function MediaFolderFormModal({
   const [name, setName] = useState('')
   const [parentFolderId, setParentFolderId] = useState('')
   const [socialChannelId, setSocialChannelId] = useState('')
+  const [selectedPageIds, setSelectedPageIds] = useState(() => new Set())
 
   const { data: channels = [] } = useSocialChannelAll()
 
@@ -28,18 +33,55 @@ export default function MediaFolderFormModal({
     if (!open) return
     setName(editing?.name ?? '')
     setParentFolderId(editing?.parentFolderId ?? defaultParentId ?? '')
-    setSocialChannelId(editing?.socialChannelId ?? defaultSocialChannelId ?? '')
+    const initialPageId = editing?.socialChannelId ?? defaultSocialChannelId ?? ''
+    setSocialChannelId(initialPageId)
+    setSelectedPageIds(new Set(initialPageId ? [initialPageId] : []))
   }, [open, editing, defaultParentId, defaultSocialChannelId])
+
+  // Chọn từ 2 Page trở lên thì thư mục cha không còn ý nghĩa (thuộc riêng 1 Page) — bỏ chọn.
+  useEffect(() => {
+    if (selectedPageIds.size > 1) setParentFolderId('')
+  }, [selectedPageIds])
+
+  const togglePage = (id) =>
+    setSelectedPageIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const toggleAllPages = () =>
+    setSelectedPageIds((prev) => (prev.size === channels.length ? new Set() : new Set(channels.map((c) => c.id))))
 
   const handleSubmit = (event) => {
     event.preventDefault()
     if (!name.trim()) return
-    onSubmit({
-      name: name.trim(),
-      parentFolderId: parentFolderId || null,
-      socialChannelId: socialChannelId || null,
-    })
+
+    if (editing) {
+      onSubmit({
+        name: name.trim(),
+        parentFolderId: parentFolderId || null,
+        socialChannelId: socialChannelId || null,
+      })
+      return
+    }
+
+    const pageIds = [...selectedPageIds]
+    if (pageIds.length <= 1) {
+      onSubmit({
+        name: name.trim(),
+        parentFolderId: parentFolderId || null,
+        socialChannelId: pageIds[0] || null,
+      })
+    } else {
+      onSubmit({ name: name.trim(), socialChannelIds: pageIds })
+    }
   }
+
+  const pickerSocialChannelId = editing
+    ? (socialChannelId || defaultSocialChannelId)
+    : ([...selectedPageIds][0] || defaultSocialChannelId)
 
   return (
     <Modal
@@ -72,35 +114,62 @@ export default function MediaFolderFormModal({
             autoFocus
           />
         </div>
-        <div className="form-group">
-          <label htmlFor="folder-parent">Thư mục cha</label>
-          <MediaFolderPickerTree
-            socialChannelId={socialChannelId || defaultSocialChannelId}
-            value={parentFolderId || null}
-            onChange={(id) => setParentFolderId(id || '')}
-            excludeFolderId={editing?.id ?? null}
-          />
-        </div>
-        <div className="form-group">
-          <label htmlFor="folder-page">Gắn với Page (Tùy chọn)</label>
-          <select
-            id="folder-page"
-            value={socialChannelId}
-            onChange={(event) => {
-              const id = event.target.value
-              setSocialChannelId(id)
-              // Chọn page thì lấy luôn tên page làm tên thư mục — đỡ phải gõ lại, tên vẫn sửa
-              // được bình thường sau đó nếu muốn đặt khác.
-              const channel = channels.find((c) => c.id === id)
-              if (channel) setName(channel.pageName)
-            }}
-          >
-            <option value="">— Không gắn page —</option>
-            {channels.map((c) => (
-              <option key={c.id} value={c.id}>{c.pageName}</option>
-            ))}
-          </select>
-        </div>
+
+        {(editing || selectedPageIds.size <= 1) && (
+          <div className="form-group">
+            <label htmlFor="folder-parent">Thư mục cha</label>
+            <MediaFolderPickerTree
+              socialChannelId={pickerSocialChannelId}
+              value={parentFolderId || null}
+              onChange={(id) => setParentFolderId(id || '')}
+              excludeFolderId={editing?.id ?? null}
+            />
+          </div>
+        )}
+        {!editing && selectedPageIds.size > 1 && (
+          <p className="form-hint">
+            Sẽ tạo ở thư mục gốc của mỗi Page đã chọn bên dưới (không chọn được thư mục cha khi chọn nhiều Page).
+          </p>
+        )}
+
+        {editing ? (
+          <div className="form-group">
+            <label htmlFor="folder-page">Gắn với Page (Tùy chọn)</label>
+            <select
+              id="folder-page"
+              value={socialChannelId}
+              onChange={(event) => setSocialChannelId(event.target.value)}
+            >
+              <option value="">— Không gắn page —</option>
+              {channels.map((c) => (
+                <option key={c.id} value={c.id}>{c.pageName}</option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="form-group">
+            <div className="media-folder-page-multiselect-header">
+              <label>Gắn với Page (Tùy chọn — chọn nhiều để tạo cùng thư mục ở mỗi Page)</label>
+              {channels.length > 0 && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={toggleAllPages}>
+                  {selectedPageIds.size === channels.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                </button>
+              )}
+            </div>
+            <div className="media-folder-page-multiselect-list">
+              {channels.map((c) => (
+                <label key={c.id} className="media-folder-page-multiselect-item">
+                  <input
+                    type="checkbox"
+                    checked={selectedPageIds.has(c.id)}
+                    onChange={() => togglePage(c.id)}
+                  />
+                  {c.pageName}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
       </form>
     </Modal>
   )

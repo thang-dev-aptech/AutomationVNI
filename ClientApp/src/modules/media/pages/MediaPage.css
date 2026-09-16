@@ -270,14 +270,14 @@
   margin: 4px 0;
 }
 
-/* MediaFolderBulkCreateModal (MEDIA-06): tạo 1 folder ở nhiều Page cùng lúc */
-.bulk-across-pages-header {
+/* MediaFolderFormModal (MEDIA-06): chọn nhiều Page khi tạo mới thư mục */
+.media-folder-page-multiselect-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.bulk-across-pages-list {
+.media-folder-page-multiselect-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -288,26 +288,10 @@
   padding: 8px;
 }
 
-.bulk-across-pages-item {
+.media-folder-page-multiselect-item {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 0.85rem;
   cursor: pointer;
-}
-
-.bulk-across-pages-result ul {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 0.85rem;
-  max-height: 260px;
-  overflow-y: auto;
-}
-
-.bulk-across-pages-result li.is-error {
-  color: var(--color-danger);
 }
