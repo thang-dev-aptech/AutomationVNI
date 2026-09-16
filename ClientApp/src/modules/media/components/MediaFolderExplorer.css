@@ -76,9 +76,19 @@
   text-align: left;
 }
 
+.media-folder-card:hover {
+  border-color: var(--color-primary);
+}
+
 .media-folder-card.is-active,
 .media-folder-card.is-dragover {
   box-shadow: inset 0 0 0 2px var(--color-primary);
+}
+
+.media-folder-card:focus-visible,
+.media-folder-row:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .media-folder-card-name {

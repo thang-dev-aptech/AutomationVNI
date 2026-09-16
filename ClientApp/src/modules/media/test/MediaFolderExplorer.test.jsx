@@ -43,7 +43,7 @@ function createQueryClient() {
   })
 }
 
-function ExplorerHarness({ socialChannelId, onSocialChannelChange = () => {} }) {
+function ExplorerHarness({ socialChannelId, onSocialChannelChange = () => {}, ...rest }) {
   const explorer = useMediaFolderExplorer({ socialChannelId })
   return (
     <MediaFolderExplorer
@@ -51,6 +51,7 @@ function ExplorerHarness({ socialChannelId, onSocialChannelChange = () => {} }) 
       onSocialChannelChange={onSocialChannelChange}
       canManage
       {...explorer}
+      {...rest}
     />
   )
 }
@@ -150,6 +151,29 @@ describe('MEDIA-04-AC1 one-level Folder Explorer', () => {
     expect(screen.queryByRole('button', { name: /Grand A/ })).not.toBeInTheDocument()
     expect(screen.getByTestId(`folder-has-children-${FOLDER_A_CHILD.id}`)).toBeInTheDocument()
     expect(screen.getByTestId(`folder-counts-${FOLDER_A_CHILD.id}`)).toHaveTextContent('1 thư mục con')
+  })
+
+  it('clicking anywhere on the card, not just the name, opens the folder', async () => {
+    const { user } = renderExplorer(PAGE_A)
+    await screen.findByRole('button', { name: /Campaign A/ })
+
+    // Bấm vào vùng counts (không phải chữ tên) vẫn phải mở được folder — cả card là vùng bấm.
+    await user.click(screen.getByTestId(`folder-counts-${FOLDER_A_ROOT.id}`))
+    await screen.findByRole('button', { name: /Child A/ })
+
+    expect(screen.getByRole('navigation', { name: 'Đường dẫn thư mục' })).toHaveTextContent('Campaign A')
+  })
+
+  it('clicking a management tool (e.g. delete) fires only that action, not also open-folder', async () => {
+    const onDelete = vi.fn()
+    const { user } = renderExplorer(PAGE_A, { onDelete })
+    await screen.findByRole('button', { name: /Campaign A/ })
+
+    await user.click(screen.getByTitle('Xóa'))
+
+    expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: FOLDER_A_ROOT.id }))
+    expect(mediaFolderApi.children.mock.calls.some((call) => call[0].parentFolderId === FOLDER_A_ROOT.id)).toBe(false)
+    expect(screen.getByRole('navigation', { name: 'Đường dẫn thư mục' })).toHaveTextContent('Thư mục gốc')
   })
 
   it('paginates one level of the current Page/parent without calling /tree', async () => {

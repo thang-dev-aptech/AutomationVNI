@@ -41,21 +41,27 @@ function FolderCard({
     ? `media-folder-card${isActive ? ' is-active' : ''}${dragOver ? ' is-dragover' : ''}`
     : `media-folder-row${isActive ? ' is-active' : ''}${dragOver ? ' is-dragover' : ''}`
 
+  // Toàn bộ card/row là vùng bấm để mở folder (không chỉ riêng tên) — nút quản lý bên trong
+  // stopPropagation để không vô tình mở folder khi bấm xóa/đổi tên/tạo con.
+  const stopAnd = (handler) => (event) => { event.stopPropagation(); handler?.() }
+
   return (
     <li>
       <div
         className={className}
+        role="button"
+        tabIndex={0}
+        onClick={() => onOpen(folder.id)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(folder.id) }
+        }}
         onDragOver={(event) => { event.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
       >
-        <button
-          type="button"
-          className={viewMode === 'grid' ? 'media-folder-card-name' : 'media-folder-name'}
-          onClick={() => onOpen(folder.id)}
-        >
+        <span className={viewMode === 'grid' ? 'media-folder-card-name' : 'media-folder-name'}>
           📁 {folder.name}
-        </button>
+        </span>
         <span
           className={viewMode === 'grid' ? 'media-folder-card-meta' : 'media-folder-count'}
           data-testid={`folder-counts-${folder.id}`}
@@ -72,9 +78,9 @@ function FolderCard({
         ) : null}
         {canManage && (
           <span className="media-folder-tools">
-            <button type="button" title="Tạo thư mục con" onClick={() => onCreateChild?.(folder.id)}>＋</button>
-            <button type="button" title="Đổi tên" onClick={() => onRename?.(folder)}>✎</button>
-            <button type="button" title="Xóa" onClick={() => onDelete?.(folder)}>🗑</button>
+            <button type="button" title="Tạo thư mục con" onClick={stopAnd(() => onCreateChild?.(folder.id))}>＋</button>
+            <button type="button" title="Đổi tên" onClick={stopAnd(() => onRename?.(folder))}>✎</button>
+            <button type="button" title="Xóa" onClick={stopAnd(() => onDelete?.(folder))}>🗑</button>
           </span>
         )}
       </div>
