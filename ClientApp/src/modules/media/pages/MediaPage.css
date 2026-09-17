@@ -133,6 +133,42 @@
   gap: 2px;
 }
 
+/* Cây thư mục dạng Google Drive (MediaFolderTreeNav) — không phân trang nên có thể
+   cao hơn hẳn 1 cấp cũ, cần giới hạn chiều cao + tự cuộn trong sidebar sticky. */
+.media-folder-tree-nav {
+  margin-top: 4px;
+  max-height: calc(100vh - 320px);
+  overflow-y: auto;
+}
+
+/* Đường dẫn thư mục (breadcrumb) — chuyển từ MediaFolderExplorer sang đầu .media-main
+   khi cây sidebar thay cho duyệt từng cấp, vẫn giữ nguyên để định hướng nhanh. */
+.media-folder-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+
+.media-folder-breadcrumb-sep {
+  color: var(--color-text-muted);
+}
+
+.media-folder-breadcrumb-item {
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+  padding: 0;
+}
+
+.media-folder-breadcrumb-item.is-current {
+  color: var(--color-text);
+  font-weight: 600;
+  cursor: default;
+}
+
 .media-folder-roots,
 .media-folder-children {
   list-style: none;

@@ -89,8 +89,13 @@ describe('MEDIA-04 MediaPage explorer flow', () => {
       </QueryClientProvider>,
     )
 
-    await screen.findByRole('button', { name: /Campaign A/ })
-    expect(mediaFolderApi.children).toHaveBeenCalledTimes(1)
+    // Regex neo vào icon 📁 để chỉ khớp nút tên thư mục, không khớp nút mở rộng
+    // (aria-label của nút mở rộng cũng chứa tên folder, vd "Mở rộng thư mục Campaign A").
+    await screen.findByRole('button', { name: /📁.*Campaign A/ })
+    // 2 lời gọi hợp lệ ở mức root: useMediaFolderExplorer tự gọi children (phục vụ
+    // folderOptions cho form upload) song song với MediaFolderTreeNav tự tải root eager
+    // cho cây sidebar — không phải trùng lặp, là 2 nhu cầu khác nhau.
+    expect(mediaFolderApi.children).toHaveBeenCalledTimes(2)
     expect(mediaFolderApi.children).toHaveBeenCalledWith(expect.objectContaining({
       socialChannelId: PAGE_A,
     }))

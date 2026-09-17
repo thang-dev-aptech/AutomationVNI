@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useMediaFolderExplorer } from '../hooks/useMediaFolderExplorer'
 import { mediaFolderApi, mediaFolderQueryKeys } from '../services/mediaFolderApi'
 import {
+  FOLDER_A_CHILD,
   FOLDER_A_ROOT,
   FOLDER_B_ROOT,
   PAGE_A,
@@ -102,5 +103,51 @@ describe('MEDIA-04 query keys and Page reset', () => {
     expect(result.current.selection).toBe('all')
     expect(result.current.pageIndex).toBe(1)
     expect(mediaFolderApi.tree).not.toHaveBeenCalled()
+  })
+
+  it('auto-expands every ancestor (and the target folder itself) when opening a nested folder', async () => {
+    mediaFolderApi.children.mockResolvedValue(wrapPaged([FOLDER_A_CHILD]))
+    mediaFolderApi.breadcrumb.mockResolvedValue(wrapBreadcrumb([
+      { id: FOLDER_A_ROOT.id, name: FOLDER_A_ROOT.name },
+      { id: FOLDER_A_CHILD.id, name: FOLDER_A_CHILD.name },
+    ]))
+
+    const { result } = renderHook(
+      ({ socialChannelId }) => useMediaFolderExplorer({ socialChannelId }),
+      { wrapper: wrapper(), initialProps: { socialChannelId: PAGE_A } },
+    )
+
+    expect(result.current.expandedFolderIds.size).toBe(0)
+
+    act(() => {
+      result.current.openFolder(FOLDER_A_CHILD.id)
+    })
+
+    await waitFor(() => {
+      expect(result.current.expandedFolderIds.has(FOLDER_A_ROOT.id)).toBe(true)
+      expect(result.current.expandedFolderIds.has(FOLDER_A_CHILD.id)).toBe(true)
+    })
+  })
+
+  it('resets expandedFolderIds to an empty Set synchronously on Page switch', async () => {
+    mediaFolderApi.children.mockResolvedValue(wrapPaged([FOLDER_A_CHILD]))
+    mediaFolderApi.breadcrumb.mockResolvedValue(wrapBreadcrumb([
+      { id: FOLDER_A_ROOT.id, name: FOLDER_A_ROOT.name },
+    ]))
+
+    const { result, rerender } = renderHook(
+      ({ socialChannelId }) => useMediaFolderExplorer({ socialChannelId }),
+      { wrapper: wrapper(), initialProps: { socialChannelId: PAGE_A } },
+    )
+
+    act(() => {
+      result.current.toggleFolderExpanded(FOLDER_A_ROOT.id)
+    })
+    expect(result.current.expandedFolderIds.has(FOLDER_A_ROOT.id)).toBe(true)
+
+    rerender({ socialChannelId: PAGE_B })
+
+    // Reset xảy ra ngay trong render (giống currentFolderId/selection), không cần waitFor.
+    expect(result.current.expandedFolderIds.size).toBe(0)
   })
 })

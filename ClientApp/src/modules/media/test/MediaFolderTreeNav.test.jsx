@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
@@ -35,7 +35,18 @@ function createQueryClient() {
   })
 }
 
-function TreeWrapper({ onOpen, onToggleExpand, onMoveAsset, onCreateChild, onRename, onDelete, initialExpanded }) {
+function TreeWrapper({
+  socialChannelId,
+  currentFolderId,
+  onOpen,
+  onToggleExpand,
+  onMoveAsset,
+  onCreateChild,
+  onRename,
+  onDelete,
+  canManage,
+  initialExpanded,
+}) {
   const [expandedFolderIds, setExpandedFolderIds] = useState(initialExpanded ?? new Set())
 
   const handleToggleExpand = (folderId) => {
@@ -55,16 +66,16 @@ function TreeWrapper({ onOpen, onToggleExpand, onMoveAsset, onCreateChild, onRen
 
   return (
     <MediaFolderTreeNav
-      socialChannelId={PAGE_A}
-      currentFolderId={null}
+      socialChannelId={socialChannelId}
+      currentFolderId={currentFolderId ?? null}
       expandedFolderIds={expandedFolderIds}
-      onOpen={onOpen || vi.fn()}
+      onOpen={onOpen}
       onToggleExpand={handleToggleExpand}
-      onMoveAsset={onMoveAsset || vi.fn()}
-      onCreateChild={onCreateChild || vi.fn()}
-      onRename={onRename || vi.fn()}
-      onDelete={onDelete || vi.fn()}
-      canManage={true}
+      onMoveAsset={onMoveAsset}
+      onCreateChild={onCreateChild}
+      onRename={onRename}
+      onDelete={onDelete}
+      canManage={canManage}
     />
   )
 }
@@ -73,20 +84,29 @@ function renderTree(props = {}) {
   const queryClient = createQueryClient()
   const user = userEvent.setup()
 
+  const onOpen = props.onOpen ?? vi.fn()
+  const onMoveAsset = props.onMoveAsset ?? vi.fn()
+  const onCreateChild = props.onCreateChild ?? vi.fn()
+  const onRename = props.onRename ?? vi.fn()
+  const onDelete = props.onDelete ?? vi.fn()
+
   const view = render(
     <QueryClientProvider client={queryClient}>
       <TreeWrapper
-        onOpen={props.onOpen}
+        socialChannelId={props.socialChannelId === undefined ? PAGE_A : props.socialChannelId}
+        currentFolderId={props.currentFolderId}
+        onOpen={onOpen}
         onToggleExpand={props.onToggleExpand}
-        onMoveAsset={props.onMoveAsset}
-        onCreateChild={props.onCreateChild}
-        onRename={props.onRename}
-        onDelete={props.onDelete}
+        onMoveAsset={onMoveAsset}
+        onCreateChild={onCreateChild}
+        onRename={onRename}
+        onDelete={onDelete}
+        canManage={props.canManage ?? true}
         initialExpanded={props.expandedFolderIds}
       />
     </QueryClientProvider>,
   )
-  return { user, ...view }
+  return { user, onOpen, onMoveAsset, onCreateChild, onRename, onDelete, ...view }
 }
 
 describe('MediaFolderTreeNav', () => {
@@ -193,17 +213,15 @@ describe('MediaFolderTreeNav', () => {
   })
 
   it('applies drag-over styling on file hover', async () => {
-    const { user } = renderTree()
+    renderTree()
     const row = await screen.findByRole('button', { name: /📁 Campaign A/ })
     const container = row.closest('.media-folder-row')
 
-    // Simulate drag over
-    await user.pointer({ keys: '[MouseLeft>]', target: container })
-    const event = new DragEvent('dragover', { bubbles: true })
-    container.dispatchEvent(event)
+    fireEvent.dragOver(container)
+    expect(container).toHaveClass('is-dragover')
 
-    // The dragOver state should add is-dragover class
-    // (actual class application depends on event handling in component)
+    fireEvent.dragLeave(container)
+    expect(container).not.toHaveClass('is-dragover')
   })
 
   it('calls onMoveAsset when asset is dropped on a folder', async () => {
@@ -211,19 +229,16 @@ describe('MediaFolderTreeNav', () => {
     const row = await screen.findByRole('button', { name: /📁 Campaign A/ })
     const container = row.closest('.media-folder-row')
 
-    const dropEvent = new DragEvent('drop', {
-      bubbles: true,
-      dataTransfer: new DataTransfer(),
-    })
-    dropEvent.dataTransfer.setData('text/media-asset-id', 'asset-123')
+    const dataTransfer = { getData: () => 'asset-123' }
+    fireEvent.drop(container, { dataTransfer })
 
-    container.dispatchEvent(dropEvent)
     expect(onMoveAsset).toHaveBeenCalledWith('asset-123', FOLDER_A_ROOT.id)
   })
 
   it('calls onCreateChild when create button is clicked and does not navigate', async () => {
     const { user, onCreateChild, onOpen } = renderTree()
-    const createButton = await screen.findByRole('button', { name: 'Tạo thư mục con' })
+    await screen.findByRole('button', { name: /📁 Campaign A/ })
+    const createButton = screen.getByTitle('Tạo thư mục con')
 
     await user.click(createButton)
     expect(onCreateChild).toHaveBeenCalledWith(FOLDER_A_ROOT.id)
@@ -232,7 +247,8 @@ describe('MediaFolderTreeNav', () => {
 
   it('calls onRename when rename button is clicked and does not navigate', async () => {
     const { user, onRename, onOpen } = renderTree()
-    const renameButton = await screen.findByRole('button', { name: 'Đổi tên' })
+    await screen.findByRole('button', { name: /📁 Campaign A/ })
+    const renameButton = screen.getByTitle('Đổi tên')
 
     await user.click(renameButton)
     expect(onRename).toHaveBeenCalledWith(FOLDER_A_ROOT)
@@ -241,7 +257,8 @@ describe('MediaFolderTreeNav', () => {
 
   it('calls onDelete when delete button is clicked and does not navigate', async () => {
     const { user, onDelete, onOpen } = renderTree()
-    const deleteButton = await screen.findByRole('button', { name: 'Xóa' })
+    await screen.findByRole('button', { name: /📁 Campaign A/ })
+    const deleteButton = screen.getByTitle('Xóa')
 
     await user.click(deleteButton)
     expect(onDelete).toHaveBeenCalledWith(FOLDER_A_ROOT)
@@ -252,9 +269,9 @@ describe('MediaFolderTreeNav', () => {
     renderTree({ canManage: false })
     await screen.findByRole('button', { name: /📁 Campaign A/ })
 
-    expect(screen.queryByRole('button', { name: 'Tạo thư mục con' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Đổi tên' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Xóa' })).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Tạo thư mục con')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Đổi tên')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Xóa')).not.toBeInTheDocument()
   })
 
   it('shows loading hint while root level is pending', async () => {
@@ -344,18 +361,27 @@ describe('MediaFolderTreeNav', () => {
   })
 
   it('shows "no children" message when a folder has no subfolders', async () => {
+    // FOLDER_A_CHILD báo hasChildren=true (nên có nút mở rộng) nhưng API trả về rỗng —
+    // đúng tình huống thực tế cần hiển thị "Không có thư mục con" (khác FOLDER_A_GRAND,
+    // vốn hasChildren=false nên không có nút mở rộng để bấm ngay từ đầu).
+    mediaFolderApi.children.mockImplementation(({ socialChannelId, parentFolderId }) => {
+      if (socialChannelId === PAGE_A && !parentFolderId) {
+        return Promise.resolve(wrapPaged([FOLDER_A_ROOT]))
+      }
+      if (socialChannelId === PAGE_A && parentFolderId === FOLDER_A_ROOT.id) {
+        return Promise.resolve(wrapPaged([FOLDER_A_CHILD]))
+      }
+      return Promise.resolve(wrapPaged([]))
+    })
+
     const { user } = renderTree()
     await screen.findByRole('button', { name: /📁 Campaign A/ })
 
     await user.click(screen.getByRole('button', { name: /Mở rộng thư mục Campaign A/ }))
     await screen.findByRole('button', { name: /📁 Child A/ })
 
-    // Expand Child A to see its single grandchild
+    // Expand Child A — API trả rỗng dù hasChildren báo true
     await user.click(screen.getByRole('button', { name: /Mở rộng thư mục Child A/ }))
-    await screen.findByRole('button', { name: /📁 Grand A/ })
-
-    // Expand Grand A — it has no children
-    await user.click(screen.getByRole('button', { name: /Mở rộng thư mục Grand A/ }))
     await screen.findByText(/Không có thư mục con/)
   })
 

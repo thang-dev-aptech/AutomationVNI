@@ -349,6 +349,28 @@ export default function MediaPage() {
         </aside>
 
         <div className="media-main">
+          <nav className="media-folder-breadcrumb" aria-label="Đường dẫn thư mục">
+            <button
+              type="button"
+              className={`media-folder-breadcrumb-item${!currentFolderId ? ' is-current' : ''}`}
+              onClick={explorer.openRoot}
+            >
+              Thư mục gốc
+            </button>
+            {explorer.ancestors.map((item, index) => (
+              <span key={item.id}>
+                <span className="media-folder-breadcrumb-sep">/</span>
+                <button
+                  type="button"
+                  className={`media-folder-breadcrumb-item${index === explorer.ancestors.length - 1 ? ' is-current' : ''}`}
+                  onClick={() => explorer.openBreadcrumb(item.id)}
+                >
+                  {item.name}
+                </button>
+              </span>
+            ))}
+          </nav>
+
           <div className="card card-body media-page-filters">
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label htmlFor="media-keyword">Tìm kiếm</label>

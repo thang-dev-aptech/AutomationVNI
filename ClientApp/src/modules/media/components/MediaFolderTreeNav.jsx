@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMediaFolderChildren } from '../hooks/useMediaFolders'
 
 const TREE_PAGE_SIZE = 100
@@ -29,11 +29,17 @@ function TreeNode({
   const isActive = currentFolderId === folder.id
   const [dragOver, setDragOver] = useState(false)
 
+  // Từng mở rộng ít nhất 1 lần thì giữ query "enabled" luôn — thu gọn/mở lại chỉ
+  // ẩn/hiện <ul>, không re-fetch (staleTime:0 sẽ fetch lại mỗi lần enabled bật lại
+  // nếu để enabled đi theo đúng isExpanded).
+  const hasExpandedOnceRef = useRef(isExpanded)
+  if (isExpanded) hasExpandedOnceRef.current = true
+
   const childrenQuery = useMediaFolderChildren({
     socialChannelId,
     parentFolderId: folder.id,
     size: TREE_PAGE_SIZE,
-    enabled: isExpanded,
+    enabled: hasExpandedOnceRef.current,
   })
 
   const children = childrenQuery.data?.items ?? []

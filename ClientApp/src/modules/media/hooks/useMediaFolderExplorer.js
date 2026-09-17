@@ -55,6 +55,25 @@ export function useMediaFolderExplorer({ socialChannelId, pageSize = EXPLORER_PA
   const size = childrenQuery.data?.size ?? pageSize
   const totalPages = Math.max(1, Math.ceil((total || 0) / (size || pageSize)))
   const ancestors = breadcrumbQuery.data?.ancestors ?? []
+  const ancestorIdsKey = ancestors.map((a) => a.id).join(',')
+
+  // Tự mở rộng nhánh cây tới đúng folder đang mở (vd khi nhảy tới từ search box) —
+  // ancestors đã bao gồm chính folder đích (root->target, xem GetBreadcrumbAsync).
+  useEffect(() => {
+    if (!ancestorIdsKey) return
+    setExpandedFolderIds((prev) => {
+      let changed = false
+      const next = new Set(prev)
+      ancestors.forEach((item) => {
+        if (!next.has(item.id)) {
+          next.add(item.id)
+          changed = true
+        }
+      })
+      return changed ? next : prev
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ancestorIdsKey])
 
   const folderOptions = useMemo(() => {
     const map = new Map()
