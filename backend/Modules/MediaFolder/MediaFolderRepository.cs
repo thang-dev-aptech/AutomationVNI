@@ -946,34 +946,42 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         return new BulkBatchMaterialization(responseItems, skippedCount);
     }
 
-    private async Task EnsureSocialChannelAccessAsync(Guid socialChannelId, CancellationToken ct)
+    /// <summary>
+    /// Page actor có quyền ghi MediaFolder: Admin thấy mọi Page chưa xóa; non-Admin chỉ thấy
+    /// Page do chính họ tạo hoặc qua SocialConnection họ sở hữu. Dùng chung cho check quyền
+    /// 1 Page (EnsureSocialChannelAccessAsync) và liệt kê Page dùng được (GetWritablePagesAsync)
+    /// — tách ra 1 chỗ để 2 nơi không lệch nhau (bug đã gặp: picker "Chọn tất cả" từng lấy từ
+    /// GET /api/SocialChannel không lọc quyền, khác với check ở CreateAcrossPagesAsync).
+    /// </summary>
+    private IQueryable<SocialChannelModel> QueryWritableChannels()
     {
+        var channels = Context.Set<SocialChannelModel>().Where(x => !x.IsDeleted);
+
         var roles = UserContext.GetCurrentUserRoles();
         if (roles.Any(role => string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase)))
-        {
-            var adminCanAccess = await Context.Set<SocialChannelModel>()
-                .AnyAsync(x => x.Id == socialChannelId && !x.IsDeleted, ct);
-            if (adminCanAccess) return;
-        }
-        else
-        {
-            var userName = UserContext.GetCurrentUserName()?.Trim();
-            if (!string.IsNullOrWhiteSpace(userName))
-            {
-                var userCanAccess = await Context.Set<SocialChannelModel>()
-                    .AnyAsync(x => x.Id == socialChannelId
-                        && !x.IsDeleted
-                        && (x.CreatedBy == userName
-                            || (x.SocialConnectionId.HasValue
-                                && Context.Set<SocialConnectionModel>().Any(c => c.Id == x.SocialConnectionId.Value
-                                    && !c.IsDeleted
-                                    && c.CreatedBy == userName))), ct);
-                if (userCanAccess) return;
-            }
-        }
+            return channels;
 
-        throw new KeyNotFoundException("Page/Kênh không tồn tại.");
+        var userName = UserContext.GetCurrentUserName()?.Trim();
+        if (string.IsNullOrWhiteSpace(userName))
+            return channels.Where(_ => false);
+
+        return channels.Where(x => x.CreatedBy == userName
+            || (x.SocialConnectionId.HasValue
+                && Context.Set<SocialConnectionModel>().Any(c => c.Id == x.SocialConnectionId.Value
+                    && !c.IsDeleted
+                    && c.CreatedBy == userName)));
     }
+
+    private async Task EnsureSocialChannelAccessAsync(Guid socialChannelId, CancellationToken ct)
+    {
+        var canAccess = await QueryWritableChannels().AnyAsync(x => x.Id == socialChannelId, ct);
+        if (!canAccess)
+            throw new KeyNotFoundException("Page/Kênh không tồn tại.");
+    }
+
+    /// <summary>Danh sách Page actor có quyền tạo MediaFolder — cho picker "Gắn với Page" (MEDIA-06).</summary>
+    public async Task<List<SocialChannelModel>> GetWritablePagesAsync(CancellationToken ct = default) =>
+        await QueryWritableChannels().OrderByDescending(x => x.CreatedAt).ToListAsync(ct);
 
     private async Task<(Dictionary<Guid, int> DirectAssets, Dictionary<Guid, int> ChildFolders)> LoadDirectCountsAsync(
         Guid socialChannelId, List<Guid> folderIds, CancellationToken ct)

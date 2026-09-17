@@ -38,6 +38,7 @@ export const mediaFolderApi = {
       params: { socialChannelId, keyword, index, size, sortBy, sortDirection },
     }),
   filter: (params) => axiosInstance.post('/api/MediaFolder/filter', params),
+  writablePages: () => axiosInstance.get('/api/MediaFolder/writable-pages'),
   bulkCreate: (payload) => axiosInstance.post('/api/MediaFolder/bulk', payload),
   createAcrossPages: (payload) => axiosInstance.post('/api/MediaFolder/create-across-pages', payload),
   create: (payload) => axiosInstance.post('/api/MediaFolder', payload),
@@ -48,6 +49,7 @@ export const mediaFolderApi = {
 export const mediaFolderQueryKeys = {
   all: ['media-folders'],
   tree: ['media-folders', 'tree'],
+  writablePages: ['media-folders', 'writable-pages'],
   children: (socialChannelId, parentFolderId, index = 1, size = 20) => [
     'media-folders',
     'children',

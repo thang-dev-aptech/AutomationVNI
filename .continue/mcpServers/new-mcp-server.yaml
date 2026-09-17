@@ -1,0 +1,6 @@
+name: New MCP server
+version: 0.0.1
+schema: v1
+mcpServers:
+  - name: Local MCP server
+    url: http://127.0.0.1:8080/mcp

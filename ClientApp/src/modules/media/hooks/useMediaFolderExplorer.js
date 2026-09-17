@@ -14,6 +14,7 @@ export function useMediaFolderExplorer({ socialChannelId, pageSize = EXPLORER_PA
   const [currentFolderId, setCurrentFolderId] = useState(null)
   const [selection, setSelection] = useState(DEFAULT_SELECTION)
   const [pageIndex, setPageIndex] = useState(1)
+  const [expandedFolderIds, setExpandedFolderIds] = useState(new Set())
 
   const pageChanged = scopedPageId !== boundPageId
   if (pageChanged) {
@@ -21,6 +22,7 @@ export function useMediaFolderExplorer({ socialChannelId, pageSize = EXPLORER_PA
     setCurrentFolderId(null)
     setSelection(DEFAULT_SELECTION)
     setPageIndex(1)
+    setExpandedFolderIds(new Set())
   }
 
   const activeFolderId = pageChanged ? null : currentFolderId
@@ -104,5 +106,17 @@ export function useMediaFolderExplorer({ socialChannelId, pageSize = EXPLORER_PA
     selectUnassigned: () => setSelection('unassigned'),
     goToPage: (nextIndex) => setPageIndex(nextIndex),
     resetToRoot: openRoot,
+    expandedFolderIds,
+    toggleFolderExpanded: (folderId) => {
+      setExpandedFolderIds((prev) => {
+        const next = new Set(prev)
+        if (next.has(folderId)) {
+          next.delete(folderId)
+        } else {
+          next.add(folderId)
+        }
+        return next
+      })
+    },
   }
 }

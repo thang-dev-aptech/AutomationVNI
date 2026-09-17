@@ -11,6 +11,18 @@ export function useMediaFolderTree() {
   })
 }
 
+/**
+ * Page mà actor có quyền tạo MediaFolder — khác useSocialChannelAll (không lọc quyền, dùng cho
+ * các màn hình chỉ đọc khác). Dùng riêng cho picker "Gắn với Page" trong MediaFolderFormModal để
+ * "Chọn tất cả" không chọn nhầm Page mà actor không sở hữu.
+ */
+export function useWritableMediaFolderPages() {
+  return useQuery({
+    queryKey: mediaFolderQueryKeys.writablePages,
+    queryFn: async () => unwrapApiData(await mediaFolderApi.writablePages()),
+  })
+}
+
 export function useMediaFolderChildren({
   socialChannelId,
   parentFolderId = null,

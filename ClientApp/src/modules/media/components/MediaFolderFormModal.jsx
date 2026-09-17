@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import Modal from '@/shared/components/Modal'
-import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
+import { useWritableMediaFolderPages } from '../hooks/useMediaFolders'
 import MediaFolderPickerTree from './MediaFolderPickerTree'
 
 /**
@@ -28,7 +28,9 @@ export default function MediaFolderFormModal({
   const [socialChannelId, setSocialChannelId] = useState('')
   const [selectedPageIds, setSelectedPageIds] = useState(() => new Set())
 
-  const { data: channels = [] } = useSocialChannelAll()
+  // Chỉ Page mà actor có quyền tạo MediaFolder — khác GET /api/SocialChannel (không lọc quyền),
+  // để "Chọn tất cả" không chọn nhầm Page mà actor không sở hữu (silent-fail khi submit).
+  const { data: channels = [] } = useWritableMediaFolderPages()
 
   useEffect(() => {
     if (!open) return

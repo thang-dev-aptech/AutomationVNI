@@ -117,6 +117,20 @@ public class MediaFolderController
         return Ok(ApiResponse.Ok(result, $"Đã tạo {result.TotalSucceeded}/{result.TotalRequested} thư mục"));
     }
 
+    /// <summary>
+    /// Danh sách Page actor có quyền tạo MediaFolder (Admin: tất cả; non-Admin: Page do họ tạo
+    /// hoặc qua SocialConnection họ sở hữu). Dùng cho picker "Gắn với Page" khi tạo mới (MEDIA-06)
+    /// — khác GET /api/SocialChannel (không lọc quyền, dùng cho các màn hình chỉ đọc khác), để
+    /// "Chọn tất cả" không chọn nhầm Page mà actor không có quyền tạo thư mục.
+    /// </summary>
+    [HttpGet("writable-pages")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> GetWritablePages(CancellationToken ct)
+    {
+        var channels = await _repo.GetWritablePagesAsync(ct);
+        return Ok(ApiResponse.Ok(channels.Select(Backend.Modules.SocialChannel.SocialChannelRepository.ToResponse).ToList()));
+    }
+
     protected override async Task<MediaFolderModel> CreateEntityAsync(CreateMediaFolderRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Name)) throw new ArgumentException("Tên thư mục không được để trống");

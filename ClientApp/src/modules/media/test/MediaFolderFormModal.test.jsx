@@ -4,9 +4,13 @@ import { describe, expect, it, vi } from 'vitest'
 import MediaFolderFormModal from '../components/MediaFolderFormModal'
 import { CHANNELS, PAGE_A, PAGE_B } from './mediaFolderExplorerFixtures'
 
-vi.mock('@/modules/social-channels/hooks/useSocialChannels', () => ({
-  useSocialChannelAll: () => ({ data: CHANNELS }),
-}))
+vi.mock('../hooks/useMediaFolders', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    useWritableMediaFolderPages: () => ({ data: CHANNELS }),
+  }
+})
 
 vi.mock('../components/MediaFolderPickerTree', () => ({
   default: (props) => <div data-testid="picker-mock" data-social-channel-id={props.socialChannelId ?? ''} />,

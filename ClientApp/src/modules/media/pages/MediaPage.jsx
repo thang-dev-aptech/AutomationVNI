@@ -245,7 +245,18 @@ export default function MediaPage() {
           items: payload.items,
         })
         if (result.totalFailed > 0) {
-          toast.warning(`Đã tạo ${result.totalSucceeded}/${result.totalRequested} thư mục — ${result.totalFailed} Page lỗi`)
+          // Không chỉ báo số lượng — nêu rõ Page nào lỗi để user biết cần bỏ chọn Page nào
+          // (vd Page họ không sở hữu, bị "Chọn tất cả" gộp nhầm vào).
+          const nameById = new Map(payload.items.map((item) => [item.socialChannelId, item.name]))
+          const failedItems = result.results.filter((item) => !item.success)
+          const preview = failedItems
+            .slice(0, 5)
+            .map((item) => nameById.get(item.socialChannelId) ?? item.socialChannelId)
+            .join(', ')
+          const more = failedItems.length > 5 ? ` và ${failedItems.length - 5} Page khác` : ''
+          toast.warning(
+            `Đã tạo ${result.totalSucceeded}/${result.totalRequested} thư mục. Lỗi ở Page: ${preview}${more}`,
+          )
         } else {
           toast.success(`Đã tạo ${result.totalSucceeded} thư mục`)
         }
