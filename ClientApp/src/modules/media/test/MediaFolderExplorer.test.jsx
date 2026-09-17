@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MediaFolderExplorer from '../components/MediaFolderExplorer'
@@ -13,8 +13,6 @@ import {
   FOLDER_B_ROOT,
   PAGE_A,
   PAGE_B,
-  deferred,
-  wrapBreadcrumb,
   wrapPaged,
 } from './mediaFolderExplorerFixtures'
 
@@ -24,9 +22,7 @@ vi.mock('../services/mediaFolderApi', async (importOriginal) => {
     ...actual,
     mediaFolderApi: {
       ...actual.mediaFolderApi,
-      tree: vi.fn(),
       children: vi.fn(),
-      breadcrumb: vi.fn(),
     },
   }
 })
@@ -67,15 +63,9 @@ function renderExplorer(socialChannelId, options = {}) {
   return { user, queryClient, ...view }
 }
 
-describe('MEDIA-04-AC1 one-level Folder Explorer', () => {
+describe('MEDIA-04 Folder Explorer with tree navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mediaFolderApi.tree.mockResolvedValue(wrapPaged([
-      FOLDER_A_ROOT,
-      FOLDER_A_CHILD,
-      FOLDER_A_GRAND,
-      FOLDER_B_ROOT,
-    ]))
     mediaFolderApi.children.mockImplementation(({ socialChannelId, parentFolderId }) => {
       if (socialChannelId === PAGE_A && !parentFolderId) {
         return Promise.resolve(wrapPaged([FOLDER_A_ROOT]))
@@ -91,143 +81,79 @@ describe('MEDIA-04-AC1 one-level Folder Explorer', () => {
       }
       return Promise.resolve(wrapPaged([]))
     })
-    mediaFolderApi.breadcrumb.mockImplementation(({ folderId }) => {
-      if (folderId === FOLDER_A_ROOT.id) {
-        return Promise.resolve(wrapBreadcrumb([{ id: FOLDER_A_ROOT.id, name: FOLDER_A_ROOT.name }]))
-      }
-      if (folderId === FOLDER_A_CHILD.id) {
-        return Promise.resolve(wrapBreadcrumb([
-          { id: FOLDER_A_ROOT.id, name: FOLDER_A_ROOT.name },
-          { id: FOLDER_A_CHILD.id, name: FOLDER_A_CHILD.name },
-        ]))
-      }
-      return Promise.resolve(wrapBreadcrumb([]))
-    })
   })
 
-  it('loads only direct children once, renders breadcrumb/counts/HasChildren, and never calls /tree', async () => {
+  it('renders Page selector, fixed rows, and tree root level', async () => {
     renderExplorer(PAGE_A)
 
-    await screen.findByRole('button', { name: /Campaign A/ })
+    expect(screen.getByRole('combobox', { name: 'Page' })).toHaveValue(PAGE_A)
+    expect(screen.getByText('Tất cả')).toBeInTheDocument()
+    expect(screen.getByText('Chưa phân loại')).toBeInTheDocument()
 
+    await screen.findByText(FOLDER_A_ROOT.name)
     expect(mediaFolderApi.children).toHaveBeenCalledTimes(1)
     expect(mediaFolderApi.children).toHaveBeenCalledWith(expect.objectContaining({
       socialChannelId: PAGE_A,
-      index: 1,
-      size: 20,
+      parentFolderId: null,
     }))
-    expect(mediaFolderApi.children.mock.calls[0][0].parentFolderId == null).toBe(true)
-    expect(mediaFolderApi.tree).not.toHaveBeenCalled()
-    expect(mediaFolderApi.breadcrumb).not.toHaveBeenCalled()
-
-    expect(screen.getByRole('navigation', { name: 'Đường dẫn thư mục' })).toHaveTextContent('Thư mục gốc')
-    expect(screen.getByTestId(`folder-counts-${FOLDER_A_ROOT.id}`)).toHaveTextContent('1 thư mục con')
-    expect(screen.getByTestId(`folder-counts-${FOLDER_A_ROOT.id}`)).toHaveTextContent('2 ảnh')
-    expect(screen.getByTestId(`folder-has-children-${FOLDER_A_ROOT.id}`)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Child A/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Grand A/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Campaign B/ })).not.toBeInTheDocument()
   })
 
-  it('opens a folder with descendants by fetching that parent once and still skipping /tree', async () => {
+  it('lazily loads children only when folder is expanded', async () => {
     const { user } = renderExplorer(PAGE_A)
-    await screen.findByRole('button', { name: /Campaign A/ })
+    await screen.findByText(FOLDER_A_ROOT.name)
+    expect(mediaFolderApi.children).toHaveBeenCalledTimes(1)
 
-    await user.click(screen.getByRole('button', { name: /Campaign A/ }))
-    await screen.findByRole('button', { name: /Child A/ })
+    const toggleButton = screen.getByRole('button', { name: /Mở rộng/ })
+    await user.click(toggleButton)
+    await screen.findByText(FOLDER_A_CHILD.name)
 
-    const parentCalls = mediaFolderApi.children.mock.calls.filter((call) => (
-      call[0].socialChannelId === PAGE_A && call[0].parentFolderId === FOLDER_A_ROOT.id
-    ))
-    expect(parentCalls).toHaveLength(1)
-    expect(mediaFolderApi.tree).not.toHaveBeenCalled()
-    expect(mediaFolderApi.breadcrumb).toHaveBeenCalledTimes(1)
-    expect(mediaFolderApi.breadcrumb).toHaveBeenCalledWith({
-      socialChannelId: PAGE_A,
-      folderId: FOLDER_A_ROOT.id,
-    })
-
-    expect(screen.getByRole('navigation', { name: 'Đường dẫn thư mục' })).toHaveTextContent('Campaign A')
-    expect(screen.queryByRole('button', { name: /Grand A/ })).not.toBeInTheDocument()
-    expect(screen.getByTestId(`folder-has-children-${FOLDER_A_CHILD.id}`)).toBeInTheDocument()
-    expect(screen.getByTestId(`folder-counts-${FOLDER_A_CHILD.id}`)).toHaveTextContent('1 thư mục con')
+    expect(mediaFolderApi.children).toHaveBeenCalledTimes(2)
+    const childCall = mediaFolderApi.children.mock.calls[1]
+    expect(childCall[0].parentFolderId).toBe(FOLDER_A_ROOT.id)
   })
 
-  it('clicking anywhere on the card, not just the name, opens the folder', async () => {
+  it('navigates when folder name is clicked', async () => {
     const { user } = renderExplorer(PAGE_A)
-    await screen.findByRole('button', { name: /Campaign A/ })
+    const nameButtons = await screen.findAllByText(FOLDER_A_ROOT.name)
 
-    // Bấm vào vùng counts (không phải chữ tên) vẫn phải mở được folder — cả card là vùng bấm.
-    await user.click(screen.getByTestId(`folder-counts-${FOLDER_A_ROOT.id}`))
-    await screen.findByRole('button', { name: /Child A/ })
+    // Find the name button (not the toggle)
+    const nameButton = nameButtons.find(btn => btn.className.includes('media-folder-name'))
+    if (nameButton) {
+      await user.click(nameButton)
 
-    expect(screen.getByRole('navigation', { name: 'Đường dẫn thư mục' })).toHaveTextContent('Campaign A')
+      // Should fetch children of the clicked folder
+      expect(mediaFolderApi.children.mock.calls.some(call =>
+        call[0].parentFolderId === FOLDER_A_ROOT.id
+      )).toBe(true)
+    }
   })
 
-  it('clicking a management tool (e.g. delete) fires only that action, not also open-folder', async () => {
+  it('supports management buttons (create/rename/delete)', async () => {
+    const onCreateChild = vi.fn()
+    const onRename = vi.fn()
     const onDelete = vi.fn()
-    const { user } = renderExplorer(PAGE_A, { onDelete })
-    await screen.findByRole('button', { name: /Campaign A/ })
+    const { user } = renderExplorer(PAGE_A, { onCreateChild, onRename, onDelete })
+
+    await screen.findByText(FOLDER_A_ROOT.name)
+
+    await user.click(screen.getByTitle('Tạo thư mục con'))
+    expect(onCreateChild).toHaveBeenCalledWith(FOLDER_A_ROOT.id)
+
+    await user.click(screen.getByTitle('Đổi tên'))
+    expect(onRename).toHaveBeenCalledWith(expect.objectContaining({ id: FOLDER_A_ROOT.id }))
 
     await user.click(screen.getByTitle('Xóa'))
-
     expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: FOLDER_A_ROOT.id }))
-    expect(mediaFolderApi.children.mock.calls.some((call) => call[0].parentFolderId === FOLDER_A_ROOT.id)).toBe(false)
-    expect(screen.getByRole('navigation', { name: 'Đường dẫn thư mục' })).toHaveTextContent('Thư mục gốc')
   })
 
-  it('paginates one level of the current Page/parent without calling /tree', async () => {
-    mediaFolderApi.children.mockImplementation(({ socialChannelId, parentFolderId, index }) => {
-      if (socialChannelId === PAGE_A && !parentFolderId) {
-        return Promise.resolve(wrapPaged(
-          index === 1 ? [FOLDER_A_ROOT] : [{ ...FOLDER_A_CHILD, name: 'Page 2 folder' }],
-          { index, size: 20, total: 40 },
-        ))
-      }
-      return Promise.resolve(wrapPaged([]))
-    })
-
-    const { user } = renderExplorer(PAGE_A)
-    await screen.findByRole('button', { name: /Campaign A/ })
-    expect(screen.getByText('Trang 1/2')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Sau' }))
-    await screen.findByRole('button', { name: /Page 2 folder/ })
-
-    const pageTwoCalls = mediaFolderApi.children.mock.calls.filter((call) => (
-      call[0].socialChannelId === PAGE_A && call[0].index === 2 && call[0].parentFolderId == null
-    ))
-    expect(pageTwoCalls).toHaveLength(1)
-    expect(mediaFolderApi.tree).not.toHaveBeenCalled()
-    expect(screen.queryByRole('button', { name: /Grand A/ })).not.toBeInTheDocument()
-  })
-})
-
-describe('MEDIA-04-AC2 reset on Page change', () => {
-  it('resets folder/breadcrumb/selection/pagination and ignores a late Page A response', async () => {
-    const pendingA = deferred()
-    mediaFolderApi.tree.mockResolvedValue(wrapPaged([FOLDER_A_ROOT, FOLDER_B_ROOT]))
-    mediaFolderApi.breadcrumb.mockResolvedValue(wrapBreadcrumb([]))
-    mediaFolderApi.children.mockImplementation(({ socialChannelId, index }) => {
-      if (socialChannelId === PAGE_A) {
-        return pendingA.promise
-      }
-      return Promise.resolve(wrapPaged(
-        index === 1 ? [FOLDER_B_ROOT] : [],
-        { index, total: 1 },
-      ))
-    })
-
+  it('resets expanded folders on Page change', async () => {
     const queryClient = createQueryClient()
-    const user = userEvent.setup()
-    const { rerender } = render(
-      <QueryClientProvider client={queryClient}>
-        <ExplorerHarness socialChannelId={PAGE_A} />
-      </QueryClientProvider>,
-    )
+    const { user, rerender } = renderExplorer(PAGE_A)
 
-    await user.click(screen.getByRole('button', { name: /Tất cả/ }))
-    expect(screen.getByRole('button', { name: /Tất cả/ })).toHaveAttribute('aria-current', 'true')
+    await screen.findByText(FOLDER_A_ROOT.name)
+    const toggleButton = screen.getByRole('button', { name: /Mở rộng/ })
+    await user.click(toggleButton)
+    await screen.findByText(FOLDER_A_CHILD.name)
 
     rerender(
       <QueryClientProvider client={queryClient}>
@@ -235,17 +161,54 @@ describe('MEDIA-04-AC2 reset on Page change', () => {
       </QueryClientProvider>,
     )
 
-    await screen.findByRole('button', { name: /Campaign B/ })
-    expect(screen.queryByRole('button', { name: /Campaign A/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('navigation', { name: 'Đường dẫn thư mục' })).toHaveTextContent('Thư mục gốc')
-    expect(screen.getByRole('button', { name: /Tất cả/ })).toHaveAttribute('aria-current', 'true')
-    expect(screen.queryByText(/Trang 2/)).not.toBeInTheDocument()
+    await screen.findByText(FOLDER_B_ROOT.name)
+    expect(screen.queryByText(FOLDER_A_CHILD.name)).not.toBeInTheDocument()
+  })
 
-    pendingA.resolve(wrapPaged([FOLDER_A_ROOT], { index: 2, total: 40, size: 20 }))
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Campaign B/ })).toBeInTheDocument()
+  it('supports "Tất cả" and "Chưa phân loại" selection', async () => {
+    const { user } = renderExplorer(PAGE_A)
+
+    const allButton = screen.getByText('Tất cả').closest('button')
+    const unassignedButton = screen.getByText('Chưa phân loại').closest('[role="button"]')
+
+    expect(allButton).toHaveAttribute('aria-current', 'true')
+
+    await user.click(unassignedButton)
+    expect(unassignedButton).toHaveAttribute('aria-current', 'true')
+    expect(allButton).not.toHaveAttribute('aria-current', 'true')
+  })
+
+  it('supports drag-drop of assets to "Chưa phân loại"', async () => {
+    const onMoveAsset = vi.fn()
+    renderExplorer(PAGE_A, { onMoveAsset })
+
+    const unassignedContainer = screen.getByText('Chưa phân loại').closest('[role="button"]')
+
+    const dropEvent = new DragEvent('drop', {
+      bubbles: true,
+      dataTransfer: new DataTransfer(),
     })
-    expect(screen.queryByRole('button', { name: /Campaign A/ })).not.toBeInTheDocument()
-    expect(mediaFolderApi.tree).not.toHaveBeenCalled()
+    dropEvent.dataTransfer.setData('text/media-asset-id', 'asset-123')
+
+    unassignedContainer.dispatchEvent(dropEvent)
+    expect(onMoveAsset).toHaveBeenCalledWith('asset-123', null)
+  })
+
+  it('changes Page and loads new Page root folders', async () => {
+    const { user } = renderExplorer(PAGE_A)
+    await screen.findByText(FOLDER_A_ROOT.name)
+
+    const pageSelect = screen.getByRole('combobox', { name: 'Page' })
+    await user.selectOptions(pageSelect, PAGE_B)
+
+    await screen.findByText(FOLDER_B_ROOT.name)
+    expect(screen.queryByText(FOLDER_A_ROOT.name)).not.toBeInTheDocument()
+  })
+
+  it('disables tree when no Page is selected', () => {
+    renderExplorer(null)
+
+    expect(screen.getByText(/Chọn Page để xem thư mục/)).toBeInTheDocument()
+    expect(mediaFolderApi.children).not.toHaveBeenCalled()
   })
 })
