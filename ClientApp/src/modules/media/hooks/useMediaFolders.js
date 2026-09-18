@@ -92,6 +92,22 @@ export function useMediaFolderSearch({
   })
 }
 
+export function useMediaFolderGlobalSearch({
+  keyword,
+  index = 1,
+  size = 20,
+  enabled = true,
+} = {}) {
+  const trimmed = keyword?.trim() ?? ''
+  return useQuery({
+    queryKey: mediaFolderQueryKeys.searchGlobal(trimmed, index, size),
+    queryFn: async () =>
+      unwrapApiData(await mediaFolderApi.searchGlobal({ keyword: trimmed, index, size })),
+    enabled: enabled && Boolean(trimmed),
+    retry: false,
+  })
+}
+
 /**
  * MEDIA-03: tạo hierarchy folder (clientRef/parentRef) trong MỘT Page, nguyên tử cả batch.
  * Preview (validateOnly) và submit dùng chung mutation; chỉ invalidate cache khi submit

@@ -96,9 +96,26 @@
   background: var(--color-surface-muted);
 }
 
+.media-folder-search-path-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+}
+
 .media-folder-search-path {
   font-size: 0.72rem;
   color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-folder-search-page-name {
+  font-size: 0.68rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  opacity: 0.8;
 }
 
 .media-folder-search-recent {

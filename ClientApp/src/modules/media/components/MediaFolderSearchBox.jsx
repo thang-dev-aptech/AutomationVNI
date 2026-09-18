@@ -1,57 +1,42 @@
 import { useState } from 'react'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
-import { useMediaFolderSearch } from '../hooks/useMediaFolders'
+import { useMediaFolderGlobalSearch } from '../hooks/useMediaFolders'
 
 const RECENT_LIMIT = 5
 
 /**
- * MEDIA-05: tìm thư mục theo tên trong Page hiện tại, hiển thị full path để phân biệt
- * tên trùng; chọn kết quả mở đúng folder qua onOpenFolder. Quick access: danh sách vài
- * folder vừa mở gần nhất trong phiên hiện tại (không có backend endpoint riêng cho việc
- * này, và business text để "UX được thống nhất" — giữ tối giản, chỉ lưu trong bộ nhớ).
- *
- * `boundPageId`/`pageChanged` theo đúng pattern useMediaFolderExplorer: đổi Page xoá
- * keyword ngay trong render hiện tại (không phải effect), nên response cũ đến muộn của
- * Page trước sẽ rơi vào query key khác và không bao giờ được set lại lên UI (MEDIA-05-AC2).
+ * Global folder search: tìm thư mục theo tên trên tất cả các Page mà actor có quyền,
+ * hiển thị Page name + full path để phân biệt folder trùng tên giữa các Page. Chọn
+ * kết quả gọi onOpenFolder với cả folderId lẫn socialChannelId để điều hướng + đặt Page.
+ * Quick access: danh sách vài folder vừa mở gần nhất (lưu trong bộ nhớ, không endpoint).
  */
-export default function MediaFolderSearchBox({ socialChannelId, onOpenFolder }) {
-  const [boundPageId, setBoundPageId] = useState(socialChannelId)
+export default function MediaFolderSearchBox({ onOpenFolder }) {
   const [keyword, setKeyword] = useState('')
   const [recent, setRecent] = useState([])
 
-  const pageChanged = socialChannelId !== boundPageId
-  if (pageChanged) {
-    setBoundPageId(socialChannelId)
-    setKeyword('')
-    setRecent([])
-  }
-  const activeKeyword = pageChanged ? '' : keyword
-
-  const searchQuery = useMediaFolderSearch({ socialChannelId, keyword: activeKeyword })
+  const searchQuery = useMediaFolderGlobalSearch({ keyword })
   const results = searchQuery.data?.items ?? []
 
   const handleOpen = (folder) => {
-    onOpenFolder?.(folder.id)
+    onOpenFolder?.(folder.id, folder.socialChannelId)
     setKeyword('')
     setRecent((prev) => [
-      { id: folder.id, name: folder.name },
+      { id: folder.id, name: folder.name, pageName: folder.pageName, socialChannelId: folder.socialChannelId },
       ...prev.filter((r) => r.id !== folder.id),
     ].slice(0, RECENT_LIMIT))
   }
-
-  if (!socialChannelId) return null
 
   return (
     <div className="media-folder-search">
       <input
         type="search"
-        value={activeKeyword}
-        placeholder="Tìm thư mục trong Page..."
-        aria-label="Tìm thư mục trong Page"
+        value={keyword}
+        placeholder="Tìm thư mục..."
+        aria-label="Tìm thư mục"
         onChange={(event) => setKeyword(event.target.value)}
       />
 
-      {activeKeyword && (
+      {keyword && (
         <div className="media-folder-search-results">
           {searchQuery.isLoading && <p className="media-folder-picker-hint">Đang tìm...</p>}
           {searchQuery.isError && (
@@ -68,13 +53,16 @@ export default function MediaFolderSearchBox({ socialChannelId, onOpenFolder }) 
               onClick={() => handleOpen(folder)}
             >
               <span className="media-folder-name">📁 {folder.name}</span>
-              <span className="media-folder-search-path">{folder.fullPath}</span>
+              <div className="media-folder-search-path-wrapper">
+                <span className="media-folder-search-path">{folder.fullPath}</span>
+                {folder.pageName && <span className="media-folder-search-page-name">{folder.pageName}</span>}
+              </div>
             </button>
           ))}
         </div>
       )}
 
-      {!activeKeyword && recent.length > 0 && (
+      {!keyword && recent.length > 0 && (
         <div className="media-folder-search-recent">
           <span className="media-folder-search-recent-label">Truy cập gần đây</span>
           {recent.map((folder) => (
@@ -84,7 +72,7 @@ export default function MediaFolderSearchBox({ socialChannelId, onOpenFolder }) 
               className="badge media-folder-search-recent-chip"
               onClick={() => handleOpen(folder)}
             >
-              📁 {folder.name}
+              📁 {folder.name} {folder.pageName && `(${folder.pageName})`}
             </button>
           ))}
         </div>

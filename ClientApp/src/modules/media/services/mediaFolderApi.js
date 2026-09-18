@@ -41,6 +41,16 @@ export const mediaFolderApi = {
     axiosInstance.get('/api/MediaFolder/search', {
       params: { socialChannelId, keyword, index, size, sortBy, sortDirection },
     }),
+  searchGlobal: ({
+    keyword,
+    index = 1,
+    size = 20,
+    sortBy = 'name',
+    sortDirection = 'asc',
+  }) =>
+    axiosInstance.get('/api/MediaFolder/search-global', {
+      params: { keyword, index, size, sortBy, sortDirection },
+    }),
   filter: (params) => axiosInstance.post('/api/MediaFolder/filter', params),
   writablePages: () => axiosInstance.get('/api/MediaFolder/writable-pages'),
   bulkCreate: (payload) => axiosInstance.post('/api/MediaFolder/bulk', payload),
@@ -78,6 +88,13 @@ export const mediaFolderQueryKeys = {
     'media-folders',
     'search',
     socialChannelId ?? 'none',
+    keyword ?? '',
+    index,
+    size,
+  ],
+  searchGlobal: (keyword, index = 1, size = 20) => [
+    'media-folders',
+    'search-global',
     keyword ?? '',
     index,
     size,

@@ -332,8 +332,12 @@ export default function MediaPage() {
         <aside className="card card-body media-sidebar">
           <h3 className="media-sidebar-title">Thư mục</h3>
           <MediaFolderSearchBox
-            socialChannelId={socialChannelId || null}
-            onOpenFolder={explorer.openFolder}
+            onOpenFolder={(folderId, pageId) => {
+              if (pageId && pageId !== socialChannelId) {
+                setSocialChannelId(pageId)
+              }
+              explorer.openFolder(folderId)
+            }}
           />
           <MediaFolderExplorer
             channels={channels}
