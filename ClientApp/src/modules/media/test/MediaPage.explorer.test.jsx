@@ -5,12 +5,13 @@ import MediaPage from '../pages/MediaPage'
 import { mediaFolderApi } from '../services/mediaFolderApi'
 import {
   CHANNELS,
-  FOLDER_A_GRAND,
   FOLDER_A_ROOT,
   FOLDER_B_ROOT,
-  PAGE_A,
   wrapPaged,
 } from './mediaFolderExplorerFixtures'
+
+const FOLDER_A_ROOT_WITH_PAGE = { ...FOLDER_A_ROOT, pageName: 'Page A' }
+const FOLDER_B_ROOT_WITH_PAGE = { ...FOLDER_B_ROOT, pageName: 'Page B' }
 
 vi.mock('@/shared/hooks/usePermissions', () => ({
   usePermissions: () => ({ canManageMedia: true }),
@@ -25,7 +26,7 @@ vi.mock('@/modules/categories/hooks/useCategories', () => ({
 }))
 
 vi.mock('@/shared/stores/toastStore', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }))
 
 vi.mock('@/shared/utils/confirmAction', () => ({
@@ -36,6 +37,7 @@ vi.mock('@/shared/utils/confirmAction', () => ({
 vi.mock('../components/AiBackgroundPromptModal', () => ({ default: () => null }))
 vi.mock('../components/MediaUploadForm', () => ({ default: () => null }))
 vi.mock('../components/MediaFolderFormModal', () => ({ default: () => null }))
+vi.mock('../components/MoveMediaFolderModal', () => ({ default: () => null }))
 vi.mock('../components/MediaGrid', () => ({ default: () => null }))
 
 vi.mock('../hooks/useMediaAssets', () => {
@@ -62,6 +64,7 @@ vi.mock('../services/mediaFolderApi', async (importOriginal) => {
     mediaFolderApi: {
       ...actual.mediaFolderApi,
       tree: vi.fn(),
+      pageRoots: vi.fn(),
       children: vi.fn(),
       breadcrumb: vi.fn(),
       create: vi.fn(),
@@ -71,15 +74,17 @@ vi.mock('../services/mediaFolderApi', async (importOriginal) => {
   }
 })
 
-describe('MEDIA-04 MediaPage explorer flow', () => {
+describe('MEDIA-04 MediaPage cross-Page browser flow', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mediaFolderApi.tree.mockResolvedValue(wrapPaged([FOLDER_A_ROOT, FOLDER_A_GRAND, FOLDER_B_ROOT]))
-    mediaFolderApi.children.mockResolvedValue(wrapPaged([FOLDER_A_ROOT]))
+    mediaFolderApi.pageRoots.mockResolvedValue(
+      wrapPaged([FOLDER_A_ROOT_WITH_PAGE, FOLDER_B_ROOT_WITH_PAGE]),
+    )
+    mediaFolderApi.children.mockResolvedValue(wrapPaged([]))
     mediaFolderApi.breadcrumb.mockResolvedValue({ data: { success: true, data: { ancestors: [] } } })
   })
 
-  it('MEDIA-04-AC1: Media Page explorer does not call /api/MediaFolder/tree', async () => {
+  it('MEDIA-04-AC1: top level loads page-roots (one card per Page), never /api/MediaFolder/tree', async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
     })
@@ -89,18 +94,16 @@ describe('MEDIA-04 MediaPage explorer flow', () => {
       </QueryClientProvider>,
     )
 
-    // Regex neo vào icon 📁 để chỉ khớp nút tên thư mục, không khớp nút mở rộng
-    // (aria-label của nút mở rộng cũng chứa tên folder, vd "Mở rộng thư mục Campaign A").
-    await screen.findByRole('button', { name: /📁.*Campaign A/ })
-    // 2 lời gọi hợp lệ ở mức root: useMediaFolderExplorer tự gọi children (phục vụ
-    // folderOptions cho form upload) song song với MediaFolderTreeNav tự tải root eager
-    // cho cây sidebar — không phải trùng lặp, là 2 nhu cầu khác nhau.
-    expect(mediaFolderApi.children).toHaveBeenCalledTimes(2)
-    expect(mediaFolderApi.children).toHaveBeenCalledWith(expect.objectContaining({
-      socialChannelId: PAGE_A,
-    }))
+    await screen.findByText('Campaign A')
+    expect(screen.getByText('Campaign B')).toBeInTheDocument()
+    expect(screen.getByText('Page A')).toBeInTheDocument()
+    expect(screen.getByText('Page B')).toBeInTheDocument()
+
+    expect(mediaFolderApi.pageRoots).toHaveBeenCalled()
     expect(mediaFolderApi.tree).not.toHaveBeenCalled()
-    expect(screen.queryByRole('button', { name: /Grand A/ })).not.toBeInTheDocument()
+    // Top level shows no folder is "open" yet — children/breadcrumb only fire once a folder is entered.
+    expect(mediaFolderApi.children).not.toHaveBeenCalled()
+    expect(mediaFolderApi.breadcrumb).not.toHaveBeenCalled()
     expect(screen.getByRole('navigation', { name: 'Đường dẫn thư mục' })).toBeInTheDocument()
   })
 })

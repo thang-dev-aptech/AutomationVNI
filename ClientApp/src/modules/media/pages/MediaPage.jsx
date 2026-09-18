@@ -369,7 +369,7 @@ export default function MediaPage() {
     try {
       await deleteFolderMutation.mutateAsync(folder.id)
       toast.success('Đã xóa thư mục')
-      if (selection === folder.id || currentFolderId === folder.id) explorer.resetToRoot()
+      if (selection === folder.id || currentFolderId === folder.id) browser.openRoot()
     } catch (folderError) {
       toast.error(getErrorMessage(folderError))
     }
@@ -420,7 +420,9 @@ export default function MediaPage() {
       <div className="media-main-content">
         <MediaFolderSearchBox
           onOpenFolder={(folderId, pageId) => {
-            browser.openFolder(folderId)
+            // useMediaBrowser.openFolder cần cả socialChannelId để suy ra Page —
+            // search box chỉ trả 2 tham số rời, phải tự dựng lại thành object.
+            browser.openFolder({ id: folderId, socialChannelId: pageId })
           }}
         />
 
@@ -521,33 +523,6 @@ export default function MediaPage() {
           />
         </div>
       </div>
-
-      <MediaUploadForm
-        open={uploadOpen}
-        onClose={() => setUploadOpen(false)}
-        onSubmit={handleCreate}
-        isSubmitting={createMutation.isPending || uploadMutation.isPending || uploadBatchMutation.isPending}
-        errorMessage={formError}
-        folders={folders}
-        categories={categories}
-        defaultFolderId={currentFolderId}
-      />
-
-      <MediaFolderFormModal
-        open={Boolean(folderModal)}
-        editing={folderModal?.editing ?? null}
-        defaultParentId={folderModal?.defaultParentId ?? null}
-        defaultSocialChannelId={derivedPageId || null}
-        onClose={() => setFolderModal(null)}
-        onSubmit={handleFolderSubmit}
-        isSubmitting={createFolderMutation.isPending || createFolderAcrossPagesMutation.isPending || updateFolderMutation.isPending}
-        errorMessage={formError}
-      />
-
-      <AiBackgroundPromptModal
-        open={aiPromptOpen}
-        onClose={() => setAiPromptOpen(false)}
-      />
 
       {folderContextMenu && (
         <ContextMenu
@@ -817,6 +792,9 @@ export default function MediaPage() {
         onSubmit={handleCreate}
         isSubmitting={createMutation.isPending || uploadMutation.isPending || uploadBatchMutation.isPending}
         errorMessage={formError}
+        folders={browser.folderOptions}
+        categories={categories}
+        defaultFolderId={currentFolderId}
       />
 
       <AiBackgroundPromptModal

@@ -156,7 +156,10 @@ export function useMediaBrowser({ pageSize = BROWSER_PAGE_SIZE } = {}) {
     refetch,
     openFolder,
     openRoot,
-    openBreadcrumb: (folder) => openFolder(folder),
+    // Ancestor items từ breadcrumb chỉ có {id, name} (MediaFolderBreadcrumbItem), không có
+    // socialChannelId — nhưng breadcrumb luôn nằm trong CÙNG 1 Page với folder đang mở, nên
+    // dùng lại derivedPageId hiện tại thay vì đọc từ chính ancestor item.
+    openBreadcrumb: (ancestor) => openFolder({ id: ancestor.id, socialChannelId: derivedPageId }),
     selectAll: () => setSelection('all'),
     selectUnassigned: () => setSelection('unassigned'),
     goToPage: (nextIndex) => setPageIndex(nextIndex),

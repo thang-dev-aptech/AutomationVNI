@@ -9,7 +9,7 @@ export default function MediaFolderCard({
   canManage = false,
 }) {
   const displayName = folder.name
-  const subtitle = folder.socialChannelName || (folder.socialChannelId ? `Page ${folder.socialChannelId}` : '')
+  const subtitle = folder.pageName || (folder.socialChannelId ? `Page ${folder.socialChannelId}` : '')
 
   const handleDragOver = (event) => {
     event.preventDefault()

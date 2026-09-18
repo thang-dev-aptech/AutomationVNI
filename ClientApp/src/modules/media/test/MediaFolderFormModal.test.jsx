@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MediaFolderFormModal from '../components/MediaFolderFormModal'
+import { useWritableMediaFolderPages } from '../hooks/useMediaFolders'
 import { CHANNELS, PAGE_A } from './mediaFolderExplorerFixtures'
 
 vi.mock('../hooks/useMediaFolders', async (importOriginal) => {
@@ -31,8 +32,6 @@ function renderModal(props = {}) {
 }
 
 describe('MediaFolderFormModal three modes', () => {
-  const { useWritableMediaFolderPages } = require('../hooks/useMediaFolders')
-
   beforeEach(() => {
     vi.clearAllMocks()
     useWritableMediaFolderPages.mockReturnValue({
