@@ -101,6 +101,27 @@ public class SearchMediaFoldersRequest
     public string? SortDirection { get; set; } = "asc";
 }
 
+/// <summary>
+/// Tìm folder trên mọi Page actor có quyền ghi (QueryWritableChannels). Không nhận SocialChannelId.
+/// </summary>
+public class SearchMediaFoldersGlobalRequest
+{
+    public string? Keyword { get; set; }
+    public int Index { get; set; } = 1;
+    public int Size { get; set; } = 20;
+    public string? SortBy { get; set; } = "name";
+    public string? SortDirection { get; set; } = "asc";
+}
+
+/// <summary>
+/// Lưới cấp cao nhất: một thư mục gốc / Page, phân trang vì số Page tăng dần.
+/// </summary>
+public class GetMediaFolderPageRootsRequest
+{
+    public int Index { get; set; } = 1;
+    public int Size { get; set; } = 60;
+}
+
 public class MediaFolderSearchResultItem
 {
     public Guid Id { get; set; }
@@ -116,6 +137,9 @@ public class MediaFolderSearchResultItem
 
     /// <summary>Đường dẫn đầy đủ trong Page, phân biệt folder trùng tên.</summary>
     public string FullPath { get; set; } = string.Empty;
+
+    /// <summary>Tên Page — điền ở search global để phân biệt folder trùng tên giữa các Page.</summary>
+    public string? PageName { get; set; }
 
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
@@ -141,6 +165,9 @@ public class MediaFolderResponse
 
     /// <summary>Có thư mục con hay không — tương thích UI hiện tại (ChildFolderCount > 0).</summary>
     public bool HasChildren { get; set; }
+
+    /// <summary>Tên Page — điền ở page-roots để phân biệt folder trùng tên giữa các Page.</summary>
+    public string? PageName { get; set; }
 
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }

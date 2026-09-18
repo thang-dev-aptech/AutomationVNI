@@ -200,62 +200,97 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         await EnsureSocialChannelAccessAsync(request.SocialChannelId, ct);
 
         var keyword = request.Keyword?.Trim();
+        var (emptyIndex, emptySize) = NormalizeSearchPage(request.Index, request.Size);
         if (string.IsNullOrWhiteSpace(keyword))
-        {
-            var emptyIndex = request.Index < 1 ? 1 : request.Index;
-            var emptySize = request.Size < 1 ? 20 : (request.Size > 100 ? 100 : request.Size);
-            return new PagedResult<MediaFolderSearchResultItem>
-            {
-                Items = [],
-                Total = 0,
-                Index = emptyIndex,
-                Size = emptySize
-            };
-        }
+            return EmptySearchPage(emptyIndex, emptySize);
 
         var pageFolders = await QueryActive()
             .Where(x => x.SocialChannelId == request.SocialChannelId)
             .ToListAsync(ct);
 
         var byId = pageFolders.ToDictionary(x => x.Id);
-        // Chỉ trả folder có ancestor chain nguyên vẹn trong Page (MEDIA-02).
-        // Parent thiếu / soft-deleted / thuộc Page khác → cùng semantics breadcrumb not-found: không lộ trong kết quả.
-        var matches = pageFolders
-            .Where(f => FolderNameMatchesKeyword(f.Name, keyword) && HasIntactPageAncestorChain(f, byId))
-            .ToList();
+        return await ProjectSearchMatchesAsync(
+            pageFolders,
+            keyword,
+            _ => byId,
+            pageNames: null,
+            request.SortBy,
+            request.SortDirection,
+            request.Index,
+            request.Size,
+            countSocialChannelId: request.SocialChannelId,
+            ct);
+    }
 
-        var isDesc = string.Equals(request.SortDirection, "desc", StringComparison.OrdinalIgnoreCase);
-        var sortBy = request.SortBy?.Trim().ToLowerInvariant();
+    /// <summary>
+    /// Tìm folder trên mọi Page writable. Gom folder theo SocialChannelId trước khi dựng map id
+    /// để HasIntactPageAncestorChain/BuildFullPath không đi xuyên Page.
+    /// </summary>
+    public async Task<PagedResult<MediaFolderSearchResultItem>> SearchFoldersGlobalAsync(
+        SearchMediaFoldersGlobalRequest request, CancellationToken ct = default)
+    {
+        var keyword = request.Keyword?.Trim();
+        var (emptyIndex, emptySize) = NormalizeSearchPage(request.Index, request.Size);
+        if (string.IsNullOrWhiteSpace(keyword))
+            return EmptySearchPage(emptyIndex, emptySize);
 
-        IEnumerable<MediaFolderModel> ordered = sortBy switch
-        {
-            "createdat" => isDesc
-                ? matches.OrderByDescending(x => x.CreatedAt).ThenBy(x => x.Id)
-                : matches.OrderBy(x => x.CreatedAt).ThenBy(x => x.Id),
-            "updatedat" => isDesc
-                ? matches.OrderByDescending(x => x.UpdatedAt ?? x.CreatedAt).ThenBy(x => x.Id)
-                : matches.OrderBy(x => x.UpdatedAt ?? x.CreatedAt).ThenBy(x => x.Id),
-            "sortorder" => isDesc
-                ? matches.OrderByDescending(x => x.SortOrder).ThenBy(x => x.Name).ThenBy(x => x.Id)
-                : matches.OrderBy(x => x.SortOrder).ThenBy(x => x.Name).ThenBy(x => x.Id),
-            _ => isDesc
-                ? matches.OrderByDescending(x => x.Name).ThenBy(x => x.Id)
-                : matches.OrderBy(x => x.Name).ThenBy(x => x.Id),
-        };
+        var writablePages = await QueryWritableChannels()
+            .Select(ch => new { ch.Id, ch.PageName })
+            .ToListAsync(ct);
+        var writableIds = writablePages.Select(p => p.Id).ToList();
+        var pageNames = writablePages.ToDictionary(p => p.Id, p => p.PageName ?? string.Empty);
 
+        if (writableIds.Count == 0)
+            return EmptySearchPage(emptyIndex, emptySize);
+
+        var folders = await QueryActive()
+            .Where(x => x.SocialChannelId.HasValue && writableIds.Contains(x.SocialChannelId.Value))
+            .ToListAsync(ct);
+
+        var byIdByPage = folders
+            .GroupBy(f => f.SocialChannelId!.Value)
+            .ToDictionary(g => g.Key, g => g.ToDictionary(x => x.Id));
+
+        return await ProjectSearchMatchesAsync(
+            folders,
+            keyword,
+            f => f.SocialChannelId.HasValue
+                && byIdByPage.TryGetValue(f.SocialChannelId.Value, out var map)
+                    ? map
+                    : new Dictionary<Guid, MediaFolderModel>(),
+            pageNames,
+            request.SortBy,
+            request.SortDirection,
+            request.Index,
+            request.Size,
+            countSocialChannelId: null,
+            ct);
+    }
+
+    /// <summary>
+    /// Một hàng / Page writable đã có thư mục gốc — lưới cấp cao nhất. Default size 60.
+    /// </summary>
+    public async Task<PagedResult<MediaFolderResponse>> GetPageRootsAsync(
+        GetMediaFolderPageRootsRequest request, CancellationToken ct = default)
+    {
         var safeIndex = request.Index < 1 ? 1 : request.Index;
-        var safeSize = request.Size < 1 ? 20 : (request.Size > 100 ? 100 : request.Size);
+        var safeSize = request.Size < 1 ? 60 : (request.Size > 100 ? 100 : request.Size);
 
-        var sorted = ordered.ToList();
-        var total = sorted.Count;
-        var pageItems = sorted
+        var pagesWithRoot = QueryWritableChannels()
+            .Where(ch => QueryActive().Any(f => f.SocialChannelId == ch.Id && f.ParentFolderId == null))
+            .OrderBy(ch => ch.PageName)
+            .ThenBy(ch => ch.Id);
+
+        var total = await pagesWithRoot.CountAsync(ct);
+        var pageSlice = await pagesWithRoot
             .Skip((safeIndex - 1) * safeSize)
             .Take(safeSize)
-            .ToList();
+            .Select(ch => new { ch.Id, ch.PageName })
+            .ToListAsync(ct);
 
-        if (pageItems.Count == 0)
+        if (pageSlice.Count == 0)
         {
-            return new PagedResult<MediaFolderSearchResultItem>
+            return new PagedResult<MediaFolderResponse>
             {
                 Items = [],
                 Total = total,
@@ -264,15 +299,34 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
             };
         }
 
-        var folderIds = pageItems.Select(x => x.Id).ToList();
-        var (directAssetCounts, childFolderCounts) =
-            await LoadDirectCountsAsync(request.SocialChannelId, folderIds, ct);
+        var pageIds = pageSlice.Select(p => p.Id).ToList();
+        var roots = await QueryActive()
+            .Where(f => f.ParentFolderId == null
+                && f.SocialChannelId.HasValue
+                && pageIds.Contains(f.SocialChannelId.Value))
+            .ToListAsync(ct);
 
-        var responseItems = pageItems.Select(f =>
+        var rootByPage = roots
+            .GroupBy(f => f.SocialChannelId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(f => f.SortOrder).ThenBy(f => f.Name).ThenBy(f => f.Id).First());
+
+        var orderedRoots = pageSlice
+            .Where(p => rootByPage.ContainsKey(p.Id))
+            .Select(p => (Folder: rootByPage[p.Id], p.PageName))
+            .ToList();
+
+        var folderIds = orderedRoots.Select(x => x.Folder.Id).ToList();
+        var (directAssetCounts, childFolderCounts) =
+            await LoadDirectCountsAsync(folderIds, socialChannelId: null, ct);
+
+        var items = orderedRoots.Select(x =>
         {
+            var f = x.Folder;
             var childCount = childFolderCounts.GetValueOrDefault(f.Id, 0);
             var assetCount = directAssetCounts.GetValueOrDefault(f.Id, 0);
-            return new MediaFolderSearchResultItem
+            return new MediaFolderResponse
             {
                 Id = f.Id,
                 Name = f.Name,
@@ -284,15 +338,15 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
                 DirectAssetCount = assetCount,
                 AssetCount = assetCount,
                 HasChildren = childCount > 0,
-                FullPath = BuildFullPath(f.Id, byId),
+                PageName = x.PageName,
                 CreatedAt = f.CreatedAt,
                 UpdatedAt = f.UpdatedAt
             };
         }).ToList();
 
-        return new PagedResult<MediaFolderSearchResultItem>
+        return new PagedResult<MediaFolderResponse>
         {
-            Items = responseItems,
+            Items = items,
             Total = total,
             Index = safeIndex,
             Size = safeSize
@@ -1030,11 +1084,134 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
     }
 
     /// <summary>Danh sách Page actor có quyền tạo MediaFolder — cho picker "Gắn với Page" (MEDIA-06).</summary>
-    public async Task<List<SocialChannelModel>> GetWritablePagesAsync(CancellationToken ct = default) =>
-        await QueryWritableChannels().OrderByDescending(x => x.CreatedAt).ToListAsync(ct);
+    public async Task<List<SocialChannelModel>> GetWritablePagesAsync(
+        bool withoutRoot = false, CancellationToken ct = default)
+    {
+        var query = QueryWritableChannels();
+        if (withoutRoot)
+        {
+            query = query.Where(ch =>
+                !QueryActive().Any(f => f.SocialChannelId == ch.Id && f.ParentFolderId == null));
+        }
+
+        return await query.OrderByDescending(x => x.CreatedAt).ToListAsync(ct);
+    }
+
+    private static (int Index, int Size) NormalizeSearchPage(int index, int size)
+    {
+        var safeIndex = index < 1 ? 1 : index;
+        var safeSize = size < 1 ? 20 : (size > 100 ? 100 : size);
+        return (safeIndex, safeSize);
+    }
+
+    private static PagedResult<MediaFolderSearchResultItem> EmptySearchPage(int index, int size) => new()
+    {
+        Items = [],
+        Total = 0,
+        Index = index,
+        Size = size
+    };
+
+    /// <summary>
+    /// Lõi match/sort/page/project dùng chung cho search Page-scoped và search global.
+    /// Match ancestor phải đi qua map id của ĐÚNG Page (caller truyền byIdFor).
+    /// </summary>
+    private async Task<PagedResult<MediaFolderSearchResultItem>> ProjectSearchMatchesAsync(
+        IReadOnlyCollection<MediaFolderModel> folders,
+        string keyword,
+        Func<MediaFolderModel, IReadOnlyDictionary<Guid, MediaFolderModel>> byIdFor,
+        IReadOnlyDictionary<Guid, string>? pageNames,
+        string? sortBy,
+        string? sortDirection,
+        int index,
+        int size,
+        Guid? countSocialChannelId,
+        CancellationToken ct)
+    {
+        var matches = folders
+            .Where(f => FolderNameMatchesKeyword(f.Name, keyword) && HasIntactPageAncestorChain(f, byIdFor(f)))
+            .ToList();
+
+        var isDesc = string.Equals(sortDirection, "desc", StringComparison.OrdinalIgnoreCase);
+        var sortKey = sortBy?.Trim().ToLowerInvariant();
+
+        IEnumerable<MediaFolderModel> ordered = sortKey switch
+        {
+            "createdat" => isDesc
+                ? matches.OrderByDescending(x => x.CreatedAt).ThenBy(x => x.Id)
+                : matches.OrderBy(x => x.CreatedAt).ThenBy(x => x.Id),
+            "updatedat" => isDesc
+                ? matches.OrderByDescending(x => x.UpdatedAt ?? x.CreatedAt).ThenBy(x => x.Id)
+                : matches.OrderBy(x => x.UpdatedAt ?? x.CreatedAt).ThenBy(x => x.Id),
+            "sortorder" => isDesc
+                ? matches.OrderByDescending(x => x.SortOrder).ThenBy(x => x.Name).ThenBy(x => x.Id)
+                : matches.OrderBy(x => x.SortOrder).ThenBy(x => x.Name).ThenBy(x => x.Id),
+            _ => isDesc
+                ? matches.OrderByDescending(x => x.Name).ThenBy(x => x.Id)
+                : matches.OrderBy(x => x.Name).ThenBy(x => x.Id),
+        };
+
+        var (safeIndex, safeSize) = NormalizeSearchPage(index, size);
+        var sorted = ordered.ToList();
+        var total = sorted.Count;
+        var pageItems = sorted
+            .Skip((safeIndex - 1) * safeSize)
+            .Take(safeSize)
+            .ToList();
+
+        if (pageItems.Count == 0)
+        {
+            return new PagedResult<MediaFolderSearchResultItem>
+            {
+                Items = [],
+                Total = total,
+                Index = safeIndex,
+                Size = safeSize
+            };
+        }
+
+        var folderIds = pageItems.Select(x => x.Id).ToList();
+        var (directAssetCounts, childFolderCounts) =
+            await LoadDirectCountsAsync(folderIds, countSocialChannelId, ct);
+
+        var responseItems = pageItems.Select(f =>
+        {
+            var childCount = childFolderCounts.GetValueOrDefault(f.Id, 0);
+            var assetCount = directAssetCounts.GetValueOrDefault(f.Id, 0);
+            string? pageName = null;
+            if (pageNames != null && f.SocialChannelId.HasValue)
+                pageName = pageNames.GetValueOrDefault(f.SocialChannelId.Value);
+
+            return new MediaFolderSearchResultItem
+            {
+                Id = f.Id,
+                Name = f.Name,
+                Description = f.Description,
+                ParentFolderId = f.ParentFolderId,
+                SocialChannelId = f.SocialChannelId,
+                SortOrder = f.SortOrder,
+                ChildFolderCount = childCount,
+                DirectAssetCount = assetCount,
+                AssetCount = assetCount,
+                HasChildren = childCount > 0,
+                FullPath = BuildFullPath(f.Id, byIdFor(f)),
+                PageName = pageName,
+                CreatedAt = f.CreatedAt,
+                UpdatedAt = f.UpdatedAt
+            };
+        }).ToList();
+
+        return new PagedResult<MediaFolderSearchResultItem>
+        {
+            Items = responseItems,
+            Total = total,
+            Index = safeIndex,
+            Size = safeSize
+        };
+    }
 
     private async Task<(Dictionary<Guid, int> DirectAssets, Dictionary<Guid, int> ChildFolders)> LoadDirectCountsAsync(
-        Guid socialChannelId, List<Guid> folderIds, CancellationToken ct)
+        List<Guid> folderIds, Guid? socialChannelId, CancellationToken ct)
     {
         var directAssetCounts = await Context.Set<MediaAssetModel>()
             .Where(x => !x.IsDeleted && x.FolderId.HasValue && folderIds.Contains(x.FolderId.Value))
@@ -1042,8 +1219,12 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
             .Select(g => new { FolderId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.FolderId, x => x.Count, ct);
 
-        var childFolderCounts = await QueryActive()
-            .Where(x => x.SocialChannelId == socialChannelId && x.ParentFolderId.HasValue && folderIds.Contains(x.ParentFolderId.Value))
+        var childQuery = QueryActive()
+            .Where(x => x.ParentFolderId.HasValue && folderIds.Contains(x.ParentFolderId.Value));
+        if (socialChannelId.HasValue)
+            childQuery = childQuery.Where(x => x.SocialChannelId == socialChannelId.Value);
+
+        var childFolderCounts = await childQuery
             .GroupBy(x => x.ParentFolderId!.Value)
             .Select(g => new { FolderId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.FolderId, x => x.Count, ct);

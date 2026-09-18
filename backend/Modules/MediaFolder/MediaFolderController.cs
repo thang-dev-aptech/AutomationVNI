@@ -90,6 +90,32 @@ public class MediaFolderController
     }
 
     /// <summary>
+    /// Tìm folder trên mọi Page writable. Mỗi kết quả kèm PageName. Không dùng /tree hay /filter.
+    /// </summary>
+    [HttpGet("search-global")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> SearchFoldersGlobal(
+        [FromQuery] SearchMediaFoldersGlobalRequest request,
+        CancellationToken ct)
+    {
+        var result = await _repo.SearchFoldersGlobalAsync(request, ct);
+        return Ok(ApiResponse.Ok(result));
+    }
+
+    /// <summary>
+    /// Lưới cấp cao nhất: một thư mục gốc / Page writable, kèm PageName, phân trang (default 60).
+    /// </summary>
+    [HttpGet("page-roots")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> GetPageRoots(
+        [FromQuery] GetMediaFolderPageRootsRequest request,
+        CancellationToken ct)
+    {
+        var result = await _repo.GetPageRootsAsync(request, ct);
+        return Ok(ApiResponse.Ok(result));
+    }
+
+    /// <summary>
     /// Tạo thư mục hàng loạt trong một Page theo cấu trúc cây (clientRef/parentRef) (MEDIA-03).
     /// Hỗ trợ validate-only/preview, xử lý duplicate và đảm bảo transaction nguyên tử.
     /// </summary>
@@ -122,12 +148,15 @@ public class MediaFolderController
     /// hoặc qua SocialConnection họ sở hữu). Dùng cho picker "Gắn với Page" khi tạo mới (MEDIA-06)
     /// — khác GET /api/SocialChannel (không lọc quyền, dùng cho các màn hình chỉ đọc khác), để
     /// "Chọn tất cả" không chọn nhầm Page mà actor không có quyền tạo thư mục.
+    /// withoutRoot=true: chỉ Page chưa có thư mục gốc active (checklist nút tạo lớn).
     /// </summary>
     [HttpGet("writable-pages")]
     [Authorize(Roles = "Admin,ContentManager")]
-    public async Task<IActionResult> GetWritablePages(CancellationToken ct)
+    public async Task<IActionResult> GetWritablePages(
+        [FromQuery] bool withoutRoot = false,
+        CancellationToken ct = default)
     {
-        var channels = await _repo.GetWritablePagesAsync(ct);
+        var channels = await _repo.GetWritablePagesAsync(withoutRoot, ct);
         return Ok(ApiResponse.Ok(channels.Select(Backend.Modules.SocialChannel.SocialChannelRepository.ToResponse).ToList()));
     }
 
