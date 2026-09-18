@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import PageHeader from '@/shared/components/PageHeader'
 import Modal from '@/shared/components/Modal'
 import StatusBadge from '@/shared/components/StatusBadge'
+import ContextMenu from '@/shared/components/ContextMenu'
 import { usePermissions } from '@/shared/hooks/usePermissions'
 import { formatDateTime, formatFileSize, getErrorMessage } from '@/shared/utils/apiHelpers'
 import { confirmAction, CONFIRM_MESSAGES } from '@/shared/utils/confirmAction'
 import { toast } from '@/shared/stores/toastStore'
-import MediaGrid from '../components/MediaGrid'
+import MediaBrowserGrid from '../components/MediaBrowserGrid'
 import MediaUploadForm from '../components/MediaUploadForm'
-import MediaFolderExplorer from '../components/MediaFolderExplorer'
 import MediaFolderSearchBox from '../components/MediaFolderSearchBox'
 import MediaFolderFormModal from '../components/MediaFolderFormModal'
 import AiBackgroundPromptModal from '../components/AiBackgroundPromptModal'
@@ -33,7 +33,7 @@ import {
   useDeleteMediaFolder,
   useUpdateMediaFolder,
 } from '../hooks/useMediaFolders'
-import { useMediaFolderExplorer } from '../hooks/useMediaFolderExplorer'
+import { useMediaBrowser } from '../hooks/useMediaBrowser'
 import {
   MEDIA_SOURCE_OPTIONS,
   getMediaSourceMeta,
@@ -52,12 +52,13 @@ export default function MediaPage() {
   const [viewingAsset, setViewingAsset] = useState(null)
   const [detailsAsset, setDetailsAsset] = useState(null)
   const [formError, setFormError] = useState('')
-
-  const [socialChannelId, setSocialChannelId] = useState('')
   const [folderModal, setFolderModal] = useState(null) // { editing, defaultParentId } | null
+  const [folderContextMenu, setFolderContextMenu] = useState(null) // { x, y, folder } | null
+  const [fileContextMenu, setFileContextMenu] = useState(null) // { x, y, asset } | null
+
   const { data: channels = [] } = useSocialChannelAll()
-  const explorer = useMediaFolderExplorer({ socialChannelId })
-  const { selection, currentFolderId } = explorer
+  const browser = useMediaBrowser()
+  const { currentFolderId, derivedPageId, selection, items } = browser
 
   const params = useMemo(
     () => ({
@@ -91,14 +92,14 @@ export default function MediaPage() {
   const [analyzingId, setAnalyzingId] = useState(null)
   const [analyzingLayoutId, setAnalyzingLayoutId] = useState(null)
 
-  const items = data?.items ?? []
-  const folders = explorer.folderOptions
+  const fileItems = data?.items ?? []
+  const browserFolders = items
 
   useEffect(() => {
-    if (socialChannelId) return
-    const firstId = channels[0]?.id
-    if (firstId) setSocialChannelId(firstId)
-  }, [channels, socialChannelId])
+    if (currentFolderId !== null || items.length > 0) return
+    // Auto-load root if no folders yet
+    browser.openRoot()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCreate = async (payload) => {
     try {
@@ -228,11 +229,66 @@ export default function MediaPage() {
     }
   }
 
+  const handleFolderContextMenu = (event, folder) => {
+    event.preventDefault()
+    setFolderContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      folder,
+    })
+  }
+
+  const handleFileContextMenu = (event, asset) => {
+    event.preventDefault()
+    setFileContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      asset,
+    })
+  }
+
+  const handleFolderContextMenuSelect = async (action, folder) => {
+    setFolderContextMenu(null)
+    switch (action) {
+      case 'open':
+        browser.openFolder(folder)
+        break
+      case 'create':
+        setFolderModal({ editing: null, defaultParentId: folder.id })
+        break
+      case 'rename':
+        setFolderModal({ editing: folder, defaultParentId: null })
+        break
+      case 'delete':
+        await handleDeleteFolder(folder)
+        break
+      default:
+        break
+    }
+  }
+
+  const handleFileContextMenuSelect = async (action, asset) => {
+    setFileContextMenu(null)
+    switch (action) {
+      case 'view':
+        setViewingAsset(asset)
+        break
+      case 'details':
+        setDetailsAsset(asset)
+        break
+      case 'delete':
+        await handleDelete(asset)
+        break
+      default:
+        break
+    }
+  }
+
   const handleFolderSubmit = async (payload) => {
     try {
       setFormError('')
+      const scopedPageId = derivedPageId || payload.socialChannelId
       if (folderModal?.editing) {
-        const scopedPageId = socialChannelId || payload.socialChannelId
         await updateFolderMutation.mutateAsync({
           id: folderModal.editing.id,
           payload: { name: payload.name, parentFolderId: payload.parentFolderId, socialChannelId: scopedPageId },
@@ -261,7 +317,6 @@ export default function MediaPage() {
           toast.success(`Đã tạo ${result.totalSucceeded} thư mục`)
         }
       } else {
-        const scopedPageId = socialChannelId || payload.socialChannelId
         await createFolderMutation.mutateAsync({
           name: payload.name,
           parentFolderId: payload.parentFolderId,
@@ -328,105 +383,108 @@ export default function MediaPage() {
         }
       />
 
-      <div className="media-layout">
-        <aside className="card card-body media-sidebar">
-          <h3 className="media-sidebar-title">Thư mục</h3>
-          <MediaFolderSearchBox
-            onOpenFolder={(folderId, pageId) => {
-              if (pageId && pageId !== socialChannelId) {
-                setSocialChannelId(pageId)
-              }
-              explorer.openFolder(folderId)
-            }}
-          />
-          <MediaFolderExplorer
-            channels={channels}
-            onSocialChannelChange={setSocialChannelId}
-            canManage={canManageMedia}
-            onMoveAsset={handleMoveAsset}
-            onCreateChild={(parentId) => { setFormError(''); setFolderModal({ editing: null, defaultParentId: parentId }) }}
-            onRename={(folder) => { setFormError(''); setFolderModal({ editing: folder, defaultParentId: null }) }}
-            onDelete={handleDeleteFolder}
-            onRetry={explorer.refetch}
-            {...explorer}
-          />
-        </aside>
+      <div className="media-main-content">
+        <MediaFolderSearchBox
+          onOpenFolder={(folderId, pageId) => {
+            browser.openFolder(folderId)
+          }}
+        />
 
-        <div className="media-main">
-          <nav className="media-folder-breadcrumb" aria-label="Đường dẫn thư mục">
-            <button
-              type="button"
-              className={`media-folder-breadcrumb-item${!currentFolderId ? ' is-current' : ''}`}
-              onClick={explorer.openRoot}
-            >
-              Thư mục gốc
-            </button>
-            {explorer.ancestors.map((item, index) => (
-              <span key={item.id}>
-                <span className="media-folder-breadcrumb-sep">/</span>
-                <button
-                  type="button"
-                  className={`media-folder-breadcrumb-item${index === explorer.ancestors.length - 1 ? ' is-current' : ''}`}
-                  onClick={() => explorer.openBreadcrumb(item.id)}
-                >
-                  {item.name}
-                </button>
-              </span>
-            ))}
-          </nav>
-
-          <div className="card card-body media-page-filters">
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label htmlFor="media-keyword">Tìm kiếm</label>
-              <input
-                id="media-keyword"
-                value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
-                placeholder="Tên file, alt text, tags..."
-              />
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label htmlFor="media-source">Nguồn</label>
-              <select
-                id="media-source"
-                value={source}
-                onChange={(event) => setSource(event.target.value)}
+        <nav className="media-folder-breadcrumb" aria-label="Đường dẫn thư mục">
+          <button
+            type="button"
+            className={`media-folder-breadcrumb-item${!currentFolderId ? ' is-current' : ''}`}
+            onClick={browser.openRoot}
+          >
+            Thư mục gốc
+          </button>
+          {browser.ancestors.map((item, index) => (
+            <span key={item.id}>
+              <span className="media-folder-breadcrumb-sep">/</span>
+              <button
+                type="button"
+                className={`media-folder-breadcrumb-item${index === browser.ancestors.length - 1 ? ' is-current' : ''}`}
+                onClick={() => browser.openBreadcrumb(item)}
               >
-                <option value="">Tất cả</option>
-                {MEDIA_SOURCE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {currentFolderId && (
-              <div className="media-page-filters-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={analyzeLayoutMutation.isPending}
-                  onClick={handleAnalyzeLayoutFolder}
-                >
-                  {analyzeLayoutMutation.isPending ? '⏳ Đang quét...' : '✨ Quét Vùng An Toàn'}
-                </button>
-              </div>
-            )}
-          </div>
+                {item.name}
+              </button>
+            </span>
+          ))}
+        </nav>
 
-          <div className="card card-body">
-            <MediaGrid
-              items={items}
-              isLoading={isLoading}
-              isError={isError}
-              error={error}
-              onRetry={refetch}
-              onView={(asset) => setViewingAsset(asset)}
-              onDetails={(asset) => setDetailsAsset(asset)}
-              onDelete={handleDelete}
-              canManage={canManageMedia}
+        <div className="card card-body media-page-filters">
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label htmlFor="media-keyword">Tìm kiếm</label>
+            <input
+              id="media-keyword"
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+              placeholder="Tên file, alt text, tags..."
             />
           </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label htmlFor="media-source">Nguồn</label>
+            <select
+              id="media-source"
+              value={source}
+              onChange={(event) => setSource(event.target.value)}
+            >
+              <option value="">Tất cả</option>
+              {MEDIA_SOURCE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              className={`btn ${selection === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={browser.selectAll}
+            >
+              Tất cả
+            </button>
+            <button
+              type="button"
+              className={`btn ${selection === 'unassigned' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={browser.selectUnassigned}
+            >
+              Chưa phân loại
+            </button>
+          </div>
+          {currentFolderId && (
+            <div className="media-page-filters-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={analyzeLayoutMutation.isPending}
+                onClick={handleAnalyzeLayoutFolder}
+              >
+                {analyzeLayoutMutation.isPending ? '⏳ Đang quét...' : '✨ Quét Vùng An Toàn'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="card card-body">
+          <MediaBrowserGrid
+            folders={browserFolders}
+            files={fileItems}
+            isLoading={browser.isLoading}
+            isError={browser.isError}
+            error={browser.error}
+            onRetry={browser.refetch}
+            onFolderClick={browser.openFolder}
+            onFolderContextMenu={handleFolderContextMenu}
+            onFolderDrop={handleMoveAsset}
+            onFileView={(asset) => setViewingAsset(asset)}
+            onFileDetails={(asset) => setDetailsAsset(asset)}
+            onFileDelete={handleDelete}
+            onFileContextMenu={handleFileContextMenu}
+            canManage={canManageMedia}
+            isRootLevel={currentFolderId === null}
+          />
         </div>
       </div>
 
@@ -445,18 +503,48 @@ export default function MediaPage() {
         open={Boolean(folderModal)}
         editing={folderModal?.editing ?? null}
         defaultParentId={folderModal?.defaultParentId ?? null}
-        defaultSocialChannelId={socialChannelId || null}
+        defaultSocialChannelId={derivedPageId || null}
         onClose={() => setFolderModal(null)}
         onSubmit={handleFolderSubmit}
         isSubmitting={createFolderMutation.isPending || createFolderAcrossPagesMutation.isPending || updateFolderMutation.isPending}
         errorMessage={formError}
       />
 
-
       <AiBackgroundPromptModal
         open={aiPromptOpen}
         onClose={() => setAiPromptOpen(false)}
       />
+
+      {folderContextMenu && (
+        <ContextMenu
+          x={folderContextMenu.x}
+          y={folderContextMenu.y}
+          items={[
+            { label: 'Mở', onSelect: () => handleFolderContextMenuSelect('open', folderContextMenu.folder) },
+            ...(canManageMedia ? [
+              { label: 'Tạo con', onSelect: () => handleFolderContextMenuSelect('create', folderContextMenu.folder) },
+              { label: 'Đổi tên', onSelect: () => handleFolderContextMenuSelect('rename', folderContextMenu.folder) },
+              { label: 'Xóa', onSelect: () => handleFolderContextMenuSelect('delete', folderContextMenu.folder), danger: true },
+            ] : []),
+          ]}
+          onDismiss={() => setFolderContextMenu(null)}
+        />
+      )}
+
+      {fileContextMenu && (
+        <ContextMenu
+          x={fileContextMenu.x}
+          y={fileContextMenu.y}
+          items={[
+            { label: 'Xem', onSelect: () => handleFileContextMenuSelect('view', fileContextMenu.asset) },
+            { label: 'Chi tiết', onSelect: () => handleFileContextMenuSelect('details', fileContextMenu.asset) },
+            ...(canManageMedia ? [
+              { label: 'Xóa', onSelect: () => handleFileContextMenuSelect('delete', fileContextMenu.asset), danger: true },
+            ] : []),
+          ]}
+          onDismiss={() => setFileContextMenu(null)}
+        />
+      )}
 
       <Modal
         open={Boolean(editingAsset)}

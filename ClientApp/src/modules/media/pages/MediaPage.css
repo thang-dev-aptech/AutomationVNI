@@ -4,6 +4,12 @@
   gap: 20px;
 }
 
+.media-main-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .media-page-filters {
   display: grid;
   gap: 16px;
@@ -20,32 +26,6 @@
   .media-page-filters {
     grid-template-columns: 1fr;
   }
-}
-
-/* Layout 2 cột: sidebar folder + nội dung */
-.media-layout {
-  display: grid;
-  grid-template-columns: 260px 1fr;
-  gap: 20px;
-  align-items: start;
-}
-
-.media-main {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  min-width: 0;
-}
-
-@media (max-width: 900px) {
-  .media-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-.media-sidebar {
-  position: sticky;
-  top: 16px;
 }
 
 /* MediaFolderSearchBox (MEDIA-05) */
