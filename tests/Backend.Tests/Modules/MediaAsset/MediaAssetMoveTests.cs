@@ -1,6 +1,8 @@
 using Backend.Data;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaFolder;
+using Backend.Modules.SocialChannel;
+using Backend.Modules.SocialChannel.Enums;
 using Backend.Tests.Modules.MediaFolder;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -57,11 +59,33 @@ public class MediaAssetMoveTests : IDisposable
         return asset;
     }
 
-    private MediaFolderModel AddFolder()
+    private MediaFolderModel AddFolder(Guid? socialChannelId = null, string name = "Folder")
     {
-        var folder = new MediaFolderModel { Id = Guid.NewGuid(), Name = "Folder" };
+        var folder = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            SocialChannelId = socialChannelId
+        };
         _db.MediaFolders.Add(folder);
         return folder;
+    }
+
+    private SocialChannelModel AddPage(string createdBy, string pageName = "Page")
+    {
+        var page = new SocialChannelModel
+        {
+            Id = Guid.NewGuid(),
+            Platform = SocialPlatform.Facebook,
+            ChannelType = SocialChannelType.Page,
+            PageName = pageName,
+            ExternalPageId = $"fb-{Guid.NewGuid():N}",
+            AccessToken = "token",
+            IsActive = true,
+            CreatedBy = createdBy
+        };
+        _db.SocialChannels.Add(page);
+        return page;
     }
 
     [Fact]
@@ -151,5 +175,56 @@ public class MediaAssetMoveTests : IDisposable
         var moved = await _repo.MoveAsync([asset.Id, asset.Id], folder.Id);
 
         Assert.Equal(1, moved);
+    }
+
+    [Fact]
+    public async Task MoveAsync_OwnedPageFolder_SucceedsForContentManager()
+    {
+        _userContext.Roles = ["ContentManager"];
+        _userContext.UserName = "page-a-owner";
+        var page = AddPage("page-a-owner", "Owned Page");
+        var folder = AddFolder(page.Id, "Owned Folder");
+        var asset = AddAsset();
+        await _db.SaveChangesAsync();
+
+        var moved = await _repo.MoveAsync([asset.Id], folder.Id);
+
+        Assert.Equal(1, moved);
+        Assert.Equal(folder.Id, (await _db.MediaAssets.FindAsync(asset.Id))!.FolderId);
+    }
+
+    [Fact]
+    public async Task MoveAsync_UnwritablePageFolder_ThrowsKeyNotFound_AndMovesNothing()
+    {
+        _userContext.Roles = ["ContentManager"];
+        _userContext.UserName = "page-a-owner";
+        var otherPage = AddPage("other-owner", "Secret Page");
+        var folder = AddFolder(otherPage.Id, "SecretTargetFolder");
+        var asset = AddAsset();
+        await _db.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<KeyNotFoundException>(
+            () => _repo.MoveAsync([asset.Id], folder.Id));
+
+        Assert.Equal("Page/Kênh không tồn tại.", ex.Message);
+        Assert.DoesNotContain(folder.Name, ex.Message);
+        Assert.DoesNotContain(folder.Id.ToString(), ex.Message);
+        Assert.Null((await _db.MediaAssets.FindAsync(asset.Id))!.FolderId);
+    }
+
+    [Fact]
+    public async Task MoveAsync_OtherUsersPage_SucceedsForAdmin()
+    {
+        _userContext.Roles = ["Admin"];
+        _userContext.UserName = "admin-user";
+        var otherPage = AddPage("other-owner", "Other Page");
+        var folder = AddFolder(otherPage.Id, "Other Folder");
+        var asset = AddAsset();
+        await _db.SaveChangesAsync();
+
+        var moved = await _repo.MoveAsync([asset.Id], folder.Id);
+
+        Assert.Equal(1, moved);
+        Assert.Equal(folder.Id, (await _db.MediaAssets.FindAsync(asset.Id))!.FolderId);
     }
 }

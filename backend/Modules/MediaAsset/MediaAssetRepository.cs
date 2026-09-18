@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Backend.Data;
 using Backend.Modules.MediaAsset.Enums;
+using Backend.Modules.MediaFolder;
 using Backend.Shared;
 using Backend.Shared.Repositories;
 using Backend.Shared.Storage;
@@ -10,8 +11,21 @@ namespace Backend.Modules.MediaAsset;
 
 public class MediaAssetRepository : GenericRepository<MediaAssetModel>
 {
+    private readonly MediaFolderRepository _folders;
+
     public MediaAssetRepository(AppDbContext context, IUserContext userContext)
-        : base(context, userContext) { }
+        : this(context, userContext, new MediaFolderRepository(context, userContext))
+    {
+    }
+
+    public MediaAssetRepository(
+        AppDbContext context,
+        IUserContext userContext,
+        MediaFolderRepository folders)
+        : base(context, userContext)
+    {
+        _folders = folders;
+    }
 
     /// <summary>Chuẩn hoá danh sách loại bài → JSON array Guid (null nếu rỗng, để coi là "dùng chung").</summary>
     public static string? SerializeCategoryIds(IEnumerable<Guid>? ids)
@@ -138,12 +152,7 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         if (idList.Count == 0) return 0;
 
         if (folderId.HasValue)
-        {
-            var folderExists = await Context.Set<Backend.Modules.MediaFolder.MediaFolderModel>()
-                .AnyAsync(x => x.Id == folderId.Value && !x.IsDeleted, ct);
-            if (!folderExists)
-                throw new InvalidOperationException("Thư mục đích không tồn tại.");
-        }
+            await EnsureDestinationFolderWritableAsync(folderId.Value, ct);
 
         var assets = await QueryActive().Where(x => idList.Contains(x.Id)).ToListAsync(ct);
         foreach (var a in assets)
@@ -153,6 +162,26 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         }
         await Context.SaveChangesAsync(ct);
         return assets.Count;
+    }
+
+    /// <summary>
+    /// Folder đích phải tồn tại; nếu gắn Page thì Page phải nằm trong QueryWritableChannels
+    /// (qua GetWritablePagesAsync). Channel ngoài quyền trả cùng thông báo không lộ metadata.
+    /// Folder chưa gắn Page giữ hành vi cũ — chỉ kiểm tra tồn tại — để không phá regression move.
+    /// </summary>
+    private async Task EnsureDestinationFolderWritableAsync(Guid folderId, CancellationToken ct)
+    {
+        var folder = await Context.Set<MediaFolderModel>()
+            .FirstOrDefaultAsync(x => x.Id == folderId && !x.IsDeleted, ct);
+        if (folder is null)
+            throw new InvalidOperationException("Thư mục đích không tồn tại.");
+
+        if (folder.SocialChannelId is not Guid channelId)
+            return;
+
+        var canWrite = (await _folders.GetWritablePagesAsync(ct: ct)).Any(p => p.Id == channelId);
+        if (!canWrite)
+            throw new KeyNotFoundException("Page/Kênh không tồn tại.");
     }
 
     public async Task SetPreviewUrlAsync(MediaAssetModel entity, CancellationToken ct = default)
