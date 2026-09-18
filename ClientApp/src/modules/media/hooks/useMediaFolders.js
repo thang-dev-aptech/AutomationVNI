@@ -31,10 +31,10 @@ export function useMediaFolderPageRoots({
  * các màn hình chỉ đọc khác). Dùng riêng cho picker "Gắn với Page" trong MediaFolderFormModal để
  * "Chọn tất cả" không chọn nhầm Page mà actor không sở hữu.
  */
-export function useWritableMediaFolderPages() {
+export function useWritableMediaFolderPages({ withoutRoot = false } = {}) {
   return useQuery({
-    queryKey: mediaFolderQueryKeys.writablePages,
-    queryFn: async () => unwrapApiData(await mediaFolderApi.writablePages()),
+    queryKey: [...mediaFolderQueryKeys.writablePages, withoutRoot],
+    queryFn: async () => unwrapApiData(await mediaFolderApi.writablePages({ withoutRoot })),
   })
 }
 

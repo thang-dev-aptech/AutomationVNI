@@ -52,7 +52,8 @@ export const mediaFolderApi = {
       params: { keyword, index, size, sortBy, sortDirection },
     }),
   filter: (params) => axiosInstance.post('/api/MediaFolder/filter', params),
-  writablePages: () => axiosInstance.get('/api/MediaFolder/writable-pages'),
+  writablePages: ({ withoutRoot = false } = {}) =>
+    axiosInstance.get('/api/MediaFolder/writable-pages', { params: { withoutRoot } }),
   bulkCreate: (payload) => axiosInstance.post('/api/MediaFolder/bulk', payload),
   createAcrossPages: (payload) => axiosInstance.post('/api/MediaFolder/create-across-pages', payload),
   create: (payload) => axiosInstance.post('/api/MediaFolder', payload),

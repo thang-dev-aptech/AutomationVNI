@@ -11,6 +11,7 @@ import MediaBrowserGrid from '../components/MediaBrowserGrid'
 import MediaUploadForm from '../components/MediaUploadForm'
 import MediaFolderSearchBox from '../components/MediaFolderSearchBox'
 import MediaFolderFormModal from '../components/MediaFolderFormModal'
+import MoveMediaFolderModal from '../components/MoveMediaFolderModal'
 import AiBackgroundPromptModal from '../components/AiBackgroundPromptModal'
 import {
   useAnalyzeAllMediaAssets,
@@ -52,7 +53,8 @@ export default function MediaPage() {
   const [viewingAsset, setViewingAsset] = useState(null)
   const [detailsAsset, setDetailsAsset] = useState(null)
   const [formError, setFormError] = useState('')
-  const [folderModal, setFolderModal] = useState(null) // { editing, defaultParentId } | null
+  const [folderModal, setFolderModal] = useState(null) // { mode, editing, defaultParentId, defaultSocialChannelId } | null
+  const [moveModal, setMoveModal] = useState(null) // { folder } | null
   const [folderContextMenu, setFolderContextMenu] = useState(null) // { x, y, folder } | null
   const [fileContextMenu, setFileContextMenu] = useState(null) // { x, y, asset } | null
 
@@ -254,10 +256,20 @@ export default function MediaPage() {
         browser.openFolder(folder)
         break
       case 'create':
-        setFolderModal({ editing: null, defaultParentId: folder.id })
+        setFormError('')
+        setFolderModal({
+          mode: 'create-child',
+          defaultParentId: folder.id,
+          defaultSocialChannelId: folder.socialChannelId,
+        })
         break
       case 'rename':
-        setFolderModal({ editing: folder, defaultParentId: null })
+        setFormError('')
+        setFolderModal({ mode: 'rename', editing: folder })
+        break
+      case 'move':
+        setFormError('')
+        setMoveModal({ folder })
         break
       case 'delete':
         await handleDeleteFolder(folder)
@@ -287,22 +299,33 @@ export default function MediaPage() {
   const handleFolderSubmit = async (payload) => {
     try {
       setFormError('')
-      const scopedPageId = derivedPageId || payload.socialChannelId
-      if (folderModal?.editing) {
+
+      if (folderModal?.mode === 'rename') {
+        // Rename mode: update folder name
         await updateFolderMutation.mutateAsync({
           id: folderModal.editing.id,
-          payload: { name: payload.name, parentFolderId: payload.parentFolderId, socialChannelId: scopedPageId },
+          payload: {
+            name: payload.name,
+            parentFolderId: payload.parentFolderId,
+            socialChannelId: payload.socialChannelId,
+          },
         })
         toast.success('Đã cập nhật thư mục')
-      } else if (payload.items) {
-        // Nhiều Page được chọn: mỗi folder tự lấy tên theo Page tương ứng, best-effort per-Page.
+      } else if (folderModal?.mode === 'create-child') {
+        // Create child mode: create single child in fixed parent
+        await createFolderMutation.mutateAsync({
+          name: payload.name,
+          parentFolderId: payload.parentFolderId,
+          socialChannelId: payload.socialChannelId,
+        })
+        toast.success('Đã tạo thư mục')
+      } else if (folderModal?.mode === 'page-roots' && payload.items) {
+        // Page-roots mode: create roots for selected Pages
         const result = await createFolderAcrossPagesMutation.mutateAsync({
           description: null,
           items: payload.items,
         })
         if (result.totalFailed > 0) {
-          // Không chỉ báo số lượng — nêu rõ Page nào lỗi để user biết cần bỏ chọn Page nào
-          // (vd Page họ không sở hữu, bị "Chọn tất cả" gộp nhầm vào).
           const nameById = new Map(payload.items.map((item) => [item.socialChannelId, item.name]))
           const failedItems = result.results.filter((item) => !item.success)
           const preview = failedItems
@@ -316,15 +339,26 @@ export default function MediaPage() {
         } else {
           toast.success(`Đã tạo ${result.totalSucceeded} thư mục`)
         }
-      } else {
-        await createFolderMutation.mutateAsync({
-          name: payload.name,
-          parentFolderId: payload.parentFolderId,
-          socialChannelId: scopedPageId,
-        })
-        toast.success('Đã tạo thư mục')
       }
       setFolderModal(null)
+    } catch (folderError) {
+      setFormError(getErrorMessage(folderError))
+    }
+  }
+
+  const handleMoveFolder = async (payload) => {
+    try {
+      setFormError('')
+      await updateFolderMutation.mutateAsync({
+        id: payload.folderId,
+        payload: {
+          name: moveModal.folder.name,
+          parentFolderId: payload.parentFolderId,
+          socialChannelId: moveModal.folder.socialChannelId,
+        },
+      })
+      toast.success('Đã di chuyển thư mục')
+      setMoveModal(null)
     } catch (folderError) {
       setFormError(getErrorMessage(folderError))
     }
@@ -360,7 +394,7 @@ export default function MediaPage() {
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => { setFormError(''); setFolderModal({ editing: null, defaultParentId: currentFolderId }) }}
+                onClick={() => { setFormError(''); setFolderModal({ mode: 'page-roots' }) }}
               >
                 📁 Tạo thư mục
               </button>
@@ -524,6 +558,7 @@ export default function MediaPage() {
             ...(canManageMedia ? [
               { label: 'Tạo con', onSelect: () => handleFolderContextMenuSelect('create', folderContextMenu.folder) },
               { label: 'Đổi tên', onSelect: () => handleFolderContextMenuSelect('rename', folderContextMenu.folder) },
+              { label: 'Di chuyển tới', onSelect: () => handleFolderContextMenuSelect('move', folderContextMenu.folder) },
               { label: 'Xóa', onSelect: () => handleFolderContextMenuSelect('delete', folderContextMenu.folder), danger: true },
             ] : []),
           ]}
@@ -754,6 +789,40 @@ export default function MediaPage() {
           </div>
         )}
       </Modal>
+
+      <MediaFolderFormModal
+        open={Boolean(folderModal)}
+        mode={folderModal?.mode ?? 'rename'}
+        editing={folderModal?.editing ?? null}
+        defaultParentId={folderModal?.defaultParentId ?? null}
+        defaultSocialChannelId={folderModal?.defaultSocialChannelId ?? null}
+        onClose={() => setFolderModal(null)}
+        onSubmit={handleFolderSubmit}
+        isSubmitting={createFolderMutation.isPending || updateFolderMutation.isPending || createFolderAcrossPagesMutation.isPending}
+        errorMessage={formError}
+      />
+
+      <MoveMediaFolderModal
+        open={Boolean(moveModal)}
+        folder={moveModal?.folder ?? null}
+        onClose={() => setMoveModal(null)}
+        onSubmit={handleMoveFolder}
+        isSubmitting={updateFolderMutation.isPending}
+        errorMessage={formError}
+      />
+
+      <MediaUploadForm
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onSubmit={handleCreate}
+        isSubmitting={createMutation.isPending || uploadMutation.isPending || uploadBatchMutation.isPending}
+        errorMessage={formError}
+      />
+
+      <AiBackgroundPromptModal
+        open={aiPromptOpen}
+        onClose={() => setAiPromptOpen(false)}
+      />
     </section>
   )
 }

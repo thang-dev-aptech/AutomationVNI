@@ -1,129 +1,179 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MediaFolderFormModal from '../components/MediaFolderFormModal'
-import { CHANNELS, PAGE_A, PAGE_B } from './mediaFolderExplorerFixtures'
+import { CHANNELS, PAGE_A } from './mediaFolderExplorerFixtures'
 
 vi.mock('../hooks/useMediaFolders', async (importOriginal) => {
   const actual = await importOriginal()
   return {
     ...actual,
-    useWritableMediaFolderPages: () => ({ data: CHANNELS }),
+    useWritableMediaFolderPages: vi.fn(),
   }
 })
 
-vi.mock('../components/MediaFolderPickerTree', () => ({
-  default: (props) => <div data-testid="picker-mock" data-social-channel-id={props.socialChannelId ?? ''} />,
-}))
+const PAGE_WITHOUT_ROOT_1 = { ...CHANNELS[0], id: 'page-no-root-1', pageName: 'Campaign A' }
+const PAGE_WITHOUT_ROOT_2 = { ...CHANNELS[1], id: 'page-no-root-2', pageName: 'Campaign B' }
 
 function renderModal(props = {}) {
-  const user = userEvent.setup()
-  const onSubmit = props.onSubmit ?? vi.fn()
   const onClose = props.onClose ?? vi.fn()
+  const onSubmit = props.onSubmit ?? vi.fn()
+  const user = userEvent.setup()
   const view = render(
-    <MediaFolderFormModal open onClose={onClose} onSubmit={onSubmit} {...props} />,
+    <MediaFolderFormModal
+      open
+      onClose={onClose}
+      onSubmit={onSubmit}
+      {...props}
+    />
   )
-  return { user, onSubmit, onClose, ...view }
+  return { user, onClose, onSubmit, ...view }
 }
 
-describe('MEDIA-06 MediaFolderFormModal (create: multi-Page select, name = Page name)', () => {
-  it('create mode with 0 Pages selected: submits a single-folder payload with the typed name and socialChannelId null', async () => {
-    const { user, onSubmit } = renderModal()
+describe('MediaFolderFormModal three modes', () => {
+  const { useWritableMediaFolderPages } = require('../hooks/useMediaFolders')
 
-    await user.type(screen.getByLabelText('Tên thư mục'), 'Logo')
-    await user.click(screen.getByRole('button', { name: 'Lưu' }))
-
-    expect(onSubmit).toHaveBeenCalledWith({ name: 'Logo', parentFolderId: null, socialChannelId: null })
-  })
-
-  it('checking exactly 1 Page auto-fills the name with that Page\'s name, shows the parent picker scoped to it', async () => {
-    const { user, onSubmit } = renderModal()
-
-    await user.click(screen.getByLabelText(CHANNELS[0].pageName))
-
-    expect(screen.getByLabelText('Tên thư mục')).toHaveValue(CHANNELS[0].pageName)
-    expect(screen.getByTestId('picker-mock')).toHaveAttribute('data-social-channel-id', PAGE_A)
-
-    await user.click(screen.getByRole('button', { name: 'Lưu' }))
-    expect(onSubmit).toHaveBeenCalledWith({ name: CHANNELS[0].pageName, parentFolderId: null, socialChannelId: PAGE_A })
-  })
-
-  it('the auto-filled name can still be edited by hand before submitting', async () => {
-    const { user, onSubmit } = renderModal()
-
-    await user.click(screen.getByLabelText(CHANNELS[0].pageName))
-    const nameInput = screen.getByLabelText('Tên thư mục')
-    await user.clear(nameInput)
-    await user.type(nameInput, 'Custom Name')
-    await user.click(screen.getByRole('button', { name: 'Lưu' }))
-
-    expect(onSubmit).toHaveBeenCalledWith({ name: 'Custom Name', parentFolderId: null, socialChannelId: PAGE_A })
-  })
-
-  it('checking 2+ Pages hides the name field and the parent picker, and submits one item per Page named after it', async () => {
-    const { user, onSubmit } = renderModal()
-
-    await user.click(screen.getByLabelText(CHANNELS[0].pageName))
-    await user.click(screen.getByLabelText(CHANNELS[1].pageName))
-
-    expect(screen.queryByLabelText('Tên thư mục')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('picker-mock')).not.toBeInTheDocument()
-    expect(screen.getByText(/mỗi Page đã chọn sẽ có 1 thư mục gốc, tên trùng tên Page đó/i)).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Lưu' }))
-    expect(onSubmit).toHaveBeenCalledWith({
-      items: [
-        { socialChannelId: PAGE_A, name: CHANNELS[0].pageName },
-        { socialChannelId: PAGE_B, name: CHANNELS[1].pageName },
-      ],
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useWritableMediaFolderPages.mockReturnValue({
+      data: [PAGE_WITHOUT_ROOT_1, PAGE_WITHOUT_ROOT_2],
+      isLoading: false,
     })
   })
 
-  it('unchecking back down to 1 Page brings the name field and parent picker back', async () => {
-    const { user } = renderModal()
+  describe('page-roots mode', () => {
+    it('displays checklist of Pages without roots', () => {
+      renderModal({ mode: 'page-roots' })
 
-    await user.click(screen.getByLabelText(CHANNELS[0].pageName))
-    await user.click(screen.getByLabelText(CHANNELS[1].pageName))
-    expect(screen.queryByTestId('picker-mock')).not.toBeInTheDocument()
+      expect(screen.getByText(/Chọn Page để tạo/)).toBeInTheDocument()
+      expect(screen.getByLabelText(PAGE_WITHOUT_ROOT_1.pageName)).toBeInTheDocument()
+      expect(screen.getByLabelText(PAGE_WITHOUT_ROOT_2.pageName)).toBeInTheDocument()
+    })
 
-    await user.click(screen.getByLabelText(CHANNELS[1].pageName))
-    expect(screen.getByTestId('picker-mock')).toBeInTheDocument()
-    expect(screen.getByLabelText('Tên thư mục')).toBeInTheDocument()
+    it('submits items array with socialChannelId and page name', async () => {
+      const { user, onSubmit } = renderModal({ mode: 'page-roots' })
+
+      await user.click(screen.getByLabelText(PAGE_WITHOUT_ROOT_1.pageName))
+      await user.click(screen.getByRole('button', { name: /Lưu/ }))
+
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          items: expect.arrayContaining([
+            expect.objectContaining({
+              socialChannelId: PAGE_WITHOUT_ROOT_1.id,
+              name: PAGE_WITHOUT_ROOT_1.pageName,
+            }),
+          ]),
+        })
+      )
+    })
+
+    it('disables submit when no Pages selected', () => {
+      renderModal({ mode: 'page-roots' })
+
+      const submitButton = screen.getByRole('button', { name: /Lưu/ })
+      expect(submitButton).toBeDisabled()
+    })
+
+    it('supports select/deselect all', async () => {
+      const { user } = renderModal({ mode: 'page-roots' })
+
+      await user.click(screen.getByRole('button', { name: /Chọn tất cả/ }))
+
+      expect(screen.getByLabelText(PAGE_WITHOUT_ROOT_1.pageName)).toBeChecked()
+      expect(screen.getByLabelText(PAGE_WITHOUT_ROOT_2.pageName)).toBeChecked()
+    })
   })
 
-  it('"Chọn tất cả" selects every Page and toggles to "Bỏ chọn tất cả"', async () => {
-    const { user } = renderModal()
+  describe('create-child mode', () => {
+    it('shows only name field', () => {
+      renderModal({
+        mode: 'create-child',
+        defaultParentId: 'parent-123',
+        defaultSocialChannelId: PAGE_A,
+      })
 
-    await user.click(screen.getByRole('button', { name: 'Chọn tất cả' }))
-    expect(screen.getByLabelText(CHANNELS[0].pageName)).toBeChecked()
-    expect(screen.getByLabelText(CHANNELS[1].pageName)).toBeChecked()
+      expect(screen.getByLabelText(/Tên thư mục/)).toBeInTheDocument()
+      expect(screen.queryByText(/Chọn Page/)).not.toBeInTheDocument()
+    })
 
-    await user.click(screen.getByRole('button', { name: 'Bỏ chọn tất cả' }))
-    expect(screen.getByLabelText(CHANNELS[0].pageName)).not.toBeChecked()
+    it('submits with fixed parent and page', async () => {
+      const { user, onSubmit } = renderModal({
+        mode: 'create-child',
+        defaultParentId: 'parent-123',
+        defaultSocialChannelId: PAGE_A,
+      })
+
+      await user.type(screen.getByLabelText(/Tên thư mục/), 'New Folder')
+      await user.click(screen.getByRole('button', { name: /Lưu/ }))
+
+      expect(onSubmit).toHaveBeenCalledWith({
+        name: 'New Folder',
+        parentFolderId: 'parent-123',
+        socialChannelId: PAGE_A,
+      })
+    })
+
+    it('disables submit when name is empty', () => {
+      renderModal({
+        mode: 'create-child',
+        defaultParentId: 'parent-123',
+      })
+
+      const submitButton = screen.getByRole('button', { name: /Lưu/ })
+      expect(submitButton).toBeDisabled()
+    })
   })
 
-  it('edit mode keeps the original single-Page select behavior, unaffected by multi-select', async () => {
-    const editing = { id: 'folder-1', name: 'Old Name', parentFolderId: null, socialChannelId: PAGE_A }
-    const { user, onSubmit } = renderModal({ editing })
+  describe('rename mode', () => {
+    it('shows only name field', () => {
+      const folder = { id: 'folder-1', name: 'Original Name', socialChannelId: PAGE_A }
+      renderModal({ mode: 'rename', editing: folder })
 
-    expect(screen.getByDisplayValue('Old Name')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Chọn tất cả' })).not.toBeInTheDocument()
-    expect(screen.getByTestId('picker-mock')).toHaveAttribute('data-social-channel-id', PAGE_A)
+      expect(screen.getByDisplayValue('Original Name')).toBeInTheDocument()
+      expect(screen.queryByText(/Chọn Page/)).not.toBeInTheDocument()
+    })
 
-    await user.click(screen.getByRole('button', { name: 'Lưu' }))
-    expect(onSubmit).toHaveBeenCalledWith({ name: 'Old Name', parentFolderId: null, socialChannelId: PAGE_A })
+    it('submits with updated name', async () => {
+      const folder = {
+        id: 'folder-1',
+        name: 'Original Name',
+        socialChannelId: PAGE_A,
+        parentFolderId: 'parent-123',
+      }
+      const { user, onSubmit } = renderModal({ mode: 'rename', editing: folder })
+
+      const input = screen.getByDisplayValue('Original Name')
+      await user.clear(input)
+      await user.type(input, 'Renamed Folder')
+      await user.click(screen.getByRole('button', { name: /Lưu/ }))
+
+      expect(onSubmit).toHaveBeenCalledWith({
+        name: 'Renamed Folder',
+        parentFolderId: 'parent-123',
+        socialChannelId: PAGE_A,
+      })
+    })
+
+    it('disables submit when name is empty', async () => {
+      const folder = { id: 'folder-1', name: 'Original' }
+      renderModal({ mode: 'rename', editing: folder })
+
+      const input = screen.getByDisplayValue('Original')
+      await userEvent.clear(input)
+
+      const submitButton = screen.getByRole('button', { name: /Lưu/ })
+      expect(submitButton).toBeDisabled()
+    })
   })
 
-  it('resets Page selection and name every time the modal is reopened', async () => {
-    const { user, rerender } = renderModal()
+  describe('modal closing', () => {
+    it('calls onClose when cancel clicked', async () => {
+      const { user, onClose } = renderModal({ mode: 'rename' })
 
-    await user.type(screen.getByLabelText('Tên thư mục'), 'Sẽ bị xóa')
-    await user.click(screen.getByLabelText(CHANNELS[0].pageName))
+      await user.click(screen.getByRole('button', { name: /Hủy/ }))
 
-    rerender(<MediaFolderFormModal open={false} onClose={vi.fn()} onSubmit={vi.fn()} />)
-    rerender(<MediaFolderFormModal open onClose={vi.fn()} onSubmit={vi.fn()} />)
-
-    expect(screen.getByLabelText('Tên thư mục')).toHaveValue('')
-    expect(screen.getByLabelText(CHANNELS[0].pageName)).not.toBeChecked()
+      expect(onClose).toHaveBeenCalled()
+    })
   })
 })
