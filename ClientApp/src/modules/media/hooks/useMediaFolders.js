@@ -12,6 +12,21 @@ export function useMediaFolderTree() {
 }
 
 /**
+ * Cross-Page top-level roots: one root folder per Page the actor can manage.
+ * Each root includes Page metadata (id, name) to display alongside the folder.
+ */
+export function useMediaFolderPageRoots({
+  index = 1,
+  size = 20,
+} = {}) {
+  return useQuery({
+    queryKey: mediaFolderQueryKeys.pageRoots(index, size),
+    queryFn: async () => unwrapApiData(await mediaFolderApi.pageRoots({ index, size })),
+    retry: false,
+  })
+}
+
+/**
  * Page mà actor có quyền tạo MediaFolder — khác useSocialChannelAll (không lọc quyền, dùng cho
  * các màn hình chỉ đọc khác). Dùng riêng cho picker "Gắn với Page" trong MediaFolderFormModal để
  * "Chọn tất cả" không chọn nhầm Page mà actor không sở hữu.

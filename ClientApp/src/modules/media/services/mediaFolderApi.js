@@ -4,6 +4,10 @@ const ROOT_PARENT = 'root'
 
 export const mediaFolderApi = {
   tree: () => axiosInstance.get('/api/MediaFolder/tree'),
+  pageRoots: ({ index = 1, size = 20 } = {}) =>
+    axiosInstance.get('/api/MediaFolder/page-roots', {
+      params: { index, size },
+    }),
   children: ({
     socialChannelId,
     parentFolderId = null,
@@ -50,6 +54,12 @@ export const mediaFolderQueryKeys = {
   all: ['media-folders'],
   tree: ['media-folders', 'tree'],
   writablePages: ['media-folders', 'writable-pages'],
+  pageRoots: (index = 1, size = 20) => [
+    'media-folders',
+    'page-roots',
+    index,
+    size,
+  ],
   children: (socialChannelId, parentFolderId, index = 1, size = 20) => [
     'media-folders',
     'children',
