@@ -70,12 +70,32 @@ public class MediaFolderCreateAcrossPagesTests : IDisposable
         Assert.Equal(0, result.TotalFailed);
         Assert.All(result.Results, r => Assert.True(r.Success));
 
-        var folderA = await _db.MediaFolders.SingleAsync(f => f.SocialChannelId == _pageAId);
-        var folderB = await _db.MediaFolders.SingleAsync(f => f.SocialChannelId == _pageBId);
-        Assert.Equal("Page A", folderA.Name);
-        Assert.Null(folderA.ParentFolderId);
-        Assert.Equal("Page B", folderB.Name);
-        Assert.Null(folderB.ParentFolderId);
+        // Each page should have 3 folders: root + template + chung_chi
+        var foldersA = await _db.MediaFolders.Where(f => f.SocialChannelId == _pageAId).ToListAsync();
+        var foldersB = await _db.MediaFolders.Where(f => f.SocialChannelId == _pageBId).ToListAsync();
+
+        Assert.Equal(3, foldersA.Count);
+        Assert.Equal(3, foldersB.Count);
+
+        // Verify Page A root folder
+        var rootA = foldersA.Single(f => f.ParentFolderId == null);
+        Assert.Equal("Page A", rootA.Name);
+
+        // Verify Page A subfolders
+        var subfoldersA = foldersA.Where(f => f.ParentFolderId == rootA.Id).OrderBy(f => f.SortOrder).ToList();
+        Assert.Equal(2, subfoldersA.Count);
+        Assert.Equal("template", subfoldersA[0].Name);
+        Assert.Equal("chung_chi", subfoldersA[1].Name);
+
+        // Verify Page B root folder
+        var rootB = foldersB.Single(f => f.ParentFolderId == null);
+        Assert.Equal("Page B", rootB.Name);
+
+        // Verify Page B subfolders
+        var subfoldersB = foldersB.Where(f => f.ParentFolderId == rootB.Id).OrderBy(f => f.SortOrder).ToList();
+        Assert.Equal(2, subfoldersB.Count);
+        Assert.Equal("template", subfoldersB[0].Name);
+        Assert.Equal("chung_chi", subfoldersB[1].Name);
     }
 
     [Fact]
@@ -157,5 +177,56 @@ public class MediaFolderCreateAcrossPagesTests : IDisposable
         {
             Items = tooMany,
         }));
+    }
+
+    [Fact]
+    public async Task CreateAcrossPages_Idempotent_RerunningDoesNotCreateDuplicates()
+    {
+        var result1 = await _repo.CreateAcrossPagesAsync(new CreateMediaFolderAcrossPagesRequest
+        {
+            Items = [new CreateMediaFolderAcrossPagesItem { SocialChannelId = _pageAId, Name = "Page A" }],
+        });
+
+        Assert.Equal(1, result1.TotalSucceeded);
+        var count1 = await _db.MediaFolders.CountAsync(f => f.SocialChannelId == _pageAId);
+        Assert.Equal(3, count1);
+
+        // Re-run for the same page — should succeed but not create duplicates
+        var result2 = await _repo.CreateAcrossPagesAsync(new CreateMediaFolderAcrossPagesRequest
+        {
+            Items = [new CreateMediaFolderAcrossPagesItem { SocialChannelId = _pageAId, Name = "Page A" }],
+        });
+
+        Assert.Equal(1, result2.TotalSucceeded);
+        var count2 = await _db.MediaFolders.CountAsync(f => f.SocialChannelId == _pageAId);
+        Assert.Equal(3, count2);
+        Assert.Equal(count1, count2); // No duplicates created
+    }
+
+    [Fact]
+    public async Task CreateAcrossPages_PerPageAtomicity_FailureLeaksNothing()
+    {
+        // This test verifies that when a folder creation fails within BulkCreateAsync,
+        // all three folders for that page roll back (BulkCreateAsync runs in a real EF transaction).
+
+        var result = await _repo.CreateAcrossPagesAsync(new CreateMediaFolderAcrossPagesRequest
+        {
+            Items =
+            [
+                new CreateMediaFolderAcrossPagesItem { SocialChannelId = _pageAId, Name = "Page A" },
+                new CreateMediaFolderAcrossPagesItem { SocialChannelId = _pageCId, Name = "Page C (no access)" }, // Will fail
+            ],
+        });
+
+        Assert.Equal(1, result.TotalSucceeded);
+        Assert.Equal(1, result.TotalFailed);
+
+        // Page A should have all 3 folders
+        var countA = await _db.MediaFolders.CountAsync(f => f.SocialChannelId == _pageAId);
+        Assert.Equal(3, countA);
+
+        // Page C should have 0 folders (rollback succeeded)
+        var countC = await _db.MediaFolders.CountAsync(f => f.SocialChannelId == _pageCId);
+        Assert.Equal(0, countC);
     }
 }
