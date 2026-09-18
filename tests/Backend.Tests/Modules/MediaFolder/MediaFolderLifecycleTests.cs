@@ -222,14 +222,15 @@ public class MediaFolderLifecycleTests : IDisposable
     [Fact]
     public async Task UpdateAsync_Reparent_ToValidSiblingBranch_Succeeds()
     {
-        var rootA = await _repo.CreateAsync(new CreateMediaFolderRequest { Name = "Root A", SocialChannelId = _pageAId });
-        var rootB = await _repo.CreateAsync(new CreateMediaFolderRequest { Name = "Root B", SocialChannelId = _pageAId });
-        var moving = await _repo.CreateAsync(new CreateMediaFolderRequest { Name = "Moving", ParentFolderId = rootA.Id });
+        var root = await _repo.CreateAsync(new CreateMediaFolderRequest { Name = "Root", SocialChannelId = _pageAId });
+        var siblingA = await _repo.CreateAsync(new CreateMediaFolderRequest { Name = "Sibling A", ParentFolderId = root.Id });
+        var siblingB = await _repo.CreateAsync(new CreateMediaFolderRequest { Name = "Sibling B", ParentFolderId = root.Id });
+        var moving = await _repo.CreateAsync(new CreateMediaFolderRequest { Name = "Moving", ParentFolderId = siblingA.Id });
 
-        var updated = await _repo.UpdateAsync(moving.Id, new UpdateMediaFolderRequest { ParentFolderId = rootB.Id });
+        var updated = await _repo.UpdateAsync(moving.Id, new UpdateMediaFolderRequest { ParentFolderId = siblingB.Id });
 
         Assert.NotNull(updated);
-        Assert.Equal(rootB.Id, updated!.ParentFolderId);
+        Assert.Equal(siblingB.Id, updated!.ParentFolderId);
     }
 
     [Fact]
@@ -238,10 +239,31 @@ public class MediaFolderLifecycleTests : IDisposable
         var root = await _repo.CreateAsync(new CreateMediaFolderRequest { Name = "Root", SocialChannelId = _pageAId });
         var child = await _repo.CreateAsync(new CreateMediaFolderRequest { Name = "Child", ParentFolderId = root.Id });
 
-        var updated = await _repo.UpdateAsync(child.Id, new UpdateMediaFolderRequest { ParentFolderId = null });
+        // Move child to page B (which has no root) and set it as root
+        var updated = await _repo.UpdateAsync(child.Id, new UpdateMediaFolderRequest { ParentFolderId = null, SocialChannelId = _pageBId });
 
         Assert.NotNull(updated);
         Assert.Null(updated!.ParentFolderId);
+        Assert.Equal(_pageBId, updated.SocialChannelId);
+    }
+
+    // ---------- Single-root-per-page guard tests ----------
+
+    [Fact]
+    public async Task CreateAsync_SecondRoot_IsRejected()
+    {
+        var root1 = await _repo.CreateAsync(new CreateMediaFolderRequest { Name = "Root 1", SocialChannelId = _pageAId });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _repo.CreateAsync(new CreateMediaFolderRequest { Name = "Root 2", SocialChannelId = _pageAId }));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_Reparent_ToRoot_WhenRootExists_IsRejected()
+    {
+        var root = await _repo.CreateAsync(new CreateMediaFolderRequest { Name = "Root", SocialChannelId = _pageAId });
+        var child = await _repo.CreateAsync(new CreateMediaFolderRequest { Name = "Child", ParentFolderId = root.Id });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _repo.UpdateAsync(child.Id, new UpdateMediaFolderRequest { ParentFolderId = null }));
     }
 
     // ---------- SoftDeleteAsync ----------

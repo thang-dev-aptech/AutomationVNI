@@ -461,6 +461,10 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
 
             request.SocialChannelId ??= parent.SocialChannelId;
         }
+        else if (request.SocialChannelId.HasValue)
+        {
+            await EnsureSingleRootPerPageAsync(request.SocialChannelId.Value, null, ct);
+        }
 
         var entity = new MediaFolderModel
         {
@@ -475,9 +479,35 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
     }
 
     /// <summary>
-    /// MEDIA-06: tạo 1 folder gốc ở nhiều Page cùng lúc, mỗi Page có tên riêng (frontend thường
-    /// điền = tên Page). Best-effort per Page — Page này lỗi (tên trống, Page không tồn tại/không
-    /// có quyền, v.v.) không chặn các Page khác; mỗi Page tạo/lưu độc lập (không transaction chung).
+    /// Mỗi Page chỉ được có ĐÚNG 1 thư mục gốc — thư mục gốc đóng vai trò "drive" của Page đó
+    /// trên màn Media (lưới cấp cao nhất hiển thị mỗi Page 1 thẻ). Gọi khi tạo folder không có
+    /// cha, và khi đưa một folder đang có cha trở về gốc.
+    /// </summary>
+    private async Task EnsureSingleRootPerPageAsync(
+        Guid socialChannelId, Guid? excludeFolderId, CancellationToken ct)
+    {
+        var hasRoot = await QueryActive()
+            .AnyAsync(x => x.SocialChannelId == socialChannelId
+                && x.ParentFolderId == null
+                && (!excludeFolderId.HasValue || x.Id != excludeFolderId.Value), ct);
+
+        if (hasRoot)
+            throw new InvalidOperationException("Page này đã có thư mục gốc.");
+    }
+
+    /// <summary>
+    /// Thư mục con mặc định được tạo sẵn trong thư mục gốc của mỗi Page.
+    /// </summary>
+    public static readonly string[] DefaultPageSubfolders = ["template", "chung_chi"];
+
+    /// <summary>
+    /// MEDIA-06: tạo "drive" cho nhiều Page cùng lúc — mỗi Page 1 thư mục gốc (tên thường = tên
+    /// Page) kèm sẵn các thư mục con mặc định (<see cref="DefaultPageSubfolders"/>).
+    ///
+    /// Best-effort per Page — Page này lỗi (tên trống, không có quyền, Page đã có thư mục gốc,
+    /// v.v.) không chặn các Page khác. Nhưng TRONG một Page thì nguyên tử: đi qua
+    /// <see cref="BulkCreateAsync"/> (có transaction thật) nên 1 Page hoặc có đủ gốc + thư mục con,
+    /// hoặc không có gì — không để lại Page dựng dở. DuplicatePolicy.Skip khiến chạy lại an toàn.
     /// </summary>
     public async Task<CreateMediaFolderAcrossPagesResponse> CreateAcrossPagesAsync(
         CreateMediaFolderAcrossPagesRequest request, CancellationToken ct = default)
@@ -499,19 +529,32 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
 
                 await EnsureSocialChannelAccessAsync(item.SocialChannelId, ct);
 
-                var entity = await CreateAsync(new CreateMediaFolderRequest
+                const string rootRef = "root";
+                var folders = new List<BulkCreateMediaFolderItem>
                 {
-                    Name = item.Name,
-                    Description = request.Description,
+                    new() { ClientRef = rootRef, Name = item.Name, Description = request.Description },
+                };
+                folders.AddRange(DefaultPageSubfolders.Select((name, index) => new BulkCreateMediaFolderItem
+                {
+                    ClientRef = $"sub-{index}",
+                    Name = name,
+                    ParentRef = rootRef,
+                    SortOrder = index,
+                }));
+
+                var bulk = await BulkCreateAsync(new BulkCreateMediaFolderRequest
+                {
                     SocialChannelId = item.SocialChannelId,
                     ParentFolderId = null,
+                    DuplicatePolicy = BulkDuplicatePolicy.Skip,
+                    Folders = folders,
                 }, ct);
 
                 results.Add(new CreateMediaFolderAcrossPagesResultItem
                 {
                     SocialChannelId = item.SocialChannelId,
                     Success = true,
-                    FolderId = entity.Id,
+                    FolderId = bulk.Folders.FirstOrDefault(f => f.ClientRef == rootRef)?.Id,
                 });
             }
             catch (Exception ex)
@@ -560,6 +603,13 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
                     throw new InvalidOperationException("Thư mục cha không thuộc Page yêu cầu.");
 
                 await EnsureNoCycleAsync(id, request.ParentFolderId.Value, ct);
+            }
+            else
+            {
+                // Đưa folder về gốc: chỉ được phép nếu Page chưa có thư mục gốc nào khác.
+                var targetChannelId = request.SocialChannelId ?? entity.SocialChannelId;
+                if (targetChannelId.HasValue)
+                    await EnsureSingleRootPerPageAsync(targetChannelId.Value, id, ct);
             }
             entity.ParentFolderId = request.ParentFolderId;
         }
