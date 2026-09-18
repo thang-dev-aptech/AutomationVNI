@@ -101,6 +101,13 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
             .Select(g => new { FolderId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.FolderId, x => x.Count, ct);
 
+        // Cả trang chỉ thuộc 1 Page (request.SocialChannelId) — tra PageName 1 lần cho subtitle
+        // trên folder card, thay vì để card tự fallback hiện GUID thô.
+        var pageName = await Context.Set<SocialChannelModel>()
+            .Where(x => x.Id == request.SocialChannelId)
+            .Select(x => x.PageName)
+            .FirstOrDefaultAsync(ct);
+
         var responseItems = items.Select(f =>
         {
             var childCount = childFolderCounts.GetValueOrDefault(f.Id, 0);
@@ -112,6 +119,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
                 Description = f.Description,
                 ParentFolderId = f.ParentFolderId,
                 SocialChannelId = f.SocialChannelId,
+                PageName = pageName,
                 SortOrder = f.SortOrder,
                 ChildFolderCount = childCount,
                 DirectAssetCount = assetCount,
