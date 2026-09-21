@@ -10,6 +10,12 @@
   gap: 20px;
 }
 
+/* Sticky pager/header needs a scrollport ancestor without overflow:hidden.
+   Global .card.card-body clips children and would pin the pager inside the card. */
+.media-main-content > .card.card-body {
+  overflow: visible;
+}
+
 .media-page-filters {
   display: grid;
   gap: 16px;
@@ -124,8 +130,7 @@
   color: var(--color-text-muted);
 }
 
-/* Đường dẫn thư mục (breadcrumb) — ở đầu .media-main
-   khi cây sidebar thay cho duyệt từng cấp, vẫn giữ nguyên để định hướng nhanh. */
+/* Đường dẫn thư mục (breadcrumb) — cùng hàng với tiêu đề "Thư mục" trong lưới. */
 .media-folder-breadcrumb {
   display: flex;
   flex-wrap: wrap;
@@ -309,4 +314,24 @@
   gap: 8px;
   font-size: 0.85rem;
   cursor: pointer;
+}
+
+.media-page-pager-host {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--color-surface);
+  padding-block: 8px;
+}
+
+.media-page-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 0;
+  margin-left: auto;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }

@@ -57,21 +57,27 @@ export default function MediaPage() {
   const [moveModal, setMoveModal] = useState(null) // { folder } | null
   const [folderContextMenu, setFolderContextMenu] = useState(null) // { x, y, folder } | null
   const [fileContextMenu, setFileContextMenu] = useState(null) // { x, y, asset } | null
+  const [gridContextMenu, setGridContextMenu] = useState(null) // { x, y } | null
+  const [filePageIndex, setFilePageIndex] = useState(1)
 
   const { data: channels = [] } = useSocialChannelAll()
   const browser = useMediaBrowser()
   const { currentFolderId, derivedPageId, selection, items } = browser
 
+  useEffect(() => {
+    setFilePageIndex(1)
+  }, [keyword, source, selection])
+
   const params = useMemo(
     () => ({
       keyword,
-      index: 1,
+      index: filePageIndex,
       size: 48,
       source: source ? Number(source) : undefined,
       folderId: selection !== 'all' && selection !== 'unassigned' ? selection : undefined,
       unassigned: selection === 'unassigned' ? true : undefined,
     }),
-    [keyword, source, selection],
+    [keyword, source, selection, filePageIndex],
   )
 
   const { data, isLoading, isError, error, refetch } = useMediaAssets(params)
@@ -95,6 +101,8 @@ export default function MediaPage() {
   const [analyzingLayoutId, setAnalyzingLayoutId] = useState(null)
 
   const fileItems = data?.items ?? []
+  const filePageSize = data?.size > 0 ? data.size : 48
+  const totalFilePages = Math.max(1, Math.ceil((data?.total ?? 0) / filePageSize))
   const browserFolders = items
 
   useEffect(() => {
@@ -231,8 +239,18 @@ export default function MediaPage() {
     }
   }
 
+  const handleGridFileDrop = async (formData) => {
+    // Append current folder to the FormData if inside a folder
+    if (currentFolderId) {
+      formData.append('folderId', currentFolderId)
+    }
+    await handleCreate(formData)
+  }
+
   const handleFolderContextMenu = (event, folder) => {
     event.preventDefault()
+    setFileContextMenu(null)
+    setGridContextMenu(null)
     setFolderContextMenu({
       x: event.clientX,
       y: event.clientY,
@@ -242,11 +260,43 @@ export default function MediaPage() {
 
   const handleFileContextMenu = (event, asset) => {
     event.preventDefault()
+    setFolderContextMenu(null)
+    setGridContextMenu(null)
     setFileContextMenu({
       x: event.clientX,
       y: event.clientY,
       asset,
     })
+  }
+
+  const handleGridContextMenu = (event) => {
+    event.preventDefault()
+    setFolderContextMenu(null)
+    setFileContextMenu(null)
+    setGridContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+    })
+  }
+
+  const handleGridContextMenuSelect = (action) => {
+    setGridContextMenu(null)
+    setFormError('')
+    if (action === 'folder') {
+      if (currentFolderId === null) {
+        setFolderModal({ mode: 'page-roots' })
+      } else {
+        setFolderModal({
+          mode: 'create-child',
+          defaultParentId: currentFolderId,
+          defaultSocialChannelId: derivedPageId,
+        })
+      }
+      return
+    }
+    if (action === 'media') {
+      setUploadOpen(true)
+    }
   }
 
   const handleFolderContextMenuSelect = async (action, folder) => {
@@ -426,28 +476,6 @@ export default function MediaPage() {
           }}
         />
 
-        <nav className="media-folder-breadcrumb" aria-label="Đường dẫn thư mục">
-          <button
-            type="button"
-            className={`media-folder-breadcrumb-item${!currentFolderId ? ' is-current' : ''}`}
-            onClick={browser.openRoot}
-          >
-            Thư mục gốc
-          </button>
-          {browser.ancestors.map((item, index) => (
-            <span key={item.id}>
-              <span className="media-folder-breadcrumb-sep">/</span>
-              <button
-                type="button"
-                className={`media-folder-breadcrumb-item${index === browser.ancestors.length - 1 ? ' is-current' : ''}`}
-                onClick={() => browser.openBreadcrumb(item)}
-              >
-                {item.name}
-              </button>
-            </span>
-          ))}
-        </nav>
-
         <div className="card card-body media-page-filters">
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label htmlFor="media-keyword">Tìm kiếm</label>
@@ -514,12 +542,44 @@ export default function MediaPage() {
             onFolderClick={browser.openFolder}
             onFolderContextMenu={handleFolderContextMenu}
             onFolderDrop={handleMoveAsset}
+            onFileDrop={handleCreate}
             onFileView={(asset) => setViewingAsset(asset)}
             onFileDetails={(asset) => setDetailsAsset(asset)}
             onFileDelete={handleDelete}
             onFileContextMenu={handleFileContextMenu}
             canManage={canManageMedia}
             isRootLevel={currentFolderId === null}
+            onGridContextMenu={handleGridContextMenu}
+            onGridFileDrop={handleGridFileDrop}
+            pageIndex={browser.pageIndex}
+            totalPages={browser.totalPages}
+            onPageChange={browser.goToPage}
+            filePageIndex={filePageIndex}
+            totalFilePages={totalFilePages}
+            onFilePageChange={setFilePageIndex}
+            folderBreadcrumb={(
+              <nav className="media-folder-breadcrumb" aria-label="Đường dẫn thư mục">
+                <button
+                  type="button"
+                  className={`media-folder-breadcrumb-item${!currentFolderId ? ' is-current' : ''}`}
+                  onClick={browser.openRoot}
+                >
+                  Thư mục gốc
+                </button>
+                {browser.ancestors.map((item, index) => (
+                  <span key={item.id}>
+                    <span className="media-folder-breadcrumb-sep">/</span>
+                    <button
+                      type="button"
+                      className={`media-folder-breadcrumb-item${index === browser.ancestors.length - 1 ? ' is-current' : ''}`}
+                      onClick={() => browser.openBreadcrumb(item)}
+                    >
+                      {item.name}
+                    </button>
+                  </span>
+                ))}
+              </nav>
+            )}
           />
         </div>
       </div>
@@ -553,6 +613,18 @@ export default function MediaPage() {
             ] : []),
           ]}
           onDismiss={() => setFileContextMenu(null)}
+        />
+      )}
+
+      {gridContextMenu && (
+        <ContextMenu
+          x={gridContextMenu.x}
+          y={gridContextMenu.y}
+          items={[
+            { label: 'Tạo thư mục', onSelect: () => handleGridContextMenuSelect('folder') },
+            { label: 'Thêm media', onSelect: () => handleGridContextMenuSelect('media') },
+          ]}
+          onDismiss={() => setGridContextMenu(null)}
         />
       )}
 

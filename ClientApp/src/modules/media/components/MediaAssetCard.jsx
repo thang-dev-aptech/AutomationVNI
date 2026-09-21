@@ -36,6 +36,7 @@ export default function MediaAssetCard({
       onDragStart={canManage ? handleDragStart : undefined}
       onContextMenu={(event) => {
         event.preventDefault()
+        event.stopPropagation()
         if (onContextMenu) {
           onContextMenu(event, asset)
         }

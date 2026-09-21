@@ -6,6 +6,7 @@ export default function MediaFolderCard({
   onClick,
   onContextMenu,
   onDrop,
+  onFileDrop,
   canManage = false,
 }) {
   const displayName = folder.name
@@ -27,9 +28,20 @@ export default function MediaFolderCard({
     event.preventDefault()
     event.currentTarget.classList.remove('media-folder-card-dragover')
 
-    const assetId = event.dataTransfer.getData('text/media-asset-id')
-    if (assetId && onDrop) {
-      onDrop(assetId, folder.id)
+    // Check for real files first (OS drag-drop)
+    if (event.dataTransfer.files?.length > 0 && onFileDrop) {
+      const formData = new FormData()
+      Array.from(event.dataTransfer.files).forEach((file) => {
+        formData.append('files', file)
+      })
+      formData.append('folderId', folder.id)
+      onFileDrop(formData)
+    } else {
+      // Fall back to internal asset move
+      const assetId = event.dataTransfer.getData('text/media-asset-id')
+      if (assetId && onDrop) {
+        onDrop(assetId, folder.id)
+      }
     }
   }
 
@@ -39,6 +51,7 @@ export default function MediaFolderCard({
       onClick={onClick}
       onContextMenu={(event) => {
         event.preventDefault()
+        event.stopPropagation()
         if (onContextMenu) {
           onContextMenu(event, folder)
         }
