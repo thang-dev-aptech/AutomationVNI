@@ -39,10 +39,19 @@ export function useWritableMediaFolderPages({ withoutRoot = false } = {}) {
 }
 
 /** Page actor được phép dùng cho ChungChiGallery và có ảnh active trong folder chung_chi. */
+export function parseChungChiEligiblePages(data) {
+  if (!Array.isArray(data)) {
+    throw new TypeError('Dữ liệu Page chứng chỉ không hợp lệ. Vui lòng tải lại trang.')
+  }
+  return data
+}
+
 export function useChungChiEligiblePages() {
   return useQuery({
     queryKey: mediaFolderQueryKeys.chungChiPages,
-    queryFn: async () => unwrapApiData(await mediaFolderApi.chungChiPages()),
+    queryFn: async () => parseChungChiEligiblePages(
+      unwrapApiData(await mediaFolderApi.chungChiPages()),
+    ),
     retry: false,
   })
 }

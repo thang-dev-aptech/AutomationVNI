@@ -56,6 +56,8 @@ describe('BulkChungChiPage', () => {
         { id: PAGE_B, pageName: 'Page B' },
       ],
       isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
     })
     bulkApi.createChungChi.mockResolvedValue({
       data: { success: true, data: { batchId: 'batch-cc-1', created: 2 } },
@@ -63,13 +65,39 @@ describe('BulkChungChiPage', () => {
   })
 
   it('shows an actionable empty state when no Page has a chung_chi image', () => {
-    useChungChiEligiblePages.mockReturnValue({ data: [], isLoading: false })
+    useChungChiEligiblePages.mockReturnValue({ data: [], isLoading: false, isError: false })
 
     renderPage()
 
     expect(screen.getByText('Chưa có Page nào có ảnh trong thư mục chung_chi.')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Đến Thư mục Media' })).toHaveAttribute('href', '/media')
     expect(screen.queryByRole('button', { name: 'Chọn page' })).not.toBeInTheDocument()
+  })
+
+  it('does not pass malformed channel data to ChannelMultiSelect', () => {
+    useChungChiEligiblePages.mockReturnValue({
+      data: '<!doctype html>',
+      isLoading: false,
+      isError: false,
+    })
+
+    expect(() => renderPage()).not.toThrow()
+    expect(screen.getByText('Chưa có Page nào có ảnh trong thư mục chung_chi.')).toBeInTheDocument()
+  })
+
+  it('shows a retryable error when the eligible Page response is invalid', () => {
+    const refetch = vi.fn()
+    useChungChiEligiblePages.mockReturnValue({
+      isLoading: false,
+      isError: true,
+      error: new TypeError('Dữ liệu Page chứng chỉ không hợp lệ. Vui lòng tải lại trang.'),
+      refetch,
+    })
+
+    renderPage()
+    expect(screen.getByText('Dữ liệu Page chứng chỉ không hợp lệ. Vui lòng tải lại trang.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Thử lại/i }))
+    expect(refetch).toHaveBeenCalledTimes(1)
   })
 
   it('shows a count input for Random and hides it for All', () => {

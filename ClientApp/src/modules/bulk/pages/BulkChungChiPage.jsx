@@ -4,6 +4,7 @@ import { useMutation } from '@tanstack/react-query'
 import PageHeader from '@/shared/components/PageHeader'
 import LoadingState from '@/shared/components/LoadingState'
 import EmptyState from '@/shared/components/EmptyState'
+import ErrorState from '@/shared/components/ErrorState'
 import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import { unwrapApiData, getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
@@ -26,7 +27,14 @@ export default function BulkChungChiPage() {
   const [mode, setMode] = useState(CHUNG_CHI_MODE.Random)
   const [randomCount, setRandomCount] = useState('1')
 
-  const { data: channels = [], isLoading: channelsLoading } = useChungChiEligiblePages()
+  const {
+    data: channelData,
+    isLoading: channelsLoading,
+    isError: channelsError,
+    error: channelsErrorDetail,
+    refetch: refetchChannels,
+  } = useChungChiEligiblePages()
+  const channels = Array.isArray(channelData) ? channelData : []
   const { data: categoryData } = useCategoryList({ index: 1, size: 200 })
   const categories = categoryData?.items ?? []
 
@@ -66,6 +74,9 @@ export default function BulkChungChiPage() {
   }
 
   if (channelsLoading) return <LoadingState message="Đang tải..." />
+  if (channelsError) {
+    return <ErrorState message={getErrorMessage(channelsErrorDetail)} onRetry={refetchChannels} />
+  }
 
   return (
     <section className="bulk-create">
