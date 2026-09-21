@@ -249,8 +249,8 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
                 posts.Add(new PostModel
                 {
                     Title = it.Idea.Trim(),
+                    Content = it.Idea.Trim(),
                     SocialChannelId = ch,
-                    CategoryId = it.CategoryId,
                     GenerationFlow = GenerationFlow.ChungChiGallery,
                     ImageCount = mode == ChungChiSelectionMode.Random ? randomCount : null,
                     BatchId = batchId,

@@ -44,13 +44,12 @@ public class PostBulkCreateChungChiTests : IDisposable
     {
         var channelA = AddEligiblePage("Page A");
         var channelB = AddEligiblePage("Page B");
-        var categoryId = Guid.NewGuid();
 
         var result = await _repo.BulkCreateChungChiAsync(new BulkCreateChungChiRequest
         {
             Items =
             [
-                new BulkChungChiItem { Idea = "Idea 1", CategoryId = categoryId },
+                new BulkChungChiItem { Idea = "Idea 1" },
                 new BulkChungChiItem { Idea = "Idea 2" }
             ],
             ChannelIds = [channelA, channelB],
@@ -74,10 +73,20 @@ public class PostBulkCreateChungChiTests : IDisposable
             Assert.Equal(3, p.ImageCount);
             Assert.Contains(p.SocialChannelId, new[] { channelA, channelB });
             Assert.Equal(ChungChiSelectionMode.Random, ReadMode(p.ExtraJson));
+            Assert.Null(p.CategoryId);
+            // Content is set to idea text during creation, not AI-generated
+            Assert.NotNull(p.Content);
+            Assert.NotEmpty(p.Content);
         });
 
-        Assert.Equal(2, posts.Count(p => p.Title == "Idea 1" && p.CategoryId == categoryId));
-        Assert.Equal(2, posts.Count(p => p.Title == "Idea 2" && p.CategoryId is null));
+        var idea1Posts = posts.Where(p => p.Title == "Idea 1").ToList();
+        Assert.Equal(2, idea1Posts.Count);
+        Assert.All(idea1Posts, p => Assert.Equal("Idea 1", p.Content));
+
+        var idea2Posts = posts.Where(p => p.Title == "Idea 2").ToList();
+        Assert.Equal(2, idea2Posts.Count);
+        Assert.All(idea2Posts, p => Assert.Equal("Idea 2", p.Content));
+
         Assert.Equal(2, posts.Count(p => p.SocialChannelId == channelA));
         Assert.Equal(2, posts.Count(p => p.SocialChannelId == channelB));
     }

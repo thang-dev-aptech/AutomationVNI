@@ -90,6 +90,15 @@ public class GenerationJobPipelineService(
             return;
         }
 
+        // Nhánh ChungChiGallery: caption là ý tưởng gốc (đã set sẵn lúc tạo), ảnh nguyên trạng từ
+        // thư mục con "chung_chi" dưới root Page. Không sinh text AI, không overlay, không sinh
+        // ảnh AI, không fallback FullAI khi thiếu/rỗng folder.
+        if (post.GenerationFlow == GenerationFlow.ChungChiGallery)
+        {
+            await GenerateFromChungChiAsync(post, ct);
+            return;
+        }
+
         var textJob = await QueueTextGenerationAsync(postId, ct);
         await ProcessAsync(textJob.JobId, ct);
 
@@ -109,14 +118,6 @@ public class GenerationJobPipelineService(
         if (post.GenerationFlow == GenerationFlow.Template)
         {
             await GenerateFromTemplateAsync(post, ct);
-            return;
-        }
-
-        // Nhánh ChungChiGallery: ảnh nguyên trạng từ thư mục con "chung_chi" dưới root Page.
-        // Không overlay, không sinh ảnh AI, không fallback FullAI khi thiếu/rỗng folder.
-        if (post.GenerationFlow == GenerationFlow.ChungChiGallery)
-        {
-            await GenerateFromChungChiAsync(post, ct);
             return;
         }
 

@@ -88,7 +88,6 @@ public class BulkChungChiItem
 {
     /// <summary>Ý tưởng → Title + prompt text.</summary>
     public string Idea { get; set; } = string.Empty;
-    public Guid? CategoryId { get; set; }
 }
 
 public enum ChungChiSelectionMode
