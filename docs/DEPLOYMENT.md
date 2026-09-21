@@ -17,20 +17,61 @@ cd ClientApp
 npm ci
 npm run build
 
-# Backend
-cd ../backend
-dotnet restore
-dotnet publish -c Release -o ./publish
+# Backend Linux x64 self-contained (chạy từ repository root)
+cd ..
+dotnet publish backend/backend.csproj \
+  -p:PublishProfile=LinuxX64 \
+  -o artifacts/backend-linux-x64
 ```
 
-Chạy published app:
+Profile này tạo executable `backend` và mang theo .NET runtime. Không bật trimming/single-file
+vì backend dùng EF Core, SkiaSharp và native assets; cần chép **toàn bộ** output cùng nhau.
+`appsettings.Production.json` không được đưa vào artifact để tránh đóng gói secret của máy build.
+
+Chạy published app trong môi trường bất kỳ:
 
 ```bash
-cd backend/publish
+cd artifacts/backend-linux-x64
 ASPNETCORE_ENVIRONMENT=Production \
 Jwt__SecretKey="YOUR_PRODUCTION_JWT_SECRET_MIN_32_CHARS" \
 ConnectionStrings__Default="Data Source=/var/data/vni_automation.db" \
 ./backend
+```
+
+## Linux x64 self-contained (DirectAdmin)
+
+Đích deploy hiện tại:
+
+```text
+/home/vni/domains/auto.vni.edu.vn/publish_output
+```
+
+Trước khi chép bản mới, giữ nguyên các file/directory do máy chủ sở hữu như
+`appsettings.Production.json`, `Data/`, `Storage/` và `app.log`. Chép toàn bộ nội dung của
+`artifacts/backend-linux-x64/` vào thư mục đích, rồi bảo đảm executable bit:
+
+```bash
+cd /home/vni/domains/auto.vni.edu.vn/publish_output
+chmod +x ./backend
+```
+
+Nếu đây là máy chủ mới, cấu hình secret bằng environment/secret manager hoặc tạo
+`appsettings.Production.json` trực tiếp trên máy chủ; không đưa file đó vào Git hay gói publish.
+
+Chạy đúng lệnh vận hành:
+
+```bash
+cd /home/vni/domains/auto.vni.edu.vn/publish_output && \
+nohup env ASPNETCORE_URLS="http://127.0.0.1:5000" ASPNETCORE_ENVIRONMENT=Production \
+  ./backend > app.log 2>&1 &
+```
+
+Kiểm tra process và port sau khi chạy:
+
+```bash
+pgrep -af '/backend|./backend'
+curl --fail --show-error --head http://127.0.0.1:5000/
+tail -n 100 app.log
 ```
 
 ## Production configuration checklist

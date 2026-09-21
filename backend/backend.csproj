@@ -35,7 +35,12 @@
     <!-- Font cho RichTemplateRenderService (InitializeFonts đọc theo Directory.GetCurrentDirectory()/Resources).
          Thiếu bước copy này thì `dotnet publish` không mang theo Resources/, và bản deploy sẽ
          âm thầm rớt về font hệ thống thay vì Inter — sự cố đã từng gặp với chính font này. -->
-    <Content Include="Resources\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Resources\**\*"
+             Exclude="Resources\**\*.rar;Resources\**\*.zip"
+             CopyToOutputDirectory="PreserveNewest" />
+    <!-- Production secrets belong to the server/secret manager. A local, gitignored
+         appsettings.Production.json must never be copied into a distributable publish artifact. -->
+    <Content Update="appsettings.Production.json" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
 </Project>
