@@ -9,7 +9,6 @@ import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import { unwrapApiData, getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
 import { useChungChiEligiblePages } from '@/modules/media/hooks/useMediaFolders'
-import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import { bulkApi } from '../services/bulkApi'
 import './BulkCreatePage.css'
 
@@ -23,7 +22,6 @@ export const CHUNG_CHI_MODE = {
 export default function BulkChungChiPage() {
   const navigate = useNavigate()
   const [channelIds, setChannelIds] = useState([])
-  const [categoryId, setCategoryId] = useState('')
   const [mode, setMode] = useState(CHUNG_CHI_MODE.Random)
   const [randomCount, setRandomCount] = useState('1')
 
@@ -35,8 +33,6 @@ export default function BulkChungChiPage() {
     refetch: refetchChannels,
   } = useChungChiEligiblePages()
   const channels = Array.isArray(channelData) ? channelData : []
-  const { data: categoryData } = useCategoryList({ index: 1, size: 200 })
-  const categories = categoryData?.items ?? []
 
   const createMutation = useMutation({
     mutationFn: async (payload) => unwrapApiData(await bulkApi.createChungChi(payload)),
@@ -50,7 +46,6 @@ export default function BulkChungChiPage() {
     const payload = {
       items: [{
         idea: DEFAULT_CHUNG_CHI_IDEA,
-        ...(categoryId ? { categoryId } : {}),
       }],
       channelIds,
       mode,
@@ -111,21 +106,7 @@ export default function BulkChungChiPage() {
             maxHeight={220}
           />
 
-          <div className="form-group" style={{ marginTop: 16, maxWidth: 360 }}>
-            <label htmlFor="chung-chi-category">Loại bài (tuỳ chọn)</label>
-            <select
-              id="chung-chi-category"
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-            >
-              <option value="">Không gắn loại bài</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <fieldset className="form-group" style={{ marginTop: 8, border: 0, padding: 0 }}>
+          <fieldset className="form-group" style={{ marginTop: 16, border: 0, padding: 0 }}>
             <legend style={{ fontWeight: 500, marginBottom: 8 }}>Chọn ảnh từ chung_chi</legend>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>

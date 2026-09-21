@@ -8,7 +8,6 @@ import { useChungChiEligiblePages } from '@/modules/media/hooks/useMediaFolders'
 
 const PAGE_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const PAGE_B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
-const CAT_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
 const navigate = vi.fn()
 
 vi.mock('react-router-dom', async (importOriginal) => {
@@ -18,10 +17,6 @@ vi.mock('react-router-dom', async (importOriginal) => {
 
 vi.mock('@/modules/media/hooks/useMediaFolders', () => ({
   useChungChiEligiblePages: vi.fn(),
-}))
-
-vi.mock('@/modules/categories/hooks/useCategories', () => ({
-  useCategoryList: () => ({ data: { items: [{ id: CAT_ID, name: 'Chứng chỉ' }] } }),
 }))
 
 vi.mock('@/shared/stores/toastStore', () => ({
@@ -127,7 +122,6 @@ describe('BulkChungChiPage', () => {
   it('submits POST payload matching BulkCreateChungChiRequest then navigates to the batch', async () => {
     renderPage()
 
-    fireEvent.change(screen.getByLabelText('Loại bài (tuỳ chọn)'), { target: { value: CAT_ID } })
     fireEvent.change(screen.getByLabelText('Số ảnh mỗi bài'), { target: { value: '3' } })
 
     fireEvent.click(screen.getByRole('button', { name: 'Chọn page' }))
@@ -139,7 +133,7 @@ describe('BulkChungChiPage', () => {
       expect(bulkApi.createChungChi).toHaveBeenCalledTimes(1)
     })
     expect(bulkApi.createChungChi).toHaveBeenCalledWith({
-      items: [{ idea: 'Chứng chỉ', categoryId: CAT_ID }],
+      items: [{ idea: 'Chứng chỉ' }],
       channelIds: [PAGE_A, PAGE_B],
       mode: CHUNG_CHI_MODE.Random,
       randomCount: 3,
@@ -163,5 +157,26 @@ describe('BulkChungChiPage', () => {
       })
     })
     expect(bulkApi.createChungChi.mock.calls[0][0]).not.toHaveProperty('randomCount')
+  })
+
+  it('does not render or accept a Category field', () => {
+    renderPage()
+
+    expect(screen.queryByLabelText('Loại bài')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Loại bài/i)).not.toBeInTheDocument()
+  })
+
+  it('payload never includes categoryId', async () => {
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chọn page' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Chọn hết kết quả' }))
+    fireEvent.click(screen.getByRole('button', { name: /Tạo 2 bài/ }))
+
+    await waitFor(() => {
+      expect(bulkApi.createChungChi).toHaveBeenCalledTimes(1)
+    })
+    expect(bulkApi.createChungChi.mock.calls[0][0]).not.toHaveProperty('categoryId')
+    expect(bulkApi.createChungChi.mock.calls[0][0].items[0]).not.toHaveProperty('categoryId')
   })
 })
