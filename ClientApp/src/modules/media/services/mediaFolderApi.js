@@ -54,6 +54,7 @@ export const mediaFolderApi = {
   filter: (params) => axiosInstance.post('/api/MediaFolder/filter', params),
   writablePages: ({ withoutRoot = false } = {}) =>
     axiosInstance.get('/api/MediaFolder/writable-pages', { params: { withoutRoot } }),
+  chungChiPages: () => axiosInstance.get('/api/MediaFolder/chung-chi-pages'),
   bulkCreate: (payload) => axiosInstance.post('/api/MediaFolder/bulk', payload),
   createAcrossPages: (payload) => axiosInstance.post('/api/MediaFolder/create-across-pages', payload),
   create: (payload) => axiosInstance.post('/api/MediaFolder', payload),
@@ -65,6 +66,7 @@ export const mediaFolderQueryKeys = {
   all: ['media-folders'],
   tree: ['media-folders', 'tree'],
   writablePages: ['media-folders', 'writable-pages'],
+  chungChiPages: ['media-folders', 'chung-chi-pages'],
   pageRoots: (index = 1, size = 20) => [
     'media-folders',
     'page-roots',

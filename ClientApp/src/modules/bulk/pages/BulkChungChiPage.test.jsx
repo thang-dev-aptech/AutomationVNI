@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BulkChungChiPage, { CHUNG_CHI_MODE } from './BulkChungChiPage'
 import { bulkApi } from '../services/bulkApi'
+import { useChungChiEligiblePages } from '@/modules/media/hooks/useMediaFolders'
 
 const PAGE_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const PAGE_B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
@@ -15,14 +16,8 @@ vi.mock('react-router-dom', async (importOriginal) => {
   return { ...actual, useNavigate: () => navigate }
 })
 
-vi.mock('@/modules/social-channels/hooks/useSocialChannels', () => ({
-  useSocialChannelAll: () => ({
-    data: [
-      { id: PAGE_A, pageName: 'Page A' },
-      { id: PAGE_B, pageName: 'Page B' },
-    ],
-    isLoading: false,
-  }),
+vi.mock('@/modules/media/hooks/useMediaFolders', () => ({
+  useChungChiEligiblePages: vi.fn(),
 }))
 
 vi.mock('@/modules/categories/hooks/useCategories', () => ({
@@ -55,9 +50,26 @@ function renderPage() {
 describe('BulkChungChiPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    useChungChiEligiblePages.mockReturnValue({
+      data: [
+        { id: PAGE_A, pageName: 'Page A' },
+        { id: PAGE_B, pageName: 'Page B' },
+      ],
+      isLoading: false,
+    })
     bulkApi.createChungChi.mockResolvedValue({
       data: { success: true, data: { batchId: 'batch-cc-1', created: 2 } },
     })
+  })
+
+  it('shows an actionable empty state when no Page has a chung_chi image', () => {
+    useChungChiEligiblePages.mockReturnValue({ data: [], isLoading: false })
+
+    renderPage()
+
+    expect(screen.getByText('Chưa có Page nào có ảnh trong thư mục chung_chi.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Đến Thư mục Media' })).toHaveAttribute('href', '/media')
+    expect(screen.queryByRole('button', { name: 'Chọn page' })).not.toBeInTheDocument()
   })
 
   it('shows a count input for Random and hides it for All', () => {

@@ -1,4 +1,5 @@
 using Backend.Data;
+using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaFolder;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
@@ -291,5 +292,66 @@ public sealed class MediaFolderCrossPageReadsTests : IDisposable
         Assert.Equal(_ownedNoRootPageId, withoutRoot[0].Id);
         Assert.DoesNotContain(withoutRoot, p => p.Id == _ownedPageId);
         Assert.DoesNotContain(withoutRoot, p => p.Id == _otherPageId);
+    }
+
+    [Fact]
+    public async Task ChungChiEligiblePages_RequiresOwnedPageDirectActiveImageInNamedChild()
+    {
+        var ownedRoot = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(), Name = "Owned Root", SocialChannelId = _ownedPageId
+        };
+        var ownedChungChi = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(), Name = "chung_chi", SocialChannelId = _ownedPageId,
+            ParentFolderId = ownedRoot.Id
+        };
+        var nonImageRoot = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(), Name = "Non-image Root", SocialChannelId = _ownedNoRootPageId
+        };
+        var nonImageChungChi = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(), Name = "chung_chi", SocialChannelId = _ownedNoRootPageId,
+            ParentFolderId = nonImageRoot.Id
+        };
+        var otherRoot = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(), Name = "Other Root", SocialChannelId = _otherPageId
+        };
+        var otherChungChi = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(), Name = "chung_chi", SocialChannelId = _otherPageId,
+            ParentFolderId = otherRoot.Id
+        };
+        _db.MediaFolders.AddRange(
+            ownedRoot, ownedChungChi, nonImageRoot, nonImageChungChi, otherRoot, otherChungChi);
+        _db.MediaAssets.AddRange(
+            new MediaAssetModel
+            {
+                Id = Guid.NewGuid(), FolderId = ownedChungChi.Id, FileName = "owned.jpg",
+                StoragePath = "owned.jpg", MimeType = "image/jpeg"
+            },
+            new MediaAssetModel
+            {
+                Id = Guid.NewGuid(), FolderId = nonImageChungChi.Id, FileName = "notes.pdf",
+                StoragePath = "notes.pdf", MimeType = "application/pdf"
+            },
+            new MediaAssetModel
+            {
+                Id = Guid.NewGuid(), FolderId = nonImageChungChi.Id, FileName = "deleted.png",
+                StoragePath = "deleted.png", MimeType = "image/png", IsDeleted = true
+            },
+            new MediaAssetModel
+            {
+                Id = Guid.NewGuid(), FolderId = otherChungChi.Id, FileName = "other.png",
+                StoragePath = "other.png", MimeType = "image/png"
+            });
+        await _db.SaveChangesAsync();
+
+        var result = await _repo.GetChungChiEligiblePagesAsync();
+
+        Assert.Single(result);
+        Assert.Equal(_ownedPageId, result[0].Id);
     }
 }

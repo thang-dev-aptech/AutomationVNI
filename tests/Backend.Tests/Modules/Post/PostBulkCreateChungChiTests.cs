@@ -1,7 +1,11 @@
 using System.Text.Json;
 using Backend.Data;
+using Backend.Modules.MediaAsset;
+using Backend.Modules.MediaFolder;
 using Backend.Modules.Post;
 using Backend.Modules.Post.Enums;
+using Backend.Modules.SocialChannel;
+using Backend.Modules.SocialChannel.Enums;
 using Backend.Tests.Modules.MediaFolder;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -38,8 +42,8 @@ public class PostBulkCreateChungChiTests : IDisposable
     [Fact]
     public async Task BulkCreateChungChiAsync_FansOutQueuedPostsPerIdeaAndChannel()
     {
-        var channelA = Guid.NewGuid();
-        var channelB = Guid.NewGuid();
+        var channelA = AddEligiblePage("Page A");
+        var channelB = AddEligiblePage("Page B");
         var categoryId = Guid.NewGuid();
 
         var result = await _repo.BulkCreateChungChiAsync(new BulkCreateChungChiRequest
@@ -84,7 +88,7 @@ public class PostBulkCreateChungChiTests : IDisposable
         var result = await _repo.BulkCreateChungChiAsync(new BulkCreateChungChiRequest
         {
             Items = [new BulkChungChiItem { Idea = "All ideas" }],
-            ChannelIds = [Guid.NewGuid()],
+            ChannelIds = [AddEligiblePage("Page All")],
             Mode = ChungChiSelectionMode.All,
             RandomCount = 9
         });
@@ -104,6 +108,57 @@ public class PostBulkCreateChungChiTests : IDisposable
                 Items = [new BulkChungChiItem { Idea = "   " }],
                 ChannelIds = [Guid.NewGuid()]
             }));
+    }
+
+    [Fact]
+    public async Task BulkCreateChungChiAsync_WhenAnyPageIsIneligible_RejectsWholeBatch()
+    {
+        var eligiblePage = AddEligiblePage("Eligible");
+        var emptyPage = AddPage("Empty chung_chi");
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => _repo.BulkCreateChungChiAsync(
+            new BulkCreateChungChiRequest
+            {
+                Items = [new BulkChungChiItem { Idea = "Chứng chỉ" }],
+                ChannelIds = [eligiblePage, emptyPage]
+            }));
+
+        Assert.Contains("chung_chi", ex.Message);
+        Assert.Empty(await _db.Posts.ToListAsync());
+    }
+
+    private Guid AddEligiblePage(string pageName)
+    {
+        var pageId = AddPage(pageName);
+        var root = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(), Name = "Root", SocialChannelId = pageId
+        };
+        var chungChi = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(), Name = "chung_chi", SocialChannelId = pageId, ParentFolderId = root.Id
+        };
+        _db.MediaFolders.AddRange(root, chungChi);
+        _db.MediaAssets.Add(new MediaAssetModel
+        {
+            Id = Guid.NewGuid(), FolderId = chungChi.Id, FileName = "certificate.png",
+            StoragePath = $"certificates/{pageId}.png", MimeType = "image/png"
+        });
+        _db.SaveChanges();
+        return pageId;
+    }
+
+    private Guid AddPage(string pageName)
+    {
+        var page = new SocialChannelModel
+        {
+            Id = Guid.NewGuid(), Platform = SocialPlatform.Facebook,
+            ChannelType = SocialChannelType.Page, PageName = pageName,
+            ExternalPageId = Guid.NewGuid().ToString(), AccessToken = "token", IsActive = true
+        };
+        _db.SocialChannels.Add(page);
+        _db.SaveChanges();
+        return page.Id;
     }
 
     private static ChungChiSelectionMode ReadMode(string? extraJson)

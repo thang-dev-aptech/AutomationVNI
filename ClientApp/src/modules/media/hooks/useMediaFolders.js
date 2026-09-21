@@ -38,6 +38,15 @@ export function useWritableMediaFolderPages({ withoutRoot = false } = {}) {
   })
 }
 
+/** Page actor được phép dùng cho ChungChiGallery và có ảnh active trong folder chung_chi. */
+export function useChungChiEligiblePages() {
+  return useQuery({
+    queryKey: mediaFolderQueryKeys.chungChiPages,
+    queryFn: async () => unwrapApiData(await mediaFolderApi.chungChiPages()),
+    retry: false,
+  })
+}
+
 export function useMediaFolderChildren({
   socialChannelId,
   parentFolderId = null,

@@ -1,6 +1,7 @@
 using Backend.Data;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.SocialChannel;
+using Backend.Modules.SocialChannel.Enums;
 using Backend.Modules.SocialConnection;
 using Backend.Shared;
 using Backend.Shared.Repositories;
@@ -1104,6 +1105,51 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
 
         return await query.OrderByDescending(x => x.CreatedAt).ToListAsync(ct);
     }
+
+    /// <summary>
+    /// Page có thể dùng cho luồng ChungChiGallery: actor có quyền ghi, có root active,
+    /// child trực tiếp tên chính xác "chung_chi" và ít nhất một ảnh active trực tiếp trong child.
+    /// Điều kiện này phải khớp ResolvePageSubfolderAsync/LoadFolderImageCandidateIdsAsync của pipeline.
+    /// </summary>
+    public async Task<List<SocialChannelModel>> GetChungChiEligiblePagesAsync(
+        CancellationToken ct = default)
+        => await QueryChungChiEligiblePages()
+            .OrderBy(x => x.PageName)
+            .ThenBy(x => x.Id)
+            .ToListAsync(ct);
+
+    /// <summary>
+    /// Revalidate toàn bộ Page ngay trước khi tạo batch để chặn request thủ công hoặc picker stale.
+    /// </summary>
+    public async Task EnsureChungChiPagesEligibleAsync(
+        IReadOnlyCollection<Guid> socialChannelIds,
+        CancellationToken ct = default)
+    {
+        var requestedIds = socialChannelIds.Where(x => x != Guid.Empty).Distinct().ToList();
+        var eligibleCount = await QueryChungChiEligiblePages()
+            .CountAsync(x => requestedIds.Contains(x.Id), ct);
+
+        if (eligibleCount != requestedIds.Count)
+        {
+            throw new ArgumentException(
+                "Một hoặc nhiều Page không có ảnh hợp lệ trong thư mục chung_chi hoặc bạn không có quyền sử dụng Page đó.");
+        }
+    }
+
+    private IQueryable<SocialChannelModel> QueryChungChiEligiblePages()
+        => QueryWritableChannels()
+            .Where(ch => ch.ChannelType == SocialChannelType.Page)
+            .Where(ch => QueryActive().Any(root =>
+                root.SocialChannelId == ch.Id
+                && root.ParentFolderId == null
+                && QueryActive().Any(folder =>
+                    folder.SocialChannelId == ch.Id
+                    && folder.ParentFolderId == root.Id
+                    && folder.Name == "chung_chi"
+                    && Context.Set<MediaAssetModel>().Any(asset =>
+                        !asset.IsDeleted
+                        && asset.FolderId == folder.Id
+                        && asset.MimeType.StartsWith("image/")))));
 
     private static (int Index, int Size) NormalizeSearchPage(int index, int size)
     {

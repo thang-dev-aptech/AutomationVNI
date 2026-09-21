@@ -7,7 +7,7 @@ import EmptyState from '@/shared/components/EmptyState'
 import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import { unwrapApiData, getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
-import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
+import { useChungChiEligiblePages } from '@/modules/media/hooks/useMediaFolders'
 import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import { bulkApi } from '../services/bulkApi'
 import './BulkCreatePage.css'
@@ -26,7 +26,7 @@ export default function BulkChungChiPage() {
   const [mode, setMode] = useState(CHUNG_CHI_MODE.Random)
   const [randomCount, setRandomCount] = useState('1')
 
-  const { data: channels = [], isLoading: channelsLoading } = useSocialChannelAll()
+  const { data: channels = [], isLoading: channelsLoading } = useChungChiEligiblePages()
   const { data: categoryData } = useCategoryList({ index: 1, size: 200 })
   const categories = categoryData?.items ?? []
 
@@ -77,8 +77,8 @@ export default function BulkChungChiPage() {
 
       {channels.length === 0 && (
         <EmptyState
-          message="Chưa có kênh nào. Kết nối kênh trước khi tạo bài."
-          action={<Link to="/platforms" className="btn btn-primary">Đến Platforms</Link>}
+          message="Chưa có Page nào có ảnh trong thư mục chung_chi."
+          action={<Link to="/media" className="btn btn-primary">Đến Thư mục Media</Link>}
         />
       )}
 

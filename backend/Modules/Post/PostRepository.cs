@@ -1,5 +1,6 @@
 using Backend.Data;
 using Backend.Modules.PageContext;
+using Backend.Modules.MediaFolder;
 using Backend.Modules.Post.Enums;
 using Backend.Modules.PromptTemplate;
 using Backend.Shared;
@@ -10,8 +11,17 @@ namespace Backend.Modules.Post;
 
 public class PostRepository : GenericRepository<PostModel>, IGenericRepository<PostModel>
 {
+    private readonly MediaFolderRepository _mediaFolders;
+
     public PostRepository(AppDbContext context, IUserContext userContext)
-        : base(context, userContext) { }
+        : this(context, userContext, new MediaFolderRepository(context, userContext)) { }
+
+    public PostRepository(
+        AppDbContext context,
+        IUserContext userContext,
+        MediaFolderRepository mediaFolders)
+        : base(context, userContext)
+        => _mediaFolders = mediaFolders;
 
     public async Task<PagedResult<PostResponse>> FilterAsync(
         PostFilterRequest request,
@@ -223,6 +233,8 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         var channels = (request.ChannelIds ?? []).Where(c => c != Guid.Empty).Distinct().ToList();
         if (items.Count == 0) throw new ArgumentException("Danh sách ý tưởng trống");
         if (channels.Count == 0) throw new ArgumentException("Phải chọn ít nhất một kênh đăng");
+
+        await _mediaFolders.EnsureChungChiPagesEligibleAsync(channels, ct);
 
         var mode = Enum.IsDefined(request.Mode) ? request.Mode : ChungChiSelectionMode.Random;
         var randomCount = request.RandomCount is int n && n >= 1 ? n : 1;

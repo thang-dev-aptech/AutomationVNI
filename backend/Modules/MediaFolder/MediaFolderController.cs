@@ -160,6 +160,18 @@ public class MediaFolderController
         return Ok(ApiResponse.Ok(channels.Select(Backend.Modules.SocialChannel.SocialChannelRepository.ToResponse).ToList()));
     }
 
+    /// <summary>
+    /// Page actor được phép dùng cho tạo bài hàng loạt từ chứng chỉ.
+    /// Chỉ trả Page có ít nhất một ảnh active trực tiếp trong child folder chung_chi.
+    /// </summary>
+    [HttpGet("chung-chi-pages")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> GetChungChiPages(CancellationToken ct = default)
+    {
+        var channels = await _repo.GetChungChiEligiblePagesAsync(ct);
+        return Ok(ApiResponse.Ok(channels.Select(Backend.Modules.SocialChannel.SocialChannelRepository.ToResponse).ToList()));
+    }
+
     protected override async Task<MediaFolderModel> CreateEntityAsync(CreateMediaFolderRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Name)) throw new ArgumentException("Tên thư mục không được để trống");
