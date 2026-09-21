@@ -1,5 +1,19 @@
+/**
+ * Backend chưa build/route (server cũ, thiếu endpoint mới) rơi vào SPA fallback
+ * (app.MapFallbackToFile trong Program.cs) — trả 200 OK kèm index.html thay vì lỗi.
+ * axios không parse được JSON nên payload là chuỗi HTML thô; nếu không chặn ở đây,
+ * chuỗi đó âm thầm trôi xuống làm "data" cho tới khi một chỗ xa hơn (vd .map trên
+ * chuỗi) crash mà không rõ nguyên nhân thật.
+ */
+function isHtmlPayload(payload) {
+  return typeof payload === 'string' && /^\s*<(!doctype html|html)/i.test(payload)
+}
+
 export function unwrapApiData(response) {
   const payload = response?.data
+  if (isHtmlPayload(payload)) {
+    throw new Error('Backend trả về trang HTML thay vì dữ liệu — có thể server đang chạy bản cũ, thiếu API này. Thử khởi động lại backend rồi tải lại trang.')
+  }
   if (payload && typeof payload.success === 'boolean') {
     if (!payload.success) {
       const error = new Error(payload.message || 'Yêu cầu thất bại')
