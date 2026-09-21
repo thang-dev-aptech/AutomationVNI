@@ -76,6 +76,6 @@ Người vận hành tạo bài từ ảnh chứng chỉ chỉ cần chọn Page
 Màn hình Tạo hàng loạt từ chứng chỉ chỉ hiển thị Page actor có quyền quản lý, có folder gốc active, folder con trực tiếp tên chính xác chung_chi active và ít nhất một MediaAsset active có MimeType image/* nằm trực tiếp trong folder đó. Backend phải kiểm tra lại eligibility khi tạo để chặn request thủ công/stale. Nguồn: backend/Modules/GenerationJob/GenerationJobPipelineService.cs (ResolvePageSubfolderAsync, LoadFolderImageCandidateIdsAsync); xác nhận trực tiếp của người dùng ngày 2026-09-21.
 
 ### R-013 — DEPLOY-BE-01: Backend publish artifact chạy trực tiếp trên Linux production
-<!-- req status=in-progress files=backend/backend.csproj,backend/Properties/PublishProfiles/LinuxX64.pubxml,backend/README.md,docs/DEPLOYMENT.md -->
+<!-- req status=blocked files=backend/backend.csproj,backend/Properties/PublishProfiles/LinuxX64.pubxml,backend/README.md,docs/DEPLOYMENT.md -->
 
 Backend phải được publish thành executable Linux tên `backend` để người vận hành có thể chạy từ `/home/vni/domains/auto.vni.edu.vn/publish_output` bằng `nohup env ASPNETCORE_URLS="http://127.0.0.1:5000" ASPNETCORE_ENVIRONMENT=Production ./backend > app.log 2>&1 &`. Phạm vi write: cấu hình publish/tài liệu backend và artifact build trong workspace nếu được tạo; không thay đổi business logic. Nguồn: xác nhận trực tiếp của người dùng ngày 2026-09-21.
