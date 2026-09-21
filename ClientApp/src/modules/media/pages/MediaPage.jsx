@@ -468,67 +468,69 @@ export default function MediaPage() {
       />
 
       <div className="media-main-content">
-        <MediaFolderSearchBox
-          onOpenFolder={(folderId, pageId) => {
-            // useMediaBrowser.openFolder cần cả socialChannelId để suy ra Page —
-            // search box chỉ trả 2 tham số rời, phải tự dựng lại thành object.
-            browser.openFolder({ id: folderId, socialChannelId: pageId })
-          }}
-        />
+        <div className="card card-body media-page-search-card">
+          <MediaFolderSearchBox
+            onOpenFolder={(folderId, pageId) => {
+              // useMediaBrowser.openFolder cần cả socialChannelId để suy ra Page —
+              // search box chỉ trả 2 tham số rời, phải tự dựng lại thành object.
+              browser.openFolder({ id: folderId, socialChannelId: pageId })
+            }}
+          />
 
-        <div className="card card-body media-page-filters">
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label htmlFor="media-keyword">Tìm kiếm</label>
-            <input
-              id="media-keyword"
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
-              placeholder="Tên file, alt text, tags..."
-            />
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label htmlFor="media-source">Nguồn</label>
-            <select
-              id="media-source"
-              value={source}
-              onChange={(event) => setSource(event.target.value)}
-            >
-              <option value="">Tất cả</option>
-              {MEDIA_SOURCE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              type="button"
-              className={`btn ${selection === 'all' ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={browser.selectAll}
-            >
-              Tất cả
-            </button>
-            <button
-              type="button"
-              className={`btn ${selection === 'unassigned' ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={browser.selectUnassigned}
-            >
-              Chưa phân loại
-            </button>
-          </div>
-          {currentFolderId && (
-            <div className="media-page-filters-actions">
+          <div className="media-page-filters">
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="media-keyword">Tìm kiếm</label>
+              <input
+                id="media-keyword"
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder="Tên file, alt text, tags..."
+              />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="media-source">Nguồn</label>
+              <select
+                id="media-source"
+                value={source}
+                onChange={(event) => setSource(event.target.value)}
+              >
+                <option value="">Tất cả</option>
+                {MEDIA_SOURCE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
               <button
                 type="button"
-                className="btn btn-secondary"
-                disabled={analyzeLayoutMutation.isPending}
-                onClick={handleAnalyzeLayoutFolder}
+                className={`btn ${selection === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={browser.selectAll}
               >
-                {analyzeLayoutMutation.isPending ? '⏳ Đang quét...' : '✨ Quét Vùng An Toàn'}
+                Tất cả
+              </button>
+              <button
+                type="button"
+                className={`btn ${selection === 'unassigned' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={browser.selectUnassigned}
+              >
+                Chưa phân loại
               </button>
             </div>
-          )}
+            {currentFolderId && (
+              <div className="media-page-filters-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={analyzeLayoutMutation.isPending}
+                  onClick={handleAnalyzeLayoutFolder}
+                >
+                  {analyzeLayoutMutation.isPending ? '⏳ Đang quét...' : '✨ Quét Vùng An Toàn'}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="card card-body">

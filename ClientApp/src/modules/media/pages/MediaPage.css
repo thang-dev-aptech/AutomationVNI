@@ -16,11 +16,19 @@
   overflow: visible;
 }
 
+.media-page-search-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .media-page-filters {
   display: grid;
   gap: 16px;
   grid-template-columns: 2fr 1fr auto;
   margin-bottom: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
 }
 
 .media-page-filters-actions {
@@ -34,9 +42,10 @@
   }
 }
 
-/* MediaFolderSearchBox (MEDIA-05) */
+/* MediaFolderSearchBox (MEDIA-05) — spacing to the filters row below now comes from
+   .media-page-search-card's flex gap, since both share one merged card. */
 .media-folder-search {
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 
 .media-folder-search input[type='search'] {
