@@ -64,3 +64,8 @@ Thay tree toàn bộ ở màn Media bằng Page-scoped Folder Explorer: chọn P
 <!-- req status=in-progress files=tests/Backend.Tests/Modules/MediaFolder/MediaFolderScaleIntegrationTests.cs,tests/Backend.Tests/Modules/MediaAsset/MediaAssetMoveTests.cs,tests/Backend.Tests/Modules/MediaFolder/MediaFolderLifecycleTests.cs,ClientApp/src/modules/media blocker=f085d3be-9eb0-47c4-a695-0b3c06487818 -->
 
 QA toàn luồng với ít nhất hai Page và 500 folder/Page: explorer một cấp, breadcrumb/search/full path, bulk create atomic, lazy tree request count/payload, authorization và không rò metadata. Hồi quy upload, move, create/update/delete folder và media chưa phân loại. Dependency: MEDIA-01..07; Wave 4 sau integration. Evidence cần automated tests/commands và independent review cho data boundary/performance findings. Nguồn plan: xác nhận trực tiếp của người dùng; backend tests hiện có dưới tests/Backend.Tests/Modules/MediaFolder; frontend test paths sẽ được tạo trong ClientApp.
+
+### R-011 — BULK-CC-01: Tạo hàng loạt từ chứng chỉ không yêu cầu Ý tưởng
+<!-- req status=in-progress files=ClientApp/src/modules/bulk/pages/BulkChungChiPage.jsx,ClientApp/src/modules/bulk/pages/BulkChungChiPage.test.jsx,backend/Modules/Post/PostRepository.cs,backend/Modules/Post/PostDtos.cs -->
+
+Người vận hành tạo bài từ ảnh chứng chỉ chỉ cần chọn Page, loại bài (tùy chọn) và chế độ ảnh; không nhập danh sách Ý tưởng. Mỗi Page được chọn tạo đúng một bài. Frontend duy trì contract backend hiện hữu bằng một title nội bộ ổn định, không hiển thị thành input. Nguồn: xác nhận trực tiếp của người dùng ngày 2026-09-21; ClientApp/src/modules/bulk/pages/BulkChungChiPage.jsx; backend/Modules/Post/PostRepository.cs.

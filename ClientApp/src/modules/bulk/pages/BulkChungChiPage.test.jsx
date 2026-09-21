@@ -71,10 +71,22 @@ describe('BulkChungChiPage', () => {
     expect(screen.getByLabelText('Số ảnh mỗi bài')).toBeInTheDocument()
   })
 
+  it('does not show or require an idea section', () => {
+    renderPage()
+
+    expect(screen.queryByText(/Ý tưởng/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ Thêm dòng' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Tạo 0 bài/ })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chọn page' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Chọn hết kết quả' }))
+
+    expect(screen.getByRole('button', { name: /Tạo 2 bài/ })).toBeEnabled()
+  })
+
   it('submits POST payload matching BulkCreateChungChiRequest then navigates to the batch', async () => {
     renderPage()
 
-    fireEvent.change(screen.getByLabelText('Ý tưởng 1'), { target: { value: 'Khai giảng khóa mới' } })
     fireEvent.change(screen.getByLabelText('Loại bài (tuỳ chọn)'), { target: { value: CAT_ID } })
     fireEvent.change(screen.getByLabelText('Số ảnh mỗi bài'), { target: { value: '3' } })
 
@@ -87,7 +99,7 @@ describe('BulkChungChiPage', () => {
       expect(bulkApi.createChungChi).toHaveBeenCalledTimes(1)
     })
     expect(bulkApi.createChungChi).toHaveBeenCalledWith({
-      items: [{ idea: 'Khai giảng khóa mới', categoryId: CAT_ID }],
+      items: [{ idea: 'Chứng chỉ', categoryId: CAT_ID }],
       channelIds: [PAGE_A, PAGE_B],
       mode: CHUNG_CHI_MODE.Random,
       randomCount: 3,
@@ -98,7 +110,6 @@ describe('BulkChungChiPage', () => {
   it('omits randomCount in All mode', async () => {
     renderPage()
 
-    fireEvent.change(screen.getByLabelText('Ý tưởng 1'), { target: { value: 'Tất cả ảnh' } })
     fireEvent.click(screen.getByRole('radio', { name: 'Tất cả' }))
     fireEvent.click(screen.getByRole('button', { name: 'Chọn page' }))
     fireEvent.click(screen.getByRole('button', { name: 'Chọn hết kết quả' }))
@@ -106,7 +117,7 @@ describe('BulkChungChiPage', () => {
 
     await waitFor(() => {
       expect(bulkApi.createChungChi).toHaveBeenCalledWith({
-        items: [{ idea: 'Tất cả ảnh' }],
+        items: [{ idea: 'Chứng chỉ' }],
         channelIds: [PAGE_A, PAGE_B],
         mode: CHUNG_CHI_MODE.All,
       })
