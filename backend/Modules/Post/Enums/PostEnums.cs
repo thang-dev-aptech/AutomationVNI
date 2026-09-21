@@ -50,5 +50,11 @@ public enum GenerationFlow
     /// đè lên (RichTemplateRenderService) thay vì sinh ảnh AI. Không có folder/folder rỗng → lỗi
     /// rõ ràng, không tự fallback sang FullAI.
     /// </summary>
-    Template       = 6
+    Template       = 6,
+
+    /// <summary>
+    /// AI chỉ sinh CHỮ; ảnh lấy nguyên trạng từ thư mục con "chung_chi" dưới root của Page
+    /// (Random-N hoặc All). Không overlay, không sinh ảnh AI, không fallback sang FullAI.
+    /// </summary>
+    ChungChiGallery = 7
 }

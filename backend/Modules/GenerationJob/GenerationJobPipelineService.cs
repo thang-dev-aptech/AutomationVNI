@@ -112,6 +112,14 @@ public class GenerationJobPipelineService(
             return;
         }
 
+        // Nhánh ChungChiGallery: ảnh nguyên trạng từ thư mục con "chung_chi" dưới root Page.
+        // Không overlay, không sinh ảnh AI, không fallback FullAI khi thiếu/rỗng folder.
+        if (post.GenerationFlow == GenerationFlow.ChungChiGallery)
+        {
+            await GenerateFromChungChiAsync(post, ct);
+            return;
+        }
+
         var useMedia = post.GenerationFlow == GenerationFlow.RAG;
 
         // FullAI + user đã gắn media sẵn → giữ hành vi cũ: bỏ sinh ảnh AI.
@@ -135,9 +143,9 @@ public class GenerationJobPipelineService(
     }
 
     /// <summary>
-    /// Nhánh Template: chọn ảnh trong MediaFolder gắn trực tiếp với page (SocialChannelId — không
-    /// qua PageContext, vì không phải page nào cũng có PageContext) rồi render overlay chữ đè lên
-    /// (RichTemplateRenderService, qua job ImageOverlay có sẵn).
+    /// Nhánh Template: chọn ảnh trong thư mục con "template" dưới root của Page (SocialChannelId —
+    /// không qua PageContext, vì không phải page nào cũng có PageContext) rồi render overlay chữ
+    /// đè lên (RichTemplateRenderService, qua job ImageOverlay có sẵn).
     /// post.ImageCount null/&lt;=1 (mặc định): chọn ngẫu nhiên đúng 1 ảnh, set Cover — hành vi cũ,
     /// không đổi. post.ImageCount &gt;=2: AI chọn N ảnh phù hợp nội dung nhất (MatchForPostAsync,
     /// giới hạn trong folder của page), lưu tạm ở MediaRole.TemplateSource — ImageOverlay job render
@@ -147,7 +155,8 @@ public class GenerationJobPipelineService(
     /// </summary>
     private async Task GenerateFromTemplateAsync(PostModel post, CancellationToken ct)
     {
-        var (folder, candidateIds) = await ResolveFolderCandidatesAsync(post, ct);
+        var folder = await ResolvePageSubfolderAsync(post.SocialChannelId, "template", ct);
+        var candidateIds = await LoadFolderImageCandidateIdsAsync(folder, ct);
         var desiredCount = post.ImageCount is int n && n >= 1 ? n : 1;
 
         await EnsureEnoughTemplateCandidatesAsync(post, folder, candidateIds, desiredCount, ct);
@@ -168,20 +177,120 @@ public class GenerationJobPipelineService(
         await ProcessAsync(renderJob.JobId, ct);
     }
 
-    private async Task<(MediaFolderModel? Folder, List<Guid> CandidateIds)> ResolveFolderCandidatesAsync(
-        PostModel post, CancellationToken ct)
+    /// <summary>
+    /// Nhánh ChungChiGallery: chọn ảnh trong thư mục con "chung_chi" dưới root của Page rồi gắn
+    /// nguyên trạng (Cover + Attachment) — KHÔNG queue ImageOverlay. Mode Random: shuffle + Take(N)
+    /// như bù ngẫu nhiên của Template. Mode All: mọi ảnh active trong folder (query trực tiếp, không
+    /// qua endpoint phân trang 100 item). Folder thiếu/rỗng → NeedFix rồi throw, giống Template.
+    /// </summary>
+    private async Task GenerateFromChungChiAsync(PostModel post, CancellationToken ct)
     {
-        var folder = await mediaFolderRepository.QueryActive()
-            .FirstOrDefaultAsync(f => f.SocialChannelId == post.SocialChannelId, ct);
+        var folder = await ResolvePageSubfolderAsync(post.SocialChannelId, "chung_chi", ct);
+        var candidateIds = await LoadFolderImageCandidateIdsAsync(folder, ct);
+        var (mode, randomCount) = ReadChungChiSelection(post);
 
-        var candidateIds = folder is null
-            ? []
-            : await context.Set<MediaAssetModel>()
-                .Where(x => !x.IsDeleted && x.FolderId == folder.Id && x.MimeType.StartsWith("image/"))
-                .Select(x => x.Id)
-                .ToListAsync(ct);
+        List<Guid> chosenIds;
+        if (mode == ChungChiSelectionMode.All)
+        {
+            await EnsureEnoughChungChiCandidatesAsync(post, folder, candidateIds, desiredCount: 1, ct);
+            chosenIds = candidateIds;
+        }
+        else
+        {
+            await EnsureEnoughChungChiCandidatesAsync(post, folder, candidateIds, randomCount, ct);
+            chosenIds = candidateIds
+                .OrderBy(_ => Random.Shared.Next())
+                .Take(randomCount)
+                .ToList();
+        }
 
-        return (folder, candidateIds);
+        await postMediaRepository.ReplaceGalleryAsync(post.Id, chosenIds, ct);
+
+        post.Status = PostStatus.WaitingReview;
+        post.GenerationError = null;
+        ApplyPostUpdate(post);
+        await context.SaveChangesAsync(ct);
+    }
+
+    private static (ChungChiSelectionMode Mode, int RandomCount) ReadChungChiSelection(PostModel post)
+    {
+        var randomCount = post.ImageCount is int n && n >= 1 ? n : 1;
+        var mode = ChungChiSelectionMode.Random;
+        if (string.IsNullOrWhiteSpace(post.ExtraJson))
+            return (mode, randomCount);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(post.ExtraJson);
+            if (!doc.RootElement.TryGetProperty("chungChi", out var chungChi))
+                return (mode, randomCount);
+
+            if (chungChi.TryGetProperty("mode", out var modeEl)
+                && modeEl.TryGetInt32(out var modeVal)
+                && Enum.IsDefined((ChungChiSelectionMode)modeVal))
+            {
+                mode = (ChungChiSelectionMode)modeVal;
+            }
+        }
+        catch (JsonException)
+        {
+            // ExtraJson hỏng → coi như Random với ImageCount đã lưu.
+        }
+
+        return (mode, randomCount);
+    }
+
+    private async Task EnsureEnoughChungChiCandidatesAsync(
+        PostModel post, MediaFolderModel? folder, List<Guid> candidateIds, int desiredCount,
+        CancellationToken ct)
+    {
+        if (candidateIds.Count > 0 && candidateIds.Count >= desiredCount) return;
+
+        var message = desiredCount > 1
+            ? $"Page chưa có thư mục con \"chung_chi\" (dưới thư mục gốc của page) hoặc không đủ {desiredCount} ảnh (hiện có {candidateIds.Count}). " +
+              "Vào Media > Thư mục để mở thư mục chung_chi của page này và upload thêm ảnh trước khi tạo bài."
+            : "Page chưa có thư mục con \"chung_chi\" (dưới thư mục gốc của page) hoặc thư mục rỗng. " +
+              "Vào Media > Thư mục để tạo/mở thư mục chung_chi của page này rồi upload ảnh trước khi tạo bài.";
+        logger.LogWarning(
+            "Post {PostId}: {Flow} không đủ ảnh chung_chi (SocialChannelId={SocialChannelId}, FolderId={FolderId}, CandidateCount={CandidateCount}, Desired={Desired})",
+            post.Id, post.GenerationFlow, post.SocialChannelId, folder?.Id, candidateIds.Count, desiredCount);
+
+        post.Status = PostStatus.NeedFix;
+        post.GenerationError = message;
+        ApplyPostUpdate(post);
+        await context.SaveChangesAsync(ct);
+        throw new InvalidOperationException(message);
+    }
+
+    /// <summary>
+    /// Tìm thư mục con đúng tên dưới root của Page. Mỗi Page có root + "template" + "chung_chi"
+    /// cùng SocialChannelId — không được FirstOrDefault theo channel (sẽ lấy folder bất kỳ).
+    /// </summary>
+    private async Task<MediaFolderModel?> ResolvePageSubfolderAsync(
+        Guid socialChannelId, string folderName, CancellationToken ct)
+    {
+        var root = await mediaFolderRepository.QueryActive()
+            .FirstOrDefaultAsync(
+                f => f.SocialChannelId == socialChannelId && f.ParentFolderId == null, ct);
+        if (root is null) return null;
+
+        return await mediaFolderRepository.QueryActive()
+            .FirstOrDefaultAsync(
+                f => f.ParentFolderId == root.Id
+                    && f.SocialChannelId == socialChannelId
+                    && f.Name == folderName,
+                ct);
+    }
+
+    private async Task<List<Guid>> LoadFolderImageCandidateIdsAsync(
+        MediaFolderModel? folder, CancellationToken ct)
+    {
+        if (folder is null) return [];
+
+        return await context.Set<MediaAssetModel>()
+            .Where(x => !x.IsDeleted && x.FolderId == folder.Id && x.MimeType.StartsWith("image/"))
+            .Select(x => x.Id)
+            .ToListAsync(ct);
     }
 
     private async Task EnsureEnoughTemplateCandidatesAsync(
@@ -191,10 +300,10 @@ public class GenerationJobPipelineService(
         if (candidateIds.Count > 0 && candidateIds.Count >= desiredCount) return;
 
         var message = desiredCount > 1
-            ? $"Page chưa có thư mục Template (MediaFolder gắn trực tiếp với page) hoặc không đủ {desiredCount} ảnh (hiện có {candidateIds.Count}). " +
-              "Vào Media > Thư mục để upload thêm ảnh trước khi tạo bài Template nhiều ảnh."
-            : "Page chưa có thư mục Template (MediaFolder gắn trực tiếp với page) hoặc thư mục rỗng. " +
-              "Vào Media > Thư mục để tạo/gắn page này + upload ảnh trước khi tạo bài Template.";
+            ? $"Page chưa có thư mục con \"template\" (dưới thư mục gốc của page) hoặc không đủ {desiredCount} ảnh (hiện có {candidateIds.Count}). " +
+              "Vào Media > Thư mục để mở thư mục template của page này và upload thêm ảnh trước khi tạo bài Template nhiều ảnh."
+            : "Page chưa có thư mục con \"template\" (dưới thư mục gốc của page) hoặc thư mục rỗng. " +
+              "Vào Media > Thư mục để tạo/mở thư mục template của page này rồi upload ảnh trước khi tạo bài Template.";
         logger.LogWarning(
             "Post {PostId}: {Flow} không đủ ảnh template (SocialChannelId={SocialChannelId}, FolderId={FolderId}, CandidateCount={CandidateCount}, Desired={Desired})",
             post.Id, post.GenerationFlow, post.SocialChannelId, folder?.Id, candidateIds.Count, desiredCount);

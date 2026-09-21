@@ -17,6 +17,7 @@ import PromptTemplateListPage from '@/modules/prompt-templates/pages/PromptTempl
 import CategoryListPage from '@/modules/categories/pages/CategoryListPage'
 import PageContextListPage from '@/modules/page-contexts/pages/PageContextListPage'
 import BulkCreatePage from '@/modules/bulk/pages/BulkCreatePage'
+import BulkChungChiPage from '@/modules/bulk/pages/BulkChungChiPage'
 import BatchProgressPage from '@/modules/bulk/pages/BatchProgressPage'
 import CommentsInboxPage from '@/modules/comments/pages/CommentsInboxPage'
 import PageMessagesInboxPage from '@/modules/messages/pages/PageMessagesInboxPage'
@@ -55,6 +56,7 @@ export default function AppRouter() {
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.postsCreate} />}>
             <Route path="/posts/create" element={<PostCreatePage />} />
             <Route path="/bulk" element={<BulkCreatePage />} />
+            <Route path="/bulk-chung-chi" element={<BulkChungChiPage />} />
             <Route path="/bulk/:batchId" element={<BatchProgressPage />} />
           </Route>
           <Route path="/posts/:id" element={<PostDetailPage />} />

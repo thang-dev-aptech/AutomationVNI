@@ -212,6 +212,52 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
     }
 
     /// <summary>
+    /// Fan-out ý tưởng × kênh thành bài Queued với GenerationFlow.ChungChiGallery.
+    /// Không gắn text/image template — pipeline lấy ảnh nguyên trạng từ thư mục chung_chi của Page.
+    /// </summary>
+    public async Task<BulkCreateResult> BulkCreateChungChiAsync(
+        BulkCreateChungChiRequest request,
+        CancellationToken ct = default)
+    {
+        var items = (request.Items ?? []).Where(i => !string.IsNullOrWhiteSpace(i.Idea)).ToList();
+        var channels = (request.ChannelIds ?? []).Where(c => c != Guid.Empty).Distinct().ToList();
+        if (items.Count == 0) throw new ArgumentException("Danh sách ý tưởng trống");
+        if (channels.Count == 0) throw new ArgumentException("Phải chọn ít nhất một kênh đăng");
+
+        var mode = Enum.IsDefined(request.Mode) ? request.Mode : ChungChiSelectionMode.Random;
+        var randomCount = request.RandomCount is int n && n >= 1 ? n : 1;
+
+        var batchId = Guid.NewGuid();
+        var userId = GetCurrentUserId();
+        var extraJson = BuildChungChiExtraJson(mode);
+        var posts = new List<PostModel>();
+        foreach (var ch in channels)
+            foreach (var it in items)
+            {
+                posts.Add(new PostModel
+                {
+                    Title = it.Idea.Trim(),
+                    SocialChannelId = ch,
+                    CategoryId = it.CategoryId,
+                    GenerationFlow = GenerationFlow.ChungChiGallery,
+                    ImageCount = mode == ChungChiSelectionMode.Random ? randomCount : null,
+                    BatchId = batchId,
+                    UserId = userId,
+                    Status = PostStatus.Queued,
+                    ExtraJson = extraJson
+                });
+            }
+
+        await MultiCreateAsync(posts, ct);
+        return new BulkCreateResult
+        {
+            BatchId = batchId,
+            Created = posts.Count,
+            PostIds = posts.Select(p => p.Id).ToList()
+        };
+    }
+
+    /// <summary>
     /// Import CSV: 1 row = 1 post / 1 channel. Lịch dự kiến ghi ExtraJson.pendingSchedule
     /// (worker schedule sau khi Approved).
     /// </summary>
@@ -318,6 +364,12 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
             root["reelsRequested"] = true;
         return System.Text.Json.JsonSerializer.Serialize(root);
     }
+
+    private static string BuildChungChiExtraJson(ChungChiSelectionMode mode)
+        => System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["chungChi"] = new Dictionary<string, object?> { ["mode"] = (int)mode }
+        });
 
     /// <summary>
     /// Fan-out 1 ý tưởng × N kênh → Queued. Template: PromptTemplateId chung,

@@ -84,6 +84,28 @@ public class BulkCreateResult
     public List<Guid> PostIds { get; set; } = [];
 }
 
+public class BulkChungChiItem
+{
+    /// <summary>Ý tưởng → Title + prompt text.</summary>
+    public string Idea { get; set; } = string.Empty;
+    public Guid? CategoryId { get; set; }
+}
+
+public enum ChungChiSelectionMode
+{
+    Random = 1,
+    All = 2
+}
+
+public class BulkCreateChungChiRequest
+{
+    public List<BulkChungChiItem> Items { get; set; } = [];
+    /// <summary>Fan-out: mỗi item được tạo cho MỖI channel trong danh sách.</summary>
+    public List<Guid> ChannelIds { get; set; } = [];
+    public ChungChiSelectionMode Mode { get; set; } = ChungChiSelectionMode.Random;
+    public int? RandomCount { get; set; } = 1;
+}
+
 /// <summary>1 dòng CSV = 1 bài / 1 kênh (không fan-out). Lịch lưu pending trong ExtraJson.</summary>
 public class BulkImportRow
 {

@@ -405,6 +405,38 @@ public class PostMediaRepository : GenericRepository<PostMediaModel>
         return created;
     }
 
+    /// <summary>
+    /// Ghi đè gallery Cover + Attachment của 1 post — dùng cho ChungChiGallery (ảnh cuối/as-is).
+    /// Ảnh đầu = Cover, các ảnh sau = Attachment. Không dùng MediaRole.TemplateSource (đó là nguồn
+    /// overlay của Template). Xoá mềm Cover/Attachment cũ rồi tạo lại theo thứ tự mediaIds.
+    /// </summary>
+    public async Task<List<PostMediaModel>> ReplaceGalleryAsync(
+        Guid postId, List<Guid> mediaIds, CancellationToken ct = default)
+    {
+        var existing = await QueryActive()
+            .Where(x => x.PostId == postId
+                && (x.MediaRole == MediaRole.Cover || x.MediaRole == MediaRole.Attachment))
+            .ToListAsync(ct);
+        foreach (var row in existing)
+            ApplySoftDeleteAudit(row);
+        if (existing.Count > 0)
+            await Context.SaveChangesAsync(ct);
+
+        var created = new List<PostMediaModel>();
+        for (var i = 0; i < mediaIds.Count; i++)
+        {
+            created.Add(await CreateAsync(new CreatePostMediaRequest
+            {
+                PostId = postId,
+                MediaId = mediaIds[i],
+                MediaRole = i == 0 ? MediaRole.Cover : MediaRole.Attachment,
+                SortOrder = i
+            }, ct));
+        }
+
+        return created;
+    }
+
     public static PostMediaResponse ToResponse(PostMediaModel e) => new()
     {
         Id = e.Id,

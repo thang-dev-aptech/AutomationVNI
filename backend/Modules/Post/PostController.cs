@@ -271,6 +271,26 @@ public class PostController
     }
 
     /// <summary>
+    /// Tạo hàng loạt bài lấy ảnh nguyên trạng từ thư mục chung_chi của từng Page (items × channels).
+    /// Worker sinh chữ rồi gắn ảnh; không overlay, không sinh ảnh AI.
+    /// </summary>
+    [HttpPost("bulk-create-chung-chi")]
+    public async Task<IActionResult> BulkCreateChungChi(
+        [FromBody] BulkCreateChungChiRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _repo.BulkCreateChungChiAsync(request, ct);
+            return Ok(ApiResponse.Ok(result,
+                $"Đã tạo {result.Created} bài — đang sinh nội dung nền, xem tiến độ ở batch."));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", ex.Message));
+        }
+    }
+
+    /// <summary>
     /// Import CSV: 1 row = 1 bài / 1 kênh. Lịch pending trong ExtraJson → worker tự schedule sau Approved.
     /// </summary>
     [HttpPost("bulk-import")]

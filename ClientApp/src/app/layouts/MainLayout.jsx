@@ -62,6 +62,19 @@ const NAV_GROUPS = [
       visible: (p) => p.canCreatePost,
     },
       {
+      to: '/bulk-chung-chi',
+      label: 'Tạo từ chứng chỉ',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sidebar-link-icon">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="M7 9h6" />
+          <path d="M7 13h10" />
+          <circle cx="16.5" cy="9" r="1.5" />
+        </svg>
+      ),
+      visible: (p) => p.canCreatePost,
+    },
+      {
       to: '/calendar',
       label: 'Lịch đăng bài',
       icon: (
@@ -364,7 +377,12 @@ export default function MainLayout() {
                       <NavLink
                         key={c.to}
                         to={c.to}
-                        className={({ isActive }) => `sidebar-link sidebar-sublink${isActive ? ' sidebar-link--active' : ''}`}
+                        className={({ isActive }) => {
+                          const active = c.to === '/bulk'
+                            ? pathname === '/bulk' || pathname.startsWith('/bulk/')
+                            : isActive
+                          return `sidebar-link sidebar-sublink${active ? ' sidebar-link--active' : ''}`
+                        }}
                       >
                         {c.icon}
                         <span className="sidebar-link-label">{c.label}</span>
