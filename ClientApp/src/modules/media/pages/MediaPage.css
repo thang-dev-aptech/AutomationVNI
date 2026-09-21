@@ -25,7 +25,8 @@
 .media-page-filters {
   display: grid;
   gap: 16px;
-  grid-template-columns: 2fr 1fr auto;
+  grid-template-columns: 1fr auto auto;
+  align-items: end;
   margin-bottom: 0;
   padding-top: 12px;
   border-top: 1px solid var(--color-border);
@@ -69,8 +70,21 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 200px;
+  max-height: 320px;
   overflow-y: auto;
+}
+
+.media-folder-search-section-label {
+  margin: 8px 8px 2px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.media-folder-search-section-label:first-child {
+  margin-top: 2px;
 }
 
 .media-folder-search-result {
@@ -88,6 +102,21 @@
 }
 
 .media-folder-search-result:hover {
+  background: var(--color-surface-muted);
+}
+
+.media-folder-search-file-result {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.media-folder-search-file-thumb {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
   background: var(--color-surface-muted);
 }
 

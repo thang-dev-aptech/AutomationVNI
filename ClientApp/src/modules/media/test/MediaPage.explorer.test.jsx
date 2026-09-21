@@ -42,6 +42,9 @@ vi.mock('../components/MediaFolderFormModal', () => ({ default: () => null }))
 vi.mock('../components/MoveMediaFolderModal', () => ({ default: () => null }))
 vi.mock('../components/MediaGrid', () => ({ default: () => null }))
 
+// MediaFolderSearchBox also calls useMediaAssets now (file-search dropdown, size 5), so this
+// mock sees calls from two consumers. Tests that assert on "the main grid's query" filter
+// .mock.calls down to size:48 (the grid's page size) rather than blindly taking the last call.
 vi.mock('../hooks/useMediaAssets', () => {
   const noop = () => ({ mutateAsync: vi.fn(), isPending: false })
   return {
@@ -75,12 +78,20 @@ vi.mock('../services/mediaFolderApi', async (importOriginal) => {
       pageRoots: vi.fn(),
       children: vi.fn(),
       breadcrumb: vi.fn(),
+      searchGlobal: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       softDelete: vi.fn(),
     },
   }
 })
+
+// The grid's own query always requests size:48; MediaFolderSearchBox's dropdown query always
+// requests size:5, so this reliably picks out only the grid's most recent call.
+function lastGridCall() {
+  const gridCalls = useMediaAssets.mock.calls.filter(([params]) => params.size === 48)
+  return gridCalls.at(-1)[0]
+}
 
 describe('MEDIA-04 MediaPage cross-Page browser flow', () => {
   beforeEach(() => {
@@ -92,6 +103,7 @@ describe('MEDIA-04 MediaPage cross-Page browser flow', () => {
       error: null,
       refetch: vi.fn(),
     }))
+    mediaFolderApi.searchGlobal.mockResolvedValue(wrapPaged([]))
     mediaFolderApi.pageRoots.mockResolvedValue(
       wrapPaged([FOLDER_A_ROOT_WITH_PAGE, FOLDER_B_ROOT_WITH_PAGE]),
     )
@@ -191,7 +203,7 @@ describe('MEDIA-04 MediaPage cross-Page browser flow', () => {
 
     fireEvent.click(within(filePager).getByRole('button', { name: 'Sau' }))
     await waitFor(() => {
-      const last = useMediaAssets.mock.calls.at(-1)[0]
+      const last = lastGridCall()
       expect(last.index).toBe(2)
       expect(last.size).toBe(48)
     })
@@ -226,34 +238,36 @@ describe('MEDIA-04 MediaPage cross-Page browser flow', () => {
     const fileHeading = screen.getByRole('heading', { name: 'Tệp' })
     fireEvent.click(within(fileHeading.parentElement).getByRole('button', { name: 'Sau' }))
     await waitFor(() => {
-      expect(useMediaAssets.mock.calls.at(-1)[0].index).toBe(2)
+      expect(lastGridCall().index).toBe(2)
     })
 
-    fireEvent.change(screen.getByLabelText('Tìm kiếm'), { target: { value: 'banner' } })
+    // "Tìm kiếm" file input was merged into the folder/file search box (MediaFolderSearchBox) —
+    // the same typed value drives the grid's keyword filter below.
+    fireEvent.change(screen.getByLabelText('Tìm thư mục hoặc tệp'), { target: { value: 'banner' } })
     await waitFor(() => {
-      const last = useMediaAssets.mock.calls.at(-1)[0]
+      const last = lastGridCall()
       expect(last.index).toBe(1)
       expect(last.keyword).toBe('banner')
     })
 
     fireEvent.click(within(fileHeading.parentElement).getByRole('button', { name: 'Sau' }))
     await waitFor(() => {
-      expect(useMediaAssets.mock.calls.at(-1)[0].index).toBe(2)
+      expect(lastGridCall().index).toBe(2)
     })
     fireEvent.change(screen.getByLabelText('Nguồn'), { target: { value: '1' } })
     await waitFor(() => {
-      const last = useMediaAssets.mock.calls.at(-1)[0]
+      const last = lastGridCall()
       expect(last.index).toBe(1)
       expect(last.source).toBe(1)
     })
 
     fireEvent.click(within(fileHeading.parentElement).getByRole('button', { name: 'Sau' }))
     await waitFor(() => {
-      expect(useMediaAssets.mock.calls.at(-1)[0].index).toBe(2)
+      expect(lastGridCall().index).toBe(2)
     })
     fireEvent.click(screen.getByRole('button', { name: 'Chưa phân loại' }))
     await waitFor(() => {
-      const last = useMediaAssets.mock.calls.at(-1)[0]
+      const last = lastGridCall()
       expect(last.index).toBe(1)
       expect(last.unassigned).toBe(true)
     })

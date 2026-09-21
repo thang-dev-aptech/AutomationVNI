@@ -85,9 +85,27 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
             query = query.Where(x => x.MimeType.StartsWith(request.MimeType.Trim()));
 
         var paged = await PaginateAsync(query, request.Index, request.Size, ct);
+
+        // Join Page (SocialChannelId) qua FolderId theo lô — cần cho điều hướng "mở đúng Page"
+        // từ kết quả tìm kiếm toàn cục, không round-trip DB cho từng ảnh.
+        var folderIds = paged.Items
+            .Where(x => x.FolderId.HasValue)
+            .Select(x => x.FolderId!.Value)
+            .Distinct()
+            .ToList();
+        var folderChannelMap = folderIds.Count == 0
+            ? new Dictionary<Guid, Guid?>()
+            : await Context.Set<MediaFolderModel>()
+                .Where(f => folderIds.Contains(f.Id))
+                .ToDictionaryAsync(f => f.Id, f => f.SocialChannelId, ct);
+
         return new PagedResult<MediaAssetResponse>
         {
-            Items = paged.Items.Select(ToResponse).ToList(),
+            Items = paged.Items
+                .Select(x => ToResponse(
+                    x,
+                    x.FolderId.HasValue ? folderChannelMap.GetValueOrDefault(x.FolderId.Value) : null))
+                .ToList(),
             Total = paged.Total,
             Index = paged.Index,
             Size = paged.Size
@@ -209,7 +227,7 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         return entity;
     }
 
-    public static MediaAssetResponse ToResponse(MediaAssetModel e) => new()
+    public static MediaAssetResponse ToResponse(MediaAssetModel e, Guid? socialChannelId = null) => new()
     {
         Id = e.Id,
         FileName = e.FileName,
@@ -222,6 +240,7 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         Source = e.Source,
         CategoryId = e.CategoryId,
         FolderId = e.FolderId,
+        SocialChannelId = socialChannelId,
         CategoryIds = ParseCategoryIds(e.CategoryIds),
         AltText = e.AltText,
         Description = e.Description,

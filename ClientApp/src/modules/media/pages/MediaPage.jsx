@@ -470,23 +470,25 @@ export default function MediaPage() {
       <div className="media-main-content">
         <div className="card card-body media-page-search-card">
           <MediaFolderSearchBox
+            value={keyword}
+            onChange={setKeyword}
             onOpenFolder={(folderId, pageId) => {
               // useMediaBrowser.openFolder cần cả socialChannelId để suy ra Page —
               // search box chỉ trả 2 tham số rời, phải tự dựng lại thành object.
               browser.openFolder({ id: folderId, socialChannelId: pageId })
             }}
+            onOpenFile={(asset) => {
+              // Ảnh có folder → mở đúng Page/folder chứa nó (backend đã join SocialChannelId);
+              // chưa phân loại → chuyển sang bộ lọc "Chưa phân loại" để nó hiện trong lưới dưới.
+              if (asset.folderId) {
+                browser.openFolder({ id: asset.folderId, socialChannelId: asset.socialChannelId })
+              } else {
+                browser.selectUnassigned()
+              }
+            }}
           />
 
           <div className="media-page-filters">
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label htmlFor="media-keyword">Tìm kiếm</label>
-              <input
-                id="media-keyword"
-                value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
-                placeholder="Tên file, alt text, tags..."
-              />
-            </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label htmlFor="media-source">Nguồn</label>
               <select
