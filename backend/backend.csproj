@@ -5,6 +5,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>vni-automation-backend-dev</UserSecretsId>
+    <!-- backend/publish is legacy generated output. Exclude it before default SDK items are
+         evaluated so stale binaries and server-owned config can never be nested in a new build. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);publish/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
