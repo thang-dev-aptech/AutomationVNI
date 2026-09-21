@@ -12,25 +12,30 @@
   background: rgba(45, 108, 182, 0.04);
 }
 
-.media-browser-dropzone-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(45, 108, 182, 0.12);
+.media-browser-dropzone-banner {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--color-surface);
+  padding: 12px 16px;
   border: 2px dashed var(--color-primary);
   border-radius: var(--radius-md);
+  background: rgba(45, 108, 182, 0.12);
   display: flex;
   align-items: center;
   justify-content: center;
-  pointer-events: none;
-  z-index: 100;
-}
-
-.media-browser-dropzone-text {
-  font-size: 1.125rem;
+  gap: 8px;
+  font-size: 1rem;
   font-weight: 500;
   color: var(--color-primary);
-  padding: 20px;
-  text-align: center;
+  pointer-events: none;
+}
+
+.media-browser-dropzone-banner .state-spinner {
+  width: 18px;
+  height: 18px;
+  border-width: 2px;
+  flex-shrink: 0;
 }
 
 .media-browser-section {

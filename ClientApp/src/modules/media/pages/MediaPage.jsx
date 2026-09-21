@@ -557,6 +557,7 @@ export default function MediaPage() {
             filePageIndex={filePageIndex}
             totalFilePages={totalFilePages}
             onFilePageChange={setFilePageIndex}
+            isUploading={uploadBatchMutation.isPending}
             folderBreadcrumb={(
               <nav className="media-folder-breadcrumb" aria-label="Đường dẫn thư mục">
                 <button

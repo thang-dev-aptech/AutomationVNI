@@ -33,6 +33,7 @@ export default function MediaBrowserGrid({
   filePageIndex = 1,
   totalFilePages = 1,
   onFilePageChange,
+  isUploading = false,
 }) {
   const [isDragOverGrid, setIsDragOverGrid] = useState(false)
   const hasFolders = folders.length > 0
@@ -46,6 +47,7 @@ export default function MediaBrowserGrid({
   }
 
   const handleGridDragEnter = (event) => {
+    if (event.target !== event.currentTarget) return
     if (!canManage || !event.dataTransfer.types.includes('Files')) return
     event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
@@ -122,12 +124,13 @@ export default function MediaBrowserGrid({
       onDragLeave={handleGridDragLeave}
       onDrop={handleGridDrop}
     >
-      {children}
-      {isDragOverGrid && (
-        <div className="media-browser-dropzone-overlay">
-          <div className="media-browser-dropzone-text">Thả ảnh để upload</div>
+      {(isUploading || isDragOverGrid) && (
+        <div className="media-browser-dropzone-banner">
+          {isUploading && <span className="state-spinner" />}
+          <span>{isUploading ? 'Đang tải ảnh lên...' : 'Thả ảnh để upload'}</span>
         </div>
       )}
+      {children}
     </div>
   )
 

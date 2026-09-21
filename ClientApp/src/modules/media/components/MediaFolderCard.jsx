@@ -12,19 +12,26 @@ export default function MediaFolderCard({
   const displayName = folder.name
   const subtitle = folder.pageName || (folder.socialChannelId ? `Page ${folder.socialChannelId}` : '')
 
+  const handleDragEnter = (event) => {
+    event.stopPropagation()
+  }
+
   const handleDragOver = (event) => {
+    event.stopPropagation()
     event.preventDefault()
     event.dataTransfer.dropEffect = 'move'
     event.currentTarget.classList.add('media-folder-card-dragover')
   }
 
   const handleDragLeave = (event) => {
+    event.stopPropagation()
     if (event.currentTarget === event.target) {
       event.currentTarget.classList.remove('media-folder-card-dragover')
     }
   }
 
   const handleDrop = (event) => {
+    event.stopPropagation()
     event.preventDefault()
     event.currentTarget.classList.remove('media-folder-card-dragover')
 
@@ -56,6 +63,7 @@ export default function MediaFolderCard({
           onContextMenu(event, folder)
         }
       }}
+      onDragEnter={canManage ? handleDragEnter : undefined}
       onDragOver={canManage ? handleDragOver : undefined}
       onDragLeave={canManage ? handleDragLeave : undefined}
       onDrop={canManage ? handleDrop : undefined}
