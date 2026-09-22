@@ -52,6 +52,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<CrawlRunModel> CrawlRuns => Set<CrawlRunModel>();
     public DbSet<CrawledArticleModel> CrawledArticles => Set<CrawledArticleModel>();
     public DbSet<ContentFingerprintModel> ContentFingerprints => Set<ContentFingerprintModel>();
+    public DbSet<ContentCrawlPipelineStateModel> ContentCrawlPipelineStates
+        => Set<ContentCrawlPipelineStateModel>();
     public DbSet<ShortLinkModel> ShortLinks => Set<ShortLinkModel>();
     public DbSet<Backend.Modules.NewsSite.NewsArticleModel> NewsArticles
         => Set<Backend.Modules.NewsSite.NewsArticleModel>();
@@ -413,6 +415,20 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.IncludeKeywords).HasColumnType("TEXT");
             e.Property(x => x.ExcludeKeywords).HasColumnType("TEXT");
             e.Property(x => x.DefaultChannelIds).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<ContentCrawlPipelineStateModel>(e =>
+        {
+            e.ToTable("ContentCrawlPipelineState");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.IsEnabled).HasDefaultValue(true);
+            e.Property(x => x.UpdatedByUserName).HasMaxLength(200);
+            e.HasData(new ContentCrawlPipelineStateModel
+            {
+                Id = ContentCrawlPipelineStateModel.SingletonId,
+                IsEnabled = true,
+                CreatedAt = new DateTime(2026, 9, 22, 0, 0, 0, DateTimeKind.Utc)
+            });
         });
 
         modelBuilder.Entity<CrawlRunModel>(e =>

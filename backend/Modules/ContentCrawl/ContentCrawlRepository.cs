@@ -17,6 +17,31 @@ public class ContentCrawlRepository(
     Microsoft.Extensions.Options.IOptions<ContentCrawlOptions> options)
     : GenericRepository<CrawledArticleModel>(context, userContext)
 {
+    // ── Trạng thái pipeline ─────────────────────────────────────────────────
+
+    public async Task<bool> GetPipelineEnabledAsync(CancellationToken ct = default)
+        => await Context.Set<ContentCrawlPipelineStateModel>()
+            .Where(x => x.Id == ContentCrawlPipelineStateModel.SingletonId)
+            .Select(x => x.IsEnabled)
+            .SingleAsync(ct);
+
+    public async Task<ContentCrawlPipelineStateModel> GetPipelineStateAsync(CancellationToken ct = default)
+        => await Context.Set<ContentCrawlPipelineStateModel>()
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == ContentCrawlPipelineStateModel.SingletonId, ct);
+
+    public async Task<ContentCrawlPipelineStateModel> SetPipelineEnabledAsync(
+        bool enabled, string userName, CancellationToken ct = default)
+    {
+        var state = await Context.Set<ContentCrawlPipelineStateModel>()
+            .SingleAsync(x => x.Id == ContentCrawlPipelineStateModel.SingletonId, ct);
+        state.IsEnabled = enabled;
+        state.UpdatedAt = DateTime.UtcNow;
+        state.UpdatedByUserName = string.IsNullOrWhiteSpace(userName) ? null : userName.Trim();
+        await Context.SaveChangesAsync(ct);
+        return state;
+    }
+
     // ── Nguồn cào ───────────────────────────────────────────────────────────
 
     public async Task<List<CrawlSourceModel>> GetSourcesAsync(bool onlyActive, CancellationToken ct = default)

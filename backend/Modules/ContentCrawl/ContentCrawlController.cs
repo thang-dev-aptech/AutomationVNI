@@ -20,6 +20,35 @@ public class ContentCrawlController(
     Microsoft.Extensions.Options.IOptions<ContentCrawlOptions> crawlOptions,
     ILogger<ContentCrawlController> logger) : ControllerBase
 {
+    [HttpGet("pipeline-state")]
+    public async Task<IActionResult> GetPipelineState(CancellationToken ct)
+    {
+        var state = await repository.GetPipelineStateAsync(ct);
+        return Ok(ApiResponse.Ok(ToPipelineStateResponse(state)));
+    }
+
+    [HttpPost("pipeline-state")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> SetPipelineState(
+        [FromBody] SetContentCrawlPipelineStateRequest request,
+        CancellationToken ct)
+    {
+        var state = await repository.SetPipelineEnabledAsync(
+            request.Enabled,
+            User.Identity?.Name ?? "unknown",
+            ct);
+        return Ok(ApiResponse.Ok(ToPipelineStateResponse(state),
+            request.Enabled ? "Đã bật pipeline tin tức" : "Đã dừng pipeline tin tức"));
+    }
+
+    private static ContentCrawlPipelineStateResponse ToPipelineStateResponse(
+        ContentCrawlPipelineStateModel state) => new()
+        {
+            Enabled = state.IsEnabled,
+            UpdatedAt = state.UpdatedAt,
+            UpdatedByUserName = state.UpdatedByUserName
+        };
+
     // ── Nguồn cào ───────────────────────────────────────────────────────────
 
     [HttpGet("sources")]
@@ -438,4 +467,16 @@ public class ContentCrawlController(
         }
         catch (KeyNotFoundException ex) { return NotFound(ApiResponse.Fail("NOT_FOUND", ex.Message)); }
     }
+}
+
+public class SetContentCrawlPipelineStateRequest
+{
+    public bool Enabled { get; set; }
+}
+
+public class ContentCrawlPipelineStateResponse
+{
+    public bool Enabled { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+    public string? UpdatedByUserName { get; set; }
 }
