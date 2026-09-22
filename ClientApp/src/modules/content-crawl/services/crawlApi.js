@@ -1,6 +1,11 @@
 import axiosInstance from '@/api/axiosInstance'
 
 export const crawlApi = {
+  // Trạng thái toàn bộ pipeline tin tức
+  getPipelineState: () => axiosInstance.get('/api/ContentCrawl/pipeline-state'),
+  setPipelineEnabled: (enabled) =>
+    axiosInstance.post('/api/ContentCrawl/pipeline-state', { enabled }),
+
   // Nguồn cào
   getSources: (onlyActive = false) =>
     axiosInstance.get('/api/ContentCrawl/sources', { params: { onlyActive } }),
@@ -33,6 +38,7 @@ export const crawlApi = {
 
 export const crawlQueryKeys = {
   all: ['content-crawl'],
+  pipelineState: () => ['content-crawl', 'pipeline-state'],
   sources: (onlyActive) => ['content-crawl', 'sources', onlyActive],
   runs: (sourceId) => ['content-crawl', 'runs', sourceId],
   articles: (params) => ['content-crawl', 'articles', params],

@@ -12,11 +12,13 @@ import CrawlSourceModal from '../components/CrawlSourceModal'
 import { STATUS_TABS } from '../constants/crawlConstants'
 import {
   useApproveArticle,
+  useCrawlPipelineState,
   useCrawlSummary,
   useCrawledArticles,
   useMarkNotDuplicate,
   useRededupArticle,
   useRejectArticle,
+  useSetCrawlPipelineEnabled,
   useSweepAutoApprove,
 } from '../hooks/useCrawl'
 import './CrawlInboxPage.css'
@@ -36,6 +38,12 @@ export default function CrawlInboxPage() {
 
   const { data, isLoading, isError, error, refetch } = useCrawledArticles(params)
   const { data: summary } = useCrawlSummary()
+  const {
+    data: pipelineState,
+    isLoading: isPipelineStateLoading,
+    isError: isPipelineStateError,
+  } = useCrawlPipelineState(canManageCrawlSources)
+  const setPipelineEnabled = useSetCrawlPipelineEnabled()
   const approve = useApproveArticle()
   const reject = useRejectArticle()
   const notDuplicate = useMarkNotDuplicate()
@@ -88,6 +96,21 @@ export default function CrawlInboxPage() {
     } catch (e) { toast.error(getErrorMessage(e)) }
   }
 
+  const handleTogglePipeline = async () => {
+    const nextEnabled = !pipelineState.enabled
+    if (!nextEnabled && !window.confirm(
+      'Dừng toàn bộ chức năng tin tức?\n\n'
+      + 'Pipeline sẽ tạm ngừng cào nguồn, xử lý bài và soạn bài cho đến khi được bật lại.'
+    )) return
+
+    try {
+      await setPipelineEnabled.mutateAsync(nextEnabled)
+      toast.success(nextEnabled
+        ? 'Đã bật lại toàn bộ chức năng tin tức'
+        : 'Đã dừng toàn bộ chức năng tin tức')
+    } catch (e) { toast.error(getErrorMessage(e)) }
+  }
+
   const items = data?.items ?? []
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / 20))
 
@@ -98,6 +121,26 @@ export default function CrawlInboxPage() {
         description="Tin từ báo giáo dục, AI đã xào bản nháp và chấm trùng. Duyệt một tin sẽ tạo bài cho từng page."
         actions={(
           <>
+            {canManageCrawlSources && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={handleTogglePipeline}
+                disabled={isPipelineStateLoading || isPipelineStateError
+                  || !pipelineState || setPipelineEnabled.isPending}
+                title={isPipelineStateError
+                  ? 'Không tải được trạng thái pipeline tin tức'
+                  : undefined}
+              >
+                {isPipelineStateLoading && 'Đang tải trạng thái tin tức…'}
+                {isPipelineStateError && 'Không tải được trạng thái tin tức'}
+                {pipelineState && (setPipelineEnabled.isPending
+                  ? 'Đang cập nhật trạng thái tin tức…'
+                  : pipelineState.enabled
+                    ? 'Đang chạy · Dừng toàn bộ chức năng tin tức'
+                    : 'Đang dừng · Bật lại toàn bộ chức năng tin tức')}
+              </button>
+            )}
             {canManageCrawlSources && (
               <button
                 type="button"
