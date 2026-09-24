@@ -1,5 +1,6 @@
 using Backend.Data;
 using Backend.Modules.PageContext;
+using Backend.Modules.MediaFolder;
 using Backend.Modules.Post.Enums;
 using Backend.Modules.PromptTemplate;
 using Backend.Shared;
@@ -10,8 +11,17 @@ namespace Backend.Modules.Post;
 
 public class PostRepository : GenericRepository<PostModel>, IGenericRepository<PostModel>
 {
+    private readonly MediaFolderRepository _mediaFolders;
+
     public PostRepository(AppDbContext context, IUserContext userContext)
-        : base(context, userContext) { }
+        : this(context, userContext, new MediaFolderRepository(context, userContext)) { }
+
+    public PostRepository(
+        AppDbContext context,
+        IUserContext userContext,
+        MediaFolderRepository mediaFolders)
+        : base(context, userContext)
+        => _mediaFolders = mediaFolders;
 
     public async Task<PagedResult<PostResponse>> FilterAsync(
         PostFilterRequest request,
@@ -56,6 +66,44 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
             Index = paged.Index,
             Size = paged.Size
         };
+    }
+
+    /// <summary>
+    /// Lấy bài để dựng lưới lịch trong một khoảng thời gian.
+    ///
+    /// Một bài lọt vào lưới nếu MỘT TRONG HAI mốc rơi vào khoảng: <c>ScheduledPublishAt</c> (bài
+    /// sắp đăng) hoặc <c>PublishedAt</c> (bài đã đăng) — nên lịch hiển thị được cả kế hoạch lẫn
+    /// lịch sử. Không phân trang vì khoảng ngày đã tự giới hạn số lượng; vẫn chặn trần
+    /// <c>MaxCalendarItems</c> phòng dữ liệu bất thường làm phình response.
+    /// </summary>
+    public async Task<List<PostResponse>> GetCalendarAsync(
+        PostCalendarRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        const int MaxCalendarItems = 1000;
+
+        var from = request.FromUtc;
+        var to = request.ToUtc;
+
+        var query = QueryActive().Where(x =>
+            (x.ScheduledPublishAt != null
+                && x.ScheduledPublishAt >= from && x.ScheduledPublishAt < to)
+            || (x.PublishedAt != null
+                && x.PublishedAt >= from && x.PublishedAt < to));
+
+        if (request.Statuses is { Count: > 0 })
+            query = query.Where(x => request.Statuses.Contains(x.Status));
+
+        if (request.SocialChannelIds is { Count: > 0 })
+            query = query.Where(x => request.SocialChannelIds.Contains(x.SocialChannelId));
+
+        var items = await query
+            .OrderBy(x => x.ScheduledPublishAt ?? x.PublishedAt)
+            .Take(MaxCalendarItems)
+            .ToListAsync(cancellationToken);
+
+        var names = await LoadTemplateNamesAsync(items, cancellationToken);
+        return items.Select(e => ToResponse(e, ResolveTemplateName(e, names))).ToList();
     }
 
     public async Task<PostResponse?> GetResponseByIdAsync(Guid id, CancellationToken ct = default)
@@ -162,6 +210,54 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
                     ExtraJson = BuildBulkCreateExtraJson(it.Objective, request.GenerateAsReels)
                 };
                 posts.Add(post);
+            }
+
+        await MultiCreateAsync(posts, ct);
+        return new BulkCreateResult
+        {
+            BatchId = batchId,
+            Created = posts.Count,
+            PostIds = posts.Select(p => p.Id).ToList()
+        };
+    }
+
+    /// <summary>
+    /// Fan-out ý tưởng × kênh thành bài Queued với GenerationFlow.ChungChiGallery.
+    /// Không gắn text/image template — pipeline lấy ảnh nguyên trạng từ thư mục chung_chi của Page.
+    /// </summary>
+    public async Task<BulkCreateResult> BulkCreateChungChiAsync(
+        BulkCreateChungChiRequest request,
+        CancellationToken ct = default)
+    {
+        var items = (request.Items ?? []).Where(i => !string.IsNullOrWhiteSpace(i.Idea)).ToList();
+        var channels = (request.ChannelIds ?? []).Where(c => c != Guid.Empty).Distinct().ToList();
+        if (items.Count == 0) throw new ArgumentException("Danh sách ý tưởng trống");
+        if (channels.Count == 0) throw new ArgumentException("Phải chọn ít nhất một kênh đăng");
+
+        await _mediaFolders.EnsureChungChiPagesEligibleAsync(channels, ct);
+
+        var mode = Enum.IsDefined(request.Mode) ? request.Mode : ChungChiSelectionMode.Random;
+        var randomCount = request.RandomCount is int n && n >= 1 ? n : 1;
+
+        var batchId = Guid.NewGuid();
+        var userId = GetCurrentUserId();
+        var extraJson = BuildChungChiExtraJson(mode);
+        var posts = new List<PostModel>();
+        foreach (var ch in channels)
+            foreach (var it in items)
+            {
+                posts.Add(new PostModel
+                {
+                    Title = it.Idea.Trim(),
+                    Content = it.Idea.Trim(),
+                    SocialChannelId = ch,
+                    GenerationFlow = GenerationFlow.ChungChiGallery,
+                    ImageCount = mode == ChungChiSelectionMode.Random ? randomCount : null,
+                    BatchId = batchId,
+                    UserId = userId,
+                    Status = PostStatus.Queued,
+                    ExtraJson = extraJson
+                });
             }
 
         await MultiCreateAsync(posts, ct);
@@ -281,6 +377,12 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         return System.Text.Json.JsonSerializer.Serialize(root);
     }
 
+    private static string BuildChungChiExtraJson(ChungChiSelectionMode mode)
+        => System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["chungChi"] = new Dictionary<string, object?> { ["mode"] = (int)mode }
+        });
+
     /// <summary>
     /// Fan-out 1 ý tưởng × N kênh → Queued. Template: PromptTemplateId chung,
     /// hoặc default từ PageContext theo từng kênh.
@@ -294,6 +396,9 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         string? objective,
         Guid? categoryId = null,
         SourceArticleBrief? sourceArticle = null,
+        int? imageCount = null,
+        bool generateAsReels = false,
+        Guid? newsArticleId = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(title))
@@ -339,7 +444,9 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
                 CategoryId = categoryId,
                 TextTemplateId = textTpl,
                 ImageTemplateId = imageTpl,
+                ImageCount = imageCount,
                 BatchId = batchId,
+                NewsArticleId = newsArticleId,
                 UserId = userId,
                 Status = PostStatus.Queued
             };
@@ -348,7 +455,8 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
             post.ExtraJson = BuildFanOutExtraJson(
                 objective,
                 sourceArticle is null ? null
-                    : sourceArticle with { Angle = HeadlineAngles.ForIndex(channelIndex, sourceArticle.Title) });
+                    : sourceArticle with { Angle = HeadlineAngles.ForIndex(channelIndex, sourceArticle.Title) },
+                generateAsReels);
             channelIndex++;
             posts.Add(post);
         }
@@ -366,13 +474,16 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
     /// Dựng ExtraJson lúc fan-out. Bài từ tin crawl mang thêm khối sourceArticle để pipeline
     /// sinh text đọc lại lúc dựng prompt — xem SourceArticleHelper.
     /// </summary>
-    private static string? BuildFanOutExtraJson(string? objective, SourceArticleBrief? sourceArticle)
+    private static string? BuildFanOutExtraJson(
+        string? objective, SourceArticleBrief? sourceArticle, bool reelsRequested = false)
     {
         var root = new Dictionary<string, object?>();
         if (!string.IsNullOrWhiteSpace(objective))
             root["input"] = new Dictionary<string, object?> { ["objective"] = objective.Trim() };
         if (sourceArticle is not null)
             root[SourceArticleHelper.ExtraJsonKey] = SourceArticleHelper.ToJsonBlock(sourceArticle);
+        if (reelsRequested)
+            root["reelsRequested"] = true;
         return root.Count == 0 ? null : System.Text.Json.JsonSerializer.Serialize(root);
     }
 
@@ -391,7 +502,9 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         }
 
         // Bỏ qua bài đang có lịch — xoá sẽ để lại bài mồ côi trên Facebook (xem PostController.SoftDelete).
-        query = query.Where(x => x.Status != PostStatus.Scheduled);
+        // Bỏ qua cả bài đã đăng (Published) — bài thật vẫn còn sống trên Facebook/TikTok/..., xoá bản ghi
+        // hệ thống chỉ làm mất lịch sử/số liệu mà không có cách khôi phục qua UI.
+        query = query.Where(x => x.Status != PostStatus.Scheduled && x.Status != PostStatus.Published);
 
         var posts = await query.ToListAsync(cancellationToken);
         if (posts.Count == 0)

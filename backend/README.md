@@ -28,6 +28,22 @@ dotnet run
 
 Mặc định Development: `http://localhost:5068` (xem `Properties/launchSettings.json`).
 
+## Publish Linux production
+
+Profile `LinuxX64` tạo bản Linux x64 self-contained, vì vậy máy chủ không cần cài .NET 10.
+Toàn bộ file trong output phải được chép cùng nhau; không chỉ chép riêng executable `backend`.
+
+```bash
+# Chạy từ thư mục gốc repository
+dotnet publish backend/backend.csproj \
+  -p:PublishProfile=LinuxX64 \
+  -o artifacts/backend-linux-x64
+```
+
+`appsettings.Production.json` được cố ý loại khỏi artifact vì chứa cấu hình/secret riêng của
+máy chủ. Hướng dẫn chép artifact, giữ dữ liệu và chạy bằng `nohup` nằm tại
+[`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md#linux-x64-self-contained-directadmin).
+
 ## Database migration
 
 ```bash

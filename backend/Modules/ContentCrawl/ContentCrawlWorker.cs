@@ -15,6 +15,8 @@ public class ContentCrawlWorker(
     IOptions<ContentCrawlOptions> options,
     ILogger<ContentCrawlWorker> logger) : BackgroundService
 {
+    private bool? _lastPipelineEnabled;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var settings = options.Value;
@@ -37,11 +39,14 @@ public class ContentCrawlWorker(
         {
             try
             {
-                await FetchDueSourcesAsync(settings, stoppingToken);
-                await ProcessArticlesAsync(stoppingToken);
-                await ComposeQueuedArticlesAsync(stoppingToken);
+                await RunTickAsync(settings, stoppingToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            // Lọc theo stoppingToken.IsCancellationRequested, KHÔNG theo kiểu exception: HttpClient
+            // hết giờ (vd. FetchAsync 20s) cũng ném TaskCanceledException — một OperationCanceledException
+            // — mà "ex is not OperationCanceledException" sẽ vô tình bỏ qua đúng lỗi cần bắt, ném ra
+            // ngoài ExecuteAsync và kéo sập cả app (BackgroundServiceExceptionBehavior=StopHost mặc
+            // định giết TOÀN BỘ host, không riêng worker này — đã xảy ra thật, xem log production).
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "ContentCrawlWorker lỗi vòng lặp");
             }
@@ -49,6 +54,33 @@ public class ContentCrawlWorker(
             try { await Task.Delay(TimeSpan.FromSeconds(Math.Max(10, settings.IntervalSeconds)), stoppingToken); }
             catch (OperationCanceledException) { break; }
         }
+    }
+
+    /// <summary>
+    /// Đọc trạng thái từ DB ở đầu từng tick. Khi dừng, chỉ bỏ qua công việc của tick hiện tại;
+    /// vòng lặp và khoảng nghỉ vẫn sống để lần kế tiếp có thể thấy trạng thái được bật lại.
+    /// </summary>
+    protected virtual async Task RunTickAsync(ContentCrawlOptions settings, CancellationToken ct)
+    {
+        bool enabled;
+        using (var scope = scopeFactory.CreateScope())
+        {
+            var repository = scope.ServiceProvider.GetRequiredService<ContentCrawlRepository>();
+            enabled = await repository.GetPipelineEnabledAsync(ct);
+        }
+
+        if (_lastPipelineEnabled != enabled)
+        {
+            logger.LogInformation(
+                enabled ? "Pipeline tin tức đã bật" : "Pipeline tin tức đã dừng");
+            _lastPipelineEnabled = enabled;
+        }
+
+        if (!enabled) return;
+
+        await FetchDueSourcesAsync(settings, ct);
+        await ProcessArticlesAsync(ct);
+        await ComposeQueuedArticlesAsync(ct);
     }
 
     /// <summary>
@@ -60,7 +92,7 @@ public class ContentCrawlWorker(
     /// cái kia chạy "thành công" nhưng lấy về 0 bài vì đang đứng ở trang trắng.
     /// Ở quy mô vài nguồn × vài bài mỗi ngày thì tuần tự không hề chậm.
     /// </summary>
-    private async Task FetchDueSourcesAsync(ContentCrawlOptions settings, CancellationToken ct)
+    protected virtual async Task FetchDueSourcesAsync(ContentCrawlOptions settings, CancellationToken ct)
     {
         List<Guid> dueIds;
         using (var scope = scopeFactory.CreateScope())
@@ -80,7 +112,7 @@ public class ContentCrawlWorker(
                 var pipeline = scope.ServiceProvider.GetRequiredService<ContentCrawlPipelineService>();
                 await pipeline.RunSourceAsync(id, "worker", ct);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 // Một nguồn hỏng không được làm chết các nguồn còn lại.
                 logger.LogError(ex, "Cào nguồn {SourceId} thất bại", id);
@@ -92,7 +124,7 @@ public class ContentCrawlWorker(
     /// Chấm trùng + xào nháp chạy TUẦN TỰ trên một scope. SQLite ở journal mode mặc định
     /// (không WAL) serialize writer, ghi dồn từ nhiều scope là đường dẫn thẳng tới SQLITE_BUSY.
     /// </summary>
-    private async Task ProcessArticlesAsync(CancellationToken ct)
+    protected virtual async Task ProcessArticlesAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var pipeline = scope.ServiceProvider.GetRequiredService<ContentCrawlPipelineService>();
@@ -109,7 +141,7 @@ public class ContentCrawlWorker(
     ///
     /// Mỗi nhịp làm tối đa 3 bài để một hàng đợi dài không chặn hai việc kia của worker.
     /// </summary>
-    private async Task ComposeQueuedArticlesAsync(CancellationToken ct)
+    protected virtual async Task ComposeQueuedArticlesAsync(CancellationToken ct)
     {
         List<Guid> queued;
         using (var scope = scopeFactory.CreateScope())
@@ -131,7 +163,7 @@ public class ContentCrawlWorker(
                 var pipeline = scope.ServiceProvider.GetRequiredService<ContentCrawlPipelineService>();
                 await pipeline.ComposeQueuedAsync(newsId, ct);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 logger.LogError(ex, "Viết bài {Id} lỗi", newsId);
             }

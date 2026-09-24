@@ -215,9 +215,13 @@ public class MediaIntelligenceService(
                         new {
                             type = "text",
                             text = "Phân tích ảnh này cho nhu cầu ghép chữ banner marketing. Trả về đúng JSON:\n" +
-                                "{ \"layoutStyle\": \"TopBottomSplit\" hoặc \"FreeText\", \"safeTextRegion\": { \"x\": 10, \"y\": 20, \"width\": 80, \"height\": 30 } }\n" +
-                                "- \"layoutStyle\": chọn \"TopBottomSplit\" nếu ảnh có bố cục đối xứng, còn dải trống rõ ràng ở cả mép trên và mép dưới (phù hợp banner căn giữa, header/footer riêng biệt). Chọn \"FreeText\" nếu ảnh có MỘT vùng trống lớn nằm lệch (trái/phải/trên/dưới), không đối xứng (phù hợp khối chữ căn trái đặt gọn trong vùng trống đó).\n" +
-                                "- \"safeTextRegion\": x, y, width, height là số nguyên 0-100 (phần trăm), đại diện vùng an toàn để chèn chữ — không đè lên mặt người mẫu hoặc chi tiết quan trọng. Nếu chọn \"TopBottomSplit\" vẫn trả vùng trống lớn nhất tương ứng."
+                                "{ \"layoutStyle\": \"TopBottomSplit\" | \"FreeText\" | \"SolidPanelSplit\", " +
+                                "\"safeTextRegion\": { \"x\": 10, \"y\": 20, \"width\": 80, \"height\": 30 }, " +
+                                "\"logoShape\": \"Square\" | \"Circle\", \"colorSlot\": \"Primary\" | \"Secondary\" | \"Accent\" }\n" +
+                                "- \"layoutStyle\": chọn \"TopBottomSplit\" nếu ảnh có bố cục đối xứng, còn dải trống rõ ràng ở cả mép trên và mép dưới (phù hợp banner căn giữa, header/footer riêng biệt). Chọn \"FreeText\" nếu ảnh có MỘT vùng trống lớn nằm lệch (trái/phải/trên/dưới), không đối xứng (phù hợp khối chữ căn trái đặt gọn trong vùng trống đó). Chọn \"SolidPanelSplit\" nếu ảnh có chủ thể/chi tiết dày đặc gần như toàn khung, không còn vùng trống nào đủ lớn để chèn chữ dễ đọc — layout này tự vẽ 1 nửa khung là mảng màu thương hiệu đặc chứa chữ, nửa còn lại giữ nguyên ảnh không chèn chữ.\n" +
+                                "- \"safeTextRegion\": x, y, width, height là số nguyên 0-100 (phần trăm), đại diện vùng an toàn để chèn chữ — không đè lên mặt người mẫu hoặc chi tiết quan trọng. Nếu chọn \"TopBottomSplit\" vẫn trả vùng trống lớn nhất tương ứng. Nếu chọn \"SolidPanelSplit\", cứ trả ước lượng bất kỳ (hệ thống sẽ bỏ qua trường này).\n" +
+                                "- \"logoShape\": \"Circle\" nếu ảnh nền có nhiều đường cong/mềm mại, \"Square\" nếu ảnh nền góc cạnh/nghiêm túc hơn.\n" +
+                                "- \"colorSlot\": chọn màu thương hiệu (Primary/Secondary/Accent) tương phản tốt nhất với vùng ảnh sẽ đặt khung nền chữ lên."
                         },
                         new { type = "image_url", image_url = new { url = dataUrl } }
                     }
@@ -238,18 +242,25 @@ public class MediaIntelligenceService(
 
         if (parsed.SafeTextRegion != null)
         {
-            existingTags["safeTextRegion"] = JsonSerializer.SerializeToNode(new {
-                x = parsed.SafeTextRegion.X,
-                y = parsed.SafeTextRegion.Y,
-                width = parsed.SafeTextRegion.Width,
-                height = parsed.SafeTextRegion.Height
-            });
+            // Kẹp ngay tại đây (nơi dữ liệu AI đi vào hệ thống lần đầu) — trước đây chỉ check JSON tồn
+            // tại, số nguyên AI trả về ghi thẳng vào Tags không hề kiểm tra khoảng giá trị. width/height
+            // kẹp thêm theo x/y để vùng không bao giờ mô tả 1 hình chữ nhật tràn ra ngoài khung ảnh (%).
+            var x = Math.Clamp(parsed.SafeTextRegion.X, 0, 100);
+            var y = Math.Clamp(parsed.SafeTextRegion.Y, 0, 100);
+            var w = Math.Clamp(Math.Min(parsed.SafeTextRegion.Width, 100 - x), 0, 100);
+            var h = Math.Clamp(Math.Min(parsed.SafeTextRegion.Height, 100 - y), 0, 100);
+            existingTags["safeTextRegion"] = JsonSerializer.SerializeToNode(new { x, y, width = w, height = h });
         }
 
-        var layoutStyle = parsed.LayoutStyle is "TopBottomSplit" or "FreeText"
+        var layoutStyle = parsed.LayoutStyle is "TopBottomSplit" or "FreeText" or "SolidPanelSplit"
             ? parsed.LayoutStyle
             : "TopBottomSplit";
         existingTags["layoutStyle"] = layoutStyle;
+
+        // logoShape/colorSlot mới thêm — allow-list nghiêm ngặt (không cho AI tự bịa hình dạng/màu),
+        // default giữ đúng hành vi hiện tại (Square = không đổi gì, Primary = màu vẫn dùng như trước).
+        existingTags["logoShape"] = parsed.LogoShape is "Circle" ? "Circle" : "Square";
+        existingTags["colorSlot"] = parsed.ColorSlot is "Secondary" or "Accent" ? parsed.ColorSlot : "Primary";
 
         asset.Tags = existingTags.ToJsonString(JsonOptions);
         asset.UpdatedAt = DateTime.UtcNow;
@@ -678,6 +689,8 @@ public class MediaIntelligenceService(
     {
         public SafeRegionPayload? SafeTextRegion { get; set; }
         public string? LayoutStyle { get; set; }
+        public string? LogoShape { get; set; }
+        public string? ColorSlot { get; set; }
     }
 
     private sealed class SafeRegionPayload

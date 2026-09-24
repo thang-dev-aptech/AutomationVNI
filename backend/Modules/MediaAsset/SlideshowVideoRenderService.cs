@@ -17,8 +17,13 @@ public class SlideshowVideoRenderService(
 {
     private static readonly string DefaultPadColor = "#0A2846";
 
+    /// <param name="audioTrackPathOverride">
+    /// Đường dẫn file nhạc tạm (từ thư viện nhạc, đã copy ra temp file) — có giá trị thì dùng thay
+    /// cho <see cref="ReelsOptions.AudioTrackPath"/> mặc định hệ thống. Null = giữ hành vi cũ.
+    /// </param>
     public async Task<byte[]> RenderAsync(
-        List<byte[]> frames, string? brandColorHex, CancellationToken ct = default)
+        List<byte[]> frames, string? brandColorHex, string? audioTrackPathOverride = null,
+        CancellationToken ct = default)
     {
         if (frames.Count == 0)
             throw new ArgumentException("Cần ít nhất 1 khung hình để dựng video", nameof(frames));
@@ -47,8 +52,11 @@ public class SlideshowVideoRenderService(
             var padColor = string.IsNullOrWhiteSpace(brandColorHex) ? DefaultPadColor : brandColorHex.Trim();
             var outputPath = Path.Combine(workDir, "output.mp4");
 
-            var hasAudio = !string.IsNullOrWhiteSpace(reels.AudioTrackPath)
-                && File.Exists(ResolveFfmpegPath(reels.AudioTrackPath));
+            var audioTrackPath = string.IsNullOrWhiteSpace(audioTrackPathOverride)
+                ? reels.AudioTrackPath
+                : audioTrackPathOverride;
+            var hasAudio = !string.IsNullOrWhiteSpace(audioTrackPath)
+                && File.Exists(ResolveFfmpegPath(audioTrackPath));
 
             var args = new List<string>
             {
@@ -57,7 +65,7 @@ public class SlideshowVideoRenderService(
             };
             if (hasAudio)
             {
-                args.AddRange(["-i", ResolveFfmpegPath(reels.AudioTrackPath!)]);
+                args.AddRange(["-i", ResolveFfmpegPath(audioTrackPath!)]);
             }
             args.AddRange([
                 "-vf", $"scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color={padColor}",
@@ -74,7 +82,9 @@ public class SlideshowVideoRenderService(
             }
             args.Add(outputPath);
 
-            await RunFfmpegAsync(ffmpegPath, args, ct);
+            logger.LogInformation(
+                "Bắt đầu render Reels: {FrameCount} khung hình, hasAudio={HasAudio}", frames.Count, hasAudio);
+            await RunFfmpegAsync(ffmpegPath, args, reels.FfmpegTimeoutSeconds, ct);
 
             if (!File.Exists(outputPath))
                 throw new InvalidOperationException("FFmpeg chạy xong nhưng không thấy file video output");
@@ -109,24 +119,66 @@ public class SlideshowVideoRenderService(
             ? configuredPath
             : Path.Combine(Directory.GetCurrentDirectory(), configuredPath);
 
-    private async Task RunFfmpegAsync(string ffmpegPath, List<string> args, CancellationToken ct)
+    private async Task RunFfmpegAsync(
+        string ffmpegPath, List<string> args, int timeoutSeconds, CancellationToken ct)
     {
         var psi = new ProcessStartInfo
         {
             FileName = ffmpegPath,
+            // Bắt buộc redirect stdin rồi đóng ngay bên dưới — không thì stdin của FFmpeg kế thừa
+            // thẳng từ tiến trình backend. Backend chạy nền dài hạn (không phải terminal thật), nên
+            // handle kế thừa xuống có thể trỏ tới 1 pipe không bao giờ đóng/không bao giờ có dữ liệu.
+            // FFmpeg mặc định chạy 1 luồng riêng đọc lệnh tương tác từ stdin (q để dừng...) — gặp
+            // đúng tình huống đó thì luồng này treo vô thời hạn, không log gì, không lỗi gì, vì phần
+            // mã hoá video (đọc qua -i, tách hẳn khỏi stdin) vẫn coi như "đang chạy" bình thường.
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true
         };
+        // -nostdin: tự bảo FFmpeg đừng đợi input tương tác — cùng mục đích với đóng stdin ở trên,
+        // giữ cả hai làm 2 lớp chặn độc lập cho cùng 1 nguyên nhân.
+        psi.ArgumentList.Add("-nostdin");
         foreach (var arg in args) psi.ArgumentList.Add(arg);
 
+        // Log nguyên lệnh sẽ chạy. Khi FFmpeg treo, đây là thứ duy nhất cho phép chạy lại y hệt
+        // bằng tay trên server để tái hiện — không có nó thì chỉ còn cách đoán tham số.
+        logger.LogInformation("Chạy FFmpeg: {Path} {Args}", ffmpegPath, string.Join(' ', psi.ArgumentList));
+
+        var startedAt = DateTime.UtcNow;
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("Không khởi động được tiến trình FFmpeg");
+        process.StandardInput.Close();
 
         var stderrTask = process.StandardError.ReadToEndAsync(ct);
         var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+        try
+        {
+            await process.WaitForExitAsync(timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // Hết timeout riêng của FFmpeg (không phải job bị huỷ từ ngoài) — lưới an toàn thứ 2,
+            // phòng FFmpeg treo vì lý do khác ngoài stdin (ảnh input hỏng, đĩa đầy...).
+            TryKill(process);
+
+            // Vét stderr mà FFmpeg đã kịp in ra TRƯỚC khi treo — phần này chứa banner phiên bản,
+            // thông tin stream đã parse được và dòng tiến độ cuối cùng, tức là biết được nó đứng ở
+            // bước nào. Sau khi Kill thì pipe đóng nên ReadToEndAsync trả về ngay; vẫn bọc timeout
+            // ngắn phòng trường hợp pipe không đóng, để không treo tiếp ngay trong nhánh xử lý treo.
+            var partialStderr = await ReadWithGraceAsync(stderrTask);
+            logger.LogError(
+                "FFmpeg treo quá {Timeout}s — đã kill. stderr đọc được tới lúc treo: {Stderr}",
+                timeoutSeconds, string.IsNullOrWhiteSpace(partialStderr) ? "(rỗng)" : Limit(partialStderr, 4000));
+
+            throw new InvalidOperationException(
+                $"FFmpeg không hoàn tất sau {timeoutSeconds}s — đã huỷ tiến trình");
+        }
+
         var stderr = await stderrTask;
         await stdoutTask;
 
@@ -135,6 +187,22 @@ public class SlideshowVideoRenderService(
             logger.LogError("FFmpeg thoát với mã {ExitCode}: {Stderr}", process.ExitCode, Limit(stderr, 2000));
             throw new InvalidOperationException($"FFmpeg lỗi (exit code {process.ExitCode}) — xem log để biết chi tiết");
         }
+
+        logger.LogInformation(
+            "FFmpeg xong sau {Seconds:F1}s", (DateTime.UtcNow - startedAt).TotalSeconds);
+    }
+
+    /// <summary>Đọc nốt stream đã kill, tối đa 5s — không để nhánh xử lý treo lại treo tiếp.</summary>
+    private static async Task<string> ReadWithGraceAsync(Task<string> readTask)
+    {
+        var completed = await Task.WhenAny(readTask, Task.Delay(TimeSpan.FromSeconds(5)));
+        return completed == readTask ? await readTask : string.Empty;
+    }
+
+    private void TryKill(Process process)
+    {
+        try { process.Kill(entireProcessTree: true); }
+        catch (Exception ex) { logger.LogWarning(ex, "Không kill được tiến trình FFmpeg quá hạn"); }
     }
 
     private static string Limit(string value, int max) => value.Length <= max ? value : value[..max];

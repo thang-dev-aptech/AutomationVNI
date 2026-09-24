@@ -152,38 +152,62 @@ export function loadPageMapFromStorage() {
 }
 
 /**
+ * Với 1 page: sinh đúng `postsPerPage` mốc giờ, bắt đầu từ `startDate`, cuốn dần sang ngày
+ * kế tiếp chỉ khi khung giờ/ngày đã dùng hết — không quét cả một khoảng ngày cố định. Nhờ vậy
+ * "1 bài/page" luôn tự nằm gọn trong 1 ngày (không cần canh tay Từ ngày = Đến ngày), còn
+ * "N bài/page" tự tràn sang đúng số ngày cần thiết theo số khung giờ/ngày đã khai.
+ * @returns {Date[]}
+ */
+export function buildTimesForPage(startDate, slots, jitterMinutes, postsPerPage, pageIndex = 0) {
+  const times = []
+  const day = new Date(startDate)
+  day.setHours(0, 0, 0, 0)
+  let guard = 0
+  while (times.length < postsPerPage && guard++ < 400) {
+    const dayTimes = buildJitteredTimesForDay(day, slots, jitterMinutes, pageIndex)
+    for (const t of dayTimes) {
+      times.push(t)
+      if (times.length >= postsPerPage) break
+    }
+    day.setDate(day.getDate() + 1)
+  }
+  return times
+}
+
+/**
  * @param {{
  *   channels: Array<{ id: string, pageName?: string, name?: string }>,
  *   dateFrom: string,
- *   dateTo: string,
+ *   postsPerPage: number,
  *   slotsText: string,
  *   jitterMinutes?: number,
  * }} opts
- * @returns {{ rowCount: number, pageCount: number, entries: ReturnType<typeof buildPageCodeMap> }}
+ * @returns {{ rowCount: number, pageCount: number, entries: ReturnType<typeof buildPageCodeMap>, daysUsed: number }}
  */
 export function downloadBulkScheduleSkeleton({
   channels,
   dateFrom,
-  dateTo,
+  postsPerPage,
   slotsText,
   jitterMinutes = 35,
 }) {
   if (!channels?.length) throw new Error('Chưa chọn page nào để xuất khung')
   const slots = parseTimeSlots(slotsText)
   if (slots.length === 0) throw new Error('Nhập ít nhất 1 khung giờ, ví dụ 09:00,15:00')
+  const count = Math.max(1, Math.min(60, Math.round(Number(postsPerPage)) || 1))
+
+  const startDate = new Date(`${dateFrom}T00:00:00`)
+  if (Number.isNaN(startDate.getTime())) throw new Error('Ngày bắt đầu không hợp lệ')
 
   const entries = buildPageCodeMap(channels)
   savePageMapToStorage(entries)
 
-  const days = eachDateInclusive(dateFrom, dateTo)
   const jitter = Math.max(0, Math.min(240, Number(jitterMinutes) || 0))
   const skeletonRows = []
   entries.forEach((e, pageIndex) => {
-    for (const day of days) {
-      const times = buildJitteredTimesForDay(day, slots, jitter, pageIndex)
-      for (const t of times) {
-        skeletonRows.push([e.pageCode, formatLocalScheduleFromDate(t), '', ''])
-      }
+    const times = buildTimesForPage(startDate, slots, jitter, count, pageIndex)
+    for (const t of times) {
+      skeletonRows.push([e.pageCode, formatLocalScheduleFromDate(t), '', ''])
     }
   })
 
@@ -195,6 +219,8 @@ export function downloadBulkScheduleSkeleton({
     pageCount: entries.length,
     entries,
     jitterMinutes: jitter,
+    postsPerPage: count,
+    daysUsed: Math.ceil(count / slots.length),
   }
 }
 

@@ -183,6 +183,16 @@ public class RejectCrawledArticleRequest
     public string? Reason { get; set; }
 }
 
+public class SweepAutoApproveResult
+{
+    /// <summary>Số tin đạt điểm ≥ ngưỡng đang tồn ở "chờ duyệt" trước khi quét.</summary>
+    public int Total { get; set; }
+    public int Approved { get; set; }
+    public int Failed { get; set; }
+    /// <summary>Tiêu đề + lý do của tối đa vài tin lỗi đầu tiên — đủ để soát mà không phình response.</summary>
+    public List<string> FailedTitles { get; set; } = [];
+}
+
 public class CrawlNowRequest
 {
     public string? TriggerSource { get; set; }

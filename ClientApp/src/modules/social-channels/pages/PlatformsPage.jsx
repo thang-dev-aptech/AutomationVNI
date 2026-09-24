@@ -20,6 +20,7 @@ import {
   useSocialChannelAll,
   useSocialConnections,
   useThreadsConnectUrl,
+  useTikTokConnectUrl,
   useUpdateSocialChannel,
 } from '../hooks/useSocialChannels'
 import './PlatformsPage.css'
@@ -57,6 +58,7 @@ export default function PlatformsPage() {
   const disconnectMutation = useDisconnectSocialConnection()
   const metaConnectMutation = useMetaConnectUrl()
   const threadsConnectMutation = useThreadsConnectUrl()
+  const tiktokConnectMutation = useTikTokConnectUrl()
 
   const orphanChannels = useMemo(() => {
     const kw = keyword.trim().toLowerCase()
@@ -140,6 +142,27 @@ export default function PlatformsPage() {
   }, [searchParams, navigate, refetchConnections, refetchChannels])
 
   useEffect(() => {
+    const status = searchParams.get('tiktokConnected')
+    if (!status) return
+
+    if (status === 'success') {
+      const username = searchParams.get('username')
+      toast.success(
+        username
+          ? `Đã kết nối TikTok: ${decodeURIComponent(username)}`
+          : 'Đã kết nối TikTok',
+      )
+      refetchConnections()
+      refetchChannels()
+    } else if (status === 'error') {
+      const message = searchParams.get('message')
+      toast.error(message ? decodeURIComponent(message) : 'Kết nối TikTok thất bại')
+    }
+
+    navigate('/platforms', { replace: true })
+  }, [searchParams, navigate, refetchConnections, refetchChannels])
+
+  useEffect(() => {
     if (connections.length === 0) return
     setExpandedIds((prev) => {
       if (prev.size > 0) return prev
@@ -217,9 +240,23 @@ export default function PlatformsPage() {
     }
   }
 
+  const handleConnectTikTok = async () => {
+    setConnectMenuOpen(false)
+    try {
+      const result = await tiktokConnectMutation.mutateAsync()
+      if (result?.hint) console.info('[TikTok OAuth]', result.hint)
+      if (result?.url) window.location.href = result.url
+    } catch (connectError) {
+      toast.error(getErrorMessage(connectError))
+    }
+  }
+
   /** Re-sync must go back through the same provider that created the connection. */
-  const handleResync = (connection) =>
-    connection.provider === 3 ? handleConnectThreads() : handleConnectMeta()
+  const handleResync = (connection) => {
+    if (connection.provider === 3) return handleConnectThreads()
+    if (connection.provider === 4) return handleConnectTikTok()
+    return handleConnectMeta()
+  }
 
   const handleProviderAction = (provider) => {
     if (provider.connectAction === 'meta') {
@@ -228,6 +265,10 @@ export default function PlatformsPage() {
     }
     if (provider.connectAction === 'threads') {
       handleConnectThreads()
+      return
+    }
+    if (provider.connectAction === 'tiktok') {
+      handleConnectTikTok()
       return
     }
     if (provider.connectAction === 'manual') {
@@ -334,7 +375,7 @@ export default function PlatformsPage() {
           <div className="connections-list">
             <h2 className="platforms-section-title">Tài khoản đã kết nối</h2>
             {filteredConnections.length === 0 ? (
-              <EmptyState message="Chưa có tài khoản nào. Bấm + Connect → Meta hoặc Threads." />
+              <EmptyState message="Chưa có tài khoản nào. Bấm + Connect → Meta, Threads hoặc TikTok." />
             ) : (
               filteredConnections.map((connection) => (
                 <ConnectionCard
@@ -348,7 +389,9 @@ export default function PlatformsPage() {
                   onEditChannel={openEdit}
                   onDeleteChannel={handleDelete}
                   resyncPending={
-                    metaConnectMutation.isPending || threadsConnectMutation.isPending
+                    metaConnectMutation.isPending
+                    || threadsConnectMutation.isPending
+                    || tiktokConnectMutation.isPending
                   }
                 />
               ))

@@ -45,6 +45,24 @@ public class NewsSiteOptions
     /// </summary>
     public string PreviewBaseUrl { get; set; } = "";
 
+    /// <summary>
+    /// Đoạn path lấy từ PublicBaseUrl, vd "https://domain.net/news" → "/news"; domain riêng như
+    /// "https://tintuc.vni.edu.vn" → "". Một nguồn sự thật DUY NHẤT cho mọi link nội bộ trong
+    /// trang (menu, asset, link bài — xem NewsSiteRenderer.Link) — không thêm khoá cấu hình
+    /// riêng để tránh lệch giữa PublicBaseUrl và "subpath" khai hai chỗ. Getter-only nên
+    /// ConfigurationBinder tự bỏ qua, không bind nhầm từ JSON/env var.
+    /// </summary>
+    public string BasePath
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(PublicBaseUrl)) return "";
+            return Uri.TryCreate(PublicBaseUrl, UriKind.Absolute, out var uri)
+                ? uri.AbsolutePath.TrimEnd('/')
+                : "";
+        }
+    }
+
     /// <summary>Thư mục nginx phục vụ. Trong Docker phải bind mount, xem README của VNINews.</summary>
     public string OutputPath { get; set; } = "Storage/News";
 
@@ -99,4 +117,26 @@ public class NewsSiteOptions
     /// phân bố điểm tách đôi rõ rệt: 19 tin ở vùng 80–100, trung bình 90,5.
     /// </summary>
     public int FanpageSuggestMinScore { get; set; } = 85;
+
+    /// <summary>
+    /// URL thật của các kênh mạng xã hội VNI Education. Để trống thì icon tương ứng KHÔNG hiện
+    /// trên trang — thà thiếu icon còn hơn hiện link chết (trước đây cả 3 đều href="#").
+    /// </summary>
+    public NewsSocialLinks? SocialLinks { get; set; }
+
+    /// <summary>
+    /// Token cho endpoint feed JSON (<c>GET /api/news-public/zalo-feed</c>) dùng cho bot Zalo đọc
+    /// tin mới tự động phát. Để trống = không kiểm token, ai cũng gọi được (chấp nhận được vì
+    /// endpoint chỉ đọc, không sửa gì) — đặt giá trị thì bắt buộc client gửi đúng header
+    /// <c>X-Feed-Token</c>, sai/thiếu bị từ chối 401. Cùng tinh thần optional-by-default như
+    /// MetaWebhooks:VerifyToken.
+    /// </summary>
+    public string? FeedToken { get; set; }
+}
+
+public class NewsSocialLinks
+{
+    public string? FacebookUrl { get; set; }
+    public string? YouTubeUrl { get; set; }
+    public string? TikTokUrl { get; set; }
 }

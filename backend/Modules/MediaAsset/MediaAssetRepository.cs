@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Backend.Data;
 using Backend.Modules.MediaAsset.Enums;
+using Backend.Modules.MediaFolder;
 using Backend.Shared;
 using Backend.Shared.Repositories;
 using Backend.Shared.Storage;
@@ -10,8 +11,21 @@ namespace Backend.Modules.MediaAsset;
 
 public class MediaAssetRepository : GenericRepository<MediaAssetModel>
 {
+    private readonly MediaFolderRepository _folders;
+
     public MediaAssetRepository(AppDbContext context, IUserContext userContext)
-        : base(context, userContext) { }
+        : this(context, userContext, new MediaFolderRepository(context, userContext))
+    {
+    }
+
+    public MediaAssetRepository(
+        AppDbContext context,
+        IUserContext userContext,
+        MediaFolderRepository folders)
+        : base(context, userContext)
+    {
+        _folders = folders;
+    }
 
     /// <summary>Chuẩn hoá danh sách loại bài → JSON array Guid (null nếu rỗng, để coi là "dùng chung").</summary>
     public static string? SerializeCategoryIds(IEnumerable<Guid>? ids)
@@ -71,9 +85,27 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
             query = query.Where(x => x.MimeType.StartsWith(request.MimeType.Trim()));
 
         var paged = await PaginateAsync(query, request.Index, request.Size, ct);
+
+        // Join Page (SocialChannelId) qua FolderId theo lô — cần cho điều hướng "mở đúng Page"
+        // từ kết quả tìm kiếm toàn cục, không round-trip DB cho từng ảnh.
+        var folderIds = paged.Items
+            .Where(x => x.FolderId.HasValue)
+            .Select(x => x.FolderId!.Value)
+            .Distinct()
+            .ToList();
+        var folderChannelMap = folderIds.Count == 0
+            ? new Dictionary<Guid, Guid?>()
+            : await Context.Set<MediaFolderModel>()
+                .Where(f => folderIds.Contains(f.Id))
+                .ToDictionaryAsync(f => f.Id, f => f.SocialChannelId, ct);
+
         return new PagedResult<MediaAssetResponse>
         {
-            Items = paged.Items.Select(ToResponse).ToList(),
+            Items = paged.Items
+                .Select(x => ToResponse(
+                    x,
+                    x.FolderId.HasValue ? folderChannelMap.GetValueOrDefault(x.FolderId.Value) : null))
+                .ToList(),
             Total = paged.Total,
             Index = paged.Index,
             Size = paged.Size
@@ -138,12 +170,7 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         if (idList.Count == 0) return 0;
 
         if (folderId.HasValue)
-        {
-            var folderExists = await Context.Set<Backend.Modules.MediaFolder.MediaFolderModel>()
-                .AnyAsync(x => x.Id == folderId.Value && !x.IsDeleted, ct);
-            if (!folderExists)
-                throw new InvalidOperationException("Thư mục đích không tồn tại.");
-        }
+            await EnsureDestinationFolderWritableAsync(folderId.Value, ct);
 
         var assets = await QueryActive().Where(x => idList.Contains(x.Id)).ToListAsync(ct);
         foreach (var a in assets)
@@ -153,6 +180,26 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         }
         await Context.SaveChangesAsync(ct);
         return assets.Count;
+    }
+
+    /// <summary>
+    /// Folder đích phải tồn tại; nếu gắn Page thì Page phải nằm trong QueryWritableChannels
+    /// (qua GetWritablePagesAsync). Channel ngoài quyền trả cùng thông báo không lộ metadata.
+    /// Folder chưa gắn Page giữ hành vi cũ — chỉ kiểm tra tồn tại — để không phá regression move.
+    /// </summary>
+    private async Task EnsureDestinationFolderWritableAsync(Guid folderId, CancellationToken ct)
+    {
+        var folder = await Context.Set<MediaFolderModel>()
+            .FirstOrDefaultAsync(x => x.Id == folderId && !x.IsDeleted, ct);
+        if (folder is null)
+            throw new InvalidOperationException("Thư mục đích không tồn tại.");
+
+        if (folder.SocialChannelId is not Guid channelId)
+            return;
+
+        var canWrite = (await _folders.GetWritablePagesAsync(ct: ct)).Any(p => p.Id == channelId);
+        if (!canWrite)
+            throw new KeyNotFoundException("Page/Kênh không tồn tại.");
     }
 
     public async Task SetPreviewUrlAsync(MediaAssetModel entity, CancellationToken ct = default)
@@ -180,7 +227,7 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         return entity;
     }
 
-    public static MediaAssetResponse ToResponse(MediaAssetModel e) => new()
+    public static MediaAssetResponse ToResponse(MediaAssetModel e, Guid? socialChannelId = null) => new()
     {
         Id = e.Id,
         FileName = e.FileName,
@@ -193,6 +240,7 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         Source = e.Source,
         CategoryId = e.CategoryId,
         FolderId = e.FolderId,
+        SocialChannelId = socialChannelId,
         CategoryIds = ParseCategoryIds(e.CategoryIds),
         AltText = e.AltText,
         Description = e.Description,
@@ -369,6 +417,38 @@ public class PostMediaRepository : GenericRepository<PostMediaModel>
                 PostId = postId,
                 MediaId = mediaIds[i],
                 MediaRole = MediaRole.TemplateSource,
+                SortOrder = i
+            }, ct));
+        }
+
+        return created;
+    }
+
+    /// <summary>
+    /// Ghi đè gallery Cover + Attachment của 1 post — dùng cho ChungChiGallery (ảnh cuối/as-is).
+    /// Ảnh đầu = Cover, các ảnh sau = Attachment. Không dùng MediaRole.TemplateSource (đó là nguồn
+    /// overlay của Template). Xoá mềm Cover/Attachment cũ rồi tạo lại theo thứ tự mediaIds.
+    /// </summary>
+    public async Task<List<PostMediaModel>> ReplaceGalleryAsync(
+        Guid postId, List<Guid> mediaIds, CancellationToken ct = default)
+    {
+        var existing = await QueryActive()
+            .Where(x => x.PostId == postId
+                && (x.MediaRole == MediaRole.Cover || x.MediaRole == MediaRole.Attachment))
+            .ToListAsync(ct);
+        foreach (var row in existing)
+            ApplySoftDeleteAudit(row);
+        if (existing.Count > 0)
+            await Context.SaveChangesAsync(ct);
+
+        var created = new List<PostMediaModel>();
+        for (var i = 0; i < mediaIds.Count; i++)
+        {
+            created.Add(await CreateAsync(new CreatePostMediaRequest
+            {
+                PostId = postId,
+                MediaId = mediaIds[i],
+                MediaRole = i == 0 ? MediaRole.Cover : MediaRole.Attachment,
                 SortOrder = i
             }, ct));
         }

@@ -28,29 +28,39 @@ public static class IdentitySeeder
                 await roleManager.CreateAsync(new ApplicationRole { Name = role });
         }
 
-        if (string.IsNullOrWhiteSpace(seedSettings.AdminEmail) ||
-            string.IsNullOrWhiteSpace(seedSettings.AdminPassword))
+        await SeedUserAsync(userManager, seedSettings.AdminEmail, seedSettings.AdminPassword, "Admin");
+
+        // Tài khoản reviewer (role Viewer) — optional, để trống 2 biến thì bỏ qua, không lỗi.
+        // Mục đích: có sẵn 1 tài khoản chỉ-xem để đưa cho bên thứ 3 audit (TikTok App Review, ...)
+        // mà không phải chia sẻ tài khoản Admin thật.
+        await SeedUserAsync(userManager, seedSettings.ReviewerEmail, seedSettings.ReviewerPassword, "Viewer");
+    }
+
+    private static async Task SeedUserAsync(
+        UserManager<ApplicationUser> userManager, string? email, string? password, string role)
+    {
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
             return;
 
-        var adminEmail = seedSettings.AdminEmail.Trim();
-        var admin = await userManager.FindByEmailAsync(adminEmail);
-        if (admin is not null) return;
+        email = email.Trim();
+        var existing = await userManager.FindByEmailAsync(email);
+        if (existing is not null) return;
 
-        admin = new ApplicationUser
+        var user = new ApplicationUser
         {
             Id = Guid.NewGuid(),
-            UserName = adminEmail,
-            Email = adminEmail,
+            UserName = email,
+            Email = email,
             EmailConfirmed = true
         };
 
-        var createResult = await userManager.CreateAsync(admin, seedSettings.AdminPassword);
+        var createResult = await userManager.CreateAsync(user, password);
         if (!createResult.Succeeded)
         {
             var errors = string.Join("; ", createResult.Errors.Select(e => e.Description));
-            throw new InvalidOperationException($"Không thể seed admin user: {errors}");
+            throw new InvalidOperationException($"Không thể seed user '{email}' (role {role}): {errors}");
         }
 
-        await userManager.AddToRoleAsync(admin, "Admin");
+        await userManager.AddToRoleAsync(user, role);
     }
 }

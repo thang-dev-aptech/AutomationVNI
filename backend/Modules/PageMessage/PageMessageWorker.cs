@@ -41,7 +41,10 @@ public class PageMessageReconcileWorker(
                         result.Errors.Count);
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            // Lọc theo stoppingToken.IsCancellationRequested, không theo kiểu exception: Messenger
+            // API timeout cũng ném TaskCanceledException, dễ bị lọt qua nếu lọc theo kiểu và kéo
+            // sập cả app (BackgroundServiceExceptionBehavior=StopHost mặc định).
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "PageMessageReconcileWorker loop error");
             }

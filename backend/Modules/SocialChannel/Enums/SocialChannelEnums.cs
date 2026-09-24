@@ -15,7 +15,8 @@ public enum SocialChannelType
     Page = 1,
     Instagram = 2,
     Group = 3,
-    Threads = 4
+    Threads = 4,
+    TikTok = 5
 }
 
 /// <summary>OAuth provider for SocialConnection (Meta, LinkedIn, …).</summary>
@@ -23,5 +24,6 @@ public enum SocialProvider
 {
     Meta = 1,
     LinkedIn = 2,
-    Threads = 3
+    Threads = 3,
+    TikTok = 4
 }

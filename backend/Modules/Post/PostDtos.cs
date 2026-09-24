@@ -24,6 +24,8 @@ public class CreatePostRequest
     public Guid? ImageTemplateId { get; set; }
     /// <summary>Số ảnh cho flow Template (&gt;=3 bật multi-photo) / số khung hình cho Reels. Null = 1 ảnh (mặc định cũ).</summary>
     public int? ImageCount { get; set; }
+    /// <summary>Bật thì tự ghép ảnh/khung hình vừa sinh thành video Reels ngay sau khi sinh xong.</summary>
+    public bool GenerateAsReels { get; set; }
 }
 
 public class SetReelsFramesRequest
@@ -38,6 +40,9 @@ public class ConvertToReelsRequest
     /// Thứ tự khung hình muốn dùng — null thì dùng đúng ảnh bài đang có (mặc định, không cần chỉnh tay).
     /// </summary>
     public List<Guid>? MediaIds { get; set; }
+
+    /// <summary>Nhạc nền từ thư viện — null thì dùng nhạc mặc định hệ thống (ReelsOptions.AudioTrackPath).</summary>
+    public Guid? MusicTrackId { get; set; }
 }
 
 // --- Bulk (tạo hàng loạt) ---
@@ -77,6 +82,27 @@ public class BulkCreateResult
     public Guid BatchId { get; set; }
     public int Created { get; set; }
     public List<Guid> PostIds { get; set; } = [];
+}
+
+public class BulkChungChiItem
+{
+    /// <summary>Ý tưởng → Title + prompt text.</summary>
+    public string Idea { get; set; } = string.Empty;
+}
+
+public enum ChungChiSelectionMode
+{
+    Random = 1,
+    All = 2
+}
+
+public class BulkCreateChungChiRequest
+{
+    public List<BulkChungChiItem> Items { get; set; } = [];
+    /// <summary>Fan-out: mỗi item được tạo cho MỖI channel trong danh sách.</summary>
+    public List<Guid> ChannelIds { get; set; } = [];
+    public ChungChiSelectionMode Mode { get; set; } = ChungChiSelectionMode.Random;
+    public int? RandomCount { get; set; } = 1;
 }
 
 /// <summary>1 dòng CSV = 1 bài / 1 kênh (không fan-out). Lịch lưu pending trong ExtraJson.</summary>
@@ -181,6 +207,27 @@ public class PostFilterRequest : PagedFilterRequest
     public bool? IsRecycled { get; set; }
 }
 
+/// <summary>
+/// Truy vấn cho lưới lịch đăng bài. KHÔNG dùng lại PostFilterRequest vì lịch cần những thứ
+/// bộ lọc kia không có: lọc theo thời điểm ĐĂNG (ScheduledPublishAt/PublishedAt) chứ không phải
+/// CreatedAt, nhận NHIỀU trạng thái/kênh cùng lúc, và không phân trang (khoảng ngày đã tự giới hạn
+/// số lượng — phân trang 20 dòng sẽ cắt mất bài của một tháng).
+/// </summary>
+public class PostCalendarRequest
+{
+    /// <summary>Mốc đầu khoảng, UTC. Thường là 00:00 ngày đầu lưới theo giờ VN đổi sang UTC.</summary>
+    public DateTime FromUtc { get; set; }
+
+    /// <summary>Mốc cuối khoảng, UTC, không bao gồm (nửa khoảng mở).</summary>
+    public DateTime ToUtc { get; set; }
+
+    /// <summary>Rỗng/null = không lọc theo trạng thái.</summary>
+    public List<PostStatus>? Statuses { get; set; }
+
+    /// <summary>Rỗng/null = không lọc theo kênh.</summary>
+    public List<Guid>? SocialChannelIds { get; set; }
+}
+
 public class PostResponse
 {
     public Guid Id { get; set; }
@@ -223,6 +270,14 @@ public class SchedulePostRequest
 {
     public DateTime ScheduledAt { get; set; }
     public string? Timezone { get; set; }
+    /// <summary>Chỉ có ý nghĩa với post nhắm kênh TikTok. Null = giữ nguyên lựa chọn hiện tại.</summary>
+    public TikTokPostMode? TikTokPostMode { get; set; }
+}
+
+public class PublishNowRequest
+{
+    /// <summary>Chỉ có ý nghĩa với post nhắm kênh TikTok. Null = giữ nguyên lựa chọn hiện tại.</summary>
+    public TikTokPostMode? TikTokPostMode { get; set; }
 }
 
 public class PostGenerationStatusResponse

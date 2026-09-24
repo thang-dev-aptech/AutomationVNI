@@ -15,10 +15,21 @@ export const newsSiteApi = {
 
   /** Dựng lại toàn bộ HTML tĩnh. Dùng sau khi sửa giao diện hoặc khi nghi trang lệch. */
   build: () => axiosInstance.post('/api/NewsSite/build', {}),
+
+  /** Danh sách người đăng ký nhận tin (cả đã huỷ, để admin nhìn được toàn cảnh). */
+  listSubscribers: (params) => axiosInstance.get('/api/NewsSite/subscribers', { params }),
+
+  /** Bật/tắt 1 người đăng ký theo Id — khác luồng độc giả tự huỷ bằng token trong email. */
+  setSubscriberActive: (id, isActive) =>
+    axiosInstance.patch(`/api/NewsSite/subscribers/${id}`, { isActive }),
+
+  /** Đưa bài về lại hàng chờ gửi email — dùng khi lần gửi trước hỏng hết (vd sai SMTP). */
+  resendNewsletter: (id) => axiosInstance.post(`/api/NewsSite/${id}/resend-newsletter`, {}),
 }
 
 export const newsSiteQueryKeys = {
   all: ['news-site'],
   list: (params) => ['news-site', 'list', params],
   status: () => ['news-site', 'status'],
+  subscribers: (params) => ['news-site', 'subscribers', params],
 }

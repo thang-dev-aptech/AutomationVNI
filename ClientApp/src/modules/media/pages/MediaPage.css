@@ -4,11 +4,37 @@
   gap: 20px;
 }
 
+.media-main-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Sticky pager/header needs a scrollport ancestor without overflow:hidden.
+   Global .card.card-body clips children and would pin the pager inside the card. */
+.media-main-content > .card.card-body {
+  overflow: visible;
+}
+
+.media-page-search-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .media-page-filters {
   display: grid;
   gap: 16px;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: 1fr auto auto;
+  align-items: end;
   margin-bottom: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.media-page-filters-actions {
+  display: flex;
+  align-items: flex-end;
 }
 
 @media (max-width: 767px) {
@@ -17,30 +43,121 @@
   }
 }
 
-/* Layout 2 cột: sidebar folder + nội dung */
-.media-layout {
-  display: grid;
-  grid-template-columns: 260px 1fr;
-  gap: 20px;
-  align-items: start;
+/* MediaFolderSearchBox (MEDIA-05) — spacing to the filters row below now comes from
+   .media-page-search-card's flex gap, since both share one merged card. */
+.media-folder-search {
+  margin-bottom: 0;
 }
 
-.media-main {
+.media-folder-search input[type='search'] {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.media-folder-search input[type='search']:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px rgba(45, 108, 182, 0.12);
+}
+
+.media-folder-search-results {
+  margin-top: 6px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  min-width: 0;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
 }
 
-@media (max-width: 900px) {
-  .media-layout {
-    grid-template-columns: 1fr;
-  }
+.media-folder-search-section-label {
+  margin: 8px 8px 2px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
 }
 
-.media-sidebar {
-  position: sticky;
-  top: 16px;
+.media-folder-search-section-label:first-child {
+  margin-top: 2px;
+}
+
+.media-folder-search-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+}
+
+.media-folder-search-result:hover {
+  background: var(--color-surface-muted);
+}
+
+.media-folder-search-file-result {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.media-folder-search-file-thumb {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+}
+
+.media-folder-search-path-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+}
+
+.media-folder-search-path {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-folder-search-page-name {
+  font-size: 0.68rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.media-folder-search-recent {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.media-folder-search-recent-label {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.media-folder-search-recent-chip {
+  cursor: pointer;
+  border: none;
 }
 
 .media-sidebar-title {
@@ -51,10 +168,31 @@
   color: var(--color-text-muted);
 }
 
-.media-folder-tree {
+/* Đường dẫn thư mục (breadcrumb) — cùng hàng với tiêu đề "Thư mục" trong lưới. */
+.media-folder-breadcrumb {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+
+.media-folder-breadcrumb-sep {
+  color: var(--color-text-muted);
+}
+
+.media-folder-breadcrumb-item {
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+  padding: 0;
+}
+
+.media-folder-breadcrumb-item.is-current {
+  color: var(--color-text);
+  font-weight: 600;
+  cursor: default;
 }
 
 .media-folder-roots,
@@ -123,12 +261,8 @@
 }
 
 .media-folder-tools {
-  display: none;
-  gap: 2px;
-}
-
-.media-folder-row:hover .media-folder-tools {
   display: inline-flex;
+  gap: 2px;
 }
 
 .media-folder-tools button {
@@ -144,4 +278,98 @@
 .media-folder-tools button:hover {
   background: var(--color-surface);
   color: var(--color-text);
+}
+
+/* MediaFolderPickerTree (MEDIA-07): chọn parent/move-destination, lazy per-node */
+.media-folder-picker {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.media-folder-row.is-disabled,
+.media-folder-row.is-disabled .media-folder-name {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.media-folder-picker-select {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.media-folder-row-status {
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  list-style: none;
+}
+
+.media-folder-retry {
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.78rem;
+  text-decoration: underline;
+}
+
+.media-folder-picker-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin: 4px 0;
+}
+
+/* MediaFolderFormModal (MEDIA-06): chọn nhiều Page khi tạo mới thư mục */
+.media-folder-page-multiselect-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.media-folder-page-multiselect-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+}
+
+.media-folder-page-multiselect-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.media-page-pager-host {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--color-surface);
+  padding-block: 8px;
+}
+
+.media-page-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 0;
+  margin-left: auto;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }

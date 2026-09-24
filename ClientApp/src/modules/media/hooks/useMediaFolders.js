@@ -3,10 +3,156 @@ import { unwrapApiData } from '@/shared/utils/apiHelpers'
 import { mediaFolderApi, mediaFolderQueryKeys } from '../services/mediaFolderApi'
 import { mediaAssetQueryKeys } from '../services/mediaAssetApi'
 
+/** Kept for PageContext logo picker (flat filter, not a hierarchy pick — out of MEDIA-07 scope). */
 export function useMediaFolderTree() {
   return useQuery({
     queryKey: mediaFolderQueryKeys.tree,
     queryFn: async () => unwrapApiData(await mediaFolderApi.tree()),
+  })
+}
+
+/**
+ * Cross-Page top-level roots: one root folder per Page the actor can manage.
+ * Each root includes Page metadata (id, name) to display alongside the folder.
+ */
+export function useMediaFolderPageRoots({
+  index = 1,
+  size = 20,
+} = {}) {
+  return useQuery({
+    queryKey: mediaFolderQueryKeys.pageRoots(index, size),
+    queryFn: async () => unwrapApiData(await mediaFolderApi.pageRoots({ index, size })),
+    retry: false,
+  })
+}
+
+/**
+ * Page mà actor có quyền tạo MediaFolder — khác useSocialChannelAll (không lọc quyền, dùng cho
+ * các màn hình chỉ đọc khác). Dùng riêng cho picker "Gắn với Page" trong MediaFolderFormModal để
+ * "Chọn tất cả" không chọn nhầm Page mà actor không sở hữu.
+ */
+export function useWritableMediaFolderPages({ withoutRoot = false } = {}) {
+  return useQuery({
+    queryKey: [...mediaFolderQueryKeys.writablePages, withoutRoot],
+    queryFn: async () => unwrapApiData(await mediaFolderApi.writablePages({ withoutRoot })),
+  })
+}
+
+/** Page actor được phép dùng cho ChungChiGallery và có ảnh active trong folder chung_chi. */
+export function parseChungChiEligiblePages(data) {
+  if (!Array.isArray(data)) {
+    throw new TypeError('Dữ liệu Page chứng chỉ không hợp lệ. Vui lòng tải lại trang.')
+  }
+  return data
+}
+
+export function useChungChiEligiblePages() {
+  return useQuery({
+    queryKey: mediaFolderQueryKeys.chungChiPages,
+    queryFn: async () => parseChungChiEligiblePages(
+      unwrapApiData(await mediaFolderApi.chungChiPages()),
+    ),
+    retry: false,
+  })
+}
+
+export function useMediaFolderChildren({
+  socialChannelId,
+  parentFolderId = null,
+  index = 1,
+  size = 20,
+  sortBy = 'sortOrder',
+  sortDirection = 'asc',
+  enabled = true,
+} = {}) {
+  return useQuery({
+    queryKey: mediaFolderQueryKeys.children(socialChannelId, parentFolderId, index, size),
+    queryFn: async () =>
+      unwrapApiData(
+        await mediaFolderApi.children({
+          socialChannelId,
+          parentFolderId,
+          index,
+          size,
+          sortBy,
+          sortDirection,
+        }),
+      ),
+    enabled: enabled && Boolean(socialChannelId),
+    retry: false,
+  })
+}
+
+export function useMediaFolderBreadcrumb({ socialChannelId, folderId } = {}) {
+  return useQuery({
+    queryKey: mediaFolderQueryKeys.breadcrumb(socialChannelId, folderId),
+    queryFn: async () =>
+      unwrapApiData(await mediaFolderApi.breadcrumb({ socialChannelId, folderId })),
+    enabled: Boolean(socialChannelId) && Boolean(folderId),
+    retry: false,
+  })
+}
+
+export function useMediaFolderSearch({
+  socialChannelId,
+  keyword,
+  index = 1,
+  size = 20,
+  enabled = true,
+} = {}) {
+  const trimmed = keyword?.trim() ?? ''
+  return useQuery({
+    queryKey: mediaFolderQueryKeys.search(socialChannelId, trimmed, index, size),
+    queryFn: async () =>
+      unwrapApiData(await mediaFolderApi.search({ socialChannelId, keyword: trimmed, index, size })),
+    enabled: enabled && Boolean(socialChannelId) && Boolean(trimmed),
+    retry: false,
+  })
+}
+
+export function useMediaFolderGlobalSearch({
+  keyword,
+  index = 1,
+  size = 20,
+  enabled = true,
+} = {}) {
+  const trimmed = keyword?.trim() ?? ''
+  return useQuery({
+    queryKey: mediaFolderQueryKeys.searchGlobal(trimmed, index, size),
+    queryFn: async () =>
+      unwrapApiData(await mediaFolderApi.searchGlobal({ keyword: trimmed, index, size })),
+    enabled: enabled && Boolean(trimmed),
+    retry: false,
+  })
+}
+
+/**
+ * MEDIA-03: tạo hierarchy folder (clientRef/parentRef) trong MỘT Page, nguyên tử cả batch.
+ * Preview (validateOnly) và submit dùng chung mutation; chỉ invalidate cache khi submit
+ * thật thành công. Không có UI nào gọi hook này hiện tại — MEDIA-06 (nút "Tạo hàng loạt")
+ * dùng useCreateMediaFolderAcrossPages bên dưới thay vì hierarchy-trong-1-Page.
+ */
+export function useBulkCreateMediaFolder() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload) => unwrapApiData(await mediaFolderApi.bulkCreate(payload)),
+    onSuccess: (_data, variables) => {
+      if (variables.validateOnly) return
+      queryClient.invalidateQueries({ queryKey: mediaFolderQueryKeys.all })
+    },
+  })
+}
+
+/**
+ * MEDIA-06: tạo 1 folder gốc cùng tên ở nhiều Page cùng lúc (best-effort — Page lỗi không
+ * chặn Page khác). Luôn invalidate cache vì ngay cả khi có Page lỗi, các Page thành công
+ * đã ghi dữ liệu thật.
+ */
+export function useCreateMediaFolderAcrossPages() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload) => unwrapApiData(await mediaFolderApi.createAcrossPages(payload)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: mediaFolderQueryKeys.all }),
   })
 }
 

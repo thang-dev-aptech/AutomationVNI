@@ -15,7 +15,10 @@ import {
   useSubmitPostReview,
 } from '../hooks/usePosts'
 
-export default function PostWorkflowActions({ post, onDeleted }) {
+// SocialPlatform.TikTok = 4 (backend/Modules/SocialChannel/Enums/SocialChannelEnums.cs).
+const TIKTOK_PLATFORM = 4
+
+export default function PostWorkflowActions({ post, channel, onDeleted }) {
   const {
     canSubmitReview,
     canApprovePost,
@@ -49,6 +52,9 @@ export default function PostWorkflowActions({ post, onDeleted }) {
   const [rejectReason, setRejectReason] = useState('')
   const [scheduledAt, setScheduledAt] = useState('')
   const [actionError, setActionError] = useState('')
+  // '' = giữ nguyên lựa chọn hiện tại của post (mặc định DirectPost nếu chưa từng chọn gì).
+  const [tikTokPostMode, setTikTokPostMode] = useState('')
+  const isTikTok = channel?.platform === TIKTOK_PLATFORM
 
   const isBusy =
     submitReview.isPending ||
@@ -88,6 +94,7 @@ export default function PostWorkflowActions({ post, onDeleted }) {
         id: post.id,
         scheduledAt: new Date(scheduledAt).toISOString(),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        tikTokPostMode: isTikTok && tikTokPostMode ? Number(tikTokPostMode) : undefined,
       }),
     )
     setScheduleOpen(false)
@@ -96,7 +103,10 @@ export default function PostWorkflowActions({ post, onDeleted }) {
 
   const handlePublishNow = async () => {
     if (!confirmAction(CONFIRM_MESSAGES.publishNow())) return
-    await runAction(() => publishNow.mutateAsync(post.id))
+    await runAction(() => publishNow.mutateAsync({
+      id: post.id,
+      tikTokPostMode: isTikTok && tikTokPostMode ? Number(tikTokPostMode) : undefined,
+    }))
   }
 
   const handleDelete = async () => {
@@ -138,6 +148,25 @@ export default function PostWorkflowActions({ post, onDeleted }) {
     <div className="card card-body" style={{ marginBottom: 16 }}>
       <h2 style={{ margin: '0 0 12px', fontSize: '1.05rem' }}>Thao tác workflow</h2>
       {actionError && <div className="alert alert-error">{actionError}</div>}
+
+      {isTikTok && (actions.schedule || actions.publishNow) && (
+        <div className="form-group" style={{ maxWidth: 360 }}>
+          <label htmlFor="tiktok-post-mode">Chế độ đăng TikTok</label>
+          <select
+            id="tiktok-post-mode"
+            value={tikTokPostMode}
+            onChange={(event) => setTikTokPostMode(event.target.value)}
+          >
+            <option value="">Đăng trực tiếp</option>
+            <option value="2">Gửi vào Draft (nhạc TikTok thật)</option>
+          </select>
+          <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-muted, #888)' }}>
+            "Gửi vào Draft" đưa video vào Inbox app TikTok thật — bạn tự mở app thêm caption/quyền
+            riêng tư/chọn nhạc TikTok thật rồi đăng thủ công.
+          </p>
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {actions.submitReview && (
           <button

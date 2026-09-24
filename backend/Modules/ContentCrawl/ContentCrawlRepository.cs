@@ -17,6 +17,31 @@ public class ContentCrawlRepository(
     Microsoft.Extensions.Options.IOptions<ContentCrawlOptions> options)
     : GenericRepository<CrawledArticleModel>(context, userContext)
 {
+    // ── Trạng thái pipeline ─────────────────────────────────────────────────
+
+    public async Task<bool> GetPipelineEnabledAsync(CancellationToken ct = default)
+        => await Context.Set<ContentCrawlPipelineStateModel>()
+            .Where(x => x.Id == ContentCrawlPipelineStateModel.SingletonId)
+            .Select(x => x.IsEnabled)
+            .SingleAsync(ct);
+
+    public async Task<ContentCrawlPipelineStateModel> GetPipelineStateAsync(CancellationToken ct = default)
+        => await Context.Set<ContentCrawlPipelineStateModel>()
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == ContentCrawlPipelineStateModel.SingletonId, ct);
+
+    public async Task<ContentCrawlPipelineStateModel> SetPipelineEnabledAsync(
+        bool enabled, string userName, CancellationToken ct = default)
+    {
+        var state = await Context.Set<ContentCrawlPipelineStateModel>()
+            .SingleAsync(x => x.Id == ContentCrawlPipelineStateModel.SingletonId, ct);
+        state.IsEnabled = enabled;
+        state.UpdatedAt = DateTime.UtcNow;
+        state.UpdatedByUserName = string.IsNullOrWhiteSpace(userName) ? null : userName.Trim();
+        await Context.SaveChangesAsync(ct);
+        return state;
+    }
+
     // ── Nguồn cào ───────────────────────────────────────────────────────────
 
     public async Task<List<CrawlSourceModel>> GetSourcesAsync(bool onlyActive, CancellationToken ct = default)
@@ -292,6 +317,18 @@ public class ContentCrawlRepository(
             .Where(x => x.Status == CrawledArticleStatus.Pending)
             .OrderByDescending(x => x.FetchedAt)
             .Take(Math.Clamp(take, 1, 100))
+            .ToListAsync(ct);
+
+    /// <summary>
+    /// Tin đang chờ duyệt tay nhưng đạt điểm ≥ ngưỡng tự duyệt — hàng tồn từ TRƯỚC lúc tính năng
+    /// tự duyệt (AutoApproveMinScore) được bật, vì tính năng đó chỉ chấm tin mới cào về, không
+    /// quét ngược lại tin cũ sẵn có. Dùng cho thao tác "quét 1 lần" xử lý nốt hàng tồn.
+    /// </summary>
+    public async Task<List<CrawledArticleModel>> GetPendingAboveScoreAsync(
+        int minScore, CancellationToken ct = default)
+        => await QueryActive()
+            .Where(x => x.Status == CrawledArticleStatus.Pending && x.QualityScore >= minScore)
+            .OrderBy(x => x.FetchedAt)
             .ToListAsync(ct);
 
     /// <summary>Tin sạch, chờ duyệt, CHƯA báo Telegram lần nào (TelegramMessageId rỗng).</summary>

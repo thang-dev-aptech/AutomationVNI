@@ -253,6 +253,59 @@ namespace backend.Migrations
                     b.ToTable("Categories", (string)null);
                 });
 
+            modelBuilder.Entity("Backend.Modules.ContentCrawl.ContentCrawlPipelineStateModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedByUserName")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ContentCrawlPipelineState", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("8dff99ee-b1a0-4ff6-b7a5-ea9f32b13e63"),
+                            CreatedAt = new DateTime(2026, 9, 22, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            IsEnabled = true
+                        });
+                });
+
             modelBuilder.Entity("Backend.Modules.ContentCrawl.ContentFingerprintModel", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1073,6 +1126,66 @@ namespace backend.Migrations
                     b.ToTable("MediaFolders", (string)null);
                 });
 
+            modelBuilder.Entity("Backend.Modules.MusicTrack.MusicTrackModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("MimeType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StoragePath")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.ToTable("MusicTracks", (string)null);
+                });
+
             modelBuilder.Entity("Backend.Modules.NewsSite.NewsArticleModel", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1138,6 +1251,9 @@ namespace backend.Migrations
                     b.Property<DateTime?>("LastBuiltAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("NewsletterSentAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("PublishedAt")
                         .HasColumnType("TEXT");
 
@@ -1196,6 +1312,65 @@ namespace backend.Migrations
                     b.HasIndex("Status");
 
                     b.ToTable("NewsArticles", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.NewsSite.NewsSubscriberModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UnsubscribeToken")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UnsubscribedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("UnsubscribeToken")
+                        .IsUnique();
+
+                    b.ToTable("NewsSubscribers", (string)null);
                 });
 
             modelBuilder.Entity("Backend.Modules.Notification.AppNotificationModel", b =>
@@ -1728,6 +1903,9 @@ namespace backend.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("NewsArticleId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("PublishedAt")
                         .HasColumnType("TEXT");
 
@@ -1756,6 +1934,9 @@ namespace backend.Migrations
 
                     b.Property<Guid?>("TextTemplateId")
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("TikTokPostMode")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Title")
                         .IsRequired()

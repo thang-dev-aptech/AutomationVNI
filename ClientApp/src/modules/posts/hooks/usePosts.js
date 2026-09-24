@@ -26,6 +26,18 @@ export function usePosts(params = { index: 1, size: 20 }) {
   })
 }
 
+/**
+ * Bài để dựng lưới lịch. Trả thẳng mảng (không phân trang) vì khoảng ngày đã giới hạn số lượng.
+ * Key nằm dưới prefix ['posts'] nên invalidatePostQueries() tự làm mới sau khi đổi lịch.
+ */
+export function usePostCalendar(params) {
+  return useQuery({
+    queryKey: postQueryKeys.calendar(params),
+    queryFn: async () => unwrapApiData(await postApi.calendar(params)),
+    enabled: Boolean(params?.fromUtc && params?.toUtc),
+  })
+}
+
 /** Các status đang sinh nội dung nền (Queued/Generating/GeneratingMedia/Rendering). */
 export const GENERATING_STATUSES = [2, 3, 12, 14]
 
@@ -128,8 +140,8 @@ export function useRejectPost() {
 
 export function useSchedulePost() {
   return useWorkflowMutation(
-    async ({ id, scheduledAt, timezone }) =>
-      unwrapApiData(await postApi.schedule(id, { scheduledAt, timezone })),
+    async ({ id, scheduledAt, timezone, tikTokPostMode }) =>
+      unwrapApiData(await postApi.schedule(id, { scheduledAt, timezone, tikTokPostMode })),
     (v) => v.id,
   )
 }
@@ -141,9 +153,10 @@ export function useCancelSchedulePost() {
 export function usePublishNowPost() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (id) => unwrapApiData(await postApi.publishNow(id)),
+    mutationFn: async ({ id, tikTokPostMode } = {}) =>
+      unwrapApiData(await postApi.publishNow(id, tikTokPostMode)),
     // onSettled: refresh dù publish thành công hay lỗi (post đã đổi status ở server).
-    onSettled: (_data, _error, id) => invalidatePostQueries(queryClient, id),
+    onSettled: (_data, _error, variables) => invalidatePostQueries(queryClient, variables?.id),
   })
 }
 
@@ -213,7 +226,8 @@ export function useRegenerateImage() {
 export function useConvertToReels() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, mediaIds }) => unwrapApiData(await postApi.convertToReels(id, mediaIds)),
+    mutationFn: async ({ id, mediaIds, musicTrackId }) =>
+      unwrapApiData(await postApi.convertToReels(id, mediaIds, musicTrackId)),
     onSettled: (_data, _error, variables) => {
       invalidatePostQueries(queryClient, variables?.id)
       queryClient.invalidateQueries({ queryKey: ['generation-jobs'] })

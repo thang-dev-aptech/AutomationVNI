@@ -129,6 +129,16 @@ public class ContentCrawlOptions
     /// <summary>Đo thật: gateway vietai chấm một bài mất ~28s, để 30s là hụt gần hết.</summary>
     public int ScreenTimeoutSeconds { get; set; } = 120;
 
+    /// <summary>
+    /// 0 = tắt (mặc định). Đặt &gt;0 (vd 80) thì tin chấm ĐẠT mức này tự động duyệt lên web
+    /// (CỬA 1) — KHÔNG qua người duyệt, KHÔNG đăng fanpage (CỬA 2 vẫn luôn cần tay bấm, kể cả
+    /// khi bài đã tự lên web qua ngưỡng này).
+    ///
+    /// Nên giữ 0 vài tuần đầu (cùng tinh thần AutoScheduleOnApprove) để soi chất lượng điểm số
+    /// AI trước khi thả tự động — chấm điểm sai một tin xấu vẫn tự lên web thì không ai chặn kịp.
+    /// Phải LỚN HƠN MinQualityScore, không thì tin vừa đủ 60 điểm (rất mỏng) đã tự đăng.
+    /// </summary>
+    public int AutoApproveMinScore { get; set; }
 
     public DedupOptions Dedup { get; set; } = new();
 }

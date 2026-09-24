@@ -6,7 +6,7 @@ import ErrorState from '@/shared/components/ErrorState'
 import { formatDateTime, getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
 import { getPostStatusMeta } from '@/modules/posts/constants/postStatus'
-import { useBatch, useBulkApprove, useBulkSchedule } from '../hooks/useBulk'
+import { useBatch, useBulkApprove, useBulkCancelSchedule, useBulkSchedule } from '../hooks/useBulk'
 
 export default function BatchProgressPage() {
   const { batchId } = useParams()
@@ -15,11 +15,12 @@ export default function BatchProgressPage() {
   // Bắt đầu rải từ mốc nào (datetime-local, giờ máy). Rỗng = từ bây giờ.
   const [startAt, setStartAt] = useState('')
   // Lệch ngẫu nhiên ± phút quanh khung giờ, tránh đăng khít cùng một phút mỗi ngày.
-  const [jitterMinutes, setJitterMinutes] = useState(10)
+  const [jitterMinutes, setJitterMinutes] = useState(30)
 
   const { data, isLoading, isError, error, refetch, isFetching } = useBatch(batchId)
   const approveMutation = useBulkApprove()
   const scheduleMutation = useBulkSchedule()
+  const cancelScheduleMutation = useBulkCancelSchedule()
 
   const byStatus = data?.byStatus ?? {}
   const posts = data?.posts ?? []
@@ -28,6 +29,7 @@ export default function BatchProgressPage() {
     (byStatus.GeneratingMedia ?? 0) + (byStatus.RenderingTemplate ?? 0)
   const waitingReview = byStatus.WaitingReview ?? 0
   const approved = byStatus.Approved ?? 0
+  const scheduled = byStatus.Scheduled ?? 0
 
   const handleApprove = async () => {
     try {
@@ -61,6 +63,15 @@ export default function BatchProgressPage() {
     try {
       const res = await scheduleMutation.mutateAsync(payload)
       toast.success(res?.message || 'Đã lên lịch')
+      refetch()
+    } catch (e) { toast.error(getErrorMessage(e)) }
+  }
+
+  const handleCancelSchedule = async () => {
+    if (!window.confirm(`Hủy lịch của ${scheduled} bài đang chờ đăng trong lô này?\n\nBài sẽ về lại "Đã duyệt", không đăng nữa cho tới khi rải lịch lại.`)) return
+    try {
+      const res = await cancelScheduleMutation.mutateAsync({ batchId })
+      toast.success(res?.message || 'Đã hủy lịch')
       refetch()
     } catch (e) { toast.error(getErrorMessage(e)) }
   }
@@ -119,14 +130,25 @@ export default function BatchProgressPage() {
           <small style={{ color: 'var(--text-muted,#888)' }}>0 = đăng đúng khung giờ</small>
         </div>
 
-        <button type="button" className="btn btn-primary" onClick={handleSchedule}
-          disabled={scheduleMutation.isPending || approved === 0}>
-          Rải lịch {approved > 0 ? `${approved} bài` : ''}
-        </button>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <button type="button" className="btn btn-primary" onClick={handleSchedule}
+            disabled={scheduleMutation.isPending || approved === 0}>
+            Rải lịch {approved > 0 ? `${approved} bài` : ''}
+          </button>
+        </div>
+
+        {scheduled > 0 && (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <button type="button" className="btn btn-ghost" onClick={handleCancelSchedule}
+              disabled={cancelScheduleMutation.isPending}>
+              Hủy lịch {scheduled} bài
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Danh sách bài */}
-      <div className="card">
+      <div className="card" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table>
           <thead>
             <tr><th>Tiêu đề</th><th>Trạng thái</th><th>Lịch đăng</th><th /></tr>

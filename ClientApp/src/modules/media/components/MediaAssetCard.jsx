@@ -6,6 +6,7 @@ export default function MediaAssetCard({
   onView,
   onDetails,
   onDelete,
+  onContextMenu,
   canManage = false,
 }) {
   const displayName = asset.originalFileName || asset.fileName
@@ -33,6 +34,13 @@ export default function MediaAssetCard({
       className="media-asset-card card"
       draggable={canManage}
       onDragStart={canManage ? handleDragStart : undefined}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        if (onContextMenu) {
+          onContextMenu(event, asset)
+        }
+      }}
     >
       <button
         type="button"

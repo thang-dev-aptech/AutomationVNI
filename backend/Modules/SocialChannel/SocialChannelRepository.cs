@@ -130,7 +130,10 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
         Guid socialConnectionId,
         string? extraJson,
         string? auditUser,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        // Meta/Threads chưa cần lưu refresh token riêng nên tham số này để cuối, optional —
+        // không phá lời gọi cũ. TikTok truyền vào bằng named argument.
+        string? refreshToken = null)
     {
         var normalizedId = externalPageId.Trim();
         var actor = string.IsNullOrWhiteSpace(auditUser) ? "meta-oauth" : auditUser.Trim();
@@ -156,6 +159,8 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
             existing.DeletedBy = null;
             if (extraJson is not null)
                 existing.ExtraJson = extraJson;
+            if (refreshToken is not null)
+                existing.RefreshToken = refreshToken;
             existing.UpdatedAt = DateTime.UtcNow;
             existing.UpdatedBy = actor;
             await Context.SaveChangesAsync(ct);
@@ -169,6 +174,7 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
             PageName = pageName.Trim(),
             ExternalPageId = normalizedId,
             AccessToken = accessToken,
+            RefreshToken = refreshToken,
             TokenExpiresAt = tokenExpiresAt,
             SocialConnectionId = socialConnectionId,
             IsActive = true,

@@ -49,3 +49,24 @@ export function useRebuildSite() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: newsSiteQueryKeys.all }),
   })
 }
+
+export function useResendNewsletter() {
+  return useMutation({
+    mutationFn: async (id) => unwrapApiData(await newsSiteApi.resendNewsletter(id)),
+  })
+}
+
+export function useSubscribers(params) {
+  return useQuery({
+    queryKey: newsSiteQueryKeys.subscribers(params),
+    queryFn: async () => unwrapApiData(await newsSiteApi.listSubscribers(params)),
+  })
+}
+
+export function useSetSubscriberActive() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, isActive }) => unwrapApiData(await newsSiteApi.setSubscriberActive(id, isActive)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['news-site', 'subscribers'] }),
+  })
+}

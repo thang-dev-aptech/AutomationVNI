@@ -61,6 +61,32 @@ const NAV_GROUPS = [
       ),
       visible: (p) => p.canCreatePost,
     },
+      {
+      to: '/bulk-chung-chi',
+      label: 'Tạo từ chứng chỉ',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sidebar-link-icon">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="M7 9h6" />
+          <path d="M7 13h10" />
+          <circle cx="16.5" cy="9" r="1.5" />
+        </svg>
+      ),
+      visible: (p) => p.canCreatePost,
+    },
+      {
+      to: '/calendar',
+      label: 'Lịch đăng bài',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sidebar-link-icon">
+          <rect x="3" y="4" width="18" height="17" rx="2" />
+          <line x1="3" y1="10" x2="21" y2="10" />
+          <line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="16" y1="2" x2="16" y2="6" />
+        </svg>
+      ),
+      visible: (p) => p.canViewPosts,
+    },
     ],
   },
   {
@@ -192,6 +218,18 @@ const NAV_GROUPS = [
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
           <circle cx="8.5" cy="8.5" r="1.5" />
           <polyline points="21 15 16 10 5 21" />
+        </svg>
+      ),
+      visible: (p) => p.canViewMedia,
+    },
+      {
+      to: '/music',
+      label: 'Nhạc',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sidebar-link-icon">
+          <path d="M9 18V5l12-2v13" />
+          <circle cx="6" cy="18" r="3" />
+          <circle cx="18" cy="16" r="3" />
         </svg>
       ),
       visible: (p) => p.canViewMedia,
@@ -339,7 +377,12 @@ export default function MainLayout() {
                       <NavLink
                         key={c.to}
                         to={c.to}
-                        className={({ isActive }) => `sidebar-link sidebar-sublink${isActive ? ' sidebar-link--active' : ''}`}
+                        className={({ isActive }) => {
+                          const active = c.to === '/bulk'
+                            ? pathname === '/bulk' || pathname.startsWith('/bulk/')
+                            : isActive
+                          return `sidebar-link sidebar-sublink${active ? ' sidebar-link--active' : ''}`
+                        }}
                       >
                         {c.icon}
                         <span className="sidebar-link-label">{c.label}</span>

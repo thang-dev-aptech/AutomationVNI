@@ -230,6 +230,7 @@
 
 .lb-delta--up   { color: var(--color-success-text); }
 .lb-delta--down { color: var(--color-danger-text); }
+.lb-delta--flat { color: var(--color-text-muted); }
 
 .lb-barcol { width: 120px; }
 

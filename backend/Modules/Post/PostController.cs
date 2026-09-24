@@ -90,8 +90,8 @@ public class PostController
         var deleted = await _repo.SoftDeleteAllAsync(deleteAllUsers, ct);
         return Ok(ApiResponse.Ok(new { deleted },
             deleted == 0
-                ? "Không có bài viết nào để xóa (bài đang có lịch đăng được giữ lại)"
-                : $"Đã xóa {deleted} bài viết — bài đang có lịch đăng được giữ lại"));
+                ? "Không có bài viết nào để xóa (bài đang có lịch đăng và bài đã đăng được giữ lại)"
+                : $"Đã xóa {deleted} bài viết — bài đang có lịch đăng và bài đã đăng được giữ lại"));
     }
 
     // --- Generation pipeline ---
@@ -174,6 +174,8 @@ public class PostController
                 pageContextByChannel: pageMap,
                 objective: request.Objective,
                 categoryId: request.CategoryId,
+                imageCount: request.ImageCount,
+                generateAsReels: request.GenerateAsReels,
                 ct: ct);
 
             return Ok(ApiResponse.Ok(bulk,
@@ -202,6 +204,8 @@ public class PostController
         try
         {
             await GenerateTextThenImageAsync(post.Id, ct);
+            if (request.GenerateAsReels)
+                await _generationPipeline.ConvertToReelsAsync(post.Id, null, ct);
             await _workflow.ApproveAsync(post.Id, ct);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or KeyNotFoundException)
@@ -257,6 +261,26 @@ public class PostController
         try
         {
             var result = await _repo.BulkCreateAsync(request, pageMap, ct);
+            return Ok(ApiResponse.Ok(result,
+                $"Đã tạo {result.Created} bài — đang sinh nội dung nền, xem tiến độ ở batch."));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Tạo hàng loạt bài lấy ảnh nguyên trạng từ thư mục chung_chi của từng Page (items × channels).
+    /// Worker sinh chữ rồi gắn ảnh; không overlay, không sinh ảnh AI.
+    /// </summary>
+    [HttpPost("bulk-create-chung-chi")]
+    public async Task<IActionResult> BulkCreateChungChi(
+        [FromBody] BulkCreateChungChiRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _repo.BulkCreateChungChiAsync(request, ct);
             return Ok(ApiResponse.Ok(result,
                 $"Đã tạo {result.Created} bài — đang sinh nội dung nền, xem tiến độ ở batch."));
         }
@@ -377,7 +401,7 @@ public class PostController
         var guard = await EnsureGenerationPermissionAsync(id, ct);
         if (guard is not null) return guard;
 
-        await _generationPipeline.ConvertToReelsAsync(id, request?.MediaIds, ct);
+        await _generationPipeline.ConvertToReelsAsync(id, request?.MediaIds, ct, request?.MusicTrackId);
         await _workflow.ApproveAsync(id, ct);
 
         var post = await _workflow.GetPostAsync(id, ct);
@@ -410,20 +434,72 @@ public class PostController
         }));
     }
 
-    /// <summary>Lên lịch hàng loạt các bài Approved, rải theo khung giờ vàng (spread).</summary>
+    /// <summary>
+    /// Lên lịch hàng loạt các bài Approved, rải theo khung giờ vàng (spread).
+    ///
+    /// Rải theo TỪNG PAGE, không phải theo tổng số bài cả lô (xem PostRecycleService — mỗi page
+    /// tự đếm lại từ đầu 1 danh sách mốc giờ DÙNG CHUNG, nên "mỗi page 1 bài" luôn rơi CÙNG 1
+    /// ngày). NHƯNG khi số page nhiều hơn số khung/ngày, bản đầu tiên gộp hết page vào ĐÚNG 1
+    /// khung rồi phó mặc cho jitter ngẫu nhiên tách chúng ra — 49 page nhét vào 1 cửa sổ
+    /// ±jitter phút chắc chắn có page trùng phút hoặc cách nhau 1 phút (sinh nhật trùng ngày,
+    /// thấy thật trên batch CBEB3D07 production). Sửa lại: chia page vào từng khung/ngày theo
+    /// VÒNG QUAY (round-robin theo thứ tự page — page 0 vào khung 1, page 1 vào khung 2, page 2
+    /// vào khung 3, page 3 quay lại khung 1...), rồi DÀN ĐỀU (không ngẫu nhiên) các page dùng
+    /// chung 1 khung ra khắp phạm vi ±jitter — đảm bảo khoảng cách tối thiểu cố định giữa 2 page
+    /// bất kỳ cùng khung, không còn phụ thuộc may rủi của số ngẫu nhiên.
+    /// </summary>
     [HttpPost("bulk-schedule")]
     public async Task<IActionResult> BulkSchedule([FromBody] BulkScheduleRequest request, CancellationToken ct)
     {
         var posts = await _repo.ResolveTargetsAsync(request.BatchId, request.PostIds, [PostStatus.Approved], ct);
-        var times = ScheduleSlotHelper.ComputeSlotTimesUtc(
-            request.StartAtUtc ?? DateTime.UtcNow, request.TimeSlots, request.Timezone,
-            posts.Count, request.JitterMinutes);
+        var byChannel = posts.GroupBy(p => p.SocialChannelId).OrderBy(g => g.Key).ToList();
+        var postsPerChannel = byChannel.Count > 0 ? byChannel.Max(g => g.Count()) : 0;
+        var dailySlotCount = Math.Max(1, (request.TimeSlots ?? [])
+            .Count(s => TimeSpan.TryParse(s?.Trim(), out _)));
 
+        // Đủ mốc cho postsPerChannel "ngày", MỖI ngày đủ cả dailySlotCount khung — không chỉ 1
+        // khung/ngày như bản trước, để có chỗ round-robin page vào từng khung riêng.
+        var sharedTimes = ScheduleSlotHelper.ComputeSlotTimesUtc(
+            request.StartAtUtc ?? DateTime.UtcNow, request.TimeSlots, request.Timezone,
+            postsPerChannel * dailySlotCount, jitterMinutes: 0);
+
+        var jitter = request.JitterMinutes;
+        var now = DateTime.UtcNow;
         var ok = new List<Guid>();
-        for (var i = 0; i < posts.Count && i < times.Count; i++)
+        for (var c = 0; c < byChannel.Count; c++)
         {
-            try { await _workflow.ScheduleAsync(posts[i].Id, times[i], request.Timezone, ct); ok.Add(posts[i].Id); }
-            catch { /* bỏ qua bài lỗi */ }
+            var channelPosts = byChannel[c].ToList();
+            var slotIndex = c % dailySlotCount;
+            // Bao nhiêu page dùng CHUNG khung này (để dàn đều đúng phạm vi) và page này là thứ
+            // mấy trong nhóm đó — quyết định độ lệch của riêng nó trong phạm vi ±jitter.
+            var groupSize = (int)Math.Ceiling((double)byChannel.Count / dailySlotCount);
+            var laneInGroup = c / dailySlotCount;
+
+            for (var j = 0; j < channelPosts.Count; j++)
+            {
+                var flatIndex = j * dailySlotCount + slotIndex;
+                if (flatIndex >= sharedTimes.Count) break;
+
+                var offsetMinutes = 0;
+                if (jitter > 0 && groupSize > 1)
+                    // Dàn đều laneInGroup=[0..groupSize-1] ra khắp [-jitter, +jitter] — 2 page kề
+                    // nhau trong nhóm luôn cách nhau đúng 2*jitter/(groupSize-1) phút, không hơn
+                    // không kém, không phụ thuộc số ngẫu nhiên.
+                    offsetMinutes = (int)Math.Round(-jitter + (2.0 * jitter * laneInGroup / (groupSize - 1)));
+                else if (jitter > 0)
+                    offsetMinutes = Random.Shared.Next(-jitter, jitter + 1);
+
+                var scheduledAt = sharedTimes[flatIndex].AddMinutes(offsetMinutes);
+                // Lệch âm không được kéo mốc về quá khứ (cùng nguyên tắc ScheduleSlotHelper).
+                if (scheduledAt < now) scheduledAt = now.AddMinutes(1);
+
+                try
+                {
+                    await _workflow.ScheduleAsync(channelPosts[j].Id, scheduledAt, request.Timezone, ct);
+                    ok.Add(channelPosts[j].Id);
+                }
+                catch { /* bỏ qua bài lỗi */ }
+            }
         }
         return Ok(ApiResponse.Ok(new BulkOperationResult
         {
@@ -431,8 +507,29 @@ public class PostController
             Skipped = posts.Count - ok.Count,
             PostIds = ok,
             Message = request.JitterMinutes > 0
-                ? $"Đã lên lịch {ok.Count}/{posts.Count} bài, rải theo khung giờ (lệch ngẫu nhiên ±{request.JitterMinutes} phút)"
+                ? $"Đã lên lịch {ok.Count}/{posts.Count} bài, rải theo khung giờ (lệch ±{request.JitterMinutes} phút, dàn đều)"
                 : $"Đã lên lịch {ok.Count}/{posts.Count} bài, rải theo khung giờ"
+        }));
+    }
+
+    /// <summary>Hủy lịch hàng loạt các bài đang Scheduled trong batch (hoặc theo postIds) — đưa
+    /// về lại Approved, không đăng nữa cho tới khi lên lịch lại.</summary>
+    [HttpPost("bulk-cancel-schedule")]
+    public async Task<IActionResult> BulkCancelSchedule([FromBody] BulkTargetRequest request, CancellationToken ct)
+    {
+        var posts = await _repo.ResolveTargetsAsync(request.BatchId, request.PostIds, [PostStatus.Scheduled], ct);
+        var ok = new List<Guid>();
+        foreach (var p in posts)
+        {
+            try { await _workflow.CancelScheduleAsync(p.Id, ct); ok.Add(p.Id); }
+            catch { /* bỏ qua bài lỗi trạng thái */ }
+        }
+        return Ok(ApiResponse.Ok(new BulkOperationResult
+        {
+            Affected = ok.Count,
+            Skipped = posts.Count - ok.Count,
+            PostIds = ok,
+            Message = $"Đã hủy lịch {ok.Count}/{posts.Count} bài"
         }));
     }
 
@@ -515,7 +612,8 @@ public class PostController
         if (!_workflow.IsOwner(post) && !_workflow.IsInAnyRole("Admin", "ContentManager"))
             return StatusCode(403, ApiResponse.Fail("FORBIDDEN", "Bạn không có quyền thực hiện thao tác này"));
 
-        var result = await _workflow.ScheduleAsync(id, request.ScheduledAt, request.Timezone, ct);
+        var result = await _workflow.ScheduleAsync(
+            id, request.ScheduledAt, request.Timezone, ct, request.TikTokPostMode);
         return Ok(ApiResponse.Ok(ToResponse(result), "Lên lịch đăng thành công"));
     }
 
@@ -534,10 +632,10 @@ public class PostController
 
     [HttpPost("{id:guid}/publish-now")]
     [Authorize(Roles = "Admin,Reviewer,ContentManager")]
-    public async Task<IActionResult> PublishNow(Guid id, CancellationToken ct)
+    public async Task<IActionResult> PublishNow(Guid id, [FromBody] PublishNowRequest? request, CancellationToken ct)
     {
         // publish-now = đăng NGAY: chuyển Publishing + tạo log Pending, rồi xử lý luôn (mock/real).
-        await _workflow.PublishNowAsync(id, ct);
+        await _workflow.PublishNowAsync(id, ct, request?.TikTokPostMode);
 
         try
         {
@@ -566,5 +664,21 @@ public class PostController
         {
             return NotFound(ApiResponse.Fail("NOT_FOUND", "Không tìm thấy bài viết"));
         }
+    }
+
+    /// <summary>
+    /// Danh sách bài để dựng lưới lịch trong một khoảng thời gian (không phân trang).
+    /// Tách riêng khỏi <c>POST /filter</c> vì lịch lọc theo thời điểm đăng chứ không phải CreatedAt.
+    /// </summary>
+    [HttpPost("calendar")]
+    public async Task<IActionResult> Calendar(
+        [FromBody] PostCalendarRequest request, CancellationToken ct)
+    {
+        if (request.ToUtc <= request.FromUtc)
+            return BadRequest(ApiResponse.Fail(
+                "INVALID_RANGE", "Khoảng thời gian không hợp lệ"));
+
+        var items = await _repo.GetCalendarAsync(request, ct);
+        return Ok(ApiResponse.Ok(items));
     }
 }

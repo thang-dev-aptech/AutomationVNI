@@ -8,6 +8,22 @@ function invalidateCrawl(queryClient) {
   queryClient.invalidateQueries({ queryKey: crawlQueryKeys.all })
 }
 
+export function useCrawlPipelineState(enabled = true) {
+  return useQuery({
+    queryKey: crawlQueryKeys.pipelineState(),
+    queryFn: async () => unwrapApiData(await crawlApi.getPipelineState()),
+    enabled: Boolean(enabled),
+  })
+}
+
+export function useSetCrawlPipelineEnabled() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (enabled) => unwrapApiData(await crawlApi.setPipelineEnabled(enabled)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: crawlQueryKeys.pipelineState() }),
+  })
+}
+
 export function useCrawlSources(onlyActive = false) {
   return useQuery({
     queryKey: crawlQueryKeys.sources(onlyActive),
@@ -127,6 +143,14 @@ export function useRededupArticle() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (id) => unwrapApiData(await crawlApi.rededup(id)),
+    onSuccess: () => invalidateCrawl(queryClient),
+  })
+}
+
+export function useSweepAutoApprove() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => unwrapApiData(await crawlApi.sweepAutoApprove()),
     onSuccess: () => invalidateCrawl(queryClient),
   })
 }

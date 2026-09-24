@@ -61,11 +61,35 @@ public class NewsFanpageService(
             Angle: null,
             KeyPoints: NewsSiteRepository.ReadKeyPoints(news.KeyPointsJson));
 
+        var skipped = new List<string>();
+
+        // ── Không đăng trùng: page nào đã có bài từ ĐÚNG tin này thì loại luôn ─────────────────
+        // Đặt TRƯỚC khối hạn mức vì đây là điều kiện cứng (không đăng lại tin này cho page này
+        // trong bất kỳ hoàn cảnh nào), còn hạn mức là điều kiện mềm (đủ thì để mai) — kiểm tra
+        // rẻ hơn trước để khỏi tính hạn mức cho page rồi mới phát hiện phải loại.
+        var alreadyPosted = await context.Posts
+            .Where(p => !p.IsDeleted && p.NewsArticleId == news.Id && channelIds.Contains(p.SocialChannelId))
+            .Select(p => p.SocialChannelId)
+            .Distinct()
+            .ToListAsync(ct);
+        if (alreadyPosted.Count > 0)
+        {
+            var dupNames = await context.SocialChannels
+                .Where(c => alreadyPosted.Contains(c.Id)).Select(c => c.PageName).ToListAsync(ct);
+            channelIds = channelIds.Where(id => !alreadyPosted.Contains(id)).ToList();
+            skipped.AddRange(dupNames.Select(n => $"(bỏ qua {n} — đã đăng tin này rồi)"));
+            logger.LogInformation(
+                "Bỏ qua {N} page đã đăng tin {Slug} rồi: {Names}",
+                dupNames.Count, news.Slug, string.Join(", ", dupNames));
+        }
+        if (channelIds.Count == 0)
+            throw new ArgumentException(
+                $"Mọi page đã chọn đều đã đăng tin này rồi ({string.Join(", ", skipped)}).");
+
         // ── Hạn mức mỗi page mỗi ngày ────────────────────────────────────────
         // Chặn ở đây chứ không ở giao diện: lệnh Telegram /fb và API đi thẳng vào hàm này,
         // chặn trên giao diện thì hai đường kia vẫn dội được.
         var cap = newsOptions.Value.MaxFanpagePostsPerChannelPerDay;
-        var skipped = new List<string>();
         if (cap > 0)
         {
             var since = DateTime.UtcNow.Date;
@@ -79,12 +103,15 @@ public class NewsFanpageService(
             var full = todayCount.Where(x => x.N >= cap).Select(x => x.Channel).ToHashSet();
             if (full.Count > 0)
             {
-                skipped = await context.SocialChannels
+                // AddRange, không gán đè — khối chặn-đăng-trùng phía trên có thể đã ghi vài dòng
+                // vào skipped rồi, gán đè sẽ mất báo cáo của khối đó.
+                var capNames = await context.SocialChannels
                     .Where(c => full.Contains(c.Id)).Select(c => c.PageName).ToListAsync(ct);
                 channelIds = channelIds.Where(id => !full.Contains(id)).ToList();
+                skipped.AddRange(capNames.Select(n => $"(bỏ qua {n} — đủ hạn mức hôm nay)"));
                 logger.LogWarning(
                     "Bỏ qua {N} page đã đủ {Cap} bài hôm nay: {Names}",
-                    full.Count, cap, string.Join(", ", skipped));
+                    full.Count, cap, string.Join(", ", capNames));
             }
 
             if (channelIds.Count == 0)
@@ -104,6 +131,7 @@ public class NewsFanpageService(
             objective: crawlOptions.Value.DefaultObjective,
             categoryId: news.CategoryId,
             sourceArticle: brief,
+            newsArticleId: news.Id,
             ct: ct);
 
         if (autoPublish && bulk.PostIds.Count > 0)
@@ -131,9 +159,9 @@ public class NewsFanpageService(
             "CỬA 2 — bài web {Slug} → {N} bài fanpage, link {Link}", news.Slug, bulk.Created, linkTarget);
 
         // Page bị bỏ PHẢI trả về. Bỏ im lặng thì người duyệt chọn 5 page, thấy báo thành công,
-        // mà chỉ 3 page có bài — không có gì nói cho họ biết hai page kia đã đủ hạn mức.
-        if (skipped.Count > 0)
-            names.AddRange(skipped.Select(n => $"(bỏ qua {n} — đủ hạn mức hôm nay)"));
+        // mà chỉ 3 page có bài — không có gì nói cho họ biết vì sao (đã đăng rồi, hay đủ hạn mức).
+        // skipped đã là chuỗi định dạng sẵn (2 khối phía trên tự ghi lý do riêng), không bọc thêm.
+        names.AddRange(skipped);
 
         return new FanpageResult(bulk.BatchId, bulk.Created, names, newsUrl);
     }

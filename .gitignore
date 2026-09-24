@@ -4,6 +4,7 @@ Thumbs.db
 .idea/
 .vscode/
 !.vscode/extensions.json
+.claude/
 *.swp
 *.swo
 *~
@@ -16,6 +17,10 @@ Thumbs.db
 **/appsettings.*.local.json
 **/appsettings.Production.json
 **/secrets.json
+
+# Ghi chú env đầy đủ tự tay soạn cho việc bàn giao — chứa secret thật (JWT secret, mật khẩu
+# admin, App Secret Meta/Threads, API key AI, Telegram bot token), không phải file mẫu.
+/VNI Automation env production.md
 
 # Logs
 *.log
@@ -85,18 +90,59 @@ backend/backend.zip
 backend/Storage.zip
 backend/wwwroot/dist.zip
 
+# Bản CSDL/backup rời tải về gốc repo để đối chiếu/chỉnh sửa cục bộ — CHỨA BÍ MẬT y hệt
+# /Data/ ở trên (token fanpage Facebook, email subscriber), nhưng nằm ngoài thư mục đó nên
+# luật /Data/ không phủ tới.
+/Data.zip
+/vni_automation.db
+/vni_automation.db.zip
+/vni_automation.db.bak*
+
 # Gói publish/deploy dựng thủ công ngoài quy trình CI — không phải mã nguồn, rất nặng.
 publish_output/
 publish_output_sc/
 publish_frontend/
 /publish_backend.zip
+/publish_backend*.zip
 /publish_frontend.zip
+backend/publish/
+
+# ffmpeg.rar/.zip tải nhầm vào Resources — không phải binary ffmpeg chuẩn (xem rule
+# backend/Resources/ffmpeg/ bên dưới), lọt vào đây do tải thủ công rồi quên xoá.
+backend/Resources/ffmpeg.rar
+backend/Resources/ffmpeg.zip
+
+# Video quay demo tay (vd. cho TikTok App Review) + tài liệu hướng dẫn quay đi kèm — không phải
+# mã nguồn, rất nặng, và có thể lộ dữ liệu thật hiện trên màn hình lúc quay.
+*.mp4
+Huong-dan-quay-video-huong-dan-su-dung.docx
+
+# Ảnh test/scratch dùng thử tính năng AI vision/overlay, không phải asset dự án.
+/healthcare.jpeg
+/test1.jpeg
+/test2.jpeg
+/test2-*.png
+
+# Bản proxy PHP thật đang chạy trên DirectAdmin — xem api-proxy.example.php để biết cấu trúc;
+# bản thật khác nhau theo từng máy/server nên không commit (không chứa secret nhưng là config
+# triển khai riêng của từng server, giống appsettings.Production.json).
+/proxy.php
 
 # Project/script debug cá nhân, không thuộc source chính thức của repo.
 scratch/
 test_api/
 test_find_inputs.js
 program_version_*.txt
+
+# ZaloBot ("AIBot/") — dự án .NET riêng, độc lập, KHÔNG tích hợp vào AutomationVNI (đã đánh giá
+# và quyết định không gộp: kiến trúc/mục tiêu bộ nhớ khác hẳn). Nằm tạm trong thư mục này để
+# tham khảo, không phải source của repo.
+/AIBot/
+
+# App icon + favicon 1024x1024 dựng riêng cho hồ sơ nộp TikTok App Review — deliverable rời nộp
+# qua form của TikTok, không phải asset được app dùng tới (không có chỗ nào trong code trỏ tới).
+/app-icon.png
+/favicon-icon.png
 
 # FFmpeg static binary cho SlideshowVideoRenderService (dựng video Reels) — ~80MB, tải về theo
 # hướng dẫn ở REELS_PLAN.md phần C4 (johnvansickle.com/ffmpeg), không commit để khỏi phình repo

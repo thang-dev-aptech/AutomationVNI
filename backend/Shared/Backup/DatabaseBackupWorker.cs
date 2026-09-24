@@ -49,7 +49,7 @@ public class DatabaseBackupWorker(
                     logger.LogError(
                         "Bản sao {Path} mở ra KHÔNG đọc được bản ghi nào — coi như hỏng", r.Path);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "Vòng lặp sao lưu lỗi");
             }

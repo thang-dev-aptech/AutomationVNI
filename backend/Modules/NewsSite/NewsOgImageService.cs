@@ -32,6 +32,7 @@ public class NewsOgImageService(ILogger<NewsOgImageService> logger)
     private static (Rgba32 From, Rgba32 To) Palette(string? slug) => slug switch
     {
         "giao-duc" => (Hex(0x2D6CB6), Hex(0x1E4E82)),
+        "phap-luat-chinh-sach" => (Hex(0x8A1F2B), Hex(0x4A0E15)),
         "cong-nghe-ai" => (Hex(0x1E4E82), Hex(0x5B21B6)),
         "ky-nang" => (Hex(0xF08A22), Hex(0xC2610A)),
         _ => (Hex(0x556274), Hex(0x2B3441)),

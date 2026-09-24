@@ -1,6 +1,11 @@
 import axiosInstance from '@/api/axiosInstance'
 
 export const crawlApi = {
+  // Trạng thái toàn bộ pipeline tin tức
+  getPipelineState: () => axiosInstance.get('/api/ContentCrawl/pipeline-state'),
+  setPipelineEnabled: (enabled) =>
+    axiosInstance.post('/api/ContentCrawl/pipeline-state', { enabled }),
+
   // Nguồn cào
   getSources: (onlyActive = false) =>
     axiosInstance.get('/api/ContentCrawl/sources', { params: { onlyActive } }),
@@ -26,10 +31,14 @@ export const crawlApi = {
   reject: (id, payload) => axiosInstance.post(`/api/ContentCrawl/articles/${id}/reject`, payload),
   notDuplicate: (id) => axiosInstance.post(`/api/ContentCrawl/articles/${id}/not-duplicate`),
   rededup: (id) => axiosInstance.post(`/api/ContentCrawl/articles/${id}/rededup`),
+  /** Quét 1 lượt: tự duyệt lên web các tin "chờ duyệt" đạt điểm ≥ ngưỡng tự duyệt — dọn hàng tồn
+   * cào từ TRƯỚC lúc tính năng tự duyệt được bật. */
+  sweepAutoApprove: () => axiosInstance.post('/api/ContentCrawl/articles/sweep-auto-approve'),
 }
 
 export const crawlQueryKeys = {
   all: ['content-crawl'],
+  pipelineState: () => ['content-crawl', 'pipeline-state'],
   sources: (onlyActive) => ['content-crawl', 'sources', onlyActive],
   runs: (sourceId) => ['content-crawl', 'runs', sourceId],
   articles: (params) => ['content-crawl', 'articles', params],

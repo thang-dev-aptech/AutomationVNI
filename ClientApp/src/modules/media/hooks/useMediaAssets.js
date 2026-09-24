@@ -2,10 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { unwrapApiData } from '@/shared/utils/apiHelpers'
 import { mediaAssetApi, mediaAssetQueryKeys } from '../services/mediaAssetApi'
 
-export function useMediaAssets(params = { index: 1, size: 48 }) {
+export function useMediaAssets(params = { index: 1, size: 48 }, { enabled = true } = {}) {
   return useQuery({
     queryKey: mediaAssetQueryKeys.list(params),
     queryFn: async () => unwrapApiData(await mediaAssetApi.filter(params)),
+    enabled,
   })
 }
 

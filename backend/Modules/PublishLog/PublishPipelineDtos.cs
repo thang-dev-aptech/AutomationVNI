@@ -24,6 +24,8 @@ public class ProcessDueScheduledResult
     public int Succeeded { get; set; }
     public int Failed { get; set; }
     public int Skipped { get; set; }
+    /// <summary>Bài trễ hẹn quá lâu, rải lại sang khung giờ vàng sắp tới thay vì đăng ngay.</summary>
+    public int Rescheduled { get; set; }
     public List<ProcessDueScheduledItem> Items { get; set; } = [];
 }
 

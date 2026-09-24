@@ -6,6 +6,7 @@ using Backend.Modules.GenerationJob.Enums;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaAsset.Enums;
 using Backend.Modules.MediaFolder;
+using Backend.Modules.MusicTrack;
 using Backend.Modules.PageContext;
 using Backend.Modules.Post;
 using Backend.Modules.Post.Enums;
@@ -62,8 +63,11 @@ public class GenerationJobPipelineService(
     private static readonly PostStatus[] QueueReelsRenderAllowedStatuses =
         [PostStatus.WaitingReview, PostStatus.Approved, PostStatus.NeedFix, PostStatus.Failed];
 
+    // Queued: PostRecycleService đặt bài Recycle+VectorSearch vào trạng thái này để hàm này xử lý
+    // (ImageTemplateId=Guid.Empty báo hiệu "cần tìm ảnh qua vector search") — thiếu Queued ở đây
+    // khiến MỌI bài recycle kiểu VectorSearch lập tức Failed ngay lượt sinh bài đầu tiên.
     private static readonly PostStatus[] QueueMediaMatchAllowedStatuses =
-        [PostStatus.WaitingReview, PostStatus.Approved, PostStatus.NeedMedia, PostStatus.GeneratingMedia];
+        [PostStatus.WaitingReview, PostStatus.Approved, PostStatus.NeedMedia, PostStatus.GeneratingMedia, PostStatus.Queued];
 
     /// <summary>
     /// Sinh trọn nội dung cho 1 post: text → image. Dùng chung cho create-and-generate (đồng bộ)
@@ -83,6 +87,15 @@ public class GenerationJobPipelineService(
                 var matchJob = await QueueMediaMatchAsync(postId, ct);
                 await ProcessAsync(matchJob.JobId, ct);
             }
+            return;
+        }
+
+        // Nhánh ChungChiGallery: caption là ý tưởng gốc (đã set sẵn lúc tạo), ảnh nguyên trạng từ
+        // thư mục con "chung_chi" dưới root Page. Không sinh text AI, không overlay, không sinh
+        // ảnh AI, không fallback FullAI khi thiếu/rỗng folder.
+        if (post.GenerationFlow == GenerationFlow.ChungChiGallery)
+        {
+            await GenerateFromChungChiAsync(post, ct);
             return;
         }
 
@@ -131,9 +144,9 @@ public class GenerationJobPipelineService(
     }
 
     /// <summary>
-    /// Nhánh Template: chọn ảnh trong MediaFolder gắn trực tiếp với page (SocialChannelId — không
-    /// qua PageContext, vì không phải page nào cũng có PageContext) rồi render overlay chữ đè lên
-    /// (RichTemplateRenderService, qua job ImageOverlay có sẵn).
+    /// Nhánh Template: chọn ảnh trong thư mục con "template" dưới root của Page (SocialChannelId —
+    /// không qua PageContext, vì không phải page nào cũng có PageContext) rồi render overlay chữ
+    /// đè lên (RichTemplateRenderService, qua job ImageOverlay có sẵn).
     /// post.ImageCount null/&lt;=1 (mặc định): chọn ngẫu nhiên đúng 1 ảnh, set Cover — hành vi cũ,
     /// không đổi. post.ImageCount &gt;=2: AI chọn N ảnh phù hợp nội dung nhất (MatchForPostAsync,
     /// giới hạn trong folder của page), lưu tạm ở MediaRole.TemplateSource — ImageOverlay job render
@@ -143,7 +156,8 @@ public class GenerationJobPipelineService(
     /// </summary>
     private async Task GenerateFromTemplateAsync(PostModel post, CancellationToken ct)
     {
-        var (folder, candidateIds) = await ResolveFolderCandidatesAsync(post, ct);
+        var folder = await ResolvePageSubfolderAsync(post.SocialChannelId, "template", ct);
+        var candidateIds = await LoadFolderImageCandidateIdsAsync(folder, ct);
         var desiredCount = post.ImageCount is int n && n >= 1 ? n : 1;
 
         await EnsureEnoughTemplateCandidatesAsync(post, folder, candidateIds, desiredCount, ct);
@@ -164,20 +178,120 @@ public class GenerationJobPipelineService(
         await ProcessAsync(renderJob.JobId, ct);
     }
 
-    private async Task<(MediaFolderModel? Folder, List<Guid> CandidateIds)> ResolveFolderCandidatesAsync(
-        PostModel post, CancellationToken ct)
+    /// <summary>
+    /// Nhánh ChungChiGallery: chọn ảnh trong thư mục con "chung_chi" dưới root của Page rồi gắn
+    /// nguyên trạng (Cover + Attachment) — KHÔNG queue ImageOverlay. Mode Random: shuffle + Take(N)
+    /// như bù ngẫu nhiên của Template. Mode All: mọi ảnh active trong folder (query trực tiếp, không
+    /// qua endpoint phân trang 100 item). Folder thiếu/rỗng → NeedFix rồi throw, giống Template.
+    /// </summary>
+    private async Task GenerateFromChungChiAsync(PostModel post, CancellationToken ct)
     {
-        var folder = await mediaFolderRepository.QueryActive()
-            .FirstOrDefaultAsync(f => f.SocialChannelId == post.SocialChannelId, ct);
+        var folder = await ResolvePageSubfolderAsync(post.SocialChannelId, "chung_chi", ct);
+        var candidateIds = await LoadFolderImageCandidateIdsAsync(folder, ct);
+        var (mode, randomCount) = ReadChungChiSelection(post);
 
-        var candidateIds = folder is null
-            ? []
-            : await context.Set<MediaAssetModel>()
-                .Where(x => !x.IsDeleted && x.FolderId == folder.Id && x.MimeType.StartsWith("image/"))
-                .Select(x => x.Id)
-                .ToListAsync(ct);
+        List<Guid> chosenIds;
+        if (mode == ChungChiSelectionMode.All)
+        {
+            await EnsureEnoughChungChiCandidatesAsync(post, folder, candidateIds, desiredCount: 1, ct);
+            chosenIds = candidateIds;
+        }
+        else
+        {
+            await EnsureEnoughChungChiCandidatesAsync(post, folder, candidateIds, randomCount, ct);
+            chosenIds = candidateIds
+                .OrderBy(_ => Random.Shared.Next())
+                .Take(randomCount)
+                .ToList();
+        }
 
-        return (folder, candidateIds);
+        await postMediaRepository.ReplaceGalleryAsync(post.Id, chosenIds, ct);
+
+        post.Status = PostStatus.WaitingReview;
+        post.GenerationError = null;
+        ApplyPostUpdate(post);
+        await context.SaveChangesAsync(ct);
+    }
+
+    private static (ChungChiSelectionMode Mode, int RandomCount) ReadChungChiSelection(PostModel post)
+    {
+        var randomCount = post.ImageCount is int n && n >= 1 ? n : 1;
+        var mode = ChungChiSelectionMode.Random;
+        if (string.IsNullOrWhiteSpace(post.ExtraJson))
+            return (mode, randomCount);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(post.ExtraJson);
+            if (!doc.RootElement.TryGetProperty("chungChi", out var chungChi))
+                return (mode, randomCount);
+
+            if (chungChi.TryGetProperty("mode", out var modeEl)
+                && modeEl.TryGetInt32(out var modeVal)
+                && Enum.IsDefined((ChungChiSelectionMode)modeVal))
+            {
+                mode = (ChungChiSelectionMode)modeVal;
+            }
+        }
+        catch (JsonException)
+        {
+            // ExtraJson hỏng → coi như Random với ImageCount đã lưu.
+        }
+
+        return (mode, randomCount);
+    }
+
+    private async Task EnsureEnoughChungChiCandidatesAsync(
+        PostModel post, MediaFolderModel? folder, List<Guid> candidateIds, int desiredCount,
+        CancellationToken ct)
+    {
+        if (candidateIds.Count > 0 && candidateIds.Count >= desiredCount) return;
+
+        var message = desiredCount > 1
+            ? $"Page chưa có thư mục con \"chung_chi\" (dưới thư mục gốc của page) hoặc không đủ {desiredCount} ảnh (hiện có {candidateIds.Count}). " +
+              "Vào Media > Thư mục để mở thư mục chung_chi của page này và upload thêm ảnh trước khi tạo bài."
+            : "Page chưa có thư mục con \"chung_chi\" (dưới thư mục gốc của page) hoặc thư mục rỗng. " +
+              "Vào Media > Thư mục để tạo/mở thư mục chung_chi của page này rồi upload ảnh trước khi tạo bài.";
+        logger.LogWarning(
+            "Post {PostId}: {Flow} không đủ ảnh chung_chi (SocialChannelId={SocialChannelId}, FolderId={FolderId}, CandidateCount={CandidateCount}, Desired={Desired})",
+            post.Id, post.GenerationFlow, post.SocialChannelId, folder?.Id, candidateIds.Count, desiredCount);
+
+        post.Status = PostStatus.NeedFix;
+        post.GenerationError = message;
+        ApplyPostUpdate(post);
+        await context.SaveChangesAsync(ct);
+        throw new InvalidOperationException(message);
+    }
+
+    /// <summary>
+    /// Tìm thư mục con đúng tên dưới root của Page. Mỗi Page có root + "template" + "chung_chi"
+    /// cùng SocialChannelId — không được FirstOrDefault theo channel (sẽ lấy folder bất kỳ).
+    /// </summary>
+    private async Task<MediaFolderModel?> ResolvePageSubfolderAsync(
+        Guid socialChannelId, string folderName, CancellationToken ct)
+    {
+        var root = await mediaFolderRepository.QueryActive()
+            .FirstOrDefaultAsync(
+                f => f.SocialChannelId == socialChannelId && f.ParentFolderId == null, ct);
+        if (root is null) return null;
+
+        return await mediaFolderRepository.QueryActive()
+            .FirstOrDefaultAsync(
+                f => f.ParentFolderId == root.Id
+                    && f.SocialChannelId == socialChannelId
+                    && f.Name == folderName,
+                ct);
+    }
+
+    private async Task<List<Guid>> LoadFolderImageCandidateIdsAsync(
+        MediaFolderModel? folder, CancellationToken ct)
+    {
+        if (folder is null) return [];
+
+        return await context.Set<MediaAssetModel>()
+            .Where(x => !x.IsDeleted && x.FolderId == folder.Id && x.MimeType.StartsWith("image/"))
+            .Select(x => x.Id)
+            .ToListAsync(ct);
     }
 
     private async Task EnsureEnoughTemplateCandidatesAsync(
@@ -187,10 +301,10 @@ public class GenerationJobPipelineService(
         if (candidateIds.Count > 0 && candidateIds.Count >= desiredCount) return;
 
         var message = desiredCount > 1
-            ? $"Page chưa có thư mục Template (MediaFolder gắn trực tiếp với page) hoặc không đủ {desiredCount} ảnh (hiện có {candidateIds.Count}). " +
-              "Vào Media > Thư mục để upload thêm ảnh trước khi tạo bài Template nhiều ảnh."
-            : "Page chưa có thư mục Template (MediaFolder gắn trực tiếp với page) hoặc thư mục rỗng. " +
-              "Vào Media > Thư mục để tạo/gắn page này + upload ảnh trước khi tạo bài Template.";
+            ? $"Page chưa có thư mục con \"template\" (dưới thư mục gốc của page) hoặc không đủ {desiredCount} ảnh (hiện có {candidateIds.Count}). " +
+              "Vào Media > Thư mục để mở thư mục template của page này và upload thêm ảnh trước khi tạo bài Template nhiều ảnh."
+            : "Page chưa có thư mục con \"template\" (dưới thư mục gốc của page) hoặc thư mục rỗng. " +
+              "Vào Media > Thư mục để tạo/mở thư mục template của page này rồi upload ảnh trước khi tạo bài Template.";
         logger.LogWarning(
             "Post {PostId}: {Flow} không đủ ảnh template (SocialChannelId={SocialChannelId}, FolderId={FolderId}, CandidateCount={CandidateCount}, Desired={Desired})",
             post.Id, post.GenerationFlow, post.SocialChannelId, folder?.Id, candidateIds.Count, desiredCount);
@@ -413,11 +527,11 @@ public class GenerationJobPipelineService(
     /// của post (không cần chỉnh tay — "biến ảnh đang có thành video").
     /// </param>
     public async Task<ProcessGenerationJobResponse> ConvertToReelsAsync(
-        Guid postId, List<Guid>? frameMediaIds, CancellationToken ct = default)
+        Guid postId, List<Guid>? frameMediaIds, CancellationToken ct = default, Guid? musicTrackId = null)
     {
         var queued = await QueueReelsRenderAsync(postId, ct);
         var job = await RequireJobAsync(queued.JobId, ct);
-        return await ProcessReelsRenderAsync(job, frameMediaIds, ct);
+        return await ProcessReelsRenderAsync(job, frameMediaIds, ct, musicTrackId);
     }
 
     public async Task<QueueMediaMatchResponse> QueueMediaMatchAsync(
@@ -1499,6 +1613,8 @@ public class GenerationJobPipelineService(
         float? safeTextRegionY = null;
         float? safeTextRegionWidth = null;
         float? safeTextRegionHeight = null;
+        string? logoShape = null;
+        string? colorSlot = null;
 
         if (!string.IsNullOrWhiteSpace(sourceMedia.Tags))
         {
@@ -1516,6 +1632,9 @@ public class GenerationJobPipelineService(
                     safeTextRegionWidth = (float?)safeRegion["width"];
                     safeTextRegionHeight = (float?)safeRegion["height"];
                 }
+
+                logoShape = tagsObj?["logoShape"]?.GetValue<string>();
+                colorSlot = tagsObj?["colorSlot"]?.GetValue<string>();
             }
             catch { }
         }
@@ -1537,7 +1656,9 @@ public class GenerationJobPipelineService(
             SafeTextRegionX = safeTextRegionX,
             SafeTextRegionY = safeTextRegionY,
             SafeTextRegionWidth = safeTextRegionWidth,
-            SafeTextRegionHeight = safeTextRegionHeight
+            SafeTextRegionHeight = safeTextRegionHeight,
+            LogoShape = logoShape,
+            ColorSlot = colorSlot
         }, ct);
 
         var renderedAsset = await mediaAssetRepository.CreateAsync(new CreateMediaAssetRequest
@@ -1565,6 +1686,10 @@ public class GenerationJobPipelineService(
     private Task<ProcessGenerationJobResponse> ProcessReelsRenderAsync(GenerationJobModel job, CancellationToken ct)
         => ProcessReelsRenderAsync(job, frameMediaIds: null, ct);
 
+    private Task<ProcessGenerationJobResponse> ProcessReelsRenderAsync(
+        GenerationJobModel job, List<Guid>? frameMediaIds, CancellationToken ct)
+        => ProcessReelsRenderAsync(job, frameMediaIds, ct, musicTrackId: null);
+
     /// <summary>
     /// Ghép khung hình thành 1 video slideshow bằng FFmpeg (SlideshowVideoRenderService) — bước
     /// cuối của "Đăng Reels". Dọn hết ảnh cũ sau khi ghép xong, chỉ giữ đúng 1 video làm Cover:
@@ -1579,7 +1704,7 @@ public class GenerationJobPipelineService(
     /// render qua RenderFrameAsync cho nhất quán thương hiệu trước khi ghép vào video.
     /// </summary>
     private async Task<ProcessGenerationJobResponse> ProcessReelsRenderAsync(
-        GenerationJobModel job, List<Guid>? frameMediaIds, CancellationToken ct)
+        GenerationJobModel job, List<Guid>? frameMediaIds, CancellationToken ct, Guid? musicTrackId)
     {
         var post = await RequirePostAsync(job.PostId, ct);
 
@@ -1657,7 +1782,21 @@ public class GenerationJobPipelineService(
         var pageContext = await pageContextRepository.GetByChannelAsync(post.SocialChannelId, ct);
         var brandColorHex = pageContext?.BrandColors?.Split(',').FirstOrDefault()?.Trim();
 
-        var videoBytes = await slideshowVideoRenderService.RenderAsync(frameBytesList, brandColorHex, ct);
+        byte[] videoBytes;
+        var audioOverridePath = await ResolveMusicTrackTempFileAsync(musicTrackId, ct);
+        try
+        {
+            videoBytes = await slideshowVideoRenderService.RenderAsync(
+                frameBytesList, brandColorHex, audioOverridePath, ct);
+        }
+        finally
+        {
+            if (audioOverridePath is not null)
+            {
+                try { File.Delete(audioOverridePath); }
+                catch (Exception ex) { logger.LogWarning(ex, "Không xoá được file nhạc tạm {Path}", audioOverridePath); }
+            }
+        }
 
         var saveResult = await fileStorageService.SaveBytesAsync(
             videoBytes, "rendered", ".mp4", "video/mp4", ct);
@@ -1707,6 +1846,26 @@ public class GenerationJobPipelineService(
             PostMediaId = postMedia.Id,
             PublicUrl = previewUrl
         };
+    }
+
+    /// <summary>
+    /// Copy nhạc từ thư viện (MusicTrackModel) ra 1 file tạm — SlideshowVideoRenderService chạy
+    /// FFmpeg qua Process.Start, cần đường dẫn file thật trên đĩa, không nhận stream/byte[] trực
+    /// tiếp. Null (không chọn nhạc, hoặc track không tồn tại) → giữ nguyên nhạc mặc định hệ thống.
+    /// </summary>
+    private async Task<string?> ResolveMusicTrackTempFileAsync(Guid? musicTrackId, CancellationToken ct)
+    {
+        if (musicTrackId is not Guid trackId) return null;
+
+        var track = await context.Set<MusicTrackModel>()
+            .FirstOrDefaultAsync(x => x.Id == trackId && !x.IsDeleted, ct);
+        if (track is null) return null;
+
+        var tempPath = Path.Combine(Path.GetTempPath(), $"music-{Guid.NewGuid():N}{Path.GetExtension(track.FileName)}");
+        await using var source = await fileStorageService.OpenReadAsync(track.StoragePath, ct);
+        await using var dest = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
+        await source.CopyToAsync(dest, ct);
+        return tempPath;
     }
 
     /// <summary>

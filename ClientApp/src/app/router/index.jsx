@@ -7,14 +7,17 @@ import { ROUTE_ROLES } from '@/app/router/routeRoles'
 import DashboardPage from '@/modules/dashboard/pages/DashboardPage'
 import PlatformsPage from '@/modules/social-channels/pages/PlatformsPage'
 import PostListPage from '@/modules/posts/pages/PostListPage'
+import PostCalendarPage from '@/modules/posts/pages/PostCalendarPage'
 import PostCreatePage from '@/modules/posts/pages/PostCreatePage'
 import PostDetailPage from '@/modules/posts/pages/PostDetailPage'
 import MediaPage from '@/modules/media/pages/MediaPage'
+import MusicLibraryPage from '@/modules/music/pages/MusicLibraryPage'
 import JobsPage from '@/modules/jobs/pages/JobsPage'
 import PromptTemplateListPage from '@/modules/prompt-templates/pages/PromptTemplateListPage'
 import CategoryListPage from '@/modules/categories/pages/CategoryListPage'
 import PageContextListPage from '@/modules/page-contexts/pages/PageContextListPage'
 import BulkCreatePage from '@/modules/bulk/pages/BulkCreatePage'
+import BulkChungChiPage from '@/modules/bulk/pages/BulkChungChiPage'
 import BatchProgressPage from '@/modules/bulk/pages/BatchProgressPage'
 import CommentsInboxPage from '@/modules/comments/pages/CommentsInboxPage'
 import PageMessagesInboxPage from '@/modules/messages/pages/PageMessagesInboxPage'
@@ -49,13 +52,16 @@ export default function AppRouter() {
             <Route path="/platforms" element={<PlatformsPage />} />
           </Route>
           <Route path="/posts" element={<PostListPage />} />
+          <Route path="/calendar" element={<PostCalendarPage />} />
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.postsCreate} />}>
             <Route path="/posts/create" element={<PostCreatePage />} />
             <Route path="/bulk" element={<BulkCreatePage />} />
+            <Route path="/bulk-chung-chi" element={<BulkChungChiPage />} />
             <Route path="/bulk/:batchId" element={<BatchProgressPage />} />
           </Route>
           <Route path="/posts/:id" element={<PostDetailPage />} />
           <Route path="/media" element={<MediaPage />} />
+          <Route path="/music" element={<MusicLibraryPage />} />
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.templates} />}>
             <Route path="/prompt-templates" element={<PromptTemplateListPage />} />
             <Route path="/categories" element={<CategoryListPage />} />

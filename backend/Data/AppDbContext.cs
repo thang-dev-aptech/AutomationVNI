@@ -5,6 +5,7 @@ using Backend.Modules.GenerationJob;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaEmbedding;
 using Backend.Modules.MediaFolder;
+using Backend.Modules.MusicTrack;
 using Backend.Modules.PageContext;
 using Backend.Modules.PageMessage;
 using Backend.Modules.Post;
@@ -32,6 +33,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<MediaAssetModel> MediaAssets => Set<MediaAssetModel>();
     public DbSet<MediaFolderModel> MediaFolders => Set<MediaFolderModel>();
     public DbSet<PostMediaModel> PostMedias => Set<PostMediaModel>();
+    public DbSet<MusicTrackModel> MusicTracks => Set<MusicTrackModel>();
     public DbSet<GenerationJobModel> GenerationJobs => Set<GenerationJobModel>();
     public DbSet<PublishLogModel> PublishLogs => Set<PublishLogModel>();
     public DbSet<MediaEmbeddingModel> MediaEmbeddings => Set<MediaEmbeddingModel>();
@@ -50,9 +52,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<CrawlRunModel> CrawlRuns => Set<CrawlRunModel>();
     public DbSet<CrawledArticleModel> CrawledArticles => Set<CrawledArticleModel>();
     public DbSet<ContentFingerprintModel> ContentFingerprints => Set<ContentFingerprintModel>();
+    public DbSet<ContentCrawlPipelineStateModel> ContentCrawlPipelineStates
+        => Set<ContentCrawlPipelineStateModel>();
     public DbSet<ShortLinkModel> ShortLinks => Set<ShortLinkModel>();
     public DbSet<Backend.Modules.NewsSite.NewsArticleModel> NewsArticles
         => Set<Backend.Modules.NewsSite.NewsArticleModel>();
+    public DbSet<Backend.Modules.NewsSite.NewsSubscriberModel> NewsSubscribers
+        => Set<Backend.Modules.NewsSite.NewsSubscriberModel>();
     public DbSet<Backend.Modules.Notification.AppNotificationModel> AppNotifications
         => Set<Backend.Modules.Notification.AppNotificationModel>();
 
@@ -191,6 +197,17 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasIndex(x => new { x.PostId, x.MediaId });
             e.HasIndex(x => x.PostId);
             e.HasIndex(x => x.MediaId);
+        });
+
+        modelBuilder.Entity<MusicTrackModel>(e =>
+        {
+            e.ToTable("MusicTracks");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.DisplayName).HasMaxLength(300);
+            e.Property(x => x.FileName).HasMaxLength(500);
+            e.Property(x => x.StoragePath).HasMaxLength(1000);
+            e.Property(x => x.MimeType).HasMaxLength(100);
         });
 
         modelBuilder.Entity<GenerationJobModel>(e =>
@@ -400,6 +417,20 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.DefaultChannelIds).HasColumnType("TEXT");
         });
 
+        modelBuilder.Entity<ContentCrawlPipelineStateModel>(e =>
+        {
+            e.ToTable("ContentCrawlPipelineState");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.IsEnabled).HasDefaultValue(true);
+            e.Property(x => x.UpdatedByUserName).HasMaxLength(200);
+            e.HasData(new ContentCrawlPipelineStateModel
+            {
+                Id = ContentCrawlPipelineStateModel.SingletonId,
+                IsEnabled = true,
+                CreatedAt = new DateTime(2026, 9, 22, 0, 0, 0, DateTimeKind.Utc)
+            });
+        });
+
         modelBuilder.Entity<CrawlRunModel>(e =>
         {
             e.ToTable("CrawlRuns");
@@ -474,6 +505,19 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.KeyPointsJson).HasColumnType("TEXT");
             e.Property(x => x.TimelineJson).HasColumnType("TEXT");
             e.Property(x => x.ErrorMessage).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<Backend.Modules.NewsSite.NewsSubscriberModel>(e =>
+        {
+            e.ToTable("NewsSubscribers");
+            e.HasKey(x => x.Id);
+            // Tra theo Email lúc đăng ký lại (idempotent) và theo UnsubscribeToken lúc bấm huỷ
+            // từ email — cả hai chạy trên mỗi lượt độc giả tương tác.
+            e.HasIndex(x => x.Email).IsUnique();
+            e.HasIndex(x => x.UnsubscribeToken).IsUnique();
+            e.HasIndex(x => x.IsActive);
+            e.Property(x => x.Email).HasMaxLength(320);
+            e.Property(x => x.UnsubscribeToken).HasMaxLength(64);
         });
 
         modelBuilder.Entity<Backend.Modules.Notification.AppNotificationModel>(e =>

@@ -68,6 +68,10 @@ public class MediaAssetResponse
     public MediaSource Source { get; set; }
     public Guid? CategoryId { get; set; }
     public Guid? FolderId { get; set; }
+    /// <summary>Page của folder chứa ảnh (join từ FolderId) — null nếu chưa phân loại. Chỉ
+    /// FilterAsync điền field này (cần cho điều hướng "mở đúng Page" từ kết quả tìm kiếm);
+    /// các mapper khác để null.</summary>
+    public Guid? SocialChannelId { get; set; }
     public List<Guid> CategoryIds { get; set; } = [];
     public string? AltText { get; set; }
     public string? Description { get; set; }

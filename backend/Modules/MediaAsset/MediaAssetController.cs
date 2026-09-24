@@ -41,8 +41,23 @@ public class MediaAssetController
     protected override Task<PagedResult<MediaAssetResponse>> FilterEntitiesAsync(MediaAssetFilterRequest request, CancellationToken ct)
         => _repo.FilterAsync(request, ct);
 
+    // [Authorize] trên CreateEntityAsync/UpdateEntityAsync (protected, không phải action) không được
+    // MVC pipeline áp dụng — phải override đúng action Create/Update/SoftDelete của BaseController.
+    [Authorize(Roles = "Admin,ContentManager")]
+    public override Task<IActionResult> Create([FromBody] CreateMediaAssetRequest request, CancellationToken ct)
+        => base.Create(request, ct);
+
+    [Authorize(Roles = "Admin,ContentManager")]
+    public override Task<IActionResult> Update(Guid id, [FromBody] UpdateMediaAssetRequest request, CancellationToken ct)
+        => base.Update(id, request, ct);
+
+    [Authorize(Roles = "Admin,ContentManager")]
+    public override Task<IActionResult> SoftDelete(Guid id, CancellationToken ct)
+        => base.SoftDelete(id, ct);
+
     [HttpPost("upload")]
     [Consumes("multipart/form-data")]
+    [Authorize(Roles = "Admin,ContentManager")]
     public async Task<IActionResult> Upload(
         [FromForm] IFormFile file,
         [FromForm] Guid? categoryId,
@@ -76,6 +91,7 @@ public class MediaAssetController
     /// </summary>
     [HttpPost("upload-batch")]
     [Consumes("multipart/form-data")]
+    [Authorize(Roles = "Admin,ContentManager")]
     public async Task<IActionResult> UploadBatch(
         [FromForm] List<IFormFile> files,
         [FromForm] Guid? folderId,
@@ -202,6 +218,7 @@ public class MediaAssetController
     }
 
     [HttpPost("move")]
+    [Authorize(Roles = "Admin,ContentManager")]
     public async Task<IActionResult> Move(
         [FromBody] MoveMediaAssetsRequest request,
         CancellationToken ct)
@@ -210,6 +227,10 @@ public class MediaAssetController
         {
             var moved = await _repo.MoveAsync(request.Ids, request.FolderId, ct);
             return Ok(ApiResponse.Ok(new { moved }, $"Đã chuyển {moved} ảnh"));
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound(ApiResponse.Fail("NOT_FOUND", "Page/Kênh không tồn tại."));
         }
         catch (InvalidOperationException ex)
         {

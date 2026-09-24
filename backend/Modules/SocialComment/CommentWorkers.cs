@@ -42,7 +42,10 @@ public class CommentWebhookHydrationWorker(
                 if (n > 0)
                     logger.LogInformation("Hydrated {Count} webhook event(s)", n);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            // Lọc theo stoppingToken.IsCancellationRequested, không theo kiểu exception: timeout
+            // gọi API Meta cũng ném TaskCanceledException, dễ lọt qua nếu lọc theo kiểu và kéo sập
+            // cả app (BackgroundServiceExceptionBehavior=StopHost mặc định).
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "CommentWebhookHydrationWorker loop error");
             }
@@ -104,7 +107,7 @@ public class CommentReconcileWorker(
                     }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "CommentReconcileWorker loop error");
             }

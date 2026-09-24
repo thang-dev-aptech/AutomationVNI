@@ -19,6 +19,7 @@ using Backend.Shared.Ai;
 using Backend.Shared.Meta;
 using Backend.Shared.PageMessage;
 using Backend.Shared.Threads;
+using Backend.Shared.TikTok;
 using Backend.Shared.SocialPublish;
 using Backend.Shared.SocialComment;
 using Backend.Shared.DevSeed;
@@ -35,6 +36,14 @@ using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Mặc định .NET: 1 BackgroundService (crawl, gửi mail, đồng bộ comment, refresh token...) ném
+// exception chưa bắt là KÉO SẬP TOÀN BỘ app — kể cả API đăng nhập, không riêng gì worker đó.
+// Đã xảy ra thật: ContentCrawlWorker timeout gọi HTTP 20s, exception lọt qua catch lọc sai kiểu,
+// cả app tắt và không tự bật lại (log production 2026-08-30). Đã vá từng chỗ lọc sai, nhưng đây
+// là lưới an toàn cuối — lỗi nào sót/lỗi mới phát sinh chỉ dừng ĐÚNG worker đó, không giết cả app.
+builder.Services.Configure<HostOptions>(o =>
+    o.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore);
+
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<SeedSettings>(builder.Configuration.GetSection("Seed"));
 builder.Services.Configure<FileStorageOptions>(builder.Configuration.GetSection("FileStorage"));
@@ -46,6 +55,7 @@ builder.Services.Configure<SocialPublishOptions>(builder.Configuration.GetSectio
 builder.Services.Configure<ReelsOptions>(builder.Configuration.GetSection("Reels"));
 builder.Services.Configure<MetaOAuthOptions>(builder.Configuration.GetSection("MetaOAuth"));
 builder.Services.Configure<ThreadsOAuthOptions>(builder.Configuration.GetSection("ThreadsOAuth"));
+builder.Services.Configure<TikTokOAuthOptions>(builder.Configuration.GetSection("TikTokOAuth"));
 builder.Services.Configure<CommentWorkerOptions>(builder.Configuration.GetSection("CommentWorker"));
 builder.Services.Configure<MessageWorkerOptions>(builder.Configuration.GetSection("MessageWorker"));
 
@@ -111,6 +121,7 @@ builder.Services.AddScoped<PostRepository>();
 builder.Services.AddScoped<PostWorkflowService>();
 builder.Services.AddScoped<MediaAssetRepository>();
 builder.Services.AddScoped<Backend.Modules.MediaFolder.MediaFolderRepository>();
+builder.Services.AddScoped<Backend.Modules.MusicTrack.MusicTrackRepository>();
 // 60s không đủ cho model vision họ Claude qua gateway (đo thực tế: opus-4.6 ~24s cho prompt text,
 // ảnh còn nặng hơn). Timeout quá chặt làm phân tích media fail hàng loạt.
 builder.Services.AddHttpClient<MediaIntelligenceService>(client =>
@@ -162,6 +173,12 @@ builder.Services.AddScoped<Backend.Modules.NewsSite.NewsSiteBuilder>();
 builder.Services.AddScoped<Backend.Modules.NewsSite.NewsDedupService>();
 builder.Services.AddScoped<Backend.Modules.NewsSite.NewsPublisher>();
 builder.Services.AddScoped<Backend.Modules.NewsSite.NewsFanpageService>();
+
+// ── Email (bản tin trang tin) ─────────────────────────────────────────────────
+builder.Services.Configure<Backend.Shared.Email.EmailOptions>(
+    builder.Configuration.GetSection("Email"));
+builder.Services.AddScoped<Backend.Shared.Email.IEmailSender, Backend.Shared.Email.SmtpEmailSender>();
+builder.Services.AddHostedService<Backend.Modules.NewsSite.NewsletterSendWorker>();
 builder.Services.AddScoped<ContentCrawlPipelineService>();
 builder.Services.AddHttpClient<IAiJudgeService, AiJudgeService>(client =>
     // Trần 30s là quá chặt: đo thật trên gateway vietai, chấm điểm một bài mất ~28s nên 6/9
@@ -273,6 +290,11 @@ builder.Services.AddHttpClient<ThreadsPublishService>((sp, client) =>
     var th = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SocialPublishOptions>>().Value.Threads;
     client.Timeout = TimeSpan.FromSeconds(Math.Max(10, th.TimeoutSeconds));
 });
+builder.Services.AddHttpClient<TikTokPublishService>((sp, client) =>
+{
+    var tt = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SocialPublishOptions>>().Value.TikTok;
+    client.Timeout = TimeSpan.FromSeconds(Math.Max(10, tt.TimeoutSeconds));
+});
 builder.Services.AddScoped<ISocialPublishService, SocialPublishService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient(nameof(MetaOAuthService));
@@ -283,6 +305,11 @@ builder.Services.AddHttpClient(nameof(ThreadsOAuthService));
 builder.Services.AddScoped<ThreadsProfileSyncService>();
 builder.Services.AddScoped<IThreadsOAuthService, ThreadsOAuthService>();
 builder.Services.AddHostedService<ThreadsTokenRefreshService>();
+
+builder.Services.AddHttpClient(nameof(TikTokOAuthService));
+builder.Services.AddScoped<TikTokProfileSyncService>();
+builder.Services.AddScoped<ITikTokOAuthService, TikTokOAuthService>();
+builder.Services.AddHostedService<TikTokTokenRefreshService>();
 
 builder.Services.Configure<ApiBehaviorOptions>(options =>
     options.SuppressModelStateInvalidFilter = false);

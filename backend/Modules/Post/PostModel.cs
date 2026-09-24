@@ -27,6 +27,13 @@ public class PostModel : BaseEntity
     /// <summary>Id bài viết gốc nếu bài này được tạo từ chức năng Recycle. Null nếu là bài tạo mới hoàn toàn. No FK.</summary>
     public Guid? SourcePostId { get; set; }
 
+    /// <summary>
+    /// Id NewsArticle nguồn nếu bài này được tạo từ CỬA 2 (NewsFanpageService — đăng tin đã lên
+    /// web sang fanpage). Null với mọi bài tạo theo cách khác. No FK — dùng để chặn đăng trùng
+    /// cùng 1 tin lên cùng 1 page nhiều lần (xem NewsFanpageService.PublishAsync).
+    /// </summary>
+    public Guid? NewsArticleId { get; set; }
+
     public PostStatus Status { get; set; } = PostStatus.Draft;
     public DateTime? ScheduledPublishAt { get; set; }
     public string? ScheduleTimezone { get; set; }
@@ -38,4 +45,11 @@ public class PostModel : BaseEntity
     public string? ApprovedBy { get; set; }
     public DateTime? ApprovedAt { get; set; }
     public Guid UserId { get; set; }
+
+    /// <summary>
+    /// Chỉ áp dụng khi SocialChannel là TikTok. Null = DirectPost (mặc định). Lưu bền (không chỉ
+    /// tham số lúc gọi API) vì lựa chọn lúc bấm nút và lúc thực sự publish có thể lệch nhau khi
+    /// bài được lên lịch — phải sống qua vòng đời GenerationJob/PublishLog.
+    /// </summary>
+    public TikTokPostMode? TikTokPostMode { get; set; }
 }

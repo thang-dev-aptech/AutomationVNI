@@ -112,6 +112,11 @@ public class NewsSiteBuilder(
             pages++;
         }
 
+        // Trang tìm kiếm — khung tĩnh, site.js tự đổ kết quả lúc mở (xem NewsSiteRenderer.RenderSearch).
+        await WriteAtomicAsync(
+            Path.Combine(OutputRoot, "tim-kiem", "index.html"), renderer.RenderSearch(), ct);
+        pages++;
+
         await WriteAtomicAsync(Path.Combine(OutputRoot, "sitemap.xml"), renderer.RenderSitemap(published), ct);
         await WriteAtomicAsync(Path.Combine(OutputRoot, "robots.txt"), renderer.RenderRobots(), ct);
         pages += 2;

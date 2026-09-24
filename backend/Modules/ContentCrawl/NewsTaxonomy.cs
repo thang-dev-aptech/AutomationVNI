@@ -29,6 +29,10 @@ public static class NewsTaxonomy
             "chính sách giáo dục, tuyển sinh, thi cử, điểm chuẩn, học phí, chương trình học, "
             + "trường lớp, giáo viên, du học"),
 
+        new("phap-luat-chinh-sach", "Pháp luật và chính sách",
+            "văn bản pháp luật, quy định, chính sách giáo dục, thông tư/nghị định liên quan "
+            + "giáo dục và đào tạo"),
+
         new("cong-nghe-ai", "AI & Công nghệ",
             "trí tuệ nhân tạo, chuyển đổi số, phần mềm, thiết bị, an toàn thông tin, "
             + "công nghệ ứng dụng trong dạy và học"),

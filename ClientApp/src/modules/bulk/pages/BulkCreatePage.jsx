@@ -11,6 +11,7 @@ import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import { usePageContextList } from '@/modules/page-contexts/hooks/usePageContexts'
 import { isPageContextTemplateReady } from '@/modules/posts/components/PostCreateForm'
 import GenerationFlowPicker from '@/modules/posts/components/GenerationFlowPicker'
+import PostFormatPicker from '@/modules/posts/components/PostFormatPicker'
 import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import { useBulkCreate, useBulkImport } from '../hooks/useBulk'
 import {
@@ -30,12 +31,6 @@ const SKEL_CHANNEL_IDS_KEY = 'vni.bulkSkelChannelIds.v1'
 
 function defaultDateFrom() {
   const d = new Date()
-  return d.toISOString().slice(0, 10)
-}
-
-function defaultDateTo() {
-  const d = new Date()
-  d.setDate(d.getDate() + 6)
   return d.toISOString().slice(0, 10)
 }
 
@@ -65,7 +60,7 @@ export default function BulkCreatePage() {
   const [imageCount, setImageCount] = useState('')
 
   const [skelFrom, setSkelFrom] = useState(defaultDateFrom)
-  const [skelTo, setSkelTo] = useState(defaultDateTo)
+  const [skelPostsPerPage, setSkelPostsPerPage] = useState(1)
   const [skelSlots, setSkelSlots] = useState('09:00,15:00')
   const [skelJitter, setSkelJitter] = useState(35)
   const [skelChannelIds, setSkelChannelIds] = useState(loadSkelChannelIds)
@@ -98,6 +93,21 @@ export default function BulkCreatePage() {
     return map
   }, [pageContexts])
 
+  const channelById = useMemo(() => {
+    const map = new Map()
+    for (const ch of channels) map.set(ch.id, ch)
+    return map
+  }, [channels])
+
+  // SocialPlatform.TikTok = 4 — gộp cả 2 danh sách chọn kênh (khung lịch + fan-out) vì panel
+  // "Định dạng đăng" dùng chung cho cả 2 luồng bên dưới.
+  const hasTikTokSelected = useMemo(() => {
+    for (const id of [...skelChannelIds, ...channelIds]) {
+      if (channelById.get(id)?.platform === 4) return true
+    }
+    return false
+  }, [skelChannelIds, channelIds, channelById])
+
   const needCategoryCount = useMemo(
     () => channelIds.filter((id) => !isPageContextTemplateReady(contextByChannel.get(id))).length,
     [channelIds, contextByChannel],
@@ -122,12 +132,13 @@ export default function BulkCreatePage() {
       const result = downloadBulkScheduleSkeleton({
         channels: skeletonChannels,
         dateFrom: skelFrom,
-        dateTo: skelTo,
+        postsPerPage: skelPostsPerPage,
         slotsText: skelSlots,
         jitterMinutes: Number(skelJitter) || 0,
       })
       toast.success(
-        `Đã xuất ${result.pageCount} page / ${result.rowCount} dòng (±${result.jitterMinutes} phút lệch giờ mỗi ngày).`,
+        `Đã xuất ${result.pageCount} page / ${result.rowCount} dòng, tự dùng ${result.daysUsed} ngày `
+        + `(±${result.jitterMinutes} phút lệch giờ mỗi ngày).`,
       )
     } catch (err) {
       toast.error(err?.message || 'Không xuất được khung')
@@ -308,6 +319,98 @@ export default function BulkCreatePage() {
         <>
           <div className="bulk-panel">
             <div className="bulk-panel__head">
+              <h3 className="bulk-panel__title">Tuỳ chọn chung</h3>
+              <p className="bulk-panel__desc">Áp cho cả import CSV và tạo hàng loạt bên dưới — chọn trước khi làm các bước còn lại.</p>
+            </div>
+
+            <div className="form-group">
+              <label>Định dạng đăng</label>
+              <PostFormatPicker value={generateAsReels} onChange={setGenerateAsReels} />
+              {generateAsReels && (
+                <p className="bulk-field-hint" style={{ color: '#a855f7' }}>
+                  🎬 Mọi bài trong lô sẽ tự chuyển thành video Reels sau khi sinh ảnh xong, không cần bấm gì thêm.
+                </p>
+              )}
+              {hasTikTokSelected && !generateAsReels && (
+                <p className="bulk-field-hint" style={{ color: 'var(--color-warning)' }}>
+                  ⚠️ Có kênh TikTok trong danh sách đã chọn — kênh này cần ảnh có URL công khai nếu không
+                  dùng Reels. Khuyên chọn Reels (video) ở trên.
+                </p>
+              )}
+            </div>
+
+            <div className="form-group" style={{ marginTop: 16 }}>
+              <label>Phương pháp tạo ảnh</label>
+              <GenerationFlowPicker value={flow} onChange={setFlow} />
+            </div>
+
+            {isTemplateFlow && (
+              <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
+                <label htmlFor="bulk-image-count">
+                  {generateAsReels ? 'Số khung hình mỗi video (tuỳ chọn)' : 'Số ảnh mỗi bài (tuỳ chọn)'}
+                </label>
+                <input
+                  id="bulk-image-count"
+                  type="number"
+                  min={1}
+                  placeholder="Để trống = 1 ảnh"
+                  value={imageCount}
+                  onChange={(e) => setImageCount(e.target.value)}
+                  style={{ maxWidth: 140 }}
+                />
+                <p className="bulk-field-hint">
+                  {generateAsReels
+                    ? 'N khung hình sẽ được ghép thành 1 video Reels dài khoảng N×3.5 giây.'
+                    : 'Để trống hoặc 1: mỗi bài 1 ảnh. Từ 2 trở lên: AI chọn đúng số ảnh phù hợp trong thư mục Template, ra bài nhiều ảnh.'}
+                </p>
+              </div>
+            )}
+
+            {!isTemplateFlow && (
+              <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, margin: 0, cursor: 'pointer', fontWeight: 500 }}>
+                  <input type="checkbox" checked={useMedia} onChange={(e) => setUseMedia(e.target.checked)} />
+                  <span>Ngoài ảnh AI, tự tìm thêm 2–3 ảnh từ kho media phù hợp nội dung (RAG)</span>
+                </label>
+                {useMedia && (
+                  <div style={{ marginTop: 10, maxWidth: 360 }}>
+                    <label htmlFor="bulk-post-type">Loại bài viết — lọc ảnh (tuỳ chọn)</label>
+                    <select id="bulk-post-type" value={postTypeId} onChange={(e) => setPostTypeId(e.target.value)}>
+                      <option value="">Tất cả loại (không lọc)</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {generateAsReels && (
+                  <p className="bulk-field-hint" style={{ color: '#a855f7' }}>
+                    🎬 Video sẽ dùng đúng ảnh vừa sinh (1 ảnh AI{useMedia ? ', cộng thêm ảnh kho ở trên' : ''}) ghép lại.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="form-group">
+              <label htmlFor="bulk-category">Danh mục (tuỳ chọn — ghi đè PageContext)</label>
+              <select
+                id="bulk-category"
+                value={promptTemplateId}
+                onChange={(e) => setPromptTemplateId(e.target.value)}
+                style={{ maxWidth: 360 }}
+              >
+                <option value="">Dùng mặc định PageContext từng page</option>
+                {categoryTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}{t.isDefault ? ' ⭐' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="bulk-panel">
+            <div className="bulk-panel__head">
               <h3 className="bulk-panel__title">1. Xuất khung lịch cho GPT</h3>
               <p className="bulk-panel__desc">
                 Chọn page muốn chạy kỳ này. Page không chọn = nghỉ. Brief gửi GPT bằng copy hoặc file .txt (cùng nội dung).
@@ -363,9 +466,16 @@ export default function BulkCreatePage() {
                   <p className="bulk-field-hint">&nbsp;</p>
                 </div>
                 <div className="form-group">
-                  <label htmlFor="skel-to">Đến ngày</label>
-                  <input id="skel-to" type="date" value={skelTo} onChange={(e) => setSkelTo(e.target.value)} />
-                  <p className="bulk-field-hint">&nbsp;</p>
+                  <label htmlFor="skel-posts-per-page">Số bài / trang</label>
+                  <input
+                    id="skel-posts-per-page"
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={skelPostsPerPage}
+                    onChange={(e) => setSkelPostsPerPage(e.target.value)}
+                  />
+                  <p className="bulk-field-hint">Tự tính đủ số ngày cần dùng — không phải tự canh Đến ngày</p>
                 </div>
                 <div className="form-group">
                   <label htmlFor="skel-slots">Khung giờ / ngày</label>
@@ -433,86 +543,6 @@ export default function BulkCreatePage() {
                   File mẫu
                 </button>
               </div>
-            </div>
-          </div>
-
-          <div className="bulk-panel">
-            <div className="bulk-panel__head">
-              <h3 className="bulk-panel__title">Tuỳ chọn chung</h3>
-              <p className="bulk-panel__desc">Áp cho import CSV và tạo hàng loạt bên dưới.</p>
-            </div>
-            <div className="form-group">
-              <label htmlFor="bulk-category">Danh mục (tuỳ chọn — ghi đè PageContext)</label>
-              <select
-                id="bulk-category"
-                value={promptTemplateId}
-                onChange={(e) => setPromptTemplateId(e.target.value)}
-                style={{ maxWidth: 360 }}
-              >
-                <option value="">Dùng mặc định PageContext từng page</option>
-                {categoryTemplates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}{t.isDefault ? ' ⭐' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group" style={{ marginTop: 12 }}>
-              <label>Phương pháp tạo ảnh</label>
-              <GenerationFlowPicker value={flow} onChange={setFlow} />
-            </div>
-
-            {isTemplateFlow && (
-              <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
-                <label htmlFor="bulk-image-count">Số ảnh mỗi bài (tuỳ chọn)</label>
-                <input
-                  id="bulk-image-count"
-                  type="number"
-                  min={1}
-                  placeholder="Để trống = 1 ảnh"
-                  value={imageCount}
-                  onChange={(e) => setImageCount(e.target.value)}
-                  style={{ maxWidth: 140 }}
-                />
-                <p className="bulk-field-hint">
-                  {generateAsReels
-                    ? 'N ảnh sẽ được ghép thành 1 video Reels dài khoảng N×3.5 giây.'
-                    : 'Để trống hoặc 1: mỗi bài 1 ảnh. Từ 2 trở lên: AI chọn đúng số ảnh phù hợp trong thư mục Template, ra bài nhiều ảnh.'}
-                </p>
-              </div>
-            )}
-
-            {!isTemplateFlow && (
-              <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, margin: 0, cursor: 'pointer', fontWeight: 500 }}>
-                  <input type="checkbox" checked={useMedia} onChange={(e) => setUseMedia(e.target.checked)} />
-                  <span>Ngoài ảnh AI, tự tìm thêm 2–3 ảnh từ kho media phù hợp nội dung (RAG)</span>
-                </label>
-                {useMedia && (
-                  <div style={{ marginTop: 10, maxWidth: 360 }}>
-                    <label htmlFor="bulk-post-type">Loại bài viết — lọc ảnh (tuỳ chọn)</label>
-                    <select id="bulk-post-type" value={postTypeId} onChange={(e) => setPostTypeId(e.target.value)}>
-                      <option value="">Tất cả loại (không lọc)</option>
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 40, margin: 0, cursor: 'pointer', fontWeight: 500 }}>
-                <input type="checkbox" checked={generateAsReels} onChange={(e) => setGenerateAsReels(e.target.checked)} />
-                <span>🎬 Tạo dạng Reels (tự ghép ảnh vừa sinh thành video ngay sau khi sinh xong)</span>
-              </label>
-              {generateAsReels && !isTemplateFlow && (
-                <p className="bulk-field-hint">
-                  Sẽ dùng đúng ảnh vừa sinh (1 ảnh AI, hoặc thêm 2–3 ảnh nếu bật tìm ảnh kho ở trên) ghép thành video.
-                </p>
-              )}
             </div>
           </div>
 

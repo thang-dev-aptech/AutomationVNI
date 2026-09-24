@@ -19,6 +19,19 @@ public enum PostStatus
     NeedFix           = 15
 }
 
+/// <summary>
+/// Chế độ đăng TikTok — lựa chọn ở bước ĐĂNG, chỉ có ý nghĩa với post nhắm kênh TikTok.
+/// DirectPost (mặc định, null cũng coi như DirectPost): API đăng thẳng, không gắn được nhạc
+/// TikTok thật. InboxDraft: gửi video vào Inbox app TikTok thật của người dùng — họ tự mở app
+/// thêm caption/quyền riêng tư/chọn nhạc TikTok thật rồi đăng thủ công (cách hợp pháp duy nhất
+/// qua API chính thức để có nhạc TikTok thật).
+/// </summary>
+public enum TikTokPostMode
+{
+    DirectPost = 1,
+    InboxDraft = 2
+}
+
 public enum GenerationFlow
 {
     FullAI         = 1,
@@ -37,5 +50,11 @@ public enum GenerationFlow
     /// đè lên (RichTemplateRenderService) thay vì sinh ảnh AI. Không có folder/folder rỗng → lỗi
     /// rõ ràng, không tự fallback sang FullAI.
     /// </summary>
-    Template       = 6
+    Template       = 6,
+
+    /// <summary>
+    /// AI chỉ sinh CHỮ; ảnh lấy nguyên trạng từ thư mục con "chung_chi" dưới root của Page
+    /// (Random-N hoặc All). Không overlay, không sinh ảnh AI, không fallback sang FullAI.
+    /// </summary>
+    ChungChiGallery = 7
 }
