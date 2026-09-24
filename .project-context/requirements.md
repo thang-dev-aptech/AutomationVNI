@@ -79,3 +79,34 @@ Màn hình Tạo hàng loạt từ chứng chỉ chỉ hiển thị Page actor c
 <!-- req status=blocked files=backend/backend.csproj,backend/Properties/PublishProfiles/LinuxX64.pubxml,backend/README.md,docs/DEPLOYMENT.md -->
 
 Backend phải được publish thành executable Linux tên `backend` để người vận hành có thể chạy từ `/home/vni/domains/auto.vni.edu.vn/publish_output` bằng `nohup env ASPNETCORE_URLS="http://127.0.0.1:5000" ASPNETCORE_ENVIRONMENT=Production ./backend > app.log 2>&1 &`. Phạm vi write: cấu hình publish/tài liệu backend và artifact build trong workspace nếu được tạo; không thay đổi business logic. Nguồn: xác nhận trực tiếp của người dùng ngày 2026-09-21.
+
+### R-014 — CONTENT-CRAWL-02: Bài Pending chấm điểm lỗi phải được quét lại, không kẹt vĩnh viễn không điểm
+<!-- req status=not-started files=backend/Modules/ContentCrawl/ContentCrawlPipelineService.cs,backend/Modules/ContentCrawl/CrawlScreenService.cs,backend/Modules/ContentCrawl/ContentCrawlWorker.cs,backend/Modules/ContentCrawl/ContentCrawlRepository.cs,backend/Modules/ContentCrawl/ContentCrawlOptions.cs -->
+
+Hành vi hiện tại (xác minh qua DB snapshot vni_automation (1).db + code, 2026-09-22): khi CrawlScreenService.ScreenAsync trả về null (AI timeout/lỗi/JSON không đọc được), ContentCrawlPipelineService.ProcessPendingAsync (dòng ~315-454) cố ý đẩy bài vào Status=Pending mà không set QualityScore — thiết kế "fail open" có chủ đích (comment trong CrawlScreenService.cs dòng 94-96: "Lỗi thì MỞ, không đóng"). Vấn đề: ProcessPendingAsync CHỈ chấm bài đúng lúc nó chuyển vào Pending, không bao giờ quét lại bài Pending cũ chưa có điểm — không có cơ chế retry nào tồn tại.
+
+Đo trên DB snapshot: Status=4 (Pending) chỉ 56% có điểm (365/652), 287 bài kẹt không điểm liên tục từ 2026-08-17 đến tận fetch mới nhất (2026-09-22 06:03) — không phải sự cố nhất thời, đang tiếp diễn mỗi ngày.
+
+Yêu cầu: bổ sung cơ chế quét lại (rescan/retry) các bài Pending chưa có QualityScore, để giảm số bài kẹt vĩnh viễn không điểm, mà không phá vỡ hành vi chấm điểm tức thời hiện có cho bài mới cào về.
+
+Nguồn: backend/Modules/ContentCrawl/ContentCrawlPipelineService.cs (ProcessPendingAsync, ~315-454); backend/Modules/ContentCrawl/CrawlScreenService.cs (ScreenAsync, dòng 94-128); backend/Modules/ContentCrawl/ContentCrawlWorker.cs (ProcessArticlesAsync, dòng 100-106); truy vấn trực tiếp vni_automation (1).db bảng CrawledArticles.
+
+### R-015 — NEWSSITE-01: Trang tin tức đã có sẵn tính năng dựng lại (rebuild) — backfill
+<!-- req status=in-progress files=backend/Modules/NewsSite/NewsSiteController.cs,backend/Modules/NewsSite/NewsSiteBuilder.cs,ClientApp/src/modules/news-site/hooks/useNewsSite.js,ClientApp/src/modules/news-site/pages/NewsSitePage.jsx -->
+
+Xác nhận với người dùng (2026-09-22): "tạo trang web tin tức" mà người dùng nhắc tới chính là action rebuild/dựng lại trang tĩnh đã tồn tại sẵn trong code, KHÔNG phải tính năng mới cần xây.
+
+Bằng chứng: backend/Modules/NewsSite/NewsSiteController.cs dòng 209-212, endpoint POST /api/NewsSite/build [Authorize(Roles = "Admin,ContentManager")], gọi NewsSiteBuilder.BuildAsync(ct) — build lại TOÀN BỘ site tĩnh (trang chủ, trang chuyên mục, trang bài) rồi ghi ra thư mục phục vụ, trả message "Đã dựng lại trang tin". Frontend đã có hook useRebuildSite (ClientApp/src/modules/news-site/hooks/useNewsSite.js:45) dùng trong ClientApp/src/modules/news-site/pages/NewsSitePage.jsx.
+
+Requirement này chỉ để ghi nhận tính năng đã hoàn thiện vào PCS (tránh PCS thiếu context khiến agent sau tưởng nhầm là chưa có), không phát sinh task triển khai mới. Không backfill evidence "passed" vì không có lệnh test cụ thể chạy trong phiên này — chỉ xác nhận qua đọc code trực tiếp, để review/manual test sau nếu cần.
+
+### R-016 — CONTENT-CRAWL-03: Nút dừng/chạy toàn bộ chức năng tin tức tại runtime
+<!-- req status=in-progress files=backend/Modules/ContentCrawl/ContentCrawlWorker.cs,backend/Modules/ContentCrawl/ContentCrawlOptions.cs,backend/Modules/ContentCrawl/ContentCrawlController.cs,backend/Modules/ContentCrawl/ContentCrawlRepository.cs,ClientApp/src/modules/content-crawl/pages/CrawlInboxPage.jsx,ClientApp/src/modules/content-crawl/hooks/useCrawl.js,ClientApp/src/modules/content-crawl/services/crawlApi.js -->
+
+Xác nhận với người dùng (2026-09-22): cần một nút dừng TOÀN BỘ chức năng tin tức — dừng cào tin, dừng chấm điểm bài báo, và dừng đưa bài báo lên trang tin tức — cùng lúc, không cần restart app.
+
+Hiện trạng: ContentCrawlWorker.ExecuteAsync (backend/Modules/ContentCrawl/ContentCrawlWorker.cs dòng 36-57) mỗi tick gọi tuần tự đúng 3 bước này: FetchDueSourcesAsync (cào), ProcessArticlesAsync (chấm trùng + chấm điểm AI), ComposeQueuedArticlesAsync (viết bài đã duyệt lên trang tin). Cờ bật/tắt DUY NHẤT hiện có là ContentCrawlOptions.Enabled (backend/Modules/ContentCrawl/ContentCrawlOptions.cs dòng 10) — đọc MỘT LẦN lúc worker khởi động qua IOptions<T> (không phải IOptionsMonitor), đổi giá trị phải sửa appsettings/biến môi trường VÀ restart app. Không có cách nào dừng/chạy lại pipeline khi app đang chạy.
+
+Yêu cầu: thêm cơ chế bật/tắt runtime (lưu bền trong DB, không mất khi restart) mà ContentCrawlWorker kiểm tra lại MỖI tick — khi tắt thì bỏ qua cả 3 bước (Fetch/Process/Compose) trong tick đó, khi bật lại thì tiếp tục hoạt động từ tick kế tiếp mà không cần restart. Phân biệt rõ với NEWSSITE-01 (R-015) — nút "dựng lại trang tin" (rebuild) đã có sẵn và KHÔNG thuộc phạm vi requirement này; đây là việc dừng luồng TỰ ĐỘNG (worker), không phải hành động thủ công build/approve/reject của người duyệt.
+
+Nguồn: backend/Modules/ContentCrawl/ContentCrawlWorker.cs; backend/Modules/ContentCrawl/ContentCrawlOptions.cs; xác nhận trực tiếp từ người dùng qua AskUserQuestion.
