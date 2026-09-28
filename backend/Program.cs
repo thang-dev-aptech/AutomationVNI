@@ -238,6 +238,8 @@ builder.Services.AddHostedService<ContentCrawlWorker>();
 // ── Nhập file từ Google Drive (GDRIVE-01) ─────────────────────────────────────
 builder.Services.Configure<GoogleDriveOptions>(builder.Configuration.GetSection("GoogleDrive"));
 builder.Services.AddScoped<IGoogleDriveClient, GoogleDriveApiClient>();
+// GoogleDriveController phụ thuộc trực tiếp vào repository này (state CRUD từ task nền tảng).
+builder.Services.AddScoped<GoogleDriveRepository>();
 
 // ═══ Chỉ số page cho dashboard khách hàng ═══
 builder.Services.Configure<Backend.Modules.PageMetrics.PageMetricsOptions>(
