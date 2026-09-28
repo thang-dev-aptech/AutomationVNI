@@ -9,45 +9,85 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Backend.Tests.Modules.GoogleDrive;
 
 /// <summary>
-/// GDRIVE-01 (t3): hành vi của GoogleDriveImportWorker chạy trên một IGoogleDriveClient fake —
-/// gdrive-toggle-test, gdrive-cursor-dedup-test, gdrive-zip-rejected-test, gdrive-bounded-retry-test.
+/// GDRIVE-01 (t3, t7) hành vi chuyển từ GoogleDriveImportWorker sang GoogleDriveSyncService
+/// (GDRIVE-03, refactor thuần tuý — không đổi hành vi): gdrive-toggle-test, gdrive-cursor-dedup-test,
+/// gdrive-zip-rejected-test, gdrive-bounded-retry-test, gdrive-no-file-loss-when-page-exceeds-cap.
+/// GDRIVE-03 (t1) mới: gdrive03-scan-now-disabled-test (phần service), gdrive03-no-race-test.
 /// </summary>
-public class GoogleDriveImportWorkerTests
+public class GoogleDriveSyncServiceTests
 {
     [Fact]
     public async Task RunTickAsync_SkipsAllPhasesWhenDisabled_ThenResumesWithoutRestart()
     {
         await using var fixture = await Fixture.CreateAsync();
-        var worker = fixture.CreateWorker();
 
         await fixture.SetEnabledAsync(false);
-        await worker.RunSingleTickAsync(fixture.Settings);
-        await worker.RunSingleTickAsync(fixture.Settings);
+        await fixture.CreateService().RunTickAsync();
+        await fixture.CreateService().RunTickAsync();
 
         Assert.Equal(0, fixture.Client.ListChangesCalls);
         Assert.Empty(fixture.Client.DownloadedFileIds);
 
         await fixture.SetEnabledAsync(true);
         fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "after-enable" });
-        await worker.RunSingleTickAsync(fixture.Settings);
+        await fixture.CreateService().RunTickAsync();
 
         Assert.True(fixture.Client.ListChangesCalls > 0);
         Assert.Equal("after-enable", (await fixture.GetStateAsync()).PageToken);
     }
 
     [Fact]
+    public async Task RunTickAsync_ReturnsDisabledResult_AndMakesNoClientCallsWhenStateDisabled()
+    {
+        // AC gdrive03-scan-now-disabled-test (84a92bd6) — phần GoogleDriveSyncService.
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(false);
+
+        var result = await fixture.CreateService().RunTickAsync();
+
+        Assert.False(result.Enabled);
+        Assert.Equal(0, result.ImportedCount);
+        Assert.Equal(0, fixture.Client.ListChangesCalls);
+        Assert.Empty(fixture.Client.DownloadedFileIds);
+    }
+
+    [Fact]
+    public async Task RunTickAsync_ConcurrentCalls_DoNotInterleave_AndLeaveConsistentState()
+    {
+        // AC gdrive03-no-race-test (e52829ee) — worker định kỳ và scan-now thủ công dùng chung
+        // GoogleDriveSyncService.Lock (static): hai lời gọi RunTickAsync gần như đồng thời, dù
+        // trên 2 instance khác nhau (mô phỏng 1 từ worker, 1 từ request scan-now), không được
+        // chồng lấn vào đoạn tới hạn (ListChangesAsync), và trạng thái cuối cùng phải nhất quán
+        // (khớp với lượt chạy sau, không mất cập nhật giữa chừng).
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+        fixture.Client.CriticalSectionDelayMs = 80;
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "race-token-1" });
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "race-token-2" });
+
+        var serviceForWorker = fixture.CreateService();
+        var serviceForScanNow = fixture.CreateService();
+
+        var taskA = serviceForWorker.RunTickAsync();
+        var taskB = serviceForScanNow.RunTickAsync();
+        await Task.WhenAll(taskA, taskB);
+
+        Assert.True(fixture.Client.MaxConcurrentCriticalSections <= 1);
+
+        var finalState = await fixture.GetStateAsync();
+        Assert.Contains(finalState.PageToken, new[] { "race-token-1", "race-token-2" });
+    }
+
+    [Fact]
     public async Task RunTickAsync_AdvancesPageTokenOnEmptyPage_AndSkipsAlreadyImportedFile()
     {
         await using var fixture = await Fixture.CreateAsync();
-        var worker = fixture.CreateWorker();
         await fixture.SetEnabledAsync(true);
 
         // Seed: file đã import từ trước.
@@ -63,7 +103,7 @@ public class GoogleDriveImportWorkerTests
             ],
         });
 
-        await worker.RunSingleTickAsync(fixture.Settings);
+        await fixture.CreateService().RunTickAsync();
 
         Assert.DoesNotContain("existing-1", fixture.Client.DownloadedFileIds);
         Assert.Contains("new-1", fixture.Client.DownloadedFileIds);
@@ -74,7 +114,7 @@ public class GoogleDriveImportWorkerTests
 
         // Lượt kế tiếp: danh sách rỗng — PageToken vẫn phải advance.
         fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "token-3", Files = [] });
-        await worker.RunSingleTickAsync(fixture.Settings);
+        await fixture.CreateService().RunTickAsync();
 
         Assert.Equal("token-3", (await fixture.GetStateAsync()).PageToken);
         // Không có file google-apps/mới nào lọt qua — tổng số MediaAsset không đổi.
@@ -86,7 +126,6 @@ public class GoogleDriveImportWorkerTests
     public async Task RunTickAsync_RejectsZipAtExtensionValidation_NoAssetNoFailureRow()
     {
         await using var fixture = await Fixture.CreateAsync();
-        var worker = fixture.CreateWorker();
         await fixture.SetEnabledAsync(true);
 
         fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
@@ -95,7 +134,7 @@ public class GoogleDriveImportWorkerTests
             Files = [new GoogleDriveFileInfo { FileId = "zip-1", Name = "malware.zip", MimeType = "application/zip", SizeBytes = 10 }],
         });
 
-        await worker.RunSingleTickAsync(fixture.Settings);
+        await fixture.CreateService().RunTickAsync();
 
         Assert.DoesNotContain("zip-1", fixture.Client.DownloadedFileIds);
         Assert.Equal(0, await fixture.CountMediaAssetsAsync());
@@ -106,7 +145,6 @@ public class GoogleDriveImportWorkerTests
     public async Task RunTickAsync_BoundedRetry_StopsAppearingAfterMaxAttempts()
     {
         await using var fixture = await Fixture.CreateAsync(maxRetryAttempts: 3);
-        var worker = fixture.CreateWorker();
         await fixture.SetEnabledAsync(true);
 
         const string fileId = "flaky-1";
@@ -118,18 +156,18 @@ public class GoogleDriveImportWorkerTests
             NextPageToken = "t2",
             Files = [new GoogleDriveFileInfo { FileId = fileId, Name = "flaky.jpg", MimeType = "image/jpeg", SizeBytes = 10 }],
         });
-        await worker.RunSingleTickAsync(fixture.Settings);
+        await fixture.CreateService().RunTickAsync();
         var failures = await fixture.GetRetryableFailuresAsync();
         Assert.Single(failures);
         Assert.Equal(1, failures[0].AttemptCount);
 
         // Tick 2 & 3: không còn "mới" (đã tiêu thụ), pha retry thử lại và vẫn lỗi -> AttemptCount 2 rồi 3.
         fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "t3", Files = [] });
-        await worker.RunSingleTickAsync(fixture.Settings);
+        await fixture.CreateService().RunTickAsync();
         Assert.Equal(2, (await fixture.GetRetryableFailuresAsync()).Single().AttemptCount);
 
         fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "t4", Files = [] });
-        await worker.RunSingleTickAsync(fixture.Settings);
+        await fixture.CreateService().RunTickAsync();
         Assert.Equal(3, (await fixture.GetFailureAsync(fileId))!.AttemptCount);
 
         // Đạt MaxRetryAttempts=3: không còn được chọn để thử lại nữa, nhưng dòng vẫn còn trong DB.
@@ -141,7 +179,6 @@ public class GoogleDriveImportWorkerTests
     public async Task RunTickAsync_BoundedRetry_SuccessMidwayDeletesFailureAndCreatesAsset()
     {
         await using var fixture = await Fixture.CreateAsync(maxRetryAttempts: 5);
-        var worker = fixture.CreateWorker();
         await fixture.SetEnabledAsync(true);
 
         const string fileId = "flaky-2";
@@ -152,22 +189,22 @@ public class GoogleDriveImportWorkerTests
             NextPageToken = "t2",
             Files = [new GoogleDriveFileInfo { FileId = fileId, Name = "flaky2.jpg", MimeType = "image/jpeg", SizeBytes = 10 }],
         });
-        await worker.RunSingleTickAsync(fixture.Settings); // AttemptCount=1
+        await fixture.CreateService().RunTickAsync(); // AttemptCount=1
         Assert.Equal(1, (await fixture.GetFailureAsync(fileId))!.AttemptCount);
 
         fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "t3", Files = [] });
-        await worker.RunSingleTickAsync(fixture.Settings); // AttemptCount=2
+        await fixture.CreateService().RunTickAsync(); // AttemptCount=2
         Assert.Equal(2, (await fixture.GetFailureAsync(fileId))!.AttemptCount);
 
         fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "t4", Files = [] });
-        await worker.RunSingleTickAsync(fixture.Settings); // thành công -> xoá dòng + tạo MediaAsset
+        await fixture.CreateService().RunTickAsync(); // thành công -> xoá dòng + tạo MediaAsset
 
         Assert.Null(await fixture.GetFailureAsync(fileId));
         Assert.Equal(1, await fixture.CountMediaAssetsAsync());
     }
 
     /// <summary>
-    /// AC gdrive-no-file-loss-when-page-exceeds-cap (9382d03b): trước bản sửa t7, worker tự
+    /// AC gdrive-no-file-loss-when-page-exceeds-cap (9382d03b, t7): trước bản sửa t7, worker tự
     /// Take(MaxFilesPerTick) SAU KHI đã nhận nguyên trang từ ListChangesAsync, rồi vẫn advance
     /// PageToken theo trang ĐẦY ĐỦ — phần bị cắt bỏ mất vĩnh viễn. Giờ việc giới hạn xảy ra ở
     /// tầng gọi API (maxResults truyền vào ListChangesAsync), nên PageToken luôn khớp đúng với
@@ -178,7 +215,6 @@ public class GoogleDriveImportWorkerTests
     public async Task RunTickAsync_BacklogLargerThanMaxFilesPerTick_ProcessesEveryFileAcrossTicks()
     {
         await using var fixture = await Fixture.CreateAsync(maxFilesPerTick: 20);
-        var worker = fixture.CreateWorker();
         await fixture.SetEnabledAsync(true);
 
         const int backlogSize = 45; // > 2x MaxFilesPerTick (20) để buộc phải trải qua >= 3 tick.
@@ -198,10 +234,10 @@ public class GoogleDriveImportWorkerTests
 
         // 3 tick là đủ để rút cạn 45 file ở mức trần 20 file/tick (20 + 20 + 5); tick thứ 4 xác
         // nhận trạng thái ổn định — không có gì mất, không có gì lặp lại.
-        await worker.RunSingleTickAsync(fixture.Settings);
-        await worker.RunSingleTickAsync(fixture.Settings);
-        await worker.RunSingleTickAsync(fixture.Settings);
-        await worker.RunSingleTickAsync(fixture.Settings);
+        await fixture.CreateService().RunTickAsync();
+        await fixture.CreateService().RunTickAsync();
+        await fixture.CreateService().RunTickAsync();
+        await fixture.CreateService().RunTickAsync();
 
         Assert.Equal(backlogSize, await fixture.CountMediaAssetsAsync());
         Assert.Equal(expectedFileIds.OrderBy(x => x), fixture.Client.DownloadedFileIds.OrderBy(x => x));
@@ -264,20 +300,24 @@ public class GoogleDriveImportWorkerTests
                 .AddScoped<MediaFolderRepository>()
                 .AddSingleton<IFileStorageService>(fileStorage)
                 .AddScoped<MediaAssetRepository>()
-                .AddScoped<Backend.Modules.GoogleDrive.GoogleDriveRepository>()
-                .AddSingleton<Backend.Modules.GoogleDrive.IGoogleDriveClient>(client)
-                .AddSingleton<IOptions<Backend.Modules.GoogleDrive.GoogleDriveOptions>>(Options.Create(gdriveOptions))
+                .AddScoped<GoogleDriveRepository>()
+                .AddSingleton<IGoogleDriveClient>(client)
+                .AddSingleton<IOptions<GoogleDriveOptions>>(Options.Create(gdriveOptions))
                 .AddSingleton<IOptions<FileStorageOptions>>(Options.Create(fileStorageOptions))
+                .AddScoped<GoogleDriveSyncService>()
                 .AddLogging()
                 .BuildServiceProvider();
 
             return new Fixture(connection, dbOptions, client, gdriveOptions, fileStorageOptions, services);
         }
 
-        public TestableWorker CreateWorker() => new(
-            _services.GetRequiredService<IServiceScopeFactory>(),
-            _services.GetRequiredService<IOptions<Backend.Modules.GoogleDrive.GoogleDriveOptions>>(),
-            NullLogger<Backend.Modules.GoogleDrive.GoogleDriveImportWorker>.Instance);
+        /// <summary>
+        /// Mỗi lần gọi trả về MỘT scope + instance GoogleDriveSyncService mới — đúng với cách
+        /// production dùng (worker tạo scope mỗi tick, controller nhận instance scoped theo mỗi
+        /// request). Lock chia sẻ giữa các instance là static nên vẫn đúng ngữ nghĩa khoá chung.
+        /// </summary>
+        public GoogleDriveSyncService CreateService() =>
+            _services.CreateScope().ServiceProvider.GetRequiredService<GoogleDriveSyncService>();
 
         public async Task SetEnabledAsync(bool enabled)
         {
@@ -285,22 +325,22 @@ public class GoogleDriveImportWorkerTests
             await CreateRepository(db).SetEnabledAsync(enabled, "test");
         }
 
-        public async Task<Backend.Modules.GoogleDrive.GoogleDriveSyncStateModel> GetStateAsync()
+        public async Task<GoogleDriveSyncStateModel> GetStateAsync()
         {
             await using var db = new AppDbContext(DbOptions);
             return await CreateRepository(db).GetSyncStateAsync();
         }
 
-        public async Task<List<Backend.Modules.GoogleDrive.GoogleDriveImportFailureModel>> GetRetryableFailuresAsync()
+        public async Task<List<GoogleDriveImportFailureModel>> GetRetryableFailuresAsync()
         {
             await using var db = new AppDbContext(DbOptions);
             return await CreateRepository(db).GetRetryableFailuresAsync(Settings.MaxRetryAttempts, Settings.MaxFilesPerTick);
         }
 
-        public async Task<Backend.Modules.GoogleDrive.GoogleDriveImportFailureModel?> GetFailureAsync(string fileId)
+        public async Task<GoogleDriveImportFailureModel?> GetFailureAsync(string fileId)
         {
             await using var db = new AppDbContext(DbOptions);
-            return await db.Set<Backend.Modules.GoogleDrive.GoogleDriveImportFailureModel>()
+            return await db.Set<GoogleDriveImportFailureModel>()
                 .FirstOrDefaultAsync(x => x.GoogleDriveFileId == fileId);
         }
 
@@ -316,7 +356,7 @@ public class GoogleDriveImportWorkerTests
             var repo = new MediaAssetRepository(db, new StubUserContext(), new RecordingFileStorageService());
             return await repo.CreateFromGoogleDriveAsync(
                 [1, 2, 3],
-                new Backend.Modules.GoogleDrive.GoogleDriveFileInfo
+                new GoogleDriveFileInfo
                 {
                     FileId = googleDriveFileId,
                     Name = "old.jpg",
@@ -325,7 +365,7 @@ public class GoogleDriveImportWorkerTests
                 });
         }
 
-        private static Backend.Modules.GoogleDrive.GoogleDriveRepository CreateRepository(AppDbContext db) =>
+        private static GoogleDriveRepository CreateRepository(AppDbContext db) =>
             new(db, new StubUserContext());
 
         public async ValueTask DisposeAsync()
@@ -335,32 +375,28 @@ public class GoogleDriveImportWorkerTests
         }
     }
 
-    public sealed class TestableWorker(
-        IServiceScopeFactory scopeFactory,
-        IOptions<Backend.Modules.GoogleDrive.GoogleDriveOptions> options,
-        ILogger<Backend.Modules.GoogleDrive.GoogleDriveImportWorker> logger)
-        : Backend.Modules.GoogleDrive.GoogleDriveImportWorker(scopeFactory, options, logger)
-    {
-        public Task RunSingleTickAsync(Backend.Modules.GoogleDrive.GoogleDriveOptions settings) =>
-            RunTickAsync(settings, CancellationToken.None);
-    }
-
-    private sealed class FakeGoogleDriveClient : Backend.Modules.GoogleDrive.IGoogleDriveClient
+    private sealed class FakeGoogleDriveClient : IGoogleDriveClient
     {
         public string StartToken { get; set; } = "start-token";
-        public Queue<Backend.Modules.GoogleDrive.GoogleDriveChangesPage> Pages { get; } = new();
+        public Queue<GoogleDriveChangesPage> Pages { get; } = new();
         /// <summary>
         /// Backlog "thô" — khi Pages rỗng, mỗi ListChangesAsync tự cắt tối đa maxResults phần tử
         /// từ đây, mô phỏng đúng cách Drive API thật giới hạn PageSize ở tầng SERVER, không phải
         /// worker tự Take() sau khi nhận nguyên trang (đây chính là bug đã sửa ở t7).
         /// </summary>
-        public Queue<Backend.Modules.GoogleDrive.GoogleDriveFileInfo> Backlog { get; } = new();
+        public Queue<GoogleDriveFileInfo> Backlog { get; } = new();
         public List<string> DownloadedFileIds { get; } = [];
         public int ListChangesCalls { get; private set; }
         public List<int> MaxResultsSeen { get; } = [];
 
+        /// <summary>Delay nhân tạo bên trong ListChangesAsync — dùng để ép mở "cửa sổ" đua nếu khoá không hoạt động.</summary>
+        public int CriticalSectionDelayMs { get; set; }
+        public int MaxConcurrentCriticalSections { get; private set; }
+
         private readonly Dictionary<string, Queue<Func<byte[]>>> _downloadBehaviors = new();
         private int _backlogTokenCounter;
+        private int _activeCriticalSections;
+        private readonly Lock _counterLock = new();
 
         public void FailDownload(string fileId, int times)
         {
@@ -375,29 +411,42 @@ public class GoogleDriveImportWorkerTests
 
         public Task<string> GetStartPageTokenAsync(CancellationToken ct = default) => Task.FromResult(StartToken);
 
-        public Task<Backend.Modules.GoogleDrive.GoogleDriveChangesPage> ListChangesAsync(
+        public async Task<GoogleDriveChangesPage> ListChangesAsync(
             string? pageToken, int maxResults, CancellationToken ct = default)
         {
-            ListChangesCalls++;
-            MaxResultsSeen.Add(maxResults);
-
-            if (Pages.Count > 0)
-                return Task.FromResult(Pages.Dequeue());
-
-            if (Backlog.Count > 0)
+            var active = Interlocked.Increment(ref _activeCriticalSections);
+            lock (_counterLock)
+                MaxConcurrentCriticalSections = Math.Max(MaxConcurrentCriticalSections, active);
+            try
             {
-                var batch = new List<Backend.Modules.GoogleDrive.GoogleDriveFileInfo>();
-                while (batch.Count < maxResults && Backlog.Count > 0)
-                    batch.Add(Backlog.Dequeue());
-                _backlogTokenCounter++;
-                return Task.FromResult(new Backend.Modules.GoogleDrive.GoogleDriveChangesPage
-                {
-                    Files = batch,
-                    NextPageToken = $"backlog-token-{_backlogTokenCounter}",
-                });
-            }
+                if (CriticalSectionDelayMs > 0)
+                    await Task.Delay(CriticalSectionDelayMs, ct);
 
-            return Task.FromResult(new Backend.Modules.GoogleDrive.GoogleDriveChangesPage { NextPageToken = pageToken });
+                ListChangesCalls++;
+                MaxResultsSeen.Add(maxResults);
+
+                if (Pages.Count > 0)
+                    return Pages.Dequeue();
+
+                if (Backlog.Count > 0)
+                {
+                    var batch = new List<GoogleDriveFileInfo>();
+                    while (batch.Count < maxResults && Backlog.Count > 0)
+                        batch.Add(Backlog.Dequeue());
+                    _backlogTokenCounter++;
+                    return new GoogleDriveChangesPage
+                    {
+                        Files = batch,
+                        NextPageToken = $"backlog-token-{_backlogTokenCounter}",
+                    };
+                }
+
+                return new GoogleDriveChangesPage { NextPageToken = pageToken };
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeCriticalSections);
+            }
         }
 
         public Task<byte[]> DownloadFileAsync(string fileId, CancellationToken ct = default)

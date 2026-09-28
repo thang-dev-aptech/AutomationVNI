@@ -5,10 +5,15 @@ using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Backend.Data;
 using Backend.Modules.GoogleDrive;
+using Backend.Modules.MediaAsset;
+using Backend.Modules.MediaFolder;
+using Backend.Shared;
 using Backend.Shared.Repositories;
+using Backend.Shared.Storage;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -23,9 +28,74 @@ namespace Backend.Tests.Modules.GoogleDrive;
 /// <summary>
 /// GDRIVE-01 (t4): AC gdrive-authz-test — POST pipeline-state chỉ Admin/ContentManager, vai trò
 /// khác bị 403 và không đổi trạng thái DB; GET không đòi role, chỉ cần đăng nhập.
+/// GDRIVE-03 (t1): AC gdrive03-scan-now-authz-test — cùng khuôn phân quyền cho POST scan-now.
 /// </summary>
 public class GoogleDriveControllerTests
 {
+    [Fact]
+    public async Task ScanNowEndpoint_EnforcesRoles()
+    {
+        var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        var dbOptions = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
+        await using (var db = new AppDbContext(dbOptions))
+            await db.Database.EnsureCreatedAsync();
+
+        using var host = CreateApiHost(dbOptions);
+        using var client = host.GetTestClient();
+
+        using (var anonymous = await client.PostAsync("/api/GoogleDrive/scan-now", null))
+            Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+
+        using (var forbidden = ScanNowRequest("Viewer", "viewer-user"))
+        using (var response = await client.SendAsync(forbidden))
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+        foreach (var role in new[] { "Admin", "ContentManager" })
+        {
+            using var allowed = ScanNowRequest(role, $"{role}-user");
+            using var response = await client.SendAsync(allowed);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        await connection.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ScanNowEndpoint_ReturnsDisabledMessage_WhenStateDisabled()
+    {
+        // AC gdrive03-scan-now-disabled-test (84a92bd6) — phần controller.
+        var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        var dbOptions = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
+        await using (var db = new AppDbContext(dbOptions))
+            await db.Database.EnsureCreatedAsync();
+        await SetEnabledAsync(dbOptions, false, "test-setup");
+
+        using var host = CreateApiHost(dbOptions);
+        using var client = host.GetTestClient();
+
+        using var request = ScanNowRequest("Admin", "admin-user");
+        using var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var message = body.GetProperty("message").GetString();
+        Assert.Contains("dừng", message, StringComparison.OrdinalIgnoreCase);
+        var data = body.GetProperty("data");
+        Assert.False(data.GetProperty("enabled").GetBoolean());
+        Assert.Equal(0, data.GetProperty("importedCount").GetInt32());
+
+        await connection.DisposeAsync();
+    }
+
+    private static HttpRequestMessage ScanNowRequest(string role, string userName)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/GoogleDrive/scan-now");
+        Authorize(request, role, userName);
+        return request;
+    }
+
     [Fact]
     public async Task PipelineStateEndpoints_EnforceAuthenticationAndRolesWithoutForbiddenWrites()
     {
@@ -93,6 +163,13 @@ public class GoogleDriveControllerTests
                     services.AddHttpContextAccessor();
                     services.AddScoped<IUserContext, HttpUserContext>();
                     services.AddScoped<GoogleDriveRepository>();
+                    services.AddScoped<MediaFolderRepository>();
+                    services.AddSingleton<IFileStorageService>(new NoopFileStorageService());
+                    services.AddScoped<MediaAssetRepository>();
+                    services.AddSingleton<IGoogleDriveClient>(new NotConfiguredGoogleDriveClient());
+                    services.AddSingleton<IOptions<GoogleDriveOptions>>(Options.Create(new GoogleDriveOptions()));
+                    services.AddSingleton<IOptions<FileStorageOptions>>(Options.Create(new FileStorageOptions()));
+                    services.AddScoped<GoogleDriveSyncService>();
                     services.AddLogging();
                     services.AddAuthentication(GoogleDriveTestAuthHandler.SchemeName)
                         .AddScheme<AuthenticationSchemeOptions, GoogleDriveTestAuthHandler>(
@@ -130,6 +207,34 @@ public class GoogleDriveControllerTests
         public Guid? GetCurrentUserId() => null;
         public string? GetCurrentUserName() => "test";
         public IReadOnlyList<string> GetCurrentUserRoles() => [];
+    }
+
+    /// <summary>
+    /// ScanNowEndpoint_EnforcesRoles chỉ cần kiểm tra 401/403/200 — client không cấu hình khiến
+    /// GoogleDriveSyncService dừng sớm sau pha retry (rỗng), không cần mô phỏng Drive API thật.
+    /// </summary>
+    private sealed class NotConfiguredGoogleDriveClient : IGoogleDriveClient
+    {
+        public bool IsConfigured() => false;
+        public string? DescribeConfigIssue() => "Chưa cấu hình (test).";
+        public Task<string> GetStartPageTokenAsync(CancellationToken ct = default) => Task.FromResult("token");
+        public Task<GoogleDriveChangesPage> ListChangesAsync(string? pageToken, int maxResults, CancellationToken ct = default)
+            => Task.FromResult(new GoogleDriveChangesPage());
+        public Task<byte[]> DownloadFileAsync(string fileId, CancellationToken ct = default)
+            => throw new InvalidOperationException("Không cấu hình.");
+    }
+
+    private sealed class NoopFileStorageService : IFileStorageService
+    {
+        public Task<FileSaveResult> SaveAsync(IFormFile file, string folder, CancellationToken ct = default)
+            => throw new NotImplementedException();
+        public Task<FileSaveResult> SaveBytesAsync(
+            byte[] data, string folder, string extension, string contentType, CancellationToken ct = default)
+            => throw new NotImplementedException();
+        public Task<Stream> OpenReadAsync(string storageKey, CancellationToken ct = default)
+            => throw new NotImplementedException();
+        public Task<bool> ExistsAsync(string storageKey, CancellationToken ct = default) => Task.FromResult(false);
+        public Task DeleteAsync(string storageKey, CancellationToken ct = default) => Task.CompletedTask;
     }
 }
 

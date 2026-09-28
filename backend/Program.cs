@@ -240,6 +240,8 @@ builder.Services.Configure<GoogleDriveOptions>(builder.Configuration.GetSection(
 builder.Services.AddScoped<IGoogleDriveClient, GoogleDriveApiClient>();
 // GoogleDriveController phụ thuộc trực tiếp vào repository này (state CRUD từ task nền tảng).
 builder.Services.AddScoped<GoogleDriveRepository>();
+// GDRIVE-03: một lượt quét, dùng chung bởi worker định kỳ VÀ endpoint scan-now thủ công.
+builder.Services.AddScoped<GoogleDriveSyncService>();
 builder.Services.AddHostedService<GoogleDriveImportWorker>();
 
 // ═══ Chỉ số page cho dashboard khách hàng ═══
