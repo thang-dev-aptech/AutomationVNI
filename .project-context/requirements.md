@@ -110,3 +110,27 @@ Hiện trạng: ContentCrawlWorker.ExecuteAsync (backend/Modules/ContentCrawl/Co
 Yêu cầu: thêm cơ chế bật/tắt runtime (lưu bền trong DB, không mất khi restart) mà ContentCrawlWorker kiểm tra lại MỖI tick — khi tắt thì bỏ qua cả 3 bước (Fetch/Process/Compose) trong tick đó, khi bật lại thì tiếp tục hoạt động từ tick kế tiếp mà không cần restart. Phân biệt rõ với NEWSSITE-01 (R-015) — nút "dựng lại trang tin" (rebuild) đã có sẵn và KHÔNG thuộc phạm vi requirement này; đây là việc dừng luồng TỰ ĐỘNG (worker), không phải hành động thủ công build/approve/reject của người duyệt.
 
 Nguồn: backend/Modules/ContentCrawl/ContentCrawlWorker.cs; backend/Modules/ContentCrawl/ContentCrawlOptions.cs; xác nhận trực tiếp từ người dùng qua AskUserQuestion.
+
+### R-017 — GDRIVE-01: Thả file vào 1 folder Google Drive dùng chung, tự động hiện lên Media
+<!-- req status=not-started files=backend/Modules/GoogleDrive/GoogleDriveOptions.cs,backend/Modules/GoogleDrive/GoogleDriveSyncStateModel.cs,backend/Modules/GoogleDrive/GoogleDriveImportFailureModel.cs,backend/Modules/GoogleDrive/IGoogleDriveClient.cs,backend/Modules/GoogleDrive/GoogleDriveApiClient.cs,backend/Modules/GoogleDrive/GoogleDriveImportWorker.cs,backend/Modules/GoogleDrive/GoogleDriveController.cs,backend/Modules/GoogleDrive/GoogleDriveRepository.cs,backend/Modules/MediaAsset/MediaAssetModel.cs,backend/Modules/MediaAsset/MediaAssetRepository.cs,backend/Modules/MediaAsset/Enums/MediaAssetEnums.cs,backend/Data/AppDbContext.cs,backend/Program.cs,backend/appsettings.json,backend/backend.csproj,.gitignore,ClientApp/src/modules/media/pages/MediaPage.jsx -->
+
+Yêu cầu người dùng: "Người dùng muốn thả một file trong folder trên google drive và file đó sẽ hiện lên trên app của mình".
+
+Xác nhận qua AskUserQuestion (2026-09-28), đã chốt:
+1. Auth: Google Service Account (chia sẻ 1 folder Drive với email service account) — KHÔNG dùng OAuth cá nhân như Meta/Threads/TikTok. Đọc-only, không cần màn hình consent, không lưu refresh token người dùng.
+2. Phạm vi: 1 folder Drive DÙNG CHUNG cho cả app, không phải mỗi Page một folder riêng.
+3. Cơ chế phát hiện: polling định kỳ (BackgroundService), không dùng webhook — đúng convention polling đã dùng khắp codebase (ContentCrawlWorker, ThreadsTokenRefreshService, TikTokTokenRefreshService), tránh yêu cầu domain HTTPS công khai + xác minh + gia hạn channel mỗi 7 ngày của webhook.
+4. Loại file: ảnh, video, tài liệu — TRỪ .zip (rủi ro giấu file thực thi, người dùng từ chối rõ ràng).
+5. Bật/tắt runtime: cần công tắc DB không cần restart, đúng 2 lớp cơ chế vừa xây cho CONTENT-CRAWL-03 (ContentCrawlOptions.Enabled tĩnh + ContentCrawlPipelineStateModel.IsEnabled DB-runtime).
+6. File tải lỗi: cần tự động thử lại có giới hạn số lần ở các lượt poll sau — đúng tinh thần retry đã xây cho CONTENT-CRAWL-02 (ScreenAttempts/LastScreenAttemptAt, giới hạn MaxAttempts, không lặp vô hạn).
+7. File Google Docs/Sheets/Slides gốc (không có byte thật, cần Export riêng theo từng mimetype): BỎ QUA, không hỗ trợ.
+
+Xác minh trực tiếp qua code (không suy đoán):
+- Chưa có bất kỳ tích hợp Google nào trong codebase (không có package Google.Apis, không có DTO/Options nào) — đây là tính năng hoàn toàn mới.
+- MediaAssetRepository constructor (backend/Modules/MediaAsset/MediaAssetRepository.cs:16-27) hiện KHÔNG có IFileStorageService — phải thêm.
+- LocalFileStorageService.SaveBytesAsync (backend/Shared/Storage/LocalFileStorageService.cs:53-75) đã có sẵn (dùng cho các chỗ lưu file bằng byte[] khác) nhưng KHÔNG kiểm tra MaxUploadBytes (chỉ SaveAsync cho IFormFile mới kiểm tra) — worker phải tự kiểm tra kích thước trước khi tải.
+- MediaFolder là domain phân vùng theo SocialChannel (glossary "MediaFolder là domain riêng và phân vùng theo SocialChannel"; convention "Mỗi Page chỉ có tối đa 1 thư mục gốc") — folder Drive dùng chung không thuộc Page nào nên file nhập về phải để FolderId=null (vào "Media chưa phân loại" có sẵn), người vận hành tự di chuyển bằng MediaAssetRepository.MoveAsync đã có.
+- ContentCrawlPipelineStateModel + migration 20260922083420_AddContentCrawlPipelineState.cs là khuôn mẫu chính xác cho bảng trạng thái bật/tắt + con trỏ đồng bộ mới.
+- .gitignore đã có khối chặn secret (dòng 11-19) và comment về sự cố từng lộ secret thật trong git history — file khoá service account phải được xử lý cùng mức cẩn trọng, không bao giờ nằm trong appsettings.json.
+
+Nguồn: khám phá code qua 2 Explore agent + 1 Plan agent (2026-09-28); xác nhận trực tiếp người dùng qua AskUserQuestion.
