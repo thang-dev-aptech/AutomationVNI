@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Backend.Data;
+using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaAsset.Enums;
 using Backend.Modules.MediaFolder;
 using Backend.Shared;
@@ -12,19 +13,22 @@ namespace Backend.Modules.MediaAsset;
 public class MediaAssetRepository : GenericRepository<MediaAssetModel>
 {
     private readonly MediaFolderRepository _folders;
+    private readonly IFileStorageService _fileStorage;
 
-    public MediaAssetRepository(AppDbContext context, IUserContext userContext)
-        : this(context, userContext, new MediaFolderRepository(context, userContext))
+    public MediaAssetRepository(AppDbContext context, IUserContext userContext, IFileStorageService fileStorage)
+        : this(context, userContext, new MediaFolderRepository(context, userContext), fileStorage)
     {
     }
 
     public MediaAssetRepository(
         AppDbContext context,
         IUserContext userContext,
-        MediaFolderRepository folders)
+        MediaFolderRepository folders,
+        IFileStorageService fileStorage)
         : base(context, userContext)
     {
         _folders = folders;
+        _fileStorage = fileStorage;
     }
 
     /// <summary>Chuẩn hoá danh sách loại bài → JSON array Guid (null nếu rỗng, để coi là "dùng chung").</summary>
@@ -128,6 +132,42 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
             FolderId = folderId,
             CategoryIds = SerializeCategoryIds(categoryIds),
             AltText = altText?.Trim()
+        };
+
+        entity = await base.CreateAsync(entity, ct);
+        entity.PublicUrl = MediaAssetUrls.Preview(entity.Id);
+        ApplyUpdateAudit(entity);
+        await Context.SaveChangesAsync(ct);
+        return entity;
+    }
+
+    /// <summary>Khoá idempotency cho nhập file Google Drive (GDRIVE-01) — chặn import trùng cùng một file.</summary>
+    public async Task<bool> ExistsByGoogleDriveFileIdAsync(string fileId, CancellationToken ct = default)
+        => await Context.Set<MediaAssetModel>()
+            .AnyAsync(x => !x.IsDeleted && x.GoogleDriveFileId == fileId, ct);
+
+    /// <summary>
+    /// Nhập file từ Google Drive (GDRIVE-01). FolderId LUÔN null — folder Drive dùng chung không
+    /// thuộc Page/SocialChannel nào, khác MediaFolder vốn phân vùng theo kênh. OriginalFileName lấy
+    /// từ <paramref name="file"/>.Name (tên thật trên Drive), KHÔNG dùng saveResult.OriginalFileName
+    /// vì đó chỉ là tên storage key ngẫu nhiên do SaveBytesAsync sinh ra.
+    /// </summary>
+    public async Task<MediaAssetModel> CreateFromGoogleDriveAsync(
+        byte[] data, GoogleDriveFileInfo file, CancellationToken ct = default)
+    {
+        var extension = Path.GetExtension(file.Name);
+        var saveResult = await _fileStorage.SaveBytesAsync(data, "google-drive", extension, file.MimeType, ct);
+
+        var entity = new MediaAssetModel
+        {
+            FileName = Path.GetFileName(saveResult.StorageKey),
+            OriginalFileName = file.Name,
+            StoragePath = saveResult.StorageKey,
+            MimeType = saveResult.ContentType,
+            FileSize = saveResult.SizeBytes,
+            Source = MediaSource.GoogleDrive,
+            FolderId = null,
+            GoogleDriveFileId = file.FileId,
         };
 
         entity = await base.CreateAsync(entity, ct);

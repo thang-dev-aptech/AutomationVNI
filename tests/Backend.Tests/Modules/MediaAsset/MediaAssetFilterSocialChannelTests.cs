@@ -3,7 +3,9 @@ using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaFolder;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
+using Backend.Shared.Storage;
 using Backend.Tests.Modules.MediaFolder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -33,7 +35,7 @@ public class MediaAssetFilterSocialChannelTests : IDisposable
 
         _db = new AppDbContext(options);
         _db.Database.EnsureCreated();
-        _repo = new MediaAssetRepository(_db, new TestUserContext());
+        _repo = new MediaAssetRepository(_db, new TestUserContext(), new NoopFileStorageService());
     }
 
     public void Dispose()
@@ -114,4 +116,24 @@ public class MediaAssetFilterSocialChannelTests : IDisposable
         Assert.Contains(result.Items, i => i.SocialChannelId == pageA);
         Assert.Contains(result.Items, i => i.SocialChannelId == pageB);
     }
+}
+
+/// <summary>FilterAsync không chạm file storage — chỉ cần một stub ném lỗi nếu lỡ được gọi.</summary>
+file sealed class NoopFileStorageService : IFileStorageService
+{
+    public Task<FileSaveResult> SaveAsync(IFormFile file, string folder, CancellationToken ct = default)
+        => throw new NotImplementedException();
+
+    public Task<FileSaveResult> SaveBytesAsync(
+        byte[] data, string folder, string extension, string contentType, CancellationToken ct = default)
+        => throw new NotImplementedException();
+
+    public Task<Stream> OpenReadAsync(string storageKey, CancellationToken ct = default)
+        => throw new NotImplementedException();
+
+    public Task<bool> ExistsAsync(string storageKey, CancellationToken ct = default)
+        => throw new NotImplementedException();
+
+    public Task DeleteAsync(string storageKey, CancellationToken ct = default)
+        => throw new NotImplementedException();
 }

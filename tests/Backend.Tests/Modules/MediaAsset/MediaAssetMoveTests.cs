@@ -3,7 +3,9 @@ using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaFolder;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
+using Backend.Shared.Storage;
 using Backend.Tests.Modules.MediaFolder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -35,7 +37,7 @@ public class MediaAssetMoveTests : IDisposable
         _db.Database.EnsureCreated();
 
         _userContext = new TestUserContext();
-        _repo = new MediaAssetRepository(_db, _userContext);
+        _repo = new MediaAssetRepository(_db, _userContext, new NoopFileStorageService());
     }
 
     public void Dispose()
@@ -227,4 +229,24 @@ public class MediaAssetMoveTests : IDisposable
         Assert.Equal(1, moved);
         Assert.Equal(folder.Id, (await _db.MediaAssets.FindAsync(asset.Id))!.FolderId);
     }
+}
+
+/// <summary>MoveAsync không chạm file storage — chỉ cần một stub ném lỗi nếu lỡ được gọi.</summary>
+file sealed class NoopFileStorageService : IFileStorageService
+{
+    public Task<FileSaveResult> SaveAsync(IFormFile file, string folder, CancellationToken ct = default)
+        => throw new NotImplementedException();
+
+    public Task<FileSaveResult> SaveBytesAsync(
+        byte[] data, string folder, string extension, string contentType, CancellationToken ct = default)
+        => throw new NotImplementedException();
+
+    public Task<Stream> OpenReadAsync(string storageKey, CancellationToken ct = default)
+        => throw new NotImplementedException();
+
+    public Task<bool> ExistsAsync(string storageKey, CancellationToken ct = default)
+        => throw new NotImplementedException();
+
+    public Task DeleteAsync(string storageKey, CancellationToken ct = default)
+        => throw new NotImplementedException();
 }
