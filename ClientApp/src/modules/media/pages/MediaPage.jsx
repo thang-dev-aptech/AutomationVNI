@@ -35,7 +35,11 @@ import {
   useUpdateMediaFolder,
 } from '../hooks/useMediaFolders'
 import { useMediaBrowser } from '../hooks/useMediaBrowser'
-import { useGoogleDrivePipelineState, useSetGoogleDrivePipelineEnabled } from '../hooks/useGoogleDrive'
+import {
+  useGoogleDrivePipelineState,
+  useScanGoogleDriveNow,
+  useSetGoogleDrivePipelineEnabled,
+} from '../hooks/useGoogleDrive'
 import {
   MEDIA_SOURCE_OPTIONS,
   getMediaSourceMeta,
@@ -88,6 +92,7 @@ export default function MediaPage() {
     isError: isGoogleDriveStateError,
   } = useGoogleDrivePipelineState(canManageMedia)
   const setGoogleDriveEnabled = useSetGoogleDrivePipelineEnabled()
+  const scanGoogleDriveNow = useScanGoogleDriveNow()
   const createMutation = useCreateMediaAsset()
   const uploadMutation = useUploadMediaAsset()
   const uploadBatchMutation = useUploadMediaBatch()
@@ -438,6 +443,26 @@ export default function MediaPage() {
     }
   }
 
+  const handleScanGoogleDriveNow = async () => {
+    try {
+      const result = await scanGoogleDriveNow.mutateAsync()
+      if (!result?.enabled) {
+        toast.warning('Nhập file từ Google Drive đang dừng — bật lên trước khi quét thủ công.')
+        return
+      }
+      if (result?.configured === false) {
+        toast.warning(result?.configIssue || 'Google Drive chưa cấu hình xong.')
+        return
+      }
+      const imported = result?.importedCount ?? 0
+      toast.success(imported > 0
+        ? `Đã quét xong — nhập ${imported} file mới.`
+        : 'Đã quét xong — không có file mới.')
+    } catch (scanError) {
+      toast.error(getErrorMessage(scanError))
+    }
+  }
+
   const handleDeleteFolder = async (folder) => {
     if (!confirmAction(`Xóa thư mục "${folder.name}"? Ảnh bên trong sẽ đưa về "Chưa phân loại".`)) return
     try {
@@ -474,6 +499,18 @@ export default function MediaPage() {
                   : googleDriveState.enabled
                     ? '🟢 Google Drive: đang bật · Tắt'
                     : '⚪ Google Drive: đang tắt · Bật')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleScanGoogleDriveNow}
+                disabled={!googleDriveState?.enabled || scanGoogleDriveNow.isPending
+                  || isGoogleDriveStateLoading || isGoogleDriveStateError}
+                title={!googleDriveState?.enabled
+                  ? 'Bật Google Drive trước khi quét thủ công'
+                  : 'Quét thư mục Drive dùng chung ngay (không chờ vòng lặp định kỳ)'}
+              >
+                {scanGoogleDriveNow.isPending ? 'Đang quét…' : 'Quét ngay'}
               </button>
               <button
                 type="button"
