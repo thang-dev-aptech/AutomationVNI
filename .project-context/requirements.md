@@ -134,3 +134,29 @@ Xác minh trực tiếp qua code (không suy đoán):
 - .gitignore đã có khối chặn secret (dòng 11-19) và comment về sự cố từng lộ secret thật trong git history — file khoá service account phải được xử lý cùng mức cẩn trọng, không bao giờ nằm trong appsettings.json.
 
 Nguồn: khám phá code qua 2 Explore agent + 1 Plan agent (2026-09-28); xác nhận trực tiếp người dùng qua AskUserQuestion.
+
+### R-018 — GDRIVE-03: Nút "Quét ngay" (force scan thủ công) cho Google Drive import
+<!-- req status=not-started files=backend/Modules/GoogleDrive/GoogleDriveSyncService.cs,backend/Modules/GoogleDrive/GoogleDriveImportWorker.cs,backend/Modules/GoogleDrive/GoogleDriveController.cs,backend/Program.cs,tests/Backend.Tests/Modules/GoogleDrive/GoogleDriveSyncServiceTests.cs,ClientApp/src/modules/media/services/googleDriveApi.js,ClientApp/src/modules/media/hooks/useGoogleDrive.js,ClientApp/src/modules/media/pages/MediaPage.jsx blocker=f87fad5b-6a81-4db6-8dbd-5a7e39b659e6 -->
+
+Yêu cầu người dùng: thêm nút quét ngay lập tức, không cần đợi tick định kỳ (mặc định 180s/30s dev) của GoogleDriveImportWorker.
+
+Hiện trạng: backend/Modules/GoogleDrive/GoogleDriveImportWorker.cs chứa toàn bộ logic một lượt quét (RunTickAsync/RetryFailuresAsync/ImportNewFilesAsync) dưới dạng protected virtual method ngay trên chính class BackgroundService, tự tạo scope bên trong — không thể gọi từ controller mà không viết lại/copy logic.
+
+Pattern có sẵn để tái dùng: ContentCrawlController có endpoint POST sources/{id}/crawl-now gọi THẲNG cùng method (pipeline.RunSourceAsync, pipeline.ProcessPendingAsync) mà ContentCrawlWorker cũng gọi trong vòng lặp nền — logic nằm ở một scoped service thường (ContentCrawlPipelineService, KHÔNG phải BackgroundService), worker và endpoint đều gọi vào đó.
+
+Thiết kế: tách GoogleDriveSyncService (scoped) chứa nguyên logic quét hiện có, worker rút gọn còn vòng lặp hẹn giờ gọi vào service, thêm endpoint POST api/GoogleDrive/scan-now gọi cùng service — tôn trọng cờ IsEnabled hiện tại (không bypass, đang dừng thì báo rõ chứ không âm thầm quét). Thêm SemaphoreSlim tĩnh dùng chung giữa worker và endpoint để không đua nhau ghi đè GoogleDriveSyncState (bảng chỉ có 1 dòng singleton).
+
+Nguồn: pattern ContentCrawlController.CrawlNow (backend/Modules/ContentCrawl/ContentCrawlController.cs); GoogleDriveImportWorker.cs hiện tại (backend/Modules/GoogleDrive/); xác nhận trực tiếp từ người dùng.
+
+### R-019 — GDRIVE-02: Hỗ trợ thư mục con (đệ quy) cho Google Drive import
+<!-- req status=not-started files=backend/Modules/GoogleDrive/GoogleDriveKnownFolderModel.cs,backend/Modules/GoogleDrive/GoogleDriveRepository.cs,backend/Modules/GoogleDrive/IGoogleDriveClient.cs,backend/Modules/GoogleDrive/GoogleDriveApiClient.cs,backend/Modules/GoogleDrive/GoogleDriveImportWorker.cs,backend/Modules/GoogleDrive/GoogleDriveSyncService.cs,backend/Data/AppDbContext.cs,tests/Backend.Tests/Modules/GoogleDrive/GoogleDriveSyncServiceTests.cs,tests/Backend.Tests/Modules/GoogleDrive/GoogleDriveApiClientTests.cs blocker=f87fad5b-6a81-4db6-8dbd-5a7e39b659e6 -->
+
+Xác nhận qua kiểm thử thực tế trên app đang chạy (2026-09-28): GDRIVE-01 chỉ nhập file nằm TRỰC TIẾP trong folder Drive dùng chung — tạo thư mục con bên trong rồi thả file vào đó bị bỏ qua âm thầm, vì GoogleDriveApiClient.ListChangesAsync lọc cứng file.Parents.Contains(folderId) (chỉ khớp parent trực tiếp = root FolderId) và loại bỏ hẳn mọi thay đổi có mimeType folder.
+
+Người dùng xác nhận muốn mở rộng qua AskUserQuestion (2026-09-28), đã chốt:
+1. Hỗ trợ thư mục con ở BẤT KỲ độ sâu nào, tự phát hiện dần khi thư mục con MỚI được tạo sau khi bật tính năng.
+2. KHÔNG cần quét lại/backfill thư mục con đã tồn tại từ trước khi bật tính năng (giữ nhất quán với giới hạn tương tự đã có ở file).
+
+Xác minh trực tiếp qua Explore agent (đọc XML docs + DLL package Google.Apis.Drive.v3 1.76.0.4273 đang dùng): Data.File.Parents chỉ là parent TRỰC TIẾP, không có API ancestor/descendant nào trong client library — không có cách hỏi Drive "file này có nằm dưới cây thư mục X không" bằng một lệnh gọi. Phải tự xây cơ chế: nuôi dần một tập ID thư mục "đã biết thuộc cây đang theo dõi" trong DB, lớn dần khi changes.list phát hiện thư mục con mới có cha nằm trong tập đã biết. Đây là pattern hoàn toàn mới cho codebase — đã tìm nhưng không có gì tương tự để tái dùng (ContentCrawlRepository.GetKnownGuidsAsync gần nhất nhưng chỉ là dedup guard, không phải cache quan hệ cây lớn dần).
+
+Nguồn: kiểm thử trực tiếp trên app; Explore agent khảo sát Google.Apis.Drive.v3; xác nhận người dùng qua AskUserQuestion 2026-09-28.
