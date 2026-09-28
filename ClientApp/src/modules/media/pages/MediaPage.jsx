@@ -35,6 +35,7 @@ import {
   useUpdateMediaFolder,
 } from '../hooks/useMediaFolders'
 import { useMediaBrowser } from '../hooks/useMediaBrowser'
+import { useGoogleDrivePipelineState, useSetGoogleDrivePipelineEnabled } from '../hooks/useGoogleDrive'
 import {
   MEDIA_SOURCE_OPTIONS,
   getMediaSourceMeta,
@@ -81,6 +82,12 @@ export default function MediaPage() {
   )
 
   const { data, isLoading, isError, error, refetch } = useMediaAssets(params)
+  const {
+    data: googleDriveState,
+    isLoading: isGoogleDriveStateLoading,
+    isError: isGoogleDriveStateError,
+  } = useGoogleDrivePipelineState(canManageMedia)
+  const setGoogleDriveEnabled = useSetGoogleDrivePipelineEnabled()
   const createMutation = useCreateMediaAsset()
   const uploadMutation = useUploadMediaAsset()
   const uploadBatchMutation = useUploadMediaBatch()
@@ -414,6 +421,23 @@ export default function MediaPage() {
     }
   }
 
+  const handleToggleGoogleDrive = async () => {
+    const nextEnabled = !googleDriveState.enabled
+    if (!nextEnabled && !confirmAction(
+      'Dừng nhập file từ Google Drive?\n\n'
+      + 'File thả vào thư mục Drive dùng chung sẽ ngừng tự động hiện lên Media cho đến khi được bật lại.',
+    )) return
+
+    try {
+      await setGoogleDriveEnabled.mutateAsync(nextEnabled)
+      toast.success(nextEnabled
+        ? 'Đã bật nhập file từ Google Drive'
+        : 'Đã dừng nhập file từ Google Drive')
+    } catch (toggleError) {
+      toast.error(getErrorMessage(toggleError))
+    }
+  }
+
   const handleDeleteFolder = async (folder) => {
     if (!confirmAction(`Xóa thư mục "${folder.name}"? Ảnh bên trong sẽ đưa về "Chưa phân loại".`)) return
     try {
@@ -433,6 +457,24 @@ export default function MediaPage() {
         actions={
           canManageMedia ? (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={handleToggleGoogleDrive}
+                disabled={isGoogleDriveStateLoading || isGoogleDriveStateError
+                  || !googleDriveState || setGoogleDriveEnabled.isPending}
+                title={isGoogleDriveStateError
+                  ? 'Không tải được trạng thái nhập file Google Drive'
+                  : undefined}
+              >
+                {isGoogleDriveStateLoading && 'Đang tải trạng thái Google Drive…'}
+                {isGoogleDriveStateError && 'Không tải được trạng thái Google Drive'}
+                {googleDriveState && (setGoogleDriveEnabled.isPending
+                  ? 'Đang cập nhật Google Drive…'
+                  : googleDriveState.enabled
+                    ? '🟢 Google Drive: đang bật · Tắt'
+                    : '⚪ Google Drive: đang tắt · Bật')}
+              </button>
               <button
                 type="button"
                 className="btn btn-secondary"
