@@ -5,6 +5,7 @@ using Backend.Modules.Auth;
 using Backend.Modules.Category;
 using Backend.Modules.ContentCrawl;
 using Backend.Modules.GenerationJob;
+using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaEmbedding;
 using Backend.Modules.PageContext;
@@ -233,6 +234,10 @@ builder.Services.AddHttpClient<HttpArticleFetcher>(client =>
     });
 builder.Services.AddScoped<CrawlSourcePortability>();
 builder.Services.AddHostedService<ContentCrawlWorker>();
+
+// ── Nhập file từ Google Drive (GDRIVE-01) ─────────────────────────────────────
+builder.Services.Configure<GoogleDriveOptions>(builder.Configuration.GetSection("GoogleDrive"));
+builder.Services.AddScoped<IGoogleDriveClient, GoogleDriveApiClient>();
 
 // ═══ Chỉ số page cho dashboard khách hàng ═══
 builder.Services.Configure<Backend.Modules.PageMetrics.PageMetricsOptions>(
