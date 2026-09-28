@@ -2,6 +2,7 @@ using Backend.Modules.ApiLog;
 using Backend.Modules.Category;
 using Backend.Modules.ContentCrawl;
 using Backend.Modules.GenerationJob;
+using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaEmbedding;
 using Backend.Modules.MediaFolder;
@@ -54,6 +55,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<ContentFingerprintModel> ContentFingerprints => Set<ContentFingerprintModel>();
     public DbSet<ContentCrawlPipelineStateModel> ContentCrawlPipelineStates
         => Set<ContentCrawlPipelineStateModel>();
+    public DbSet<GoogleDriveSyncStateModel> GoogleDriveSyncStates
+        => Set<GoogleDriveSyncStateModel>();
+    public DbSet<GoogleDriveImportFailureModel> GoogleDriveImportFailures
+        => Set<GoogleDriveImportFailureModel>();
     public DbSet<ShortLinkModel> ShortLinks => Set<ShortLinkModel>();
     public DbSet<Backend.Modules.NewsSite.NewsArticleModel> NewsArticles
         => Set<Backend.Modules.NewsSite.NewsArticleModel>();
@@ -188,6 +193,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.AltText).HasMaxLength(500);
             e.Property(x => x.Description).HasColumnType("TEXT");
             e.Property(x => x.Tags).HasColumnType("TEXT");
+            e.Property(x => x.GoogleDriveFileId).HasMaxLength(200);
+            // SQLite coi mỗi NULL là khác biệt trong chỉ mục UNIQUE, nên upload/AI/overlay
+            // (GoogleDriveFileId=null) không đụng ràng buộc — chỉ chặn trùng file Drive thật.
+            e.HasIndex(x => x.GoogleDriveFileId).IsUnique();
         });
 
         modelBuilder.Entity<PostMediaModel>(e =>
@@ -429,6 +438,34 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
                 IsEnabled = true,
                 CreatedAt = new DateTime(2026, 9, 22, 0, 0, 0, DateTimeKind.Utc)
             });
+        });
+
+        modelBuilder.Entity<GoogleDriveSyncStateModel>(e =>
+        {
+            e.ToTable("GoogleDriveSyncState");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.IsEnabled).HasDefaultValue(true);
+            e.Property(x => x.UpdatedByUserName).HasMaxLength(200);
+            e.Property(x => x.PageToken).HasMaxLength(1000);
+            e.HasData(new GoogleDriveSyncStateModel
+            {
+                Id = GoogleDriveSyncStateModel.SingletonId,
+                IsEnabled = true,
+                CreatedAt = new DateTime(2026, 9, 28, 0, 0, 0, DateTimeKind.Utc)
+            });
+        });
+
+        modelBuilder.Entity<GoogleDriveImportFailureModel>(e =>
+        {
+            e.ToTable("GoogleDriveImportFailures");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.GoogleDriveFileId).IsUnique();
+            e.HasIndex(x => x.AttemptCount);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.GoogleDriveFileId).HasMaxLength(200);
+            e.Property(x => x.FileName).HasMaxLength(500);
+            e.Property(x => x.MimeType).HasMaxLength(100);
+            e.Property(x => x.LastError).HasColumnType("TEXT");
         });
 
         modelBuilder.Entity<CrawlRunModel>(e =>

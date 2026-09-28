@@ -18,6 +18,13 @@ Thumbs.db
 **/appsettings.Production.json
 **/secrets.json
 
+# Google Service Account key (GDRIVE-01) — file khoá thật trỏ tới bởi GoogleDrive:CredentialsPath.
+# Không bao giờ commit; chỉ qua appsettings.Production.json (đã gitignore ở trên), biến môi
+# trường, hoặc đường dẫn mount ngoài trên server.
+**/google-credentials*.json
+**/*service-account*.json
+**/gdrive-credentials*.json
+
 # Ghi chú env đầy đủ tự tay soạn cho việc bàn giao — chứa secret thật (JWT secret, mật khẩu
 # admin, App Secret Meta/Threads, API key AI, Telegram bot token), không phải file mẫu.
 /VNI Automation env production.md

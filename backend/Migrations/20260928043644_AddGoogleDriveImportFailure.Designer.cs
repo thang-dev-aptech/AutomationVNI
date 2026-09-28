@@ -3,6 +3,7 @@ using System;
 using Backend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace backend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260928043644_AddGoogleDriveImportFailure")]
+    partial class AddGoogleDriveImportFailure
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.0");
@@ -1039,10 +1042,6 @@ namespace backend.Migrations
                     b.Property<Guid?>("FolderId")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("GoogleDriveFileId")
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
                     b.Property<int?>("Height")
                         .HasColumnType("INTEGER");
 
@@ -1087,9 +1086,6 @@ namespace backend.Migrations
                     b.HasIndex("CategoryId");
 
                     b.HasIndex("FolderId");
-
-                    b.HasIndex("GoogleDriveFileId")
-                        .IsUnique();
 
                     b.HasIndex("IsDeleted");
 

@@ -3,6 +3,7 @@ using System;
 using Backend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace backend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260928043610_AddGoogleDriveSyncState")]
+    partial class AddGoogleDriveSyncState
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.0");
@@ -861,75 +864,6 @@ namespace backend.Migrations
                     b.ToTable("GenerationJobs", (string)null);
                 });
 
-            modelBuilder.Entity("Backend.Modules.GoogleDrive.GoogleDriveImportFailureModel", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("AttemptCount")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DeletedBy")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ExtraJson")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("GoogleDriveFileId")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("LastAttemptAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LastError")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("MimeType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("SizeBytes")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AttemptCount");
-
-                    b.HasIndex("GoogleDriveFileId")
-                        .IsUnique();
-
-                    b.HasIndex("IsDeleted");
-
-                    b.ToTable("GoogleDriveImportFailures", (string)null);
-                });
-
             modelBuilder.Entity("Backend.Modules.GoogleDrive.GoogleDriveSyncStateModel", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1039,10 +973,6 @@ namespace backend.Migrations
                     b.Property<Guid?>("FolderId")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("GoogleDriveFileId")
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
                     b.Property<int?>("Height")
                         .HasColumnType("INTEGER");
 
@@ -1087,9 +1017,6 @@ namespace backend.Migrations
                     b.HasIndex("CategoryId");
 
                     b.HasIndex("FolderId");
-
-                    b.HasIndex("GoogleDriveFileId")
-                        .IsUnique();
 
                     b.HasIndex("IsDeleted");
 
