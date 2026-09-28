@@ -71,8 +71,8 @@ public class GoogleDriveApiClientTests
     {
         var client = CreateClient(new GoogleDriveOptions { FolderId = "", CredentialsPath = "" });
 
-        await Assert.ThrowsAsync<ArgumentException>(() => client.ListChangesAsync(""));
-        await Assert.ThrowsAsync<ArgumentException>(() => client.ListChangesAsync(null));
+        await Assert.ThrowsAsync<ArgumentException>(() => client.ListChangesAsync("", 20));
+        await Assert.ThrowsAsync<ArgumentException>(() => client.ListChangesAsync(null, 20));
     }
 
     [Fact]

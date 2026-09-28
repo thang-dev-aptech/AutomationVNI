@@ -15,10 +15,16 @@ public interface IGoogleDriveClient
     Task<string> GetStartPageTokenAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Một lượt changes.list. NextPageToken LUÔN được trả về (advance kể cả khi Files rỗng) —
-    /// người gọi phải lưu lại NextPageToken cho lượt sau dù danh sách file có rỗng hay không.
+    /// Một lượt changes.list, giới hạn tối đa <paramref name="maxResults"/> file mỗi lần gọi.
+    /// NextPageToken LUÔN được trả về (advance kể cả khi Files rỗng) — người gọi phải lưu lại
+    /// NextPageToken cho lượt sau dù danh sách file có rỗng hay không.
+    ///
+    /// QUAN TRỌNG: người gọi phải xử lý TOÀN BỘ GoogleDriveChangesPage.Files trả về rồi mới lưu
+    /// NextPageToken — không được tự cắt bớt (Take) danh sách sau khi nhận, vì NextPageToken luôn
+    /// khớp với đúng những gì server đã trả (tối đa maxResults), không khớp với phần bị cắt thêm
+    /// ở tầng gọi. Việc giới hạn số lượng phải xảy ra ở đây (request.PageSize), không phải sau đó.
     /// </summary>
-    Task<GoogleDriveChangesPage> ListChangesAsync(string? pageToken, CancellationToken ct = default);
+    Task<GoogleDriveChangesPage> ListChangesAsync(string? pageToken, int maxResults, CancellationToken ct = default);
 
     /// <summary>Tải nội dung nhị phân của một file thường (không dùng cho Google Docs/Sheets/Slides gốc).</summary>
     Task<byte[]> DownloadFileAsync(string fileId, CancellationToken ct = default);

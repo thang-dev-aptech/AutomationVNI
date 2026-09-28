@@ -166,6 +166,51 @@ public class GoogleDriveImportWorkerTests
         Assert.Equal(1, await fixture.CountMediaAssetsAsync());
     }
 
+    /// <summary>
+    /// AC gdrive-no-file-loss-when-page-exceeds-cap (9382d03b): trước bản sửa t7, worker tự
+    /// Take(MaxFilesPerTick) SAU KHI đã nhận nguyên trang từ ListChangesAsync, rồi vẫn advance
+    /// PageToken theo trang ĐẦY ĐỦ — phần bị cắt bỏ mất vĩnh viễn. Giờ việc giới hạn xảy ra ở
+    /// tầng gọi API (maxResults truyền vào ListChangesAsync), nên PageToken luôn khớp đúng với
+    /// phần đã xử lý — backlog nhiều hơn 1 trang phải được xử lý HẾT qua nhiều tick, không rơi
+    /// file nào.
+    /// </summary>
+    [Fact]
+    public async Task RunTickAsync_BacklogLargerThanMaxFilesPerTick_ProcessesEveryFileAcrossTicks()
+    {
+        await using var fixture = await Fixture.CreateAsync(maxFilesPerTick: 20);
+        var worker = fixture.CreateWorker();
+        await fixture.SetEnabledAsync(true);
+
+        const int backlogSize = 45; // > 2x MaxFilesPerTick (20) để buộc phải trải qua >= 3 tick.
+        var expectedFileIds = new List<string>();
+        for (var i = 0; i < backlogSize; i++)
+        {
+            var fileId = $"backlog-{i}";
+            expectedFileIds.Add(fileId);
+            fixture.Client.Backlog.Enqueue(new GoogleDriveFileInfo
+            {
+                FileId = fileId,
+                Name = $"backlog-{i}.jpg",
+                MimeType = "image/jpeg",
+                SizeBytes = 10,
+            });
+        }
+
+        // 3 tick là đủ để rút cạn 45 file ở mức trần 20 file/tick (20 + 20 + 5); tick thứ 4 xác
+        // nhận trạng thái ổn định — không có gì mất, không có gì lặp lại.
+        await worker.RunSingleTickAsync(fixture.Settings);
+        await worker.RunSingleTickAsync(fixture.Settings);
+        await worker.RunSingleTickAsync(fixture.Settings);
+        await worker.RunSingleTickAsync(fixture.Settings);
+
+        Assert.Equal(backlogSize, await fixture.CountMediaAssetsAsync());
+        Assert.Equal(expectedFileIds.OrderBy(x => x), fixture.Client.DownloadedFileIds.OrderBy(x => x));
+        // Mỗi lượt gọi Drive phải xin đúng maxResults = MaxFilesPerTick — việc giới hạn xảy ra ở
+        // tầng gọi API, không phải Take() sau khi nhận về nguyên trang.
+        Assert.All(fixture.Client.MaxResultsSeen, n => Assert.Equal(20, n));
+        Assert.Empty(await fixture.GetRetryableFailuresAsync());
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;
@@ -192,7 +237,7 @@ public class GoogleDriveImportWorkerTests
             _services = services;
         }
 
-        public static async Task<Fixture> CreateAsync(int maxRetryAttempts = 5)
+        public static async Task<Fixture> CreateAsync(int maxRetryAttempts = 5, int maxFilesPerTick = 20)
         {
             var connection = new SqliteConnection("DataSource=:memory:");
             await connection.OpenAsync();
@@ -206,7 +251,7 @@ public class GoogleDriveImportWorkerTests
             {
                 Enabled = true,
                 IntervalSeconds = 180,
-                MaxFilesPerTick = 20,
+                MaxFilesPerTick = maxFilesPerTick,
                 MaxRetryAttempts = maxRetryAttempts,
             };
             var fileStorageOptions = new FileStorageOptions();
@@ -304,10 +349,18 @@ public class GoogleDriveImportWorkerTests
     {
         public string StartToken { get; set; } = "start-token";
         public Queue<Backend.Modules.GoogleDrive.GoogleDriveChangesPage> Pages { get; } = new();
+        /// <summary>
+        /// Backlog "thô" — khi Pages rỗng, mỗi ListChangesAsync tự cắt tối đa maxResults phần tử
+        /// từ đây, mô phỏng đúng cách Drive API thật giới hạn PageSize ở tầng SERVER, không phải
+        /// worker tự Take() sau khi nhận nguyên trang (đây chính là bug đã sửa ở t7).
+        /// </summary>
+        public Queue<Backend.Modules.GoogleDrive.GoogleDriveFileInfo> Backlog { get; } = new();
         public List<string> DownloadedFileIds { get; } = [];
         public int ListChangesCalls { get; private set; }
+        public List<int> MaxResultsSeen { get; } = [];
 
         private readonly Dictionary<string, Queue<Func<byte[]>>> _downloadBehaviors = new();
+        private int _backlogTokenCounter;
 
         public void FailDownload(string fileId, int times)
         {
@@ -323,13 +376,28 @@ public class GoogleDriveImportWorkerTests
         public Task<string> GetStartPageTokenAsync(CancellationToken ct = default) => Task.FromResult(StartToken);
 
         public Task<Backend.Modules.GoogleDrive.GoogleDriveChangesPage> ListChangesAsync(
-            string? pageToken, CancellationToken ct = default)
+            string? pageToken, int maxResults, CancellationToken ct = default)
         {
             ListChangesCalls++;
-            var page = Pages.Count > 0
-                ? Pages.Dequeue()
-                : new Backend.Modules.GoogleDrive.GoogleDriveChangesPage { NextPageToken = pageToken };
-            return Task.FromResult(page);
+            MaxResultsSeen.Add(maxResults);
+
+            if (Pages.Count > 0)
+                return Task.FromResult(Pages.Dequeue());
+
+            if (Backlog.Count > 0)
+            {
+                var batch = new List<Backend.Modules.GoogleDrive.GoogleDriveFileInfo>();
+                while (batch.Count < maxResults && Backlog.Count > 0)
+                    batch.Add(Backlog.Dequeue());
+                _backlogTokenCounter++;
+                return Task.FromResult(new Backend.Modules.GoogleDrive.GoogleDriveChangesPage
+                {
+                    Files = batch,
+                    NextPageToken = $"backlog-token-{_backlogTokenCounter}",
+                });
+            }
+
+            return Task.FromResult(new Backend.Modules.GoogleDrive.GoogleDriveChangesPage { NextPageToken = pageToken });
         }
 
         public Task<byte[]> DownloadFileAsync(string fileId, CancellationToken ct = default)

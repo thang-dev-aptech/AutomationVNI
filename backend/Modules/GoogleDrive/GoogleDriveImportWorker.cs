@@ -143,10 +143,14 @@ public class GoogleDriveImportWorker(
             ? await client.GetStartPageTokenAsync(ct)
             : pageToken;
 
-        var page = await client.ListChangesAsync(effectiveToken, ct);
+        // Giới hạn số file mỗi lượt PHẢI xảy ra ở tầng gọi API (tham số maxResults dưới đây), không
+        // phải bằng cách Take() sau khi đã nhận nguyên trang — nếu không, NextPageToken lưu lại sẽ
+        // khớp với trang ĐẦY ĐỦ trong khi chỉ một phần được xử lý, và phần còn lại mất vĩnh viễn vì
+        // pageToken đã đi qua nó rồi (bug đã xảy ra thật, xem review t6 / commit 575a9db).
+        var page = await client.ListChangesAsync(effectiveToken, settings.MaxFilesPerTick, ct);
         var importedCount = 0;
 
-        foreach (var file in page.Files.Take(Math.Max(1, settings.MaxFilesPerTick)))
+        foreach (var file in page.Files)
         {
             ct.ThrowIfCancellationRequested();
 

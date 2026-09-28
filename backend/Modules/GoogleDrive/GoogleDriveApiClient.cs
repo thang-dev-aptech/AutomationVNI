@@ -46,7 +46,8 @@ public class GoogleDriveApiClient(IOptions<GoogleDriveOptions> options) : IGoogl
             ?? throw new InvalidOperationException("Google Drive không trả về startPageToken.");
     }
 
-    public async Task<GoogleDriveChangesPage> ListChangesAsync(string? pageToken, CancellationToken ct = default)
+    public async Task<GoogleDriveChangesPage> ListChangesAsync(
+        string? pageToken, int maxResults, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(pageToken))
             throw new ArgumentException(
@@ -58,7 +59,10 @@ public class GoogleDriveApiClient(IOptions<GoogleDriveOptions> options) : IGoogl
 
         var request = service.Changes.List(pageToken);
         request.Fields = "nextPageToken, newStartPageToken, changes(fileId, removed, file(id, name, mimeType, size, trashed, parents))";
-        request.PageSize = 100;
+        // Giới hạn NGAY tại tầng gọi Drive — không phải cắt bớt sau khi nhận về. NextPageToken
+        // server trả luôn khớp đúng với PageSize này, nên người gọi xử lý hết Files là đủ, không
+        // bao giờ "bỏ sót" file nào giữa cái đã fetch và cái đã lưu con trỏ.
+        request.PageSize = Math.Clamp(maxResults, 1, 1000);
 
         var response = await request.ExecuteAsync(ct);
 
