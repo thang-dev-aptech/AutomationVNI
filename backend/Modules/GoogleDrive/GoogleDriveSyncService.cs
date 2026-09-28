@@ -110,8 +110,9 @@ public class GoogleDriveSyncService(
     }
 
     /// <summary>
-    /// Một lượt changes.list. LUÔN advance PageToken ở cuối, kể cả khi không có file mới —
-    /// người gọi (RunTickCoreAsync) đã đảm bảo client.IsConfigured() trước khi tới đây.
+    /// Một lượt changes.list. GDRIVE-02: đầu tick seed root vào tập đã biết, xử lý Folders trước
+    /// (đa vòng cho grandchild cùng page), rồi nhận file khi Parents giao tập đã biết.
+    /// LUÔN advance PageToken ở cuối, kể cả khi không có file mới.
     /// </summary>
     private async Task<int> ImportNewFilesAsync(GoogleDriveOptions settings, string? pageToken, CancellationToken ct)
     {
@@ -126,11 +127,20 @@ public class GoogleDriveSyncService(
         // khớp với trang ĐẦY ĐỦ trong khi chỉ một phần được xử lý, và phần còn lại mất vĩnh viễn vì
         // pageToken đã đi qua nó rồi (bug đã xảy ra thật, xem review t6 / commit 575a9db).
         var page = await client.ListChangesAsync(effectiveToken, settings.MaxFilesPerTick, ct);
+
+        await repository.EnsureRootFolderKnownAsync(settings.FolderId, ct);
+        var known = await repository.GetKnownFolderIdsAsync(ct);
+        await AbsorbKnownFoldersAsync(page.Folders, known, ct);
+
         var importedCount = 0;
 
         foreach (var file in page.Files)
         {
             ct.ThrowIfCancellationRequested();
+
+            // GDRIVE-02: chỉ nhận file có parent trực tiếp nằm trong cây đã biết.
+            if (file.Parents is null || !file.Parents.Any(known.Contains))
+                continue;
 
             if (await mediaAssets.ExistsByGoogleDriveFileIdAsync(file.FileId, ct))
                 continue;
@@ -171,5 +181,33 @@ public class GoogleDriveSyncService(
 
         await repository.UpdateSyncStateAsync(page.NextPageToken, importedCount, ct);
         return importedCount;
+    }
+
+    /// <summary>
+    /// Mở rộng tập đã biết từ page.Folders: bỏ trashed / ngoài cây; thêm vào HashSet cục bộ ngay
+    /// và lặp đến khi ổn định — để thư mục cháu xuất hiện trước cha trong cùng page vẫn nhận đúng.
+    /// </summary>
+    private async Task AbsorbKnownFoldersAsync(
+        List<GoogleDriveFolderInfo> folders, HashSet<string> known, CancellationToken ct)
+    {
+        if (folders.Count == 0) return;
+
+        bool added;
+        do
+        {
+            added = false;
+            foreach (var folder in folders)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (folder.Trashed) continue;
+                if (string.IsNullOrWhiteSpace(folder.FolderId)) continue;
+                if (known.Contains(folder.FolderId)) continue;
+                if (folder.ParentIds is null || !folder.ParentIds.Any(known.Contains)) continue;
+
+                await repository.AddKnownFolderAsync(folder.FolderId, ct);
+                known.Add(folder.FolderId);
+                added = true;
+            }
+        } while (added);
     }
 }

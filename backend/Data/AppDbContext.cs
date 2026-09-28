@@ -59,6 +59,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
         => Set<GoogleDriveSyncStateModel>();
     public DbSet<GoogleDriveImportFailureModel> GoogleDriveImportFailures
         => Set<GoogleDriveImportFailureModel>();
+    public DbSet<GoogleDriveKnownFolderModel> GoogleDriveKnownFolders
+        => Set<GoogleDriveKnownFolderModel>();
     public DbSet<ShortLinkModel> ShortLinks => Set<ShortLinkModel>();
     public DbSet<Backend.Modules.NewsSite.NewsArticleModel> NewsArticles
         => Set<Backend.Modules.NewsSite.NewsArticleModel>();
@@ -466,6 +468,15 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.FileName).HasMaxLength(500);
             e.Property(x => x.MimeType).HasMaxLength(100);
             e.Property(x => x.LastError).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<GoogleDriveKnownFolderModel>(e =>
+        {
+            e.ToTable("GoogleDriveKnownFolders");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.FolderId).IsUnique();
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.FolderId).HasMaxLength(200);
         });
 
         modelBuilder.Entity<CrawlRunModel>(e =>

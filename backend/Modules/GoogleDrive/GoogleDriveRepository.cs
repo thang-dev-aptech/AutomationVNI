@@ -106,4 +106,49 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
         await Context.SaveChangesAsync(ct);
         return true;
     }
+
+    // ── Tập thư mục đã biết (GDRIVE-02) ─────────────────────────────────────
+
+    /// <summary>
+    /// Đảm bảo root FolderId luôn có trong tập đã biết từ tick đầu — không backfill cây cũ,
+    /// chỉ seed điểm gốc để thư mục con phát hiện sau đó gắn vào cây.
+    /// </summary>
+    public async Task EnsureRootFolderKnownAsync(string rootFolderId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(rootFolderId)) return;
+        await AddKnownFolderAsync(rootFolderId.Trim(), ct);
+    }
+
+    public async Task<HashSet<string>> GetKnownFolderIdsAsync(CancellationToken ct = default)
+    {
+        var ids = await Context.Set<GoogleDriveKnownFolderModel>()
+            .AsNoTracking()
+            .Where(x => !x.IsDeleted)
+            .Select(x => x.FolderId)
+            .ToListAsync(ct);
+        return ids.ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>Idempotent theo FolderId — gọi lại với id đã biết là no-op.</summary>
+    public async Task AddKnownFolderAsync(string folderId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(folderId)) return;
+        var id = folderId.Trim();
+
+        var exists = await Context.Set<GoogleDriveKnownFolderModel>()
+            .AnyAsync(x => x.FolderId == id && !x.IsDeleted, ct);
+        if (exists) return;
+
+        var entity = new GoogleDriveKnownFolderModel
+        {
+            Id = Guid.NewGuid(),
+            FolderId = id,
+            DiscoveredAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = UserContext.GetCurrentUserName(),
+            IsDeleted = false,
+        };
+        Context.Set<GoogleDriveKnownFolderModel>().Add(entity);
+        await Context.SaveChangesAsync(ct);
+    }
 }

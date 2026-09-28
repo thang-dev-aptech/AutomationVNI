@@ -15,14 +15,16 @@ public interface IGoogleDriveClient
     Task<string> GetStartPageTokenAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Một lượt changes.list, giới hạn tối đa <paramref name="maxResults"/> file mỗi lần gọi.
-    /// NextPageToken LUÔN được trả về (advance kể cả khi Files rỗng) — người gọi phải lưu lại
-    /// NextPageToken cho lượt sau dù danh sách file có rỗng hay không.
+    /// Một lượt changes.list, giới hạn tối đa <paramref name="maxResults"/> thay đổi mỗi lần gọi.
+    /// NextPageToken LUÔN được trả về (advance kể cả khi Files/Folders rỗng) — người gọi phải lưu lại
+    /// NextPageToken cho lượt sau dù danh sách có rỗng hay không.
     ///
-    /// QUAN TRỌNG: người gọi phải xử lý TOÀN BỘ GoogleDriveChangesPage.Files trả về rồi mới lưu
-    /// NextPageToken — không được tự cắt bớt (Take) danh sách sau khi nhận, vì NextPageToken luôn
-    /// khớp với đúng những gì server đã trả (tối đa maxResults), không khớp với phần bị cắt thêm
-    /// ở tầng gọi. Việc giới hạn số lượng phải xảy ra ở đây (request.PageSize), không phải sau đó.
+    /// GDRIVE-02: không còn lọc cứng theo 1 FolderId ở tầng client — trả cả thay đổi thư mục
+    /// (không trashed) kèm ParentIds thô và file kèm Parents thô; SyncService quyết định thuộc cây
+    /// đã biết hay không. Vẫn loại application/vnd.google-apps.* không phải folder.
+    ///
+    /// QUAN TRỌNG: người gọi phải xử lý TOÀN BỘ GoogleDriveChangesPage trả về rồi mới lưu
+    /// NextPageToken — không được tự cắt bớt (Take) danh sách sau khi nhận.
     /// </summary>
     Task<GoogleDriveChangesPage> ListChangesAsync(string? pageToken, int maxResults, CancellationToken ct = default);
 
@@ -30,13 +32,27 @@ public interface IGoogleDriveClient
     Task<byte[]> DownloadFileAsync(string fileId, CancellationToken ct = default);
 }
 
-/// <summary>Một trang kết quả changes.list, đã lọc theo folder/trashed/folder-type/google-apps mimeType.</summary>
+/// <summary>Một trang kết quả changes.list — folders trước files để SyncService mở rộng cây cùng tick.</summary>
 public class GoogleDriveChangesPage
 {
+    public List<GoogleDriveFolderInfo> Folders { get; set; } = [];
     public List<GoogleDriveFileInfo> Files { get; set; } = [];
 
     /// <summary>Con trỏ cho lượt poll kế tiếp — luôn có giá trị (changes.list luôn trả nextPageToken hoặc newStartPageToken).</summary>
     public string? NextPageToken { get; set; }
+}
+
+/// <summary>GDRIVE-02: thư mục phát hiện qua changes.list (ParentIds thô từ Drive).</summary>
+public class GoogleDriveFolderInfo
+{
+    public string FolderId { get; set; } = string.Empty;
+    public List<string> ParentIds { get; set; } = [];
+
+    /// <summary>
+    /// ApiClient thật luôn bỏ qua trashed; fake test có thể set true để xác nhận SyncService
+    /// cũng loại thư mục đã trash dù parent nằm trong cây.
+    /// </summary>
+    public bool Trashed { get; set; }
 }
 
 public class GoogleDriveFileInfo
@@ -45,4 +61,7 @@ public class GoogleDriveFileInfo
     public string Name { get; set; } = string.Empty;
     public string MimeType { get; set; } = string.Empty;
     public long SizeBytes { get; set; }
+
+    /// <summary>Parent trực tiếp từ Drive — SyncService nhận file khi Parents giao tập thư mục đã biết.</summary>
+    public List<string> Parents { get; set; } = [];
 }

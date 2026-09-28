@@ -19,6 +19,7 @@ namespace Backend.Tests.Modules.GoogleDrive;
 /// (GDRIVE-03, refactor thuần tuý — không đổi hành vi): gdrive-toggle-test, gdrive-cursor-dedup-test,
 /// gdrive-zip-rejected-test, gdrive-bounded-retry-test, gdrive-no-file-loss-when-page-exceeds-cap.
 /// GDRIVE-03 (t1) mới: gdrive03-scan-now-disabled-test (phần service), gdrive03-no-race-test.
+/// GDRIVE-02 (t4): child/grandchild same-tick, unrelated/trashed excluded, no regression root files.
 /// </summary>
 public class GoogleDriveSyncServiceTests
 {
@@ -98,8 +99,8 @@ public class GoogleDriveSyncServiceTests
             NextPageToken = "token-2",
             Files =
             [
-                new GoogleDriveFileInfo { FileId = "existing-1", Name = "old.jpg", MimeType = "image/jpeg", SizeBytes = 10 },
-                new GoogleDriveFileInfo { FileId = "new-1", Name = "new.jpg", MimeType = "image/jpeg", SizeBytes = 10 },
+                new GoogleDriveFileInfo { FileId = "existing-1", Name = "old.jpg", MimeType = "image/jpeg", SizeBytes = 10, Parents = [Fixture.RootFolderId] },
+                new GoogleDriveFileInfo { FileId = "new-1", Name = "new.jpg", MimeType = "image/jpeg", SizeBytes = 10, Parents = [Fixture.RootFolderId] },
             ],
         });
 
@@ -131,7 +132,7 @@ public class GoogleDriveSyncServiceTests
         fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
         {
             NextPageToken = "token-2",
-            Files = [new GoogleDriveFileInfo { FileId = "zip-1", Name = "malware.zip", MimeType = "application/zip", SizeBytes = 10 }],
+            Files = [new GoogleDriveFileInfo { FileId = "zip-1", Name = "malware.zip", MimeType = "application/zip", SizeBytes = 10, Parents = [Fixture.RootFolderId] }],
         });
 
         await fixture.CreateService().RunTickAsync();
@@ -154,7 +155,7 @@ public class GoogleDriveSyncServiceTests
         fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
         {
             NextPageToken = "t2",
-            Files = [new GoogleDriveFileInfo { FileId = fileId, Name = "flaky.jpg", MimeType = "image/jpeg", SizeBytes = 10 }],
+            Files = [new GoogleDriveFileInfo { FileId = fileId, Name = "flaky.jpg", MimeType = "image/jpeg", SizeBytes = 10, Parents = [Fixture.RootFolderId] }],
         });
         await fixture.CreateService().RunTickAsync();
         var failures = await fixture.GetRetryableFailuresAsync();
@@ -187,7 +188,7 @@ public class GoogleDriveSyncServiceTests
         fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
         {
             NextPageToken = "t2",
-            Files = [new GoogleDriveFileInfo { FileId = fileId, Name = "flaky2.jpg", MimeType = "image/jpeg", SizeBytes = 10 }],
+            Files = [new GoogleDriveFileInfo { FileId = fileId, Name = "flaky2.jpg", MimeType = "image/jpeg", SizeBytes = 10, Parents = [Fixture.RootFolderId] }],
         });
         await fixture.CreateService().RunTickAsync(); // AttemptCount=1
         Assert.Equal(1, (await fixture.GetFailureAsync(fileId))!.AttemptCount);
@@ -229,6 +230,7 @@ public class GoogleDriveSyncServiceTests
                 Name = $"backlog-{i}.jpg",
                 MimeType = "image/jpeg",
                 SizeBytes = 10,
+                Parents = [Fixture.RootFolderId],
             });
         }
 
@@ -247,8 +249,178 @@ public class GoogleDriveSyncServiceTests
         Assert.Empty(await fixture.GetRetryableFailuresAsync());
     }
 
+    // ── GDRIVE-02: thư mục con đệ quy ───────────────────────────────────────
+
+    /// <summary>AC gdrive02-child-and-file-same-tick-test (44b07276).</summary>
+    [Fact]
+    public async Task RunTickAsync_ChildFolderAndFileSameTick_ImportsFileImmediately()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+
+        const string childId = "child-folder-1";
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "gdrive02-child",
+            Folders =
+            [
+                new GoogleDriveFolderInfo
+                {
+                    FolderId = childId,
+                    ParentIds = [Fixture.RootFolderId],
+                },
+            ],
+            Files =
+            [
+                new GoogleDriveFileInfo
+                {
+                    FileId = "child-file-1",
+                    Name = "in-child.jpg",
+                    MimeType = "image/jpeg",
+                    SizeBytes = 10,
+                    Parents = [childId],
+                },
+            ],
+        });
+
+        await fixture.CreateService().RunTickAsync();
+
+        Assert.Contains(childId, await fixture.GetKnownFolderIdsAsync());
+        Assert.Contains("child-file-1", fixture.Client.DownloadedFileIds);
+        Assert.Equal(1, await fixture.CountMediaAssetsAsync());
+    }
+
+    /// <summary>AC gdrive02-grandchild-same-tick-test (5cd2cd23).</summary>
+    [Fact]
+    public async Task RunTickAsync_GrandchildFolderAndFileSameTick_ImportsFileImmediately()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+
+        const string childId = "child-folder-2";
+        const string grandchildId = "grandchild-folder-1";
+        // Thứ tự cố ý: cháu trước cha trong cùng page — multi-pass phải hấp thụ cả hai.
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "gdrive02-grandchild",
+            Folders =
+            [
+                new GoogleDriveFolderInfo
+                {
+                    FolderId = grandchildId,
+                    ParentIds = [childId],
+                },
+                new GoogleDriveFolderInfo
+                {
+                    FolderId = childId,
+                    ParentIds = [Fixture.RootFolderId],
+                },
+            ],
+            Files =
+            [
+                new GoogleDriveFileInfo
+                {
+                    FileId = "grandchild-file-1",
+                    Name = "deep.jpg",
+                    MimeType = "image/jpeg",
+                    SizeBytes = 10,
+                    Parents = [grandchildId],
+                },
+            ],
+        });
+
+        await fixture.CreateService().RunTickAsync();
+
+        var known = await fixture.GetKnownFolderIdsAsync();
+        Assert.Contains(childId, known);
+        Assert.Contains(grandchildId, known);
+        Assert.Contains("grandchild-file-1", fixture.Client.DownloadedFileIds);
+        Assert.Equal(1, await fixture.CountMediaAssetsAsync());
+    }
+
+    /// <summary>AC gdrive02-unrelated-folder-excluded-test (758b28e1).</summary>
+    [Fact]
+    public async Task RunTickAsync_UnrelatedFolderAndFile_AreExcluded()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+
+        const string unrelatedId = "unrelated-folder-xyz";
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "gdrive02-unrelated",
+            Folders =
+            [
+                new GoogleDriveFolderInfo
+                {
+                    FolderId = unrelatedId,
+                    ParentIds = ["some-other-drive-root-not-ours"],
+                },
+            ],
+            Files =
+            [
+                new GoogleDriveFileInfo
+                {
+                    FileId = "unrelated-file-1",
+                    Name = "outside.jpg",
+                    MimeType = "image/jpeg",
+                    SizeBytes = 10,
+                    Parents = [unrelatedId],
+                },
+                new GoogleDriveFileInfo
+                {
+                    FileId = "root-file-ok",
+                    Name = "ok.jpg",
+                    MimeType = "image/jpeg",
+                    SizeBytes = 10,
+                    Parents = [Fixture.RootFolderId],
+                },
+            ],
+        });
+
+        await fixture.CreateService().RunTickAsync();
+
+        var known = await fixture.GetKnownFolderIdsAsync();
+        Assert.DoesNotContain(unrelatedId, known);
+        Assert.DoesNotContain("unrelated-file-1", fixture.Client.DownloadedFileIds);
+        Assert.Contains("root-file-ok", fixture.Client.DownloadedFileIds);
+        Assert.Equal(1, await fixture.CountMediaAssetsAsync());
+    }
+
+    /// <summary>AC gdrive02-trashed-folder-excluded-test (54ebcf6a).</summary>
+    [Fact]
+    public async Task RunTickAsync_TrashedChildFolder_IsNotAddedToKnownSet()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+
+        const string trashedChildId = "trashed-child-folder";
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "gdrive02-trashed",
+            Folders =
+            [
+                new GoogleDriveFolderInfo
+                {
+                    FolderId = trashedChildId,
+                    ParentIds = [Fixture.RootFolderId],
+                    Trashed = true,
+                },
+            ],
+            Files = [],
+        });
+
+        await fixture.CreateService().RunTickAsync();
+
+        var known = await fixture.GetKnownFolderIdsAsync();
+        Assert.Contains(Fixture.RootFolderId, known);
+        Assert.DoesNotContain(trashedChildId, known);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
+        public const string RootFolderId = "root-folder";
+
         private readonly SqliteConnection _connection;
         private readonly ServiceProvider _services;
 
@@ -289,6 +461,7 @@ public class GoogleDriveSyncServiceTests
                 IntervalSeconds = 180,
                 MaxFilesPerTick = maxFilesPerTick,
                 MaxRetryAttempts = maxRetryAttempts,
+                FolderId = RootFolderId,
             };
             var fileStorageOptions = new FileStorageOptions();
             var fileStorage = new RecordingFileStorageService();
@@ -344,6 +517,12 @@ public class GoogleDriveSyncServiceTests
                 .FirstOrDefaultAsync(x => x.GoogleDriveFileId == fileId);
         }
 
+        public async Task<HashSet<string>> GetKnownFolderIdsAsync()
+        {
+            await using var db = new AppDbContext(DbOptions);
+            return await CreateRepository(db).GetKnownFolderIdsAsync();
+        }
+
         public async Task<int> CountMediaAssetsAsync()
         {
             await using var db = new AppDbContext(DbOptions);
@@ -362,6 +541,7 @@ public class GoogleDriveSyncServiceTests
                     Name = "old.jpg",
                     MimeType = "image/jpeg",
                     SizeBytes = 10,
+                    Parents = [RootFolderId],
                 });
         }
 
