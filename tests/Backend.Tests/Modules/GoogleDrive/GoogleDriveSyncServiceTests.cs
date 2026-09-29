@@ -912,6 +912,50 @@ public class GoogleDriveSyncServiceTests
         Assert.NotEqual(dedicatedId, asset.FolderId);
     }
 
+    /// <summary>
+    /// AC gdrive05-reconcile-test (0d49681f) — mô phỏng lỗi giữa chừng THẬT SỰ: một phần thư mục
+    /// đã được tạo ở lần chạy trước (vd. crash mạng sau khi tạo xong Sub1 nhưng trước khi tạo
+    /// Sub2 hoặc set cờ). Lần chạy lại (FullTreeReconciledAt vẫn null) phải: không tạo trùng
+    /// dòng ánh xạ cho Sub1 đã có, và tạo nốt Sub2 còn thiếu — khác với test RunTwice ở trên
+    /// (test đó reset cờ SAU KHI đã tạo xong toàn bộ, không thật sự mô phỏng dở dang giữa chừng).
+    /// </summary>
+    [Fact]
+    public async Task ReconcileFullTreeOnceAsync_TruePartialFailureMidRun_CompletesWithoutDuplicating()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var dedicatedId = await fixture.GetOrCreateDedicatedFolderAsync();
+
+        const string sub1 = "partial-sub-1";
+        const string sub2 = "partial-sub-2";
+
+        // Dòng ánh xạ Sub1 đã tồn tại TRƯỚC khi tick này chạy — mô phỏng đúng những gì một lần
+        // ReconcileFullTreeOnceAsync trước đó đã ghi xuống DB rồi mới crash (không đi qua
+        // SyncService lần này, đúng ngữ nghĩa "đã có sẵn từ trước").
+        await fixture.CreateMappedChildFolderDirectAsync(sub1, "Sub1", Fixture.RootFolderId, dedicatedId);
+
+        fixture.Client.FolderTree = new GoogleDriveFolderTree
+        {
+            Folders =
+            [
+                new GoogleDriveFolderInfo { FolderId = sub1, Name = "Sub1", ParentIds = [Fixture.RootFolderId] },
+                new GoogleDriveFolderInfo { FolderId = sub2, Name = "Sub2", ParentIds = [Fixture.RootFolderId] },
+            ],
+        };
+
+        await fixture.SetEnabledAsync(true);
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "partial-retry" });
+        await fixture.CreateService().RunTickAsync();
+
+        var map = await fixture.GetKnownFolderMapAsync();
+        Assert.True(map.ContainsKey(sub1));
+        Assert.True(map.ContainsKey(sub2));
+
+        // Sub1 (đã có TRƯỚC tick này) không bị tạo trùng — vẫn đúng 1 dòng active.
+        Assert.Equal(1, await fixture.CountActiveKnownFolderRowsAsync(sub1));
+        // Sub2 được tạo mới đúng 1 dòng — không nhân đôi do vòng lặp hội tụ chạy nhiều pass.
+        Assert.Equal(1, await fixture.CountActiveKnownFolderRowsAsync(sub2));
+    }
+
     // ── GDRIVE-04: folder chuyên dụng + backfill ────────────────────────────
 
     /// <summary>AC gdrive04-dedicated-folder-idempotent-test (1a10f3d6).</summary>
@@ -1143,6 +1187,26 @@ public class GoogleDriveSyncServiceTests
         {
             await using var db = new AppDbContext(DbOptions);
             return await db.Set<GoogleDriveKnownFolderModel>().CountAsync(x => !x.IsDeleted);
+        }
+
+        public async Task<int> CountActiveKnownFolderRowsAsync(string driveFolderId)
+        {
+            await using var db = new AppDbContext(DbOptions);
+            return await db.Set<GoogleDriveKnownFolderModel>()
+                .CountAsync(x => x.FolderId == driveFolderId && !x.IsDeleted);
+        }
+
+        /// <summary>
+        /// Ghi thẳng một dòng ánh xạ qua repository — mô phỏng trạng thái DB do một lần
+        /// ReconcileFullTreeOnceAsync TRƯỚC ĐÓ đã tạo xong rồi mới crash, không đi qua SyncService
+        /// của lần chạy đang test.
+        /// </summary>
+        public async Task<GoogleDriveKnownFolderModel> CreateMappedChildFolderDirectAsync(
+            string driveFolderId, string name, string driveParentId, Guid parentMediaFolderId)
+        {
+            await using var db = new AppDbContext(DbOptions);
+            return await CreateRepository(db).CreateMappedChildFolderAsync(
+                driveFolderId, name, driveParentId, parentMediaFolderId);
         }
 
         /// <summary>Mô phỏng "lỗi giữa chừng": cờ chưa từng được set thật, buộc tick sau chạy lại reconcile.</summary>
