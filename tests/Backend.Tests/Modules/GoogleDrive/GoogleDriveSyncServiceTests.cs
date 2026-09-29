@@ -640,6 +640,52 @@ public class GoogleDriveSyncServiceTests
         Assert.NotEqual(dedicatedId, assets[0].FolderId);
     }
 
+    /// <summary>
+    /// AC gdrive05-legacy-folder-file-still-imported-test (a7c142c6) — violation 3b9e0603:
+    /// dòng KnownFolder legacy (MediaFolderId=Empty) không được lọc khỏi map; file mới vẫn import.
+    /// </summary>
+    [Fact]
+    public async Task RunTickAsync_LegacyKnownFolderWithEmptyMediaFolderId_StillImportsNewFile()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+        var dedicatedId = await fixture.GetOrCreateDedicatedFolderAsync();
+
+        const string legacyChildId = "legacy-gdrive02-child";
+        await fixture.SeedLegacyKnownFolderAsync(legacyChildId);
+
+        // Tick không đổi tên/di chuyển thư mục legacy — chỉ thả file mới vào đó.
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "gdrive05-legacy-file",
+            Folders = [],
+            Files =
+            [
+                new GoogleDriveFileInfo
+                {
+                    FileId = "file-in-legacy-child",
+                    Name = "still-import.jpg",
+                    MimeType = "image/jpeg",
+                    SizeBytes = 10,
+                    Parents = [legacyChildId],
+                },
+            ],
+        });
+
+        await fixture.CreateService().RunTickAsync();
+
+        Assert.Contains("file-in-legacy-child", fixture.Client.DownloadedFileIds);
+        var assets = await fixture.GetGoogleDriveAssetsAsync();
+        Assert.Contains(assets, a => a.GoogleDriveFileId == "file-in-legacy-child");
+        var imported = assets.Single(a => a.GoogleDriveFileId == "file-in-legacy-child");
+        // Option (a): tạm về dedicated root cho đến khi Task B reconcile đúng cây.
+        Assert.Equal(dedicatedId, imported.FolderId);
+
+        var map = await fixture.GetKnownFolderMapAsync();
+        Assert.True(map.ContainsKey(legacyChildId));
+        Assert.NotEqual(Guid.Empty, map[legacyChildId].MediaFolderId);
+    }
+
     // ── GDRIVE-04: folder chuyên dụng + backfill ────────────────────────────
 
     /// <summary>AC gdrive04-dedicated-folder-idempotent-test (1a10f3d6).</summary>
@@ -857,6 +903,28 @@ public class GoogleDriveSyncServiceTests
                 FolderId = null,
                 GoogleDriveFileId = googleDriveFileId,
                 CreatedAt = DateTime.UtcNow,
+                IsDeleted = false,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Mô phỏng dòng KnownFolder di sản GDRIVE-02 sau migration thêm cột
+        /// (chỉ có FolderId, MediaFolderId = Guid.Empty).
+        /// </summary>
+        public async Task SeedLegacyKnownFolderAsync(string driveFolderId)
+        {
+            await using var db = new AppDbContext(DbOptions);
+            db.Set<GoogleDriveKnownFolderModel>().Add(new GoogleDriveKnownFolderModel
+            {
+                Id = Guid.NewGuid(),
+                FolderId = driveFolderId,
+                MediaFolderId = Guid.Empty,
+                DriveParentId = null,
+                Name = string.Empty,
+                DiscoveredAt = DateTime.UtcNow.AddDays(-30),
+                CreatedAt = DateTime.UtcNow.AddDays(-30),
+                CreatedBy = "legacy",
                 IsDeleted = false,
             });
             await db.SaveChangesAsync();

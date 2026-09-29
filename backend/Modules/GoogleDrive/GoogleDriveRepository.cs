@@ -141,6 +141,12 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
     public async Task<Dictionary<string, GoogleDriveKnownFolderModel>> GetKnownFolderMapAsync(
         CancellationToken ct = default)
     {
+        // GDRIVE-05 fix: nâng cấp dòng legacy GDRIVE-02 trước khi đọc map — nếu không,
+        // file mới trong thư mục con ổn định (không đổi tên/di chuyển) bị bỏ qua âm thầm.
+        var dedicatedId = await GetDedicatedFolderIdAsync(ct);
+        if (dedicatedId.HasValue)
+            await BackfillLegacyKnownFolderMappingsAsync(dedicatedId.Value, ct);
+
         var rows = await Context.Set<GoogleDriveKnownFolderModel>()
             .AsNoTracking()
             .Where(x => !x.IsDeleted && x.MediaFolderId != Guid.Empty)
@@ -301,7 +307,8 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
 
     /// <summary>
     /// Get-or-create MediaFolder page-less + dòng ánh xạ root Drive FolderId → dedicated.
-    /// Lần đầu cũng backfill mọi MediaAsset Source=GoogleDrive còn FolderId=null.
+    /// Lần đầu cũng backfill mọi MediaAsset Source=GoogleDrive còn FolderId=null và nâng cấp
+    /// dòng KnownFolder legacy GDRIVE-02 (MediaFolderId rỗng) về dedicated root.
     /// </summary>
     public async Task<Guid> GetOrCreateDedicatedFolderAsync(
         string rootDriveFolderId, CancellationToken ct = default)
@@ -319,6 +326,7 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
             {
                 dedicatedId = existingId;
                 await BackfillOrphanGoogleDriveAssetsAsync(dedicatedId, ct);
+                await BackfillLegacyKnownFolderMappingsAsync(dedicatedId, ct);
                 await EnsureRootFolderKnownAsync(rootDriveFolderId, dedicatedId, ct);
                 await Context.SaveChangesAsync(ct);
                 return dedicatedId;
@@ -343,6 +351,7 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
         dedicatedId = folder.Id;
 
         await BackfillOrphanGoogleDriveAssetsAsync(dedicatedId, ct);
+        await BackfillLegacyKnownFolderMappingsAsync(dedicatedId, ct);
         await Context.SaveChangesAsync(ct);
 
         await EnsureRootFolderKnownAsync(rootDriveFolderId, dedicatedId, ct);
@@ -367,5 +376,32 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
             .ToListAsync(ct);
         foreach (var asset in orphans)
             asset.FolderId = dedicatedFolderId;
+    }
+
+    /// <summary>
+    /// GDRIVE-05: dòng KnownFolder di sản GDRIVE-02 chỉ có FolderId (MediaFolderId=Empty sau
+    /// migration). Tạm map về dedicated root — không mất file; ReconcileFullTreeOnce (Task B)
+    /// sẽ đặt lại đúng vị trí cây sau.
+    /// </summary>
+    private async Task BackfillLegacyKnownFolderMappingsAsync(
+        Guid dedicatedFolderId, CancellationToken ct)
+    {
+        var legacy = await Context.Set<GoogleDriveKnownFolderModel>()
+            .Where(x => !x.IsDeleted && x.MediaFolderId == Guid.Empty)
+            .ToListAsync(ct);
+        if (legacy.Count == 0) return;
+
+        var now = DateTime.UtcNow;
+        var user = UserContext.GetCurrentUserName();
+        foreach (var row in legacy)
+        {
+            row.MediaFolderId = dedicatedFolderId;
+            if (string.IsNullOrWhiteSpace(row.Name))
+                row.Name = row.FolderId;
+            row.UpdatedAt = now;
+            row.UpdatedBy = user;
+        }
+
+        await Context.SaveChangesAsync(ct);
     }
 }

@@ -105,6 +105,8 @@ public class GoogleDriveSyncService(
 
         var page = await client.ListChangesAsync(effectiveToken, settings.MaxFilesPerTick, ct);
 
+        // GetKnownFolderMapAsync tự nâng cấp dòng KnownFolder legacy (MediaFolderId rỗng)
+        // về dedicated root — file trong thư mục con GDRIVE-02 cũ không bị bỏ qua âm thầm.
         var map = await repository.GetKnownFolderMapAsync(ct);
         await ReconcileFoldersFromChangesAsync(page.Folders, map, ct);
 
