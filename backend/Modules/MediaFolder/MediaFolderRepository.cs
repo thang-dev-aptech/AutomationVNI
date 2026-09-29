@@ -36,7 +36,12 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
 
         if (isPageLessTree)
         {
-            query = QueryActive().Where(x => x.ParentFolderId == request.ParentFolderId!.Value);
+            // Phòng thủ thêm (bug de712fc2): chỉ liệt kê con thật SỰ page-less — nếu dữ liệu cũ
+            // lỡ có 1 folder "lai" (SocialChannelId thật nhưng ParentFolderId rơi vào cây này,
+            // từ trước khi CreateAsync/UpdateAsync được vá) thì KHÔNG được lộ ra qua đường
+            // không-kiểm-tra-quyền này.
+            query = QueryActive().Where(x =>
+                x.ParentFolderId == request.ParentFolderId!.Value && x.SocialChannelId == null);
         }
         else
         {
@@ -239,6 +244,9 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
 
     /// <summary>
     /// Tìm folder trong một Page; hỗ trợ tên có/không dấu; trả full path và counts (MEDIA-02).
+    /// Quyết định phạm vi (bug de712fc2/task t16-t18): CỐ Ý không mở rộng sang cây page-less
+    /// Google Drive — tính năng gốc chỉ yêu cầu BROWSE được cây đó (GetChildrenAsync/GetBreadcrumbAsync),
+    /// không có yêu cầu tìm kiếm xuyên cây Drive; SocialChannelId vẫn bắt buộc như trước.
     /// </summary>
     public async Task<PagedResult<MediaFolderSearchResultItem>> SearchFoldersAsync(
         SearchMediaFoldersRequest request, CancellationToken ct = default)
@@ -590,10 +598,13 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
             if (parent is null)
                 throw new InvalidOperationException("Thư mục cha không tồn tại.");
 
-            if (request.SocialChannelId.HasValue && parent.SocialChannelId.HasValue && request.SocialChannelId != parent.SocialChannelId)
+            // So khớp cả trường hợp null-vs-non-null (không chỉ non-null khác nhau) — một folder
+            // page-less (cha SocialChannelId=null, ví dụ cây Google Drive) không được nhận một
+            // Page thật làm con, và ngược lại (bug de712fc2 — tạo hố hổng bỏ qua access-control).
+            if (request.SocialChannelId.HasValue && request.SocialChannelId != parent.SocialChannelId)
                 throw new InvalidOperationException("Thư mục con phải thuộc cùng Page với thư mục cha.");
 
-            request.SocialChannelId ??= parent.SocialChannelId;
+            request.SocialChannelId = parent.SocialChannelId;
         }
         else if (request.SocialChannelId.HasValue)
         {
@@ -732,8 +743,11 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
                 if (parent is null)
                     throw new InvalidOperationException("Thư mục cha không tồn tại.");
 
+                // Cùng lý do với CreateAsync (bug de712fc2): null-vs-non-null cũng phải bị coi là
+                // lệch Page, không chỉ non-null khác nhau — nếu không, một folder Page thật có
+                // thể bị di chuyển vào làm con của cây page-less (Google Drive) hoặc ngược lại.
                 var targetChannelId = request.SocialChannelId ?? entity.SocialChannelId;
-                if (targetChannelId.HasValue && parent.SocialChannelId.HasValue && targetChannelId != parent.SocialChannelId)
+                if (targetChannelId != parent.SocialChannelId)
                     throw new InvalidOperationException("Thư mục cha không thuộc Page yêu cầu.");
 
                 await EnsureNoCycleAsync(id, request.ParentFolderId.Value, ct);
@@ -1235,8 +1249,11 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
     /// GDRIVE-05: true nếu <paramref name="folderId"/> LÀ chính dedicated root, hoặc là hậu duệ
     /// của nó (đi ngược ParentFolderId tới tận root) — dùng để tổng quát hoá đặc cách "page-less"
     /// cho toàn bộ cây con Google Drive, không chỉ đúng 1 cấp root như thiết kế GDRIVE-04 cũ.
-    /// Đi ngược theo ID thật (không dựa vào SocialChannelId==null) để không vô tình khớp một
-    /// folder page-less KHÔNG LIÊN QUAN nào khác nếu sau này phát sinh (ranh giới an ninh).
+    /// Fix bug de712fc2: MỖI bước đi ngược PHẢI xác nhận SocialChannelId==null — chỉ đi ngược ID
+    /// tới root là KHÔNG ĐỦ, vì (trước khi CreateAsync/UpdateAsync được vá) một folder thuộc Page
+    /// thật vẫn có thể có ParentFolderId nằm trong cây này; gặp SocialChannelId khác null ở bất kỳ
+    /// đâu trên đường đi phải dừng lại và trả false ngay, không được coi là page-less chỉ vì tổ
+    /// tiên xa hơn trùng dedicated root.
     /// </summary>
     private async Task<bool> IsWithinDedicatedTreeAsync(Guid? folderId, CancellationToken ct)
     {
@@ -1251,9 +1268,10 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         {
             var current = await QueryActive()
                 .Where(f => f.Id == cursor)
-                .Select(f => new { f.ParentFolderId })
+                .Select(f => new { f.SocialChannelId, f.ParentFolderId })
                 .FirstOrDefaultAsync(ct);
-            if (current is null || !current.ParentFolderId.HasValue) return false;
+            if (current is null || current.SocialChannelId.HasValue) return false;
+            if (!current.ParentFolderId.HasValue) return false;
             if (current.ParentFolderId.Value == dedicated.Id) return true;
             cursor = current.ParentFolderId.Value;
         }

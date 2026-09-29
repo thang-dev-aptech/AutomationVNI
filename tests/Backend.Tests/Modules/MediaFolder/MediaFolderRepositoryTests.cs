@@ -208,4 +208,96 @@ public class MediaFolderRepositoryTests : IDisposable
         Assert.Single(children.Items);
         Assert.Equal(pageAChild.Id, children.Items[0].Id);
     }
+
+    /// <summary>
+    /// Fix bug de712fc2: CreateAsync/UpdateAsync trước đây chỉ reject khi cha-con CÙNG có
+    /// SocialChannelId nhưng khác giá trị — không reject khi cha page-less (null, như dedicated
+    /// root) nhưng con được gán SocialChannelId thật của 1 Page. Kết hợp với IsWithinDedicatedTreeAsync
+    /// (chỉ đi ngược theo ID trước khi fix), điều này tạo ra 1 folder "lai" khiến
+    /// GetChildrenAsync/GetBreadcrumbAsync bỏ qua EnsureSocialChannelAccessAsync cho 1 Page thật.
+    /// </summary>
+    [Fact]
+    public async Task CreateAsync_RejectsRealPageFolderAsChildOfDedicatedRoot()
+    {
+        var dedicatedId = await _driveRepo.GetOrCreateDedicatedFolderAsync("test-drive-root");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _folderRepo.CreateAsync(
+            new CreateMediaFolderRequest
+            {
+                Name = "Folder lai",
+                ParentFolderId = dedicatedId,
+                SocialChannelId = _pageAId,
+            }));
+    }
+
+    /// <summary>Cùng lỗ hổng de712fc2 nhưng qua đường di chuyển folder (UpdateAsync) thay vì tạo mới.</summary>
+    [Fact]
+    public async Task UpdateAsync_RejectsMovingRealPageFolderUnderDedicatedRoot()
+    {
+        var dedicatedId = await _driveRepo.GetOrCreateDedicatedFolderAsync("test-drive-root");
+        var pageAChild = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(),
+            Name = "Folder Page A",
+            SocialChannelId = _pageAId,
+            ParentFolderId = null,
+            CreatedAt = DateTime.UtcNow,
+        };
+        _db.MediaFolders.Add(pageAChild);
+        await _db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _folderRepo.UpdateAsync(
+            pageAChild.Id,
+            new UpdateMediaFolderRequest { ParentFolderId = dedicatedId }));
+    }
+
+    /// <summary>
+    /// Phòng thủ nhiều lớp: NGAY CẢ NẾU một folder "lai" đã lỡ tồn tại từ trước (dữ liệu cũ, mô
+    /// phỏng bằng cách chèn thẳng DB bỏ qua CreateAsync/UpdateAsync — đúng kịch bản reviewer đã
+    /// dùng để chứng minh bug de712fc2), GetChildrenAsync/GetBreadcrumbAsync vẫn phải đòi
+    /// SocialChannelId thật cho nó — không được lộ qua đường page-less dù ParentFolderId của nó
+    /// nằm trong cây Drive.
+    /// </summary>
+    [Fact]
+    public async Task ExistingMixedFolder_StillRequiresRealSocialChannelId_DefenseInDepth()
+    {
+        var dedicatedId = await _driveRepo.GetOrCreateDedicatedFolderAsync("test-drive-root");
+        var mixedFolder = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(),
+            Name = "Folder lai (dữ liệu cũ giả lập)",
+            SocialChannelId = _pageAId,
+            ParentFolderId = dedicatedId,
+            CreatedAt = DateTime.UtcNow,
+        };
+        _db.MediaFolders.Add(mixedFolder);
+        await _db.SaveChangesAsync();
+
+        // GetChildrenAsync(root) không được liệt kê folder lai này ra qua đường page-less.
+        var rootChildren = await _folderRepo.GetChildrenAsync(new GetMediaFolderChildrenRequest
+        {
+            SocialChannelId = Guid.Empty,
+            ParentFolderId = dedicatedId,
+            Index = 1,
+            Size = 20,
+        });
+        Assert.DoesNotContain(rootChildren.Items, x => x.Id == mixedFolder.Id);
+
+        // Mở trực tiếp folder lai qua đường page-less (SocialChannelId=Guid.Empty) phải bị từ chối.
+        await Assert.ThrowsAsync<ArgumentException>(() => _folderRepo.GetChildrenAsync(
+            new GetMediaFolderChildrenRequest
+            {
+                SocialChannelId = Guid.Empty,
+                ParentFolderId = mixedFolder.Id,
+                Index = 1,
+                Size = 20,
+            }));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => _folderRepo.GetBreadcrumbAsync(
+            new GetMediaFolderBreadcrumbRequest
+            {
+                SocialChannelId = Guid.Empty,
+                FolderId = mixedFolder.Id,
+            }));
+    }
 }
