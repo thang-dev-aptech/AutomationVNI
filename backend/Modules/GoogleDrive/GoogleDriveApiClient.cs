@@ -66,13 +66,31 @@ public class GoogleDriveApiClient(IOptions<GoogleDriveOptions> options) : IGoogl
 
         var folders = new List<GoogleDriveFolderInfo>();
         var files = new List<GoogleDriveFileInfo>();
+        var removedOrTrashedIds = new List<string>();
         foreach (var change in response.Changes ?? [])
         {
-            if (change.Removed == true) continue;
+            // GDRIVE-05 Task B: trước đây continue thẳng, không có tín hiệu nào surface ra —
+            // SyncService không cách nào biết một file/folder đã biết vừa biến mất để cascade
+            // soft-delete. Bây giờ surface ID ra RemovedOrTrashedIds; SyncService tự tra map/
+            // MediaAssetModel — ID chưa từng được biết sẽ không khớp gì và bị bỏ qua tự nhiên.
+            if (change.Removed == true)
+            {
+                if (!string.IsNullOrWhiteSpace(change.FileId))
+                    removedOrTrashedIds.Add(change.FileId);
+                continue;
+            }
 
             var file = change.File;
             if (file is null) continue;
-            if (file.Trashed == true) continue;
+
+            if (file.Trashed == true)
+            {
+                var trashedId = file.Id ?? change.FileId;
+                if (!string.IsNullOrWhiteSpace(trashedId))
+                    removedOrTrashedIds.Add(trashedId);
+                continue;
+            }
+
             if (file.MimeType is null) continue;
 
             var parentIds = (file.Parents ?? []).Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
@@ -110,8 +128,76 @@ public class GoogleDriveApiClient(IOptions<GoogleDriveOptions> options) : IGoogl
         {
             Folders = folders,
             Files = files,
+            RemovedOrTrashedIds = removedOrTrashedIds,
             NextPageToken = response.NextPageToken ?? response.NewStartPageToken,
         };
+    }
+
+    public async Task<GoogleDriveFolderTree> ListFolderTreeAsync(string rootFolderId, CancellationToken ct = default)
+    {
+        using var service = BuildDriveService();
+        var tree = new GoogleDriveFolderTree();
+        var queue = new Queue<string>();
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+
+        if (!string.IsNullOrWhiteSpace(rootFolderId))
+        {
+            queue.Enqueue(rootFolderId);
+            visited.Add(rootFolderId);
+        }
+
+        while (queue.Count > 0)
+        {
+            var parentId = queue.Dequeue();
+            string? pageToken = null;
+
+            do
+            {
+                var request = service.Files.List();
+                // Escape dấu nháy đơn phòng khi ID có ký tự lạ — ID Drive thật không có, nhưng
+                // đừng nối chuỗi ngây thơ vào một câu query.
+                request.Q = $"'{parentId.Replace("'", "\\'")}' in parents and trashed = false";
+                request.Fields = "nextPageToken, files(id, name, mimeType, size, parents)";
+                request.PageSize = 1000;
+                request.PageToken = pageToken;
+
+                var response = await request.ExecuteAsync(ct);
+                foreach (var file in response.Files ?? [])
+                {
+                    if (file.MimeType is null) continue;
+                    var parentIds = (file.Parents ?? []).Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+
+                    if (file.MimeType == FolderMimeType)
+                    {
+                        var folderId = file.Id ?? string.Empty;
+                        tree.Folders.Add(new GoogleDriveFolderInfo
+                        {
+                            FolderId = folderId,
+                            Name = file.Name ?? string.Empty,
+                            ParentIds = parentIds,
+                        });
+                        if (!string.IsNullOrWhiteSpace(folderId) && visited.Add(folderId))
+                            queue.Enqueue(folderId);
+                        continue;
+                    }
+
+                    if (file.MimeType.StartsWith(GoogleAppsMimePrefix, StringComparison.Ordinal)) continue;
+
+                    tree.Files.Add(new GoogleDriveFileInfo
+                    {
+                        FileId = file.Id ?? string.Empty,
+                        Name = file.Name ?? string.Empty,
+                        MimeType = file.MimeType,
+                        SizeBytes = file.Size ?? 0,
+                        Parents = parentIds,
+                    });
+                }
+
+                pageToken = response.NextPageToken;
+            } while (!string.IsNullOrEmpty(pageToken));
+        }
+
+        return tree;
     }
 
     public async Task<byte[]> DownloadFileAsync(string fileId, CancellationToken ct = default)

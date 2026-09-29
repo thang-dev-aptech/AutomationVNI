@@ -686,6 +686,232 @@ public class GoogleDriveSyncServiceTests
         Assert.NotEqual(Guid.Empty, map[legacyChildId].MediaFolderId);
     }
 
+    // ── GDRIVE-05 Task B: cascade soft-delete + reconcile toàn cây ───────────
+
+    /// <summary>
+    /// AC gdrive05-cascade-scope-test (cef282d1) — cây root > A > (B, C), B có file b1, C có
+    /// file c1, cộng nhánh D độc lập (anh em của A) có file d1. Drive báo A bị xoá/trash qua
+    /// RemovedOrTrashedIds phải cascade ĐÚNG A, B, C, b1, c1 — D và d1 tuyệt đối không bị ảnh hưởng.
+    /// </summary>
+    [Fact]
+    public async Task RunTickAsync_TrashedKnownFolder_CascadeDeletesOnlyThatBranch()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+
+        const string folderA = "cascade-a";
+        const string folderB = "cascade-b";
+        const string folderC = "cascade-c";
+        const string folderD = "cascade-d";
+
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "cascade-setup",
+            Folders =
+            [
+                new GoogleDriveFolderInfo { FolderId = folderA, Name = "A", ParentIds = [Fixture.RootFolderId] },
+                new GoogleDriveFolderInfo { FolderId = folderB, Name = "B", ParentIds = [folderA] },
+                new GoogleDriveFolderInfo { FolderId = folderC, Name = "C", ParentIds = [folderA] },
+                new GoogleDriveFolderInfo { FolderId = folderD, Name = "D", ParentIds = [Fixture.RootFolderId] },
+            ],
+            Files =
+            [
+                new GoogleDriveFileInfo { FileId = "b1", Name = "b1.jpg", MimeType = "image/jpeg", SizeBytes = 10, Parents = [folderB] },
+                new GoogleDriveFileInfo { FileId = "c1", Name = "c1.jpg", MimeType = "image/jpeg", SizeBytes = 10, Parents = [folderC] },
+                new GoogleDriveFileInfo { FileId = "d1", Name = "d1.jpg", MimeType = "image/jpeg", SizeBytes = 10, Parents = [folderD] },
+            ],
+        });
+        await fixture.CreateService().RunTickAsync();
+
+        var mapBefore = await fixture.GetKnownFolderMapAsync();
+        Assert.True(mapBefore.ContainsKey(folderA));
+        Assert.True(mapBefore.ContainsKey(folderB));
+        Assert.True(mapBefore.ContainsKey(folderC));
+        Assert.True(mapBefore.ContainsKey(folderD));
+        var mediaA = mapBefore[folderA].MediaFolderId;
+        var mediaB = mapBefore[folderB].MediaFolderId;
+        var mediaC = mapBefore[folderC].MediaFolderId;
+        var mediaD = mapBefore[folderD].MediaFolderId;
+
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "cascade-delete-a",
+            RemovedOrTrashedIds = [folderA],
+        });
+        await fixture.CreateService().RunTickAsync();
+
+        // Nhánh A: A, B, C và file bên trong đều bị soft-delete.
+        Assert.True((await fixture.GetMediaFolderRawAsync(mediaA))!.IsDeleted);
+        Assert.True((await fixture.GetMediaFolderRawAsync(mediaB))!.IsDeleted);
+        Assert.True((await fixture.GetMediaFolderRawAsync(mediaC))!.IsDeleted);
+        Assert.True((await fixture.GetMediaAssetByGoogleDriveFileIdRawAsync("b1"))!.IsDeleted);
+        Assert.True((await fixture.GetMediaAssetByGoogleDriveFileIdRawAsync("c1"))!.IsDeleted);
+
+        var mapAfter = await fixture.GetKnownFolderMapAsync();
+        Assert.False(mapAfter.ContainsKey(folderA));
+        Assert.False(mapAfter.ContainsKey(folderB));
+        Assert.False(mapAfter.ContainsKey(folderC));
+
+        // TUYỆT ĐỐI KHÔNG ảnh hưởng nhánh D (anh em của A) hay bất kỳ gì khác.
+        Assert.False((await fixture.GetMediaFolderRawAsync(mediaD))!.IsDeleted);
+        Assert.False((await fixture.GetMediaAssetByGoogleDriveFileIdRawAsync("d1"))!.IsDeleted);
+        Assert.True(mapAfter.ContainsKey(folderD));
+    }
+
+    /// <summary>
+    /// AC gdrive05-cascade-scope-test (cef282d1) — case "đã biết + DriveParentId đổi + cha mới
+    /// KHÔNG còn trong bản đồ" để lại từ task t8: coi như di chuyển ra ngoài cây đang theo dõi,
+    /// cascade soft-delete giống hệt bị xoá.
+    /// </summary>
+    [Fact]
+    public async Task RunTickAsync_KnownFolderMovedOutsideTrackedTree_CascadeDeletesBranch()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+
+        const string folderE = "move-out-e";
+        const string folderF = "move-out-f";
+
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "move-out-setup",
+            Folders =
+            [
+                new GoogleDriveFolderInfo { FolderId = folderE, Name = "E", ParentIds = [Fixture.RootFolderId] },
+                new GoogleDriveFolderInfo { FolderId = folderF, Name = "F", ParentIds = [folderE] },
+            ],
+            Files =
+            [
+                new GoogleDriveFileInfo { FileId = "f1", Name = "f1.jpg", MimeType = "image/jpeg", SizeBytes = 10, Parents = [folderF] },
+            ],
+        });
+        await fixture.CreateService().RunTickAsync();
+
+        var mapBefore = await fixture.GetKnownFolderMapAsync();
+        var mediaE = mapBefore[folderE].MediaFolderId;
+        var mediaF = mapBefore[folderF].MediaFolderId;
+
+        // Tick 2: E báo cha mới là một folder NGOÀI cây đang theo dõi (không có trong map).
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "move-out-2",
+            Folders =
+            [
+                new GoogleDriveFolderInfo { FolderId = folderE, Name = "E", ParentIds = ["some-external-untracked-folder"] },
+            ],
+        });
+        await fixture.CreateService().RunTickAsync();
+
+        Assert.True((await fixture.GetMediaFolderRawAsync(mediaE))!.IsDeleted);
+        Assert.True((await fixture.GetMediaFolderRawAsync(mediaF))!.IsDeleted);
+        Assert.True((await fixture.GetMediaAssetByGoogleDriveFileIdRawAsync("f1"))!.IsDeleted);
+
+        var mapAfter = await fixture.GetKnownFolderMapAsync();
+        Assert.False(mapAfter.ContainsKey(folderE));
+        Assert.False(mapAfter.ContainsKey(folderF));
+    }
+
+    /// <summary>
+    /// AC gdrive05-cascade-scope-test (cef282d1) — 1 file bị xoá trên Drive chỉ soft-delete đúng
+    /// MediaAsset đó, không ảnh hưởng file khác trong cùng folder.
+    /// </summary>
+    [Fact]
+    public async Task RunTickAsync_TrashedSingleFile_OnlyThatAssetSoftDeleted()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "single-file-setup",
+            Files =
+            [
+                new GoogleDriveFileInfo { FileId = "keep-1", Name = "keep.jpg", MimeType = "image/jpeg", SizeBytes = 10, Parents = [Fixture.RootFolderId] },
+                new GoogleDriveFileInfo { FileId = "remove-1", Name = "remove.jpg", MimeType = "image/jpeg", SizeBytes = 10, Parents = [Fixture.RootFolderId] },
+            ],
+        });
+        await fixture.CreateService().RunTickAsync();
+        Assert.Equal(2, await fixture.CountMediaAssetsAsync());
+
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "single-file-remove",
+            RemovedOrTrashedIds = ["remove-1"],
+        });
+        await fixture.CreateService().RunTickAsync();
+
+        Assert.True((await fixture.GetMediaAssetByGoogleDriveFileIdRawAsync("remove-1"))!.IsDeleted);
+        Assert.False((await fixture.GetMediaAssetByGoogleDriveFileIdRawAsync("keep-1"))!.IsDeleted);
+        Assert.Equal(1, await fixture.CountMediaAssetsAsync());
+    }
+
+    /// <summary>
+    /// AC gdrive05-reconcile-test (0d49681f) — mô phỏng lỗi giữa chừng: reset FullTreeReconciledAt
+    /// về null rồi chạy lại — lần 2 KHÔNG được tạo trùng GoogleDriveKnownFolderModel cho thư mục
+    /// đã xử lý ở lần 1 (idempotent theo Drive FolderId, không dựa duy nhất vào cột cờ).
+    /// </summary>
+    [Fact]
+    public async Task ReconcileFullTreeOnceAsync_RunTwice_DoesNotDuplicateKnownFolderRows()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+
+        const string sub1 = "reconcile-sub-1";
+        const string sub2 = "reconcile-sub-2";
+        fixture.Client.FolderTree = new GoogleDriveFolderTree
+        {
+            Folders =
+            [
+                new GoogleDriveFolderInfo { FolderId = sub1, Name = "Sub1", ParentIds = [Fixture.RootFolderId] },
+                new GoogleDriveFolderInfo { FolderId = sub2, Name = "Sub2", ParentIds = [Fixture.RootFolderId] },
+            ],
+        };
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "reconcile-1" });
+        await fixture.CreateService().RunTickAsync();
+
+        var countAfterFirst = await fixture.CountKnownFoldersAsync();
+        Assert.True(countAfterFirst >= 3); // dòng root/dedicated + sub1 + sub2
+
+        // Mô phỏng lỗi giữa chừng: cờ chưa thật sự set thành công, tick sau phải chạy lại.
+        await fixture.ResetFullTreeReconciledAtAsync();
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "reconcile-2" });
+        await fixture.CreateService().RunTickAsync();
+
+        var countAfterSecond = await fixture.CountKnownFoldersAsync();
+        Assert.Equal(countAfterFirst, countAfterSecond);
+    }
+
+    /// <summary>
+    /// AC gdrive05-reconcile-test (0d49681f) — asset GoogleDrive nằm phẳng ở dedicated root (di
+    /// sản GDRIVE-04) phải được ReconcileFullTreeOnceAsync đặt lại đúng thư mục con thật theo vị
+    /// trí hiện tại trên Drive (ListFolderTreeAsync), không còn nằm phẳng.
+    /// </summary>
+    [Fact]
+    public async Task ReconcileFullTreeOnceAsync_MovesFlatLegacyAssetsIntoRealSubfolder()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SeedOrphanGoogleDriveAssetAsync("legacy-flat-1", "flat1.jpg");
+        var dedicatedId = await fixture.GetOrCreateDedicatedFolderAsync();
+
+        const string realParent = "reconcile-real-parent";
+        fixture.Client.FolderTree = new GoogleDriveFolderTree
+        {
+            Folders = [new GoogleDriveFolderInfo { FolderId = realParent, Name = "Thật", ParentIds = [Fixture.RootFolderId] }],
+            Files = [new GoogleDriveFileInfo { FileId = "legacy-flat-1", Name = "flat1.jpg", MimeType = "image/jpeg", SizeBytes = 10, Parents = [realParent] }],
+        };
+
+        await fixture.SetEnabledAsync(true);
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "reconcile-move" });
+        await fixture.CreateService().RunTickAsync();
+
+        var map = await fixture.GetKnownFolderMapAsync();
+        Assert.True(map.ContainsKey(realParent));
+        var asset = await fixture.GetMediaAssetByGoogleDriveFileIdRawAsync("legacy-flat-1");
+        Assert.NotNull(asset);
+        Assert.Equal(map[realParent].MediaFolderId, asset!.FolderId);
+        Assert.NotEqual(dedicatedId, asset.FolderId);
+    }
+
     // ── GDRIVE-04: folder chuyên dụng + backfill ────────────────────────────
 
     /// <summary>AC gdrive04-dedicated-folder-idempotent-test (1a10f3d6).</summary>
@@ -888,6 +1114,47 @@ public class GoogleDriveSyncServiceTests
                 .FirstOrDefaultAsync(f => f.Id == id && !f.IsDeleted);
         }
 
+        /// <summary>Không lọc IsDeleted — dùng để kiểm tra cascade soft-delete đã set cờ đúng chưa.</summary>
+        public async Task<MediaFolderModel?> GetMediaFolderRawAsync(Guid id)
+        {
+            await using var db = new AppDbContext(DbOptions);
+            return await db.Set<MediaFolderModel>().AsNoTracking().FirstOrDefaultAsync(f => f.Id == id);
+        }
+
+        /// <summary>Không lọc IsDeleted — dùng để kiểm tra cascade soft-delete MediaAsset.</summary>
+        public async Task<MediaAssetModel?> GetMediaAssetByGoogleDriveFileIdRawAsync(string googleDriveFileId)
+        {
+            await using var db = new AppDbContext(DbOptions);
+            return await db.Set<MediaAssetModel>()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(a => a.GoogleDriveFileId == googleDriveFileId);
+        }
+
+        /// <summary>Không lọc IsDeleted — dùng để kiểm tra bản đồ ánh xạ đã bị cascade loại bỏ chưa.</summary>
+        public async Task<GoogleDriveKnownFolderModel?> GetKnownFolderRawAsync(string driveFolderId)
+        {
+            await using var db = new AppDbContext(DbOptions);
+            return await db.Set<GoogleDriveKnownFolderModel>()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.FolderId == driveFolderId);
+        }
+
+        public async Task<int> CountKnownFoldersAsync()
+        {
+            await using var db = new AppDbContext(DbOptions);
+            return await db.Set<GoogleDriveKnownFolderModel>().CountAsync(x => !x.IsDeleted);
+        }
+
+        /// <summary>Mô phỏng "lỗi giữa chừng": cờ chưa từng được set thật, buộc tick sau chạy lại reconcile.</summary>
+        public async Task ResetFullTreeReconciledAtAsync()
+        {
+            await using var db = new AppDbContext(DbOptions);
+            var state = await db.Set<GoogleDriveSyncStateModel>()
+                .SingleAsync(x => x.Id == GoogleDriveSyncStateModel.SingletonId);
+            state.FullTreeReconciledAt = null;
+            await db.SaveChangesAsync();
+        }
+
         public async Task SeedOrphanGoogleDriveAssetAsync(string googleDriveFileId, string name)
         {
             await using var db = new AppDbContext(DbOptions);
@@ -952,6 +1219,9 @@ public class GoogleDriveSyncServiceTests
     {
         public string StartToken { get; set; } = "start-token";
         public Queue<GoogleDriveChangesPage> Pages { get; } = new();
+        /// <summary>GDRIVE-05 Task B: cây trả về từ ListFolderTreeAsync (ReconcileFullTreeOnceAsync).</summary>
+        public GoogleDriveFolderTree FolderTree { get; set; } = new();
+        public int ListFolderTreeCalls { get; private set; }
         /// <summary>
         /// Backlog "thô" — khi Pages rỗng, mỗi ListChangesAsync tự cắt tối đa maxResults phần tử
         /// từ đây, mô phỏng đúng cách Drive API thật giới hạn PageSize ở tầng SERVER, không phải
@@ -1028,6 +1298,12 @@ public class GoogleDriveSyncServiceTests
             if (_downloadBehaviors.TryGetValue(fileId, out var queue) && queue.Count > 0)
                 return Task.FromResult(queue.Dequeue()());
             return Task.FromResult(new byte[] { 1, 2, 3 });
+        }
+
+        public Task<GoogleDriveFolderTree> ListFolderTreeAsync(string rootFolderId, CancellationToken ct = default)
+        {
+            ListFolderTreeCalls++;
+            return Task.FromResult(FolderTree);
         }
     }
 

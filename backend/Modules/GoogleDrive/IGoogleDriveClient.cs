@@ -30,6 +30,13 @@ public interface IGoogleDriveClient
 
     /// <summary>Tải nội dung nhị phân của một file thường (không dùng cho Google Docs/Sheets/Slides gốc).</summary>
     Task<byte[]> DownloadFileAsync(string fileId, CancellationToken ct = default);
+
+    /// <summary>
+    /// GDRIVE-05 Task B: quét đệ quy TOÀN BỘ cây con hiện có từ <paramref name="rootFolderId"/>
+    /// (files.list với q="'{parentId}' in parents and trashed=false"), dùng CHO ReconcileFullTreeOnceAsync
+    /// — một thao tác chạy MỘT LẦN, không phải cơ chế poll định kỳ (đó vẫn là ListChangesAsync).
+    /// </summary>
+    Task<GoogleDriveFolderTree> ListFolderTreeAsync(string rootFolderId, CancellationToken ct = default);
 }
 
 /// <summary>Một trang kết quả changes.list — folders trước files để SyncService mở rộng cây cùng tick.</summary>
@@ -38,8 +45,23 @@ public class GoogleDriveChangesPage
     public List<GoogleDriveFolderInfo> Folders { get; set; } = [];
     public List<GoogleDriveFileInfo> Files { get; set; } = [];
 
+    /// <summary>
+    /// GDRIVE-05 Task B: ID file/folder bị xoá hẳn (change.Removed=true) HOẶC đã biết mà giờ
+    /// Trashed=true trên Drive. SyncService tra bản đồ ánh xạ/MediaAssetModel để quyết định có gì
+    /// để cascade soft-delete hay không — ID của thứ CHƯA TỪNG được biết sẽ không khớp gì cả và
+    /// tự nhiên bị bỏ qua, đúng như hành vi cũ.
+    /// </summary>
+    public List<string> RemovedOrTrashedIds { get; set; } = [];
+
     /// <summary>Con trỏ cho lượt poll kế tiếp — luôn có giá trị (changes.list luôn trả nextPageToken hoặc newStartPageToken).</summary>
     public string? NextPageToken { get; set; }
+}
+
+/// <summary>GDRIVE-05 Task B: kết quả ListFolderTreeAsync — toàn bộ cây con hiện có, không phải delta.</summary>
+public class GoogleDriveFolderTree
+{
+    public List<GoogleDriveFolderInfo> Folders { get; set; } = [];
+    public List<GoogleDriveFileInfo> Files { get; set; } = [];
 }
 
 /// <summary>GDRIVE-02/05: thư mục phát hiện qua changes.list (ParentIds + Name thô từ Drive).</summary>

@@ -222,6 +222,8 @@ public class GoogleDriveControllerTests
             => Task.FromResult(new GoogleDriveChangesPage());
         public Task<byte[]> DownloadFileAsync(string fileId, CancellationToken ct = default)
             => throw new InvalidOperationException("Không cấu hình.");
+        public Task<GoogleDriveFolderTree> ListFolderTreeAsync(string rootFolderId, CancellationToken ct = default)
+            => Task.FromResult(new GoogleDriveFolderTree());
     }
 
     private sealed class NoopFileStorageService : IFileStorageService

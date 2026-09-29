@@ -23,4 +23,12 @@ public class GoogleDriveSyncStateModel : BaseEntity
     /// MediaAsset Source=GoogleDrive. Null cho đến lần get-or-create đầu tiên.
     /// </summary>
     public Guid? DedicatedFolderId { get; set; }
+
+    /// <summary>
+    /// GDRIVE-05 Task B: mốc quét toàn cây (ReconcileFullTreeOnceAsync) đã hoàn tất — null nghĩa
+    /// là chưa chạy, chạy đúng 1 lần trong toàn vòng đời. Chỉ set SAU KHI xong hoàn toàn; việc
+    /// chống tạo trùng khi chạy lại giữa chừng dựa vào idempotent-theo-FolderId ở tầng repository,
+    /// không dựa duy nhất vào cột này.
+    /// </summary>
+    public DateTime? FullTreeReconciledAt { get; set; }
 }

@@ -762,6 +762,57 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         return await base.SoftDeleteAsync(id, ct);
     }
 
+    /// <summary>
+    /// GDRIVE-05 Task B: xoá đệ quy TOÀN BỘ nhánh — folder gốc, MỌI MediaFolder con cháu (theo
+    /// ParentFolderId), và MỌI MediaAsset nằm bên trong các folder đó. Dùng khi Drive báo thư mục
+    /// bị xoá/trash hoặc bị di chuyển RA NGOÀI cây Google Drive đang theo dõi.
+    ///
+    /// KHÔNG dùng chung với SoftDeleteAsync ở trên (đó là xoá thủ công từ UI: chặn nếu còn con,
+    /// đưa ảnh trực tiếp về "Chưa phân loại") — ngữ nghĩa khác hẳn. Ở đây con cháu và ảnh bên
+    /// trong PHẢI biến mất theo nhánh, không phải "mồ côi" trở về gốc.
+    ///
+    /// Chỉ ảnh hưởng ĐÚNG nhánh bắt đầu từ <paramref name="rootFolderId"/> — duyệt cây bằng
+    /// ParentFolderId trong bộ nhớ nên không chạm tới thư mục anh em hay thư mục cha.
+    /// </summary>
+    public async Task CascadeSoftDeleteAsync(Guid rootFolderId, CancellationToken ct = default)
+    {
+        var allActive = await QueryActive().ToListAsync(ct);
+
+        var idsToDelete = new HashSet<Guid>();
+        var stack = new Stack<Guid>();
+        stack.Push(rootFolderId);
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (!idsToDelete.Add(current)) continue;
+            foreach (var child in allActive.Where(f => f.ParentFolderId == current))
+                stack.Push(child.Id);
+        }
+
+        var now = DateTime.UtcNow;
+        var user = GetCurrentUserName();
+
+        foreach (var folder in allActive.Where(f => idsToDelete.Contains(f.Id)))
+        {
+            folder.IsDeleted = true;
+            folder.DeletedAt = now;
+            folder.DeletedBy = user;
+        }
+
+        var idsList = idsToDelete.ToList();
+        var assets = await Context.Set<MediaAssetModel>()
+            .Where(a => !a.IsDeleted && a.FolderId != null && idsList.Contains(a.FolderId.Value))
+            .ToListAsync(ct);
+        foreach (var asset in assets)
+        {
+            asset.IsDeleted = true;
+            asset.DeletedAt = now;
+            asset.DeletedBy = user;
+        }
+
+        await Context.SaveChangesAsync(ct);
+    }
+
     public static MediaFolderResponse ToResponse(MediaFolderModel f) => new()
     {
         Id = f.Id,

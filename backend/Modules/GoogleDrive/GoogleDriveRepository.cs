@@ -38,6 +38,20 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
         return state;
     }
 
+    /// <summary>
+    /// GDRIVE-05 Task B: đánh dấu ReconcileFullTreeOnceAsync đã chạy xong hoàn toàn — chỉ gọi SAU
+    /// KHI toàn bộ cây đã quét/tạo mapping/cập nhật FolderId xong. Chống tạo trùng khi chạy lại
+    /// (lỡ lỗi giữa chừng) dựa vào idempotent-theo-FolderId ở CreateMappedChildFolderAsync, không
+    /// dựa duy nhất vào cột này.
+    /// </summary>
+    public async Task MarkFullTreeReconciledAsync(CancellationToken ct = default)
+    {
+        var state = await Context.Set<GoogleDriveSyncStateModel>()
+            .SingleAsync(x => x.Id == GoogleDriveSyncStateModel.SingletonId, ct);
+        state.FullTreeReconciledAt = DateTime.UtcNow;
+        await Context.SaveChangesAsync(ct);
+    }
+
     public async Task<GoogleDriveSyncStateModel> SetEnabledAsync(
         bool enabled, string userName, CancellationToken ct = default)
     {
@@ -299,6 +313,48 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
         folder.UpdatedAt = DateTime.UtcNow;
         folder.UpdatedBy = UserContext.GetCurrentUserName();
         await Context.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// GDRIVE-05 Task B: soft-delete đệ quy TOÀN BỘ dòng ánh xạ trong nhánh bắt đầu từ
+    /// <paramref name="rootFolderId"/> (duyệt theo DriveParentId trong bộ nhớ) — dùng song song
+    /// với MediaFolderRepository.CascadeSoftDeleteAsync khi một thư mục bị xoá/trash/di chuyển ra
+    /// ngoài cây. Trả về danh sách Drive FolderId đã bị loại khỏi bản đồ, để caller gỡ khỏi map
+    /// đang dùng trong cùng tick (tránh dùng nhầm mapping vừa bị xoá).
+    /// </summary>
+    public async Task<List<string>> CascadeSoftDeleteFolderMappingAsync(
+        string rootFolderId, CancellationToken ct = default)
+    {
+        var allActive = await Context.Set<GoogleDriveKnownFolderModel>()
+            .Where(x => !x.IsDeleted)
+            .ToListAsync(ct);
+
+        var idsToDelete = new HashSet<string>(StringComparer.Ordinal);
+        var stack = new Stack<string>();
+        stack.Push(rootFolderId);
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (!idsToDelete.Add(current)) continue;
+            foreach (var child in allActive.Where(x =>
+                string.Equals(x.DriveParentId, current, StringComparison.Ordinal)))
+                stack.Push(child.FolderId);
+        }
+
+        var now = DateTime.UtcNow;
+        var user = UserContext.GetCurrentUserName();
+        var rows = allActive.Where(x => idsToDelete.Contains(x.FolderId)).ToList();
+        foreach (var row in rows)
+        {
+            row.IsDeleted = true;
+            row.DeletedAt = now;
+            row.DeletedBy = user;
+        }
+
+        if (rows.Count > 0)
+            await Context.SaveChangesAsync(ct);
+
+        return rows.Select(x => x.FolderId).ToList();
     }
 
     // ── Folder chuyên dụng (GDRIVE-04) ──────────────────────────────────────
