@@ -25,40 +25,48 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
     public async Task<PagedResult<MediaFolderResponse>> GetChildrenAsync(
         GetMediaFolderChildrenRequest request, CancellationToken ct = default)
     {
-        // GDRIVE-04: folder chuyên dụng page-less — children rỗng, không Require SocialChannelId.
-        if (await IsDedicatedFolderParentAsync(request.ParentFolderId, ct))
+        // GDRIVE-04/05: cây thư mục chuyên dụng Google Drive (page-less) — browse thật theo
+        // ParentFolderId ở BẤT KỲ độ sâu nào trong cây (không chỉ đúng root như thiết kế
+        // GDRIVE-04 cũ khi cây còn phẳng), bỏ qua yêu cầu SocialChannelId/EnsureSocialChannelAccessAsync
+        // vì mọi folder trong cây này đều SocialChannelId=null, không thuộc Page nào.
+        var isPageLessTree = await IsWithinDedicatedTreeAsync(request.ParentFolderId, ct);
+
+        IQueryable<MediaFolderModel> query;
+        string? pageName = null;
+
+        if (isPageLessTree)
         {
-            return new PagedResult<MediaFolderResponse>
-            {
-                Items = [],
-                Total = 0,
-                Index = request.Index < 1 ? 1 : request.Index,
-                Size = request.Size < 1 ? 20 : (request.Size > 100 ? 100 : request.Size)
-            };
+            query = QueryActive().Where(x => x.ParentFolderId == request.ParentFolderId!.Value);
         }
-
-        if (request.SocialChannelId == Guid.Empty)
-            throw new ArgumentException("SocialChannelId không được để trống.");
-
-        await EnsureSocialChannelAccessAsync(request.SocialChannelId, ct);
-
-        if (request.ParentFolderId.HasValue)
-        {
-            var parent = await QueryActive()
-                .FirstOrDefaultAsync(x =>
-                    x.Id == request.ParentFolderId.Value &&
-                    x.SocialChannelId == request.SocialChannelId, ct);
-            if (parent is null)
-                throw new KeyNotFoundException("Thư mục cha không tồn tại.");
-        }
-
-        var query = QueryActive()
-            .Where(x => x.SocialChannelId == request.SocialChannelId);
-
-        if (request.ParentFolderId.HasValue)
-            query = query.Where(x => x.ParentFolderId == request.ParentFolderId.Value);
         else
-            query = query.Where(x => x.ParentFolderId == null);
+        {
+            if (request.SocialChannelId == Guid.Empty)
+                throw new ArgumentException("SocialChannelId không được để trống.");
+
+            await EnsureSocialChannelAccessAsync(request.SocialChannelId, ct);
+
+            if (request.ParentFolderId.HasValue)
+            {
+                var parent = await QueryActive()
+                    .FirstOrDefaultAsync(x =>
+                        x.Id == request.ParentFolderId.Value &&
+                        x.SocialChannelId == request.SocialChannelId, ct);
+                if (parent is null)
+                    throw new KeyNotFoundException("Thư mục cha không tồn tại.");
+            }
+
+            query = QueryActive().Where(x => x.SocialChannelId == request.SocialChannelId);
+            query = request.ParentFolderId.HasValue
+                ? query.Where(x => x.ParentFolderId == request.ParentFolderId.Value)
+                : query.Where(x => x.ParentFolderId == null);
+
+            // Cả trang chỉ thuộc 1 Page (request.SocialChannelId) — tra PageName 1 lần cho
+            // subtitle trên folder card, thay vì để card tự fallback hiện GUID thô.
+            pageName = await Context.Set<SocialChannelModel>()
+                .Where(x => x.Id == request.SocialChannelId)
+                .Select(x => x.PageName)
+                .FirstOrDefaultAsync(ct);
+        }
 
         var isDesc = string.Equals(request.SortDirection, "desc", StringComparison.OrdinalIgnoreCase);
         var sortBy = request.SortBy?.Trim().ToLowerInvariant();
@@ -108,19 +116,14 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
             .Select(g => new { FolderId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.FolderId, x => x.Count, ct);
 
-        // 1 query nhóm đếm số lượng folder con trực tiếp thuộc cùng Page
+        // 1 query nhóm đếm số lượng folder con trực tiếp — page-less thì mọi folder trong cây
+        // đều SocialChannelId=null nên không cần lọc thêm theo Page.
         var childFolderCounts = await QueryActive()
-            .Where(x => x.SocialChannelId == request.SocialChannelId && x.ParentFolderId.HasValue && folderIds.Contains(x.ParentFolderId.Value))
+            .Where(x => x.ParentFolderId.HasValue && folderIds.Contains(x.ParentFolderId.Value)
+                && (isPageLessTree || x.SocialChannelId == request.SocialChannelId))
             .GroupBy(x => x.ParentFolderId!.Value)
             .Select(g => new { FolderId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.FolderId, x => x.Count, ct);
-
-        // Cả trang chỉ thuộc 1 Page (request.SocialChannelId) — tra PageName 1 lần cho subtitle
-        // trên folder card, thay vì để card tự fallback hiện GUID thô.
-        var pageName = await Context.Set<SocialChannelModel>()
-            .Where(x => x.Id == request.SocialChannelId)
-            .Select(x => x.PageName)
-            .FirstOrDefaultAsync(ct);
 
         var responseItems = items.Select(f =>
         {
@@ -162,16 +165,27 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         if (request.FolderId == Guid.Empty)
             throw new ArgumentException("FolderId không được để trống.");
 
-        // GDRIVE-04: breadcrumb của folder chuyên dụng chỉ gồm chính nó — bỏ qua SocialChannelId.
-        var dedicated = await TryGetDedicatedFolderAsync(ct);
-        if (dedicated is not null && dedicated.Id == request.FolderId)
+        // GDRIVE-04/05: breadcrumb của cây page-less Google Drive — đi ngược ParentFolderId tới
+        // dedicated root ở BẤT KỲ độ sâu nào (không chỉ đúng root), bỏ qua SocialChannelId.
+        if (await IsWithinDedicatedTreeAsync(request.FolderId, ct))
         {
+            var pageLessChain = new List<MediaFolderModel>();
+            var pageLessCursor = await QueryActive().FirstOrDefaultAsync(f => f.Id == request.FolderId, ct);
+            var pageLessVisited = new HashSet<Guid>();
+            while (pageLessCursor is not null && pageLessVisited.Add(pageLessCursor.Id))
+            {
+                pageLessChain.Add(pageLessCursor);
+                if (!pageLessCursor.ParentFolderId.HasValue) break;
+                pageLessCursor = await QueryActive()
+                    .FirstOrDefaultAsync(f => f.Id == pageLessCursor.ParentFolderId.Value, ct);
+            }
+            pageLessChain.Reverse();
+
             return new MediaFolderBreadcrumbResponse
             {
-                Ancestors =
-                [
-                    new MediaFolderBreadcrumbItem { Id = dedicated.Id, Name = dedicated.Name }
-                ]
+                Ancestors = pageLessChain
+                    .Select(f => new MediaFolderBreadcrumbItem { Id = f.Id, Name = f.Name })
+                    .ToList()
             };
         }
 
@@ -1217,11 +1231,33 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
                 && f.ParentFolderId == null, ct);
     }
 
-    private async Task<bool> IsDedicatedFolderParentAsync(Guid? parentFolderId, CancellationToken ct)
+    /// <summary>
+    /// GDRIVE-05: true nếu <paramref name="folderId"/> LÀ chính dedicated root, hoặc là hậu duệ
+    /// của nó (đi ngược ParentFolderId tới tận root) — dùng để tổng quát hoá đặc cách "page-less"
+    /// cho toàn bộ cây con Google Drive, không chỉ đúng 1 cấp root như thiết kế GDRIVE-04 cũ.
+    /// Đi ngược theo ID thật (không dựa vào SocialChannelId==null) để không vô tình khớp một
+    /// folder page-less KHÔNG LIÊN QUAN nào khác nếu sau này phát sinh (ranh giới an ninh).
+    /// </summary>
+    private async Task<bool> IsWithinDedicatedTreeAsync(Guid? folderId, CancellationToken ct)
     {
-        if (!parentFolderId.HasValue) return false;
+        if (!folderId.HasValue) return false;
         var dedicated = await TryGetDedicatedFolderAsync(ct);
-        return dedicated is not null && dedicated.Id == parentFolderId.Value;
+        if (dedicated is null) return false;
+        if (dedicated.Id == folderId.Value) return true;
+
+        var cursor = folderId.Value;
+        var visited = new HashSet<Guid>();
+        while (visited.Add(cursor))
+        {
+            var current = await QueryActive()
+                .Where(f => f.Id == cursor)
+                .Select(f => new { f.ParentFolderId })
+                .FirstOrDefaultAsync(ct);
+            if (current is null || !current.ParentFolderId.HasValue) return false;
+            if (current.ParentFolderId.Value == dedicated.Id) return true;
+            cursor = current.ParentFolderId.Value;
+        }
+        return false;
     }
 
     /// <summary>Danh sách Page actor có quyền tạo MediaFolder — cho picker "Gắn với Page" (MEDIA-06).</summary>
