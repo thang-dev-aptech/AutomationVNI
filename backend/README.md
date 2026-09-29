@@ -88,6 +88,70 @@ POST /api/auth/login
 { "email": "admin@vni.local", "password": "Admin@123" }
 ```
 
+## Elasticsearch remote logging
+
+App dùng `ILogger` chuẩn ASP.NET Core (console theo `Logging` trong appsettings). Khi bật
+`ES_LOGGING_ENABLED=true`, một `ILoggerProvider` phụ enqueue log rồi ship nền qua Elasticsearch
+`_bulk` — **không** thay thế console logging.
+
+### Biến môi trường
+
+| Biến | Ý nghĩa |
+|------|---------|
+| `ES_LOGGING_ENABLED` | `true`/`false` — tắt = chỉ log local |
+| `ES_URL` | Base URL ES (vd. `https://debug.bacteriumtrench.dpdns.org`) |
+| `ES_USER` | Basic auth user (mặc định `elastic`) |
+| `ES_PASSWORD` | Basic auth password |
+| `CF_ACCESS_CLIENT_ID` | Cloudflare Access service token id |
+| `CF_ACCESS_CLIENT_SECRET` | Cloudflare Access service token secret |
+| `LOG_SERVICE_NAME` | Field `service` (vd. `automationvni`) |
+| `LOG_ENV` | Field `environment` (`dev` / `production`) |
+| `LOG_LEVEL_TO_ES` | Mức tối thiểu ship: `INFO` (mặc định), `DEBUG`, `WARN`, … |
+
+Mỗi biến trên đọc theo thứ tự: **biến môi trường thật trước** (luôn override nếu có), rồi
+fallback về **`appsettings.Production.json`** (đã `.gitignore`, không commit) dùng ĐÚNG TÊN PHẲNG
+ở trên làm key gốc — ví dụ:
+
+```json
+{
+  "ES_LOGGING_ENABLED": true,
+  "ES_URL": "https://debug.bacteriumtrench.dpdns.org",
+  "ES_PASSWORD": "...",
+  "CF_ACCESS_CLIENT_ID": "...",
+  "CF_ACCESS_CLIENT_SECRET": "..."
+}
+```
+
+Không đặt bất kỳ giá trị thật nào ở `appsettings.json` gốc hay `appsettings.Development.json` —
+hai file đó có commit vào git.
+
+Index: `app-logs-YYYY.MM.DD` (UTC). Document gồm `@timestamp`, `level`, `service`,
+`environment`, `message`, `logger`, và `error.*` khi có exception. Secret field
+(`password`, `token`, `authorization`, …) bị redact.
+
+Shipper: queue có trần, batch ≤50 hoặc mỗi 5s, timeout 5s, retry backoff rồi drop —
+lỗi ES chỉ ghi stderr, không làm crash app. Flush còn lại khi shutdown.
+
+### Kiểm tra nhanh (Kibana)
+
+```bash
+# Điền secret vào .env (đã có trong .gitignore), rồi:
+set -a && source .env && set +a
+chmod +x scripts/send-test-elasticsearch-logs.sh
+./scripts/send-test-elasticsearch-logs.sh
+```
+
+Script gửi 1 document mỗi mức DEBUG→CRITICAL. Trong Kibana: index pattern `app-logs-*`,
+lọc `service` + message chứa `send-test-elasticsearch-logs`.
+
+Hoặc bật logging trên app rồi tạo traffic:
+
+```bash
+export ES_LOGGING_ENABLED=true
+# …các ES_*/CF_ACCESS_*/LOG_* khác…
+dotnet run --project backend/backend.csproj
+```
+
 ## AI text generation (OpenAI-compatible)
 
 Provider-agnostic config tại `AiProviders`. Mặc định: `9router`. Fallback mock khi **không có ApiKey** hoặc AI call lỗi.
