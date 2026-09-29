@@ -188,14 +188,30 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
             .FirstOrDefaultAsync(x => x.FolderId == id && !x.IsDeleted, ct);
         if (existing is not null)
         {
-            if (existing.MediaFolderId == Guid.Empty)
+            // Dòng ánh xạ có thể "lệch" (trỏ MediaFolder đã bị soft-delete/không còn tồn tại)
+            // nếu MediaFolder gốc từng bị xoá rồi tạo lại — không chỉ khi còn rỗng từ legacy.
+            var needsResync = existing.MediaFolderId == Guid.Empty;
+            if (!needsResync && existing.MediaFolderId != mediaFolderId)
             {
+                var currentTargetAlive = await Context.Set<MediaFolderModel>()
+                    .AnyAsync(f => f.Id == existing.MediaFolderId && !f.IsDeleted, ct);
+                needsResync = !currentTargetAlive;
+            }
+
+            if (needsResync)
+            {
+                var staleMediaFolderId = existing.MediaFolderId;
                 existing.MediaFolderId = mediaFolderId;
                 existing.DriveParentId = parent;
                 existing.Name = trimmedName;
                 existing.UpdatedAt = DateTime.UtcNow;
                 existing.UpdatedBy = UserContext.GetCurrentUserName();
                 await Context.SaveChangesAsync(ct);
+
+                // Tự chữa cho dữ liệu đã lỡ tạo dưới MediaFolder cũ (đã xoá) trước khi phát
+                // hiện lệch — không để mồ côi vĩnh viễn, cùng tinh thần BackfillOrphan*Async.
+                if (staleMediaFolderId != Guid.Empty)
+                    await ReparentOrphansOfStaleDedicatedFolderAsync(staleMediaFolderId, mediaFolderId, ct);
             }
             return;
         }
@@ -432,6 +448,33 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
             .ToListAsync(ct);
         foreach (var asset in orphans)
             asset.FolderId = dedicatedFolderId;
+    }
+
+    /// <summary>
+    /// Fix bug e0cd97fc: khi root mapping phát hiện đang trỏ một MediaFolder cũ đã bị
+    /// soft-delete (<paramref name="staleMediaFolderId"/>) và được sửa lại đúng dedicated
+    /// folder hiện hành (<paramref name="currentDedicatedFolderId"/>), mọi MediaFolder/MediaAsset
+    /// từng lỡ được tạo dưới folder cũ đó (trong lúc mapping còn lệch) phải được chuyển sang
+    /// folder hiện hành — nếu không, chúng "mồ côi" vĩnh viễn dưới 1 cha đã xoá, không thể xem
+    /// được trên UI dù DB có đủ dữ liệu (đúng triệu chứng đã tái hiện).
+    /// </summary>
+    private async Task ReparentOrphansOfStaleDedicatedFolderAsync(
+        Guid staleMediaFolderId, Guid currentDedicatedFolderId, CancellationToken ct)
+    {
+        var orphanFolders = await Context.Set<MediaFolderModel>()
+            .Where(f => !f.IsDeleted && f.ParentFolderId == staleMediaFolderId)
+            .ToListAsync(ct);
+        foreach (var folder in orphanFolders)
+            folder.ParentFolderId = currentDedicatedFolderId;
+
+        var orphanAssets = await Context.Set<MediaAssetModel>()
+            .Where(a => !a.IsDeleted && a.FolderId == staleMediaFolderId)
+            .ToListAsync(ct);
+        foreach (var asset in orphanAssets)
+            asset.FolderId = currentDedicatedFolderId;
+
+        if (orphanFolders.Count > 0 || orphanAssets.Count > 0)
+            await Context.SaveChangesAsync(ct);
     }
 
     /// <summary>

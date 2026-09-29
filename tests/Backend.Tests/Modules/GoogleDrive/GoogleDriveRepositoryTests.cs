@@ -1,5 +1,8 @@
 using Backend.Data;
 using Backend.Modules.GoogleDrive;
+using Backend.Modules.MediaAsset;
+using Backend.Modules.MediaAsset.Enums;
+using Backend.Modules.MediaFolder;
 using Backend.Shared.Repositories;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -112,6 +115,65 @@ public class GoogleDriveRepositoryTests
         Assert.DoesNotContain(retryable, x => x.GoogleDriveFileId == "drive-file-2");
     }
 
+    /// <summary>
+    /// Fix bug e0cd97fc: nếu GoogleDriveSyncState.DedicatedFolderId hợp lệ (folder A) nhưng dòng
+    /// ánh xạ root trong GoogleDriveKnownFolders còn trỏ MediaFolder B đã bị soft-delete (kịch
+    /// bản tái hiện trên dev DB — B bị xoá sau khi A đã được tạo để thay thế), GetOrCreateDedicatedFolderAsync
+    /// phải tự sửa lại dòng ánh xạ root về đúng A, KHÔNG được no-op chỉ vì MediaFolderId hiện tại
+    /// không phải Guid.Empty.
+    /// </summary>
+    [Fact]
+    public async Task GetOrCreateDedicatedFolderAsync_ResyncsRootMapping_WhenItPointsToSoftDeletedFolder()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        const string rootDriveFolderId = "root-drive-folder-id";
+
+        var currentFolderId = await fixture.SeedMediaFolderAsync("Google Drive", parentFolderId: null, isDeleted: false);
+        var staleFolderId = await fixture.SeedMediaFolderAsync("Google Drive (cũ)", parentFolderId: null, isDeleted: true);
+        await fixture.SetDedicatedFolderIdAsync(currentFolderId);
+        await fixture.SeedRootKnownFolderAsync(rootDriveFolderId, staleFolderId);
+
+        // Dữ liệu đã lỡ "mồ côi" dưới folder cũ trước khi mapping được sửa — phải được cứu theo.
+        var orphanChildId = await fixture.SeedMediaFolderAsync("Thư mục 3", parentFolderId: staleFolderId, isDeleted: false);
+        var orphanAssetId = await fixture.SeedMediaAssetAsync(staleFolderId, "photo.png", "drive-file-orphan");
+
+        var repository = fixture.CreateRepository();
+        var resolvedId = await repository.GetOrCreateDedicatedFolderAsync(rootDriveFolderId);
+
+        Assert.Equal(currentFolderId, resolvedId);
+
+        var map = await repository.GetKnownFolderMapAsync();
+        Assert.True(map.TryGetValue(rootDriveFolderId, out var rootMapping));
+        Assert.Equal(currentFolderId, rootMapping!.MediaFolderId);
+
+        var (orphanChildParent, orphanAssetFolder) = await fixture.ReadReparentedStateAsync(orphanChildId, orphanAssetId);
+        Assert.Equal(currentFolderId, orphanChildParent);
+        Assert.Equal(currentFolderId, orphanAssetFolder);
+    }
+
+    /// <summary>File/thư mục mới ở root Drive sau khi mapping đã được sửa phải resolve đúng
+    /// dedicated folder hiện hành — không tái lập bug cho dữ liệu MỚI sau fix.</summary>
+    [Fact]
+    public async Task GetKnownFolderMapAsync_ResolvesRootToCurrentDedicatedFolder_AfterResync()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        const string rootDriveFolderId = "root-drive-folder-id";
+
+        var currentFolderId = await fixture.SeedMediaFolderAsync("Google Drive", parentFolderId: null, isDeleted: false);
+        var staleFolderId = await fixture.SeedMediaFolderAsync("Google Drive (cũ)", parentFolderId: null, isDeleted: true);
+        await fixture.SetDedicatedFolderIdAsync(currentFolderId);
+        await fixture.SeedRootKnownFolderAsync(rootDriveFolderId, staleFolderId);
+
+        var repository = fixture.CreateRepository();
+        await repository.GetOrCreateDedicatedFolderAsync(rootDriveFolderId);
+
+        // Mô phỏng 1 file mới rơi thẳng vào root Drive sau khi mapping đã được sửa.
+        var map = await repository.GetKnownFolderMapAsync();
+        Assert.True(map.TryGetValue(rootDriveFolderId, out var rootMapping));
+        Assert.Equal(currentFolderId, rootMapping!.MediaFolderId);
+        Assert.NotEqual(staleFolderId, rootMapping.MediaFolderId);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;
@@ -139,6 +201,81 @@ public class GoogleDriveRepositoryTests
 
         public GoogleDriveRepository CreateRepository() =>
             new(new AppDbContext(_dbOptions), new StubUserContext());
+
+        public async Task<Guid> SeedMediaFolderAsync(string name, Guid? parentFolderId, bool isDeleted)
+        {
+            await using var db = new AppDbContext(_dbOptions);
+            var folder = new MediaFolderModel
+            {
+                Id = Guid.NewGuid(),
+                Name = name,
+                SocialChannelId = null,
+                ParentFolderId = parentFolderId,
+                CreatedAt = DateTime.UtcNow,
+                IsDeleted = isDeleted,
+                DeletedAt = isDeleted ? DateTime.UtcNow : null,
+            };
+            db.Set<MediaFolderModel>().Add(folder);
+            await db.SaveChangesAsync();
+            return folder.Id;
+        }
+
+        public async Task<Guid> SeedMediaAssetAsync(Guid folderId, string fileName, string googleDriveFileId)
+        {
+            await using var db = new AppDbContext(_dbOptions);
+            var asset = new MediaAssetModel
+            {
+                Id = Guid.NewGuid(),
+                FileName = fileName,
+                OriginalFileName = fileName,
+                StoragePath = $"media/{fileName}",
+                MimeType = "image/png",
+                FileSize = 1,
+                Source = MediaSource.GoogleDrive,
+                FolderId = folderId,
+                GoogleDriveFileId = googleDriveFileId,
+                CreatedAt = DateTime.UtcNow,
+                IsDeleted = false,
+            };
+            db.Set<MediaAssetModel>().Add(asset);
+            await db.SaveChangesAsync();
+            return asset.Id;
+        }
+
+        public async Task SetDedicatedFolderIdAsync(Guid dedicatedFolderId)
+        {
+            await using var db = new AppDbContext(_dbOptions);
+            var state = await db.Set<GoogleDriveSyncStateModel>()
+                .SingleAsync(x => x.Id == GoogleDriveSyncStateModel.SingletonId);
+            state.DedicatedFolderId = dedicatedFolderId;
+            await db.SaveChangesAsync();
+        }
+
+        public async Task SeedRootKnownFolderAsync(string rootDriveFolderId, Guid mediaFolderId)
+        {
+            await using var db = new AppDbContext(_dbOptions);
+            db.Set<GoogleDriveKnownFolderModel>().Add(new GoogleDriveKnownFolderModel
+            {
+                Id = Guid.NewGuid(),
+                FolderId = rootDriveFolderId,
+                MediaFolderId = mediaFolderId,
+                DriveParentId = null,
+                Name = GoogleDriveRepository.DedicatedFolderName,
+                DiscoveredAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+                IsDeleted = false,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        public async Task<(Guid? ChildParentFolderId, Guid? AssetFolderId)> ReadReparentedStateAsync(
+            Guid childFolderId, Guid assetId)
+        {
+            await using var db = new AppDbContext(_dbOptions);
+            var child = await db.Set<MediaFolderModel>().SingleAsync(x => x.Id == childFolderId);
+            var asset = await db.Set<MediaAssetModel>().SingleAsync(x => x.Id == assetId);
+            return (child.ParentFolderId, asset.FolderId);
+        }
 
         public async ValueTask DisposeAsync() => await _connection.DisposeAsync();
     }
