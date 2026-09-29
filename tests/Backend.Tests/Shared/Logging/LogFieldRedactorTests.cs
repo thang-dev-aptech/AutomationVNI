@@ -77,14 +77,28 @@ public class LogFieldRedactorTests
     }
 
     [Fact]
-    public void Queue_DropsWhenFull_DoesNotThrow()
+    public void Queue_DropsWhenFull_IncrementsDroppedCount_DoesNotThrow()
     {
-        var queue = new ElasticsearchLogQueue(capacity: 2);
+        const int capacity = 2;
+        var queue = new ElasticsearchLogQueue(capacity);
+        Assert.Equal(capacity, queue.Capacity);
+
         Assert.True(queue.TryEnqueue(NewEntry("a")));
         Assert.True(queue.TryEnqueue(NewEntry("b")));
-        // Bounded DropWrite — không throw khi đầy.
-        _ = queue.TryEnqueue(NewEntry("c"));
-        Assert.True(queue.DroppedCount >= 0);
+        Assert.Equal(0, queue.DroppedCount);
+
+        // Ep đầy thật: 3 lần vượt capacity phải fail nhanh, không throw, DroppedCount = 3.
+        Assert.False(queue.TryEnqueue(NewEntry("c")));
+        Assert.False(queue.TryEnqueue(NewEntry("d")));
+        Assert.False(queue.TryEnqueue(NewEntry("e")));
+        Assert.Equal(3, queue.DroppedCount);
+
+        // Trong queue chỉ còn đúng capacity phần tử đã nhận trước khi đầy.
+        var drained = 0;
+        while (queue.TryRead(out _))
+            drained++;
+        Assert.Equal(capacity, drained);
+        Assert.Equal(3, queue.DroppedCount);
     }
 
     private static ElasticsearchLogEntry NewEntry(string message) => new()
