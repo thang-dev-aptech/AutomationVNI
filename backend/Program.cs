@@ -24,6 +24,7 @@ using Backend.Shared.TikTok;
 using Backend.Shared.SocialPublish;
 using Backend.Shared.SocialComment;
 using Backend.Shared.DevSeed;
+using Backend.Shared.Logging;
 using Backend.Shared.Middleware;
 using Backend.Shared.Repositories;
 using Backend.Shared.Storage;
@@ -36,6 +37,10 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Ship log sang Elasticsearch (ILoggerProvider + bulk background) — console logging mặc định vẫn giữ.
+// Tắt bằng ES_LOGGING_ENABLED=false hoặc bỏ biến; secret chỉ từ env (xem .env.example).
+builder.AddElasticsearchLogging();
 
 // Mặc định .NET: 1 BackgroundService (crawl, gửi mail, đồng bộ comment, refresh token...) ném
 // exception chưa bắt là KÉO SẬP TOÀN BỘ app — kể cả API đăng nhập, không riêng gì worker đó.

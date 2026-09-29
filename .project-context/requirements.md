@@ -160,3 +160,16 @@ Người dùng xác nhận muốn mở rộng qua AskUserQuestion (2026-09-28), 
 Xác minh trực tiếp qua Explore agent (đọc XML docs + DLL package Google.Apis.Drive.v3 1.76.0.4273 đang dùng): Data.File.Parents chỉ là parent TRỰC TIẾP, không có API ancestor/descendant nào trong client library — không có cách hỏi Drive "file này có nằm dưới cây thư mục X không" bằng một lệnh gọi. Phải tự xây cơ chế: nuôi dần một tập ID thư mục "đã biết thuộc cây đang theo dõi" trong DB, lớn dần khi changes.list phát hiện thư mục con mới có cha nằm trong tập đã biết. Đây là pattern hoàn toàn mới cho codebase — đã tìm nhưng không có gì tương tự để tái dùng (ContentCrawlRepository.GetKnownGuidsAsync gần nhất nhưng chỉ là dedup guard, không phải cache quan hệ cây lớn dần).
 
 Nguồn: kiểm thử trực tiếp trên app; Explore agent khảo sát Google.Apis.Drive.v3; xác nhận người dùng qua AskUserQuestion 2026-09-28.
+
+### R-022 — LOG-ES-01: Centralized Elasticsearch remote logging
+<!-- req status=in-progress files=backend/Shared/Logging/ElasticsearchLoggingOptions.cs,backend/Shared/Logging/ElasticsearchLogEntry.cs,backend/Shared/Logging/LogFieldRedactor.cs,backend/Shared/Logging/ElasticsearchLogQueue.cs,backend/Shared/Logging/ElasticsearchLogger.cs,backend/Shared/Logging/ElasticsearchLoggerProvider.cs,backend/Shared/Logging/ElasticsearchLogShipper.cs,backend/Shared/Logging/ElasticsearchLoggingExtensions.cs,backend/Program.cs,.env.example,scripts/send-test-elasticsearch-logs.sh,backend/README.md,tests/Backend.Tests/Shared/Logging/LogFieldRedactorTests.cs blocker=f863cee3-603f-471b-b422-93e2d8535d5b -->
+
+Ship debug/error logs từ backend lên Elasticsearch remote (https://debug.bacteriumtrench.dpdns.org) qua Cloudflare Access + basic auth, index app-logs-YYYY.MM.DD (UTC).
+
+Phải hook ILogger hiện có (ILoggerProvider), không thay từng Log call; giữ console logging; gửi nền (queue + _bulk), không block/crash app; redact secret; flush khi shutdown; bắt unhandled exception mức ERROR kèm stack.
+
+Cấu hình env: ES_LOGGING_ENABLED, ES_URL, ES_USER, ES_PASSWORD, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET, LOG_SERVICE_NAME, LOG_ENV, LOG_LEVEL_TO_ES.
+
+Liên quan decision f863cee3. Code đã có trong backend/Shared/Logging + Program.cs; còn cần evidence/close gate trước khi done.
+
+Nguồn: triển khai 2026-09-29; backend/README.md § Elasticsearch remote logging; scripts/send-test-elasticsearch-logs.sh.
