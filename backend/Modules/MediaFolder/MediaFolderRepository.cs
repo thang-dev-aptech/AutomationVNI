@@ -1,4 +1,5 @@
 using Backend.Data;
+using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
@@ -24,6 +25,18 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
     public async Task<PagedResult<MediaFolderResponse>> GetChildrenAsync(
         GetMediaFolderChildrenRequest request, CancellationToken ct = default)
     {
+        // GDRIVE-04: folder chuyên dụng page-less — children rỗng, không Require SocialChannelId.
+        if (await IsDedicatedFolderParentAsync(request.ParentFolderId, ct))
+        {
+            return new PagedResult<MediaFolderResponse>
+            {
+                Items = [],
+                Total = 0,
+                Index = request.Index < 1 ? 1 : request.Index,
+                Size = request.Size < 1 ? 20 : (request.Size > 100 ? 100 : request.Size)
+            };
+        }
+
         if (request.SocialChannelId == Guid.Empty)
             throw new ArgumentException("SocialChannelId không được để trống.");
 
@@ -146,11 +159,24 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
     public async Task<MediaFolderBreadcrumbResponse> GetBreadcrumbAsync(
         GetMediaFolderBreadcrumbRequest request, CancellationToken ct = default)
     {
-        if (request.SocialChannelId == Guid.Empty)
-            throw new ArgumentException("SocialChannelId không được để trống.");
-
         if (request.FolderId == Guid.Empty)
             throw new ArgumentException("FolderId không được để trống.");
+
+        // GDRIVE-04: breadcrumb của folder chuyên dụng chỉ gồm chính nó — bỏ qua SocialChannelId.
+        var dedicated = await TryGetDedicatedFolderAsync(ct);
+        if (dedicated is not null && dedicated.Id == request.FolderId)
+        {
+            return new MediaFolderBreadcrumbResponse
+            {
+                Ancestors =
+                [
+                    new MediaFolderBreadcrumbItem { Id = dedicated.Id, Name = dedicated.Name }
+                ]
+            };
+        }
+
+        if (request.SocialChannelId == Guid.Empty)
+            throw new ArgumentException("SocialChannelId không được để trống.");
 
         await EnsureSocialChannelAccessAsync(request.SocialChannelId, ct);
 
@@ -285,23 +311,54 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         var safeIndex = request.Index < 1 ? 1 : request.Index;
         var safeSize = request.Size < 1 ? 60 : (request.Size > 100 ? 100 : request.Size);
 
+        var dedicated = await TryGetDedicatedFolderAsync(ct);
+        var dedicatedOffset = dedicated is not null && safeIndex == 1 ? 1 : 0;
+
         var pagesWithRoot = QueryWritableChannels()
             .Where(ch => QueryActive().Any(f => f.SocialChannelId == ch.Id && f.ParentFolderId == null))
             .OrderBy(ch => ch.PageName)
             .ThenBy(ch => ch.Id);
 
-        var total = await pagesWithRoot.CountAsync(ct);
+        var pageTotal = await pagesWithRoot.CountAsync(ct);
+        var total = pageTotal + (dedicated is not null ? 1 : 0);
+
         var pageSlice = await pagesWithRoot
             .Skip((safeIndex - 1) * safeSize)
             .Take(safeSize)
             .Select(ch => new { ch.Id, ch.PageName })
             .ToListAsync(ct);
 
+        var items = new List<MediaFolderResponse>();
+
+        if (dedicatedOffset == 1 && dedicated is not null)
+        {
+            var (dedAssetCounts, dedChildCounts) =
+                await LoadDirectCountsAsync([dedicated.Id], socialChannelId: null, ct);
+            var childCount = dedChildCounts.GetValueOrDefault(dedicated.Id, 0);
+            var assetCount = dedAssetCounts.GetValueOrDefault(dedicated.Id, 0);
+            items.Add(new MediaFolderResponse
+            {
+                Id = dedicated.Id,
+                Name = dedicated.Name,
+                Description = dedicated.Description,
+                ParentFolderId = dedicated.ParentFolderId,
+                SocialChannelId = dedicated.SocialChannelId,
+                SortOrder = dedicated.SortOrder,
+                ChildFolderCount = childCount,
+                DirectAssetCount = assetCount,
+                AssetCount = assetCount,
+                HasChildren = childCount > 0,
+                PageName = null,
+                CreatedAt = dedicated.CreatedAt,
+                UpdatedAt = dedicated.UpdatedAt
+            });
+        }
+
         if (pageSlice.Count == 0)
         {
             return new PagedResult<MediaFolderResponse>
             {
-                Items = [],
+                Items = items,
                 Total = total,
                 Index = safeIndex,
                 Size = safeSize
@@ -330,7 +387,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         var (directAssetCounts, childFolderCounts) =
             await LoadDirectCountsAsync(folderIds, socialChannelId: null, ct);
 
-        var items = orderedRoots.Select(x =>
+        items.AddRange(orderedRoots.Select(x =>
         {
             var f = x.Folder;
             var childCount = childFolderCounts.GetValueOrDefault(f.Id, 0);
@@ -351,7 +408,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
                 CreatedAt = f.CreatedAt,
                 UpdatedAt = f.UpdatedAt
             };
-        }).ToList();
+        }));
 
         return new PagedResult<MediaFolderResponse>
         {
@@ -1090,6 +1147,30 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         var canAccess = await QueryWritableChannels().AnyAsync(x => x.Id == socialChannelId, ct);
         if (!canAccess)
             throw new KeyNotFoundException("Page/Kênh không tồn tại.");
+    }
+
+    /// <summary>GDRIVE-04: MediaFolder chuyên dụng nếu DedicatedFolderId đã được gán trên sync state.</summary>
+    private async Task<MediaFolderModel?> TryGetDedicatedFolderAsync(CancellationToken ct)
+    {
+        var dedicatedId = await Context.Set<GoogleDriveSyncStateModel>()
+            .AsNoTracking()
+            .Where(x => x.Id == GoogleDriveSyncStateModel.SingletonId)
+            .Select(x => x.DedicatedFolderId)
+            .SingleOrDefaultAsync(ct);
+        if (!dedicatedId.HasValue) return null;
+
+        return await QueryActive()
+            .FirstOrDefaultAsync(f =>
+                f.Id == dedicatedId.Value
+                && f.SocialChannelId == null
+                && f.ParentFolderId == null, ct);
+    }
+
+    private async Task<bool> IsDedicatedFolderParentAsync(Guid? parentFolderId, CancellationToken ct)
+    {
+        if (!parentFolderId.HasValue) return false;
+        var dedicated = await TryGetDedicatedFolderAsync(ct);
+        return dedicated is not null && dedicated.Id == parentFolderId.Value;
     }
 
     /// <summary>Danh sách Page actor có quyền tạo MediaFolder — cho picker "Gắn với Page" (MEDIA-06).</summary>

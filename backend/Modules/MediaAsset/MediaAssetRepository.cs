@@ -147,13 +147,14 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
             .AnyAsync(x => !x.IsDeleted && x.GoogleDriveFileId == fileId, ct);
 
     /// <summary>
-    /// Nhập file từ Google Drive (GDRIVE-01). FolderId LUÔN null — folder Drive dùng chung không
-    /// thuộc Page/SocialChannel nào, khác MediaFolder vốn phân vùng theo kênh. OriginalFileName lấy
-    /// từ <paramref name="file"/>.Name (tên thật trên Drive), KHÔNG dùng saveResult.OriginalFileName
-    /// vì đó chỉ là tên storage key ngẫu nhiên do SaveBytesAsync sinh ra.
+    /// Nhập file từ Google Drive (GDRIVE-01/GDRIVE-04). FolderId trỏ folder chuyên dụng
+    /// page-less (không thuộc SocialChannel) — caller truyền <paramref name="dedicatedFolderId"/>
+    /// từ GetOrCreateDedicatedFolderAsync.
+    /// OriginalFileName lấy từ <paramref name="file"/>.Name (tên thật trên Drive), KHÔNG dùng
+    /// saveResult.OriginalFileName vì đó chỉ là tên storage key ngẫu nhiên do SaveBytesAsync sinh ra.
     /// </summary>
     public async Task<MediaAssetModel> CreateFromGoogleDriveAsync(
-        byte[] data, GoogleDriveFileInfo file, CancellationToken ct = default)
+        byte[] data, GoogleDriveFileInfo file, Guid dedicatedFolderId, CancellationToken ct = default)
     {
         var extension = Path.GetExtension(file.Name);
         var saveResult = await _fileStorage.SaveBytesAsync(data, "google-drive", extension, file.MimeType, ct);
@@ -166,7 +167,7 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
             MimeType = saveResult.ContentType,
             FileSize = saveResult.SizeBytes,
             Source = MediaSource.GoogleDrive,
-            FolderId = null,
+            FolderId = dedicatedFolderId,
             GoogleDriveFileId = file.FileId,
         };
 

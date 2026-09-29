@@ -1,6 +1,4 @@
 using System;
-using Backend.Data;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -8,8 +6,6 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace backend.Migrations
 {
     /// <inheritdoc />
-    [DbContext(typeof(AppDbContext))]
-    [Migration("20260928091800_AddGoogleDriveKnownFolder")]
     public partial class AddGoogleDriveKnownFolder : Migration
     {
         /// <inheritdoc />

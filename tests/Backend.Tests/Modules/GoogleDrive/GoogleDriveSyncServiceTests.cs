@@ -1,6 +1,7 @@
 using Backend.Data;
 using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaAsset;
+using Backend.Modules.MediaAsset.Enums;
 using Backend.Modules.MediaFolder;
 using Backend.Shared;
 using Backend.Shared.Repositories;
@@ -417,6 +418,58 @@ public class GoogleDriveSyncServiceTests
         Assert.DoesNotContain(trashedChildId, known);
     }
 
+    // ── GDRIVE-04: folder chuyên dụng + backfill ────────────────────────────
+
+    /// <summary>AC gdrive04-dedicated-folder-idempotent-test (1a10f3d6).</summary>
+    [Fact]
+    public async Task GetOrCreateDedicatedFolderAsync_IsIdempotent_AndCreateUsesThatFolder()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+
+        var first = await fixture.GetOrCreateDedicatedFolderAsync();
+        var second = await fixture.GetOrCreateDedicatedFolderAsync();
+        Assert.Equal(first, second);
+
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "gdrive04-new",
+            Files =
+            [
+                new GoogleDriveFileInfo
+                {
+                    FileId = "new-in-dedicated",
+                    Name = "shot.jpg",
+                    MimeType = "image/jpeg",
+                    SizeBytes = 10,
+                    Parents = [Fixture.RootFolderId],
+                },
+            ],
+        });
+        await fixture.CreateService().RunTickAsync();
+
+        var assets = await fixture.GetGoogleDriveAssetsAsync();
+        Assert.Single(assets);
+        Assert.Equal(first, assets[0].FolderId);
+        Assert.DoesNotContain(assets, a => a.FolderId is null);
+    }
+
+    /// <summary>AC gdrive04-backfill-old-assets-test (e53f870a).</summary>
+    [Fact]
+    public async Task GetOrCreateDedicatedFolderAsync_BackfillsOrphanGoogleDriveAssets()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SeedOrphanGoogleDriveAssetAsync("orphan-1", "old1.jpg");
+        await fixture.SeedOrphanGoogleDriveAssetAsync("orphan-2", "old2.jpg");
+
+        var dedicatedId = await fixture.GetOrCreateDedicatedFolderAsync();
+
+        var assets = await fixture.GetGoogleDriveAssetsAsync();
+        Assert.Equal(2, assets.Count);
+        Assert.All(assets, a => Assert.Equal(dedicatedId, a.FolderId));
+        Assert.DoesNotContain(assets, a => a.FolderId is null);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         public const string RootFolderId = "root-folder";
@@ -532,6 +585,7 @@ public class GoogleDriveSyncServiceTests
         public async Task<MediaAssetModel> CreateExistingAssetAsync(string googleDriveFileId)
         {
             await using var db = new AppDbContext(DbOptions);
+            var dedicatedId = await CreateRepository(db).GetOrCreateDedicatedFolderAsync();
             var repo = new MediaAssetRepository(db, new StubUserContext(), new RecordingFileStorageService());
             return await repo.CreateFromGoogleDriveAsync(
                 [1, 2, 3],
@@ -542,7 +596,42 @@ public class GoogleDriveSyncServiceTests
                     MimeType = "image/jpeg",
                     SizeBytes = 10,
                     Parents = [RootFolderId],
-                });
+                },
+                dedicatedId);
+        }
+
+        public async Task<Guid> GetOrCreateDedicatedFolderAsync()
+        {
+            await using var db = new AppDbContext(DbOptions);
+            return await CreateRepository(db).GetOrCreateDedicatedFolderAsync();
+        }
+
+        public async Task SeedOrphanGoogleDriveAssetAsync(string googleDriveFileId, string name)
+        {
+            await using var db = new AppDbContext(DbOptions);
+            db.MediaAssets.Add(new MediaAssetModel
+            {
+                Id = Guid.NewGuid(),
+                FileName = name,
+                OriginalFileName = name,
+                StoragePath = $"google-drive/orphan/{googleDriveFileId}",
+                MimeType = "image/jpeg",
+                FileSize = 10,
+                Source = MediaSource.GoogleDrive,
+                FolderId = null,
+                GoogleDriveFileId = googleDriveFileId,
+                CreatedAt = DateTime.UtcNow,
+                IsDeleted = false,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        public async Task<List<MediaAssetModel>> GetGoogleDriveAssetsAsync()
+        {
+            await using var db = new AppDbContext(DbOptions);
+            return await db.MediaAssets
+                .Where(x => !x.IsDeleted && x.Source == MediaSource.GoogleDrive)
+                .ToListAsync();
         }
 
         private static GoogleDriveRepository CreateRepository(AppDbContext db) =>

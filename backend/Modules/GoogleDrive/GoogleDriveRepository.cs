@@ -1,4 +1,7 @@
 using Backend.Data;
+using Backend.Modules.MediaAsset;
+using Backend.Modules.MediaAsset.Enums;
+using Backend.Modules.MediaFolder;
 using Backend.Shared;
 using Backend.Shared.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -150,5 +153,72 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
         };
         Context.Set<GoogleDriveKnownFolderModel>().Add(entity);
         await Context.SaveChangesAsync(ct);
+    }
+
+    // ── Folder chuyên dụng (GDRIVE-04) ──────────────────────────────────────
+
+    public const string DedicatedFolderName = "Google Drive";
+
+    /// <summary>
+    /// Get-or-create MediaFolder page-less cho mọi file Drive. Lần đầu tạo folder + lưu
+    /// DedicatedFolderId + backfill mọi MediaAsset Source=GoogleDrive còn FolderId=null.
+    /// Gọi lại idempotent — cùng FolderId.
+    /// </summary>
+    public async Task<Guid> GetOrCreateDedicatedFolderAsync(CancellationToken ct = default)
+    {
+        var state = await Context.Set<GoogleDriveSyncStateModel>()
+            .SingleAsync(x => x.Id == GoogleDriveSyncStateModel.SingletonId, ct);
+
+        if (state.DedicatedFolderId.HasValue)
+        {
+            var existingId = state.DedicatedFolderId.Value;
+            var stillThere = await Context.Set<MediaFolderModel>()
+                .AnyAsync(f => f.Id == existingId && !f.IsDeleted, ct);
+            if (stillThere)
+            {
+                await BackfillOrphanGoogleDriveAssetsAsync(existingId, ct);
+                return existingId;
+            }
+        }
+
+        var folder = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(),
+            Name = DedicatedFolderName,
+            SocialChannelId = null,
+            ParentFolderId = null,
+            SortOrder = 0,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = UserContext.GetCurrentUserName(),
+            IsDeleted = false,
+        };
+        Context.Set<MediaFolderModel>().Add(folder);
+
+        state.DedicatedFolderId = folder.Id;
+        state.UpdatedAt = DateTime.UtcNow;
+
+        await BackfillOrphanGoogleDriveAssetsAsync(folder.Id, ct);
+        await Context.SaveChangesAsync(ct);
+        return folder.Id;
+    }
+
+    /// <summary>DedicatedFolderId đã lưu trên sync state (null nếu chưa get-or-create).</summary>
+    public async Task<Guid?> GetDedicatedFolderIdAsync(CancellationToken ct = default)
+    {
+        var state = await Context.Set<GoogleDriveSyncStateModel>()
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == GoogleDriveSyncStateModel.SingletonId, ct);
+        return state.DedicatedFolderId;
+    }
+
+    private async Task BackfillOrphanGoogleDriveAssetsAsync(Guid dedicatedFolderId, CancellationToken ct)
+    {
+        var orphans = await Context.Set<MediaAssetModel>()
+            .Where(a => !a.IsDeleted
+                && a.Source == MediaSource.GoogleDrive
+                && a.FolderId == null)
+            .ToListAsync(ct);
+        foreach (var asset in orphans)
+            asset.FolderId = dedicatedFolderId;
     }
 }

@@ -17,4 +17,10 @@ public class GoogleDriveSyncStateModel : BaseEntity
     public string? PageToken { get; set; }
     public DateTime? LastSyncAt { get; set; }
     public int LastImportedCount { get; set; }
+
+    /// <summary>
+    /// GDRIVE-04: MediaFolder chuyên dụng (Name="Google Drive", SocialChannelId=null) chứa mọi
+    /// MediaAsset Source=GoogleDrive. Null cho đến lần get-or-create đầu tiên.
+    /// </summary>
+    public Guid? DedicatedFolderId { get; set; }
 }

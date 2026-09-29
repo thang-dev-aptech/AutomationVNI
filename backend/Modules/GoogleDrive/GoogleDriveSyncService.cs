@@ -61,7 +61,10 @@ public class GoogleDriveSyncService(
         if (!state.IsEnabled)
             return new GoogleDriveSyncResult(Enabled: false, Configured: true, ConfigIssue: null, ImportedCount: 0);
 
-        await RetryFailuresAsync(settings, ct);
+        // GDRIVE-04: đảm bảo folder chuyên dụng tồn tại + backfill orphans trước retry/import.
+        var dedicatedFolderId = await repository.GetOrCreateDedicatedFolderAsync(ct);
+
+        await RetryFailuresAsync(settings, dedicatedFolderId, ct);
 
         if (!client.IsConfigured())
         {
@@ -70,7 +73,7 @@ public class GoogleDriveSyncService(
             return new GoogleDriveSyncResult(Enabled: true, Configured: false, ConfigIssue: issue, ImportedCount: 0);
         }
 
-        var importedCount = await ImportNewFilesAsync(settings, state.PageToken, ct);
+        var importedCount = await ImportNewFilesAsync(settings, state.PageToken, dedicatedFolderId, ct);
         return new GoogleDriveSyncResult(Enabled: true, Configured: true, ConfigIssue: null, ImportedCount: importedCount);
     }
 
@@ -78,7 +81,8 @@ public class GoogleDriveSyncService(
     /// Thử lại các file đã lỗi trước đó — cùng scope/DbContext với ImportNewFilesAsync (tuần tự,
     /// không song song, nên dùng chung vẫn an toàn).
     /// </summary>
-    private async Task RetryFailuresAsync(GoogleDriveOptions settings, CancellationToken ct)
+    private async Task RetryFailuresAsync(
+        GoogleDriveOptions settings, Guid dedicatedFolderId, CancellationToken ct)
     {
         var failures = await repository.GetRetryableFailuresAsync(
             settings.MaxRetryAttempts, settings.MaxFilesPerTick, ct);
@@ -96,7 +100,7 @@ public class GoogleDriveSyncService(
                     MimeType = failure.MimeType,
                     SizeBytes = failure.SizeBytes,
                 };
-                await mediaAssets.CreateFromGoogleDriveAsync(data, file, ct);
+                await mediaAssets.CreateFromGoogleDriveAsync(data, file, dedicatedFolderId, ct);
                 await repository.DeleteFailureAsync(failure.GoogleDriveFileId, ct);
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
@@ -114,7 +118,8 @@ public class GoogleDriveSyncService(
     /// (đa vòng cho grandchild cùng page), rồi nhận file khi Parents giao tập đã biết.
     /// LUÔN advance PageToken ở cuối, kể cả khi không có file mới.
     /// </summary>
-    private async Task<int> ImportNewFilesAsync(GoogleDriveOptions settings, string? pageToken, CancellationToken ct)
+    private async Task<int> ImportNewFilesAsync(
+        GoogleDriveOptions settings, string? pageToken, Guid dedicatedFolderId, CancellationToken ct)
     {
         var fileStorage = fileStorageOptions.Value;
 
@@ -168,7 +173,7 @@ public class GoogleDriveSyncService(
             try
             {
                 var data = await client.DownloadFileAsync(file.FileId, ct);
-                await mediaAssets.CreateFromGoogleDriveAsync(data, file, ct);
+                await mediaAssets.CreateFromGoogleDriveAsync(data, file, dedicatedFolderId, ct);
                 importedCount++;
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)

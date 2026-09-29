@@ -40,6 +40,7 @@ import {
   useScanGoogleDriveNow,
   useSetGoogleDrivePipelineEnabled,
 } from '../hooks/useGoogleDrive'
+import GoogleDrivePipelineSwitch from '../components/GoogleDrivePipelineSwitch'
 import {
   MEDIA_SOURCE_OPTIONS,
   getMediaSourceMeta,
@@ -482,24 +483,23 @@ export default function MediaPage() {
         actions={
           canManageMedia ? (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={handleToggleGoogleDrive}
+              <GoogleDrivePipelineSwitch
+                checked={Boolean(googleDriveState?.enabled)}
                 disabled={isGoogleDriveStateLoading || isGoogleDriveStateError
                   || !googleDriveState || setGoogleDriveEnabled.isPending}
+                loading={setGoogleDriveEnabled.isPending}
+                onChange={() => { void handleToggleGoogleDrive() }}
                 title={isGoogleDriveStateError
                   ? 'Không tải được trạng thái nhập file Google Drive'
                   : undefined}
-              >
-                {isGoogleDriveStateLoading && 'Đang tải trạng thái Google Drive…'}
-                {isGoogleDriveStateError && 'Không tải được trạng thái Google Drive'}
-                {googleDriveState && (setGoogleDriveEnabled.isPending
-                  ? 'Đang cập nhật Google Drive…'
-                  : googleDriveState.enabled
-                    ? '🟢 Google Drive: đang bật · Tắt'
-                    : '⚪ Google Drive: đang tắt · Bật')}
-              </button>
+                label={
+                  isGoogleDriveStateLoading
+                    ? 'Đang tải trạng thái Google Drive…'
+                    : isGoogleDriveStateError
+                      ? 'Không tải được trạng thái Google Drive'
+                      : undefined
+                }
+              />
               <button
                 type="button"
                 className="btn btn-secondary"

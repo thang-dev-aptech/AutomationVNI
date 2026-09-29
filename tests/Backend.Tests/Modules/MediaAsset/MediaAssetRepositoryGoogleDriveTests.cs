@@ -12,10 +12,8 @@ using Xunit;
 namespace Backend.Tests.Modules.MediaAsset;
 
 /// <summary>
-/// GDRIVE-01 (t3) — AC gdrive-folderid-null-test: CreateFromGoogleDriveAsync phải luôn tạo
-/// MediaAsset với FolderId=null/Source=GoogleDrive/GoogleDriveFileId đúng/OriginalFileName lấy
-/// từ tên thật trên Drive (không phải storage key ngẫu nhiên). Cộng thêm
-/// ExistsByGoogleDriveFileIdAsync (khoá idempotency dùng bởi worker).
+/// GDRIVE-01 (t3) + GDRIVE-04: CreateFromGoogleDriveAsync gán Source/GoogleDriveFileId/OriginalFileName
+/// đúng và FolderId = folder chuyên dụng (không còn null).
 /// </summary>
 public class MediaAssetRepositoryGoogleDriveTests : IDisposable
 {
@@ -44,8 +42,9 @@ public class MediaAssetRepositoryGoogleDriveTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateFromGoogleDriveAsync_SetsFolderIdNullSourceAndOriginalFileName()
+    public async Task CreateFromGoogleDriveAsync_SetsDedicatedFolderIdSourceAndOriginalFileName()
     {
+        var dedicatedFolderId = Guid.NewGuid();
         var file = new GoogleDriveFileInfo
         {
             FileId = "drive-file-abc",
@@ -55,9 +54,9 @@ public class MediaAssetRepositoryGoogleDriveTests : IDisposable
         };
         var data = new byte[] { 1, 2, 3, 4 };
 
-        var entity = await _repo.CreateFromGoogleDriveAsync(data, file);
+        var entity = await _repo.CreateFromGoogleDriveAsync(data, file, dedicatedFolderId);
 
-        Assert.Null(entity.FolderId);
+        Assert.Equal(dedicatedFolderId, entity.FolderId);
         Assert.Equal(MediaSource.GoogleDrive, entity.Source);
         Assert.Equal("drive-file-abc", entity.GoogleDriveFileId);
         Assert.Equal("Báo cáo quý.pdf", entity.OriginalFileName);
@@ -75,7 +74,8 @@ public class MediaAssetRepositoryGoogleDriveTests : IDisposable
 
         await _repo.CreateFromGoogleDriveAsync(
             [9, 9],
-            new GoogleDriveFileInfo { FileId = "drive-file-xyz", Name = "x.txt", MimeType = "text/plain", SizeBytes = 2 });
+            new GoogleDriveFileInfo { FileId = "drive-file-xyz", Name = "x.txt", MimeType = "text/plain", SizeBytes = 2 },
+            Guid.NewGuid());
 
         Assert.True(await _repo.ExistsByGoogleDriveFileIdAsync("drive-file-xyz"));
     }
