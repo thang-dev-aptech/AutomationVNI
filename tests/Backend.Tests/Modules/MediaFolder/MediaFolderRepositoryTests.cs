@@ -64,7 +64,7 @@ public class MediaFolderRepositoryTests : IDisposable
     [Fact]
     public async Task DedicatedFolder_AppearsFirstInPageRoots_AndChildrenBreadcrumbDoNotThrow()
     {
-        var dedicatedId = await _driveRepo.GetOrCreateDedicatedFolderAsync();
+        var dedicatedId = await _driveRepo.GetOrCreateDedicatedFolderAsync("test-drive-root");
 
         var roots = await _folderRepo.GetPageRootsAsync(new GetMediaFolderPageRootsRequest
         {

@@ -42,10 +42,11 @@ public class GoogleDriveChangesPage
     public string? NextPageToken { get; set; }
 }
 
-/// <summary>GDRIVE-02: thư mục phát hiện qua changes.list (ParentIds thô từ Drive).</summary>
+/// <summary>GDRIVE-02/05: thư mục phát hiện qua changes.list (ParentIds + Name thô từ Drive).</summary>
 public class GoogleDriveFolderInfo
 {
     public string FolderId { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
     public List<string> ParentIds { get; set; } = [];
 
     /// <summary>

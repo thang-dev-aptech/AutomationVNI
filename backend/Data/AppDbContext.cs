@@ -475,8 +475,11 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.ToTable("GoogleDriveKnownFolders");
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.FolderId).IsUnique();
+            e.HasIndex(x => x.MediaFolderId);
             e.HasIndex(x => x.IsDeleted);
             e.Property(x => x.FolderId).HasMaxLength(200);
+            e.Property(x => x.DriveParentId).HasMaxLength(200);
+            e.Property(x => x.Name).HasMaxLength(500);
         });
 
         modelBuilder.Entity<CrawlRunModel>(e =>

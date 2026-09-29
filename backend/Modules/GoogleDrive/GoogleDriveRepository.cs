@@ -110,16 +110,22 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
         return true;
     }
 
-    // ── Tập thư mục đã biết (GDRIVE-02) ─────────────────────────────────────
+    // ── Bản đồ ánh xạ Drive ↔ MediaFolder (GDRIVE-02/05) ─────────────────────
 
     /// <summary>
-    /// Đảm bảo root FolderId luôn có trong tập đã biết từ tick đầu — không backfill cây cũ,
-    /// chỉ seed điểm gốc để thư mục con phát hiện sau đó gắn vào cây.
+    /// Đảm bảo root Drive FolderId có trong bản đồ, gắn MediaFolder dedicated.
+    /// Không tạo MediaFolder mới — caller đã GetOrCreateDedicatedFolderAsync.
     /// </summary>
-    public async Task EnsureRootFolderKnownAsync(string rootFolderId, CancellationToken ct = default)
+    public async Task EnsureRootFolderKnownAsync(
+        string rootFolderId, Guid dedicatedMediaFolderId, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(rootFolderId)) return;
-        await AddKnownFolderAsync(rootFolderId.Trim(), ct);
+        await CreateFolderMappingAsync(
+            rootFolderId.Trim(),
+            dedicatedMediaFolderId,
+            driveParentId: null,
+            name: DedicatedFolderName,
+            ct);
     }
 
     public async Task<HashSet<string>> GetKnownFolderIdsAsync(CancellationToken ct = default)
@@ -132,20 +138,55 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
         return ids.ToHashSet(StringComparer.Ordinal);
     }
 
-    /// <summary>Idempotent theo FolderId — gọi lại với id đã biết là no-op.</summary>
-    public async Task AddKnownFolderAsync(string folderId, CancellationToken ct = default)
+    public async Task<Dictionary<string, GoogleDriveKnownFolderModel>> GetKnownFolderMapAsync(
+        CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(folderId)) return;
-        var id = folderId.Trim();
+        var rows = await Context.Set<GoogleDriveKnownFolderModel>()
+            .AsNoTracking()
+            .Where(x => !x.IsDeleted && x.MediaFolderId != Guid.Empty)
+            .ToListAsync(ct);
+        return rows.ToDictionary(x => x.FolderId, StringComparer.Ordinal);
+    }
 
-        var exists = await Context.Set<GoogleDriveKnownFolderModel>()
-            .AnyAsync(x => x.FolderId == id && !x.IsDeleted, ct);
-        if (exists) return;
+    /// <summary>
+    /// Idempotent theo Drive FolderId. Dòng di sản GDRIVE-02 (MediaFolderId rỗng) được
+    /// bổ sung MediaFolderId/Name/DriveParentId thay vì no-op.
+    /// </summary>
+    public async Task CreateFolderMappingAsync(
+        string driveFolderId,
+        Guid mediaFolderId,
+        string? driveParentId,
+        string name,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(driveFolderId)) return;
+        var id = driveFolderId.Trim();
+        var parent = string.IsNullOrWhiteSpace(driveParentId) ? null : driveParentId.Trim();
+        var trimmedName = name?.Trim() ?? string.Empty;
+
+        var existing = await Context.Set<GoogleDriveKnownFolderModel>()
+            .FirstOrDefaultAsync(x => x.FolderId == id && !x.IsDeleted, ct);
+        if (existing is not null)
+        {
+            if (existing.MediaFolderId == Guid.Empty)
+            {
+                existing.MediaFolderId = mediaFolderId;
+                existing.DriveParentId = parent;
+                existing.Name = trimmedName;
+                existing.UpdatedAt = DateTime.UtcNow;
+                existing.UpdatedBy = UserContext.GetCurrentUserName();
+                await Context.SaveChangesAsync(ct);
+            }
+            return;
+        }
 
         var entity = new GoogleDriveKnownFolderModel
         {
             Id = Guid.NewGuid(),
             FolderId = id,
+            MediaFolderId = mediaFolderId,
+            DriveParentId = parent,
+            Name = trimmedName,
             DiscoveredAt = DateTime.UtcNow,
             CreatedAt = DateTime.UtcNow,
             CreatedBy = UserContext.GetCurrentUserName(),
@@ -155,20 +196,120 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
         await Context.SaveChangesAsync(ct);
     }
 
+    public async Task UpdateFolderMappingAsync(
+        string driveFolderId,
+        string? driveParentId,
+        string name,
+        CancellationToken ct = default)
+    {
+        var entity = await Context.Set<GoogleDriveKnownFolderModel>()
+            .FirstOrDefaultAsync(x => x.FolderId == driveFolderId && !x.IsDeleted, ct);
+        if (entity is null) return;
+
+        entity.DriveParentId = string.IsNullOrWhiteSpace(driveParentId) ? null : driveParentId.Trim();
+        entity.Name = name?.Trim() ?? string.Empty;
+        entity.UpdatedAt = DateTime.UtcNow;
+        entity.UpdatedBy = UserContext.GetCurrentUserName();
+        await Context.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Tạo MediaFolder con page-less dưới dedicated tree + dòng ánh xạ. Trả mapping mới.
+    /// </summary>
+    public async Task<GoogleDriveKnownFolderModel> CreateMappedChildFolderAsync(
+        string driveFolderId,
+        string name,
+        string driveParentId,
+        Guid parentMediaFolderId,
+        CancellationToken ct = default)
+    {
+        var folderName = string.IsNullOrWhiteSpace(name) ? driveFolderId : name.Trim();
+
+        var existing = await Context.Set<GoogleDriveKnownFolderModel>()
+            .FirstOrDefaultAsync(x => x.FolderId == driveFolderId && !x.IsDeleted, ct);
+        if (existing is not null && existing.MediaFolderId != Guid.Empty)
+            return existing;
+
+        var mediaFolder = new MediaFolderModel
+        {
+            Id = Guid.NewGuid(),
+            Name = folderName,
+            SocialChannelId = null,
+            ParentFolderId = parentMediaFolderId,
+            SortOrder = 0,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = UserContext.GetCurrentUserName(),
+            IsDeleted = false,
+        };
+        Context.Set<MediaFolderModel>().Add(mediaFolder);
+
+        if (existing is not null)
+        {
+            existing.MediaFolderId = mediaFolder.Id;
+            existing.DriveParentId = driveParentId;
+            existing.Name = folderName;
+            existing.UpdatedAt = DateTime.UtcNow;
+            existing.UpdatedBy = UserContext.GetCurrentUserName();
+            await Context.SaveChangesAsync(ct);
+            return existing;
+        }
+
+        var mapping = new GoogleDriveKnownFolderModel
+        {
+            Id = Guid.NewGuid(),
+            FolderId = driveFolderId,
+            MediaFolderId = mediaFolder.Id,
+            DriveParentId = driveParentId,
+            Name = folderName,
+            DiscoveredAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = UserContext.GetCurrentUserName(),
+            IsDeleted = false,
+        };
+        Context.Set<GoogleDriveKnownFolderModel>().Add(mapping);
+        await Context.SaveChangesAsync(ct);
+        return mapping;
+    }
+
+    public async Task RenameMappedMediaFolderAsync(
+        Guid mediaFolderId, string newName, CancellationToken ct = default)
+    {
+        var folder = await Context.Set<MediaFolderModel>()
+            .FirstOrDefaultAsync(f => f.Id == mediaFolderId && !f.IsDeleted, ct);
+        if (folder is null) return;
+        folder.Name = newName.Trim();
+        folder.UpdatedAt = DateTime.UtcNow;
+        folder.UpdatedBy = UserContext.GetCurrentUserName();
+        await Context.SaveChangesAsync(ct);
+    }
+
+    public async Task ReparentMappedMediaFolderAsync(
+        Guid mediaFolderId, Guid newParentMediaFolderId, CancellationToken ct = default)
+    {
+        var folder = await Context.Set<MediaFolderModel>()
+            .FirstOrDefaultAsync(f => f.Id == mediaFolderId && !f.IsDeleted, ct);
+        if (folder is null) return;
+        folder.ParentFolderId = newParentMediaFolderId;
+        folder.UpdatedAt = DateTime.UtcNow;
+        folder.UpdatedBy = UserContext.GetCurrentUserName();
+        await Context.SaveChangesAsync(ct);
+    }
+
     // ── Folder chuyên dụng (GDRIVE-04) ──────────────────────────────────────
 
     public const string DedicatedFolderName = "Google Drive";
 
     /// <summary>
-    /// Get-or-create MediaFolder page-less cho mọi file Drive. Lần đầu tạo folder + lưu
-    /// DedicatedFolderId + backfill mọi MediaAsset Source=GoogleDrive còn FolderId=null.
-    /// Gọi lại idempotent — cùng FolderId.
+    /// Get-or-create MediaFolder page-less + dòng ánh xạ root Drive FolderId → dedicated.
+    /// Lần đầu cũng backfill mọi MediaAsset Source=GoogleDrive còn FolderId=null.
     /// </summary>
-    public async Task<Guid> GetOrCreateDedicatedFolderAsync(CancellationToken ct = default)
+    public async Task<Guid> GetOrCreateDedicatedFolderAsync(
+        string rootDriveFolderId, CancellationToken ct = default)
     {
         var state = await Context.Set<GoogleDriveSyncStateModel>()
             .SingleAsync(x => x.Id == GoogleDriveSyncStateModel.SingletonId, ct);
 
+        Guid dedicatedId;
         if (state.DedicatedFolderId.HasValue)
         {
             var existingId = state.DedicatedFolderId.Value;
@@ -176,8 +317,11 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
                 .AnyAsync(f => f.Id == existingId && !f.IsDeleted, ct);
             if (stillThere)
             {
-                await BackfillOrphanGoogleDriveAssetsAsync(existingId, ct);
-                return existingId;
+                dedicatedId = existingId;
+                await BackfillOrphanGoogleDriveAssetsAsync(dedicatedId, ct);
+                await EnsureRootFolderKnownAsync(rootDriveFolderId, dedicatedId, ct);
+                await Context.SaveChangesAsync(ct);
+                return dedicatedId;
             }
         }
 
@@ -196,10 +340,13 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
 
         state.DedicatedFolderId = folder.Id;
         state.UpdatedAt = DateTime.UtcNow;
+        dedicatedId = folder.Id;
 
-        await BackfillOrphanGoogleDriveAssetsAsync(folder.Id, ct);
+        await BackfillOrphanGoogleDriveAssetsAsync(dedicatedId, ct);
         await Context.SaveChangesAsync(ct);
-        return folder.Id;
+
+        await EnsureRootFolderKnownAsync(rootDriveFolderId, dedicatedId, ct);
+        return dedicatedId;
     }
 
     /// <summary>DedicatedFolderId đã lưu trên sync state (null nếu chưa get-or-create).</summary>

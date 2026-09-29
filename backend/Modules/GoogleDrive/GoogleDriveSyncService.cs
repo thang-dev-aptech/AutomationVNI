@@ -9,16 +9,9 @@ public record GoogleDriveSyncResult(bool Enabled, bool Configured, string? Confi
 
 /// <summary>
 /// Một lượt quét Google Drive (đọc trạng thái, retry, import) — GDRIVE-03, tách khỏi
-/// GoogleDriveImportWorker theo đúng pattern ContentCrawlPipelineService: scoped service thường,
-/// KHÔNG kế thừa BackgroundService, constructor nhận thẳng dependency (không tự tạo scope).
-///
-/// Dùng chung bởi cả GoogleDriveImportWorker (tick định kỳ) và GoogleDriveController.ScanNow
-/// (bấm tay). Lock tĩnh (Lock) đảm bảo hai đường gọi không bao giờ chạy chồng lấn lên cùng một
-/// dòng GoogleDriveSyncState — bảng chỉ có đúng 1 dòng singleton, chạy chồng lấn sẽ đua nhau ghi
-/// đè PageToken/LastImportedCount.
-///
-/// Logic RunTickAsync/RetryFailuresAsync/ImportNewFilesAsync là nguyên vẹn, chuyển 1:1 từ
-/// GoogleDriveImportWorker — đây là refactor thuần tuý (GDRIVE-03), không đổi hành vi GDRIVE-01.
+/// GoogleDriveImportWorker theo đúng pattern ContentCrawlPipelineService.
+/// GDRIVE-05 Task A: tạo/đổi tên/di chuyển-trong-cây MediaFolder theo bản đồ ánh xạ;
+/// cascade xoá/reconcile full-tree thuộc task riêng.
 /// </summary>
 public class GoogleDriveSyncService(
     IGoogleDriveClient client,
@@ -30,16 +23,8 @@ public class GoogleDriveSyncService(
 {
     private const string ZipExtension = ".zip";
 
-    // Static: worker (một scope) và request scan-now (một scope khác) phải tranh CÙNG một khoá,
-    // không phải khoá riêng theo từng instance scoped.
     private static readonly SemaphoreSlim Lock = new(1, 1);
 
-    /// <summary>
-    /// Đọc trạng thái từ DB ở đầu MỖI lượt gọi — IsEnabled=false thì bỏ qua toàn bộ pha
-    /// retry+import (worker định kỳ vẫn sống, chỉ tick này không làm gì; scan-now thủ công trả
-    /// về rõ ràng "đang dừng"). Chỉ một lượt RunTickAsync được chạy tại một thời điểm trên toàn bộ
-    /// app — lượt gọi thứ hai (dù từ worker hay từ scan-now) phải CHỜ, không chạy chồng lấn.
-    /// </summary>
     public async Task<GoogleDriveSyncResult> RunTickAsync(CancellationToken ct = default)
     {
         await Lock.WaitAsync(ct);
@@ -61,8 +46,8 @@ public class GoogleDriveSyncService(
         if (!state.IsEnabled)
             return new GoogleDriveSyncResult(Enabled: false, Configured: true, ConfigIssue: null, ImportedCount: 0);
 
-        // GDRIVE-04: đảm bảo folder chuyên dụng tồn tại + backfill orphans trước retry/import.
-        var dedicatedFolderId = await repository.GetOrCreateDedicatedFolderAsync(ct);
+        // GDRIVE-04/05: dedicated folder + dòng ánh xạ root Drive → MediaFolder.
+        var dedicatedFolderId = await repository.GetOrCreateDedicatedFolderAsync(settings.FolderId, ct);
 
         await RetryFailuresAsync(settings, dedicatedFolderId, ct);
 
@@ -77,10 +62,6 @@ public class GoogleDriveSyncService(
         return new GoogleDriveSyncResult(Enabled: true, Configured: true, ConfigIssue: null, ImportedCount: importedCount);
     }
 
-    /// <summary>
-    /// Thử lại các file đã lỗi trước đó — cùng scope/DbContext với ImportNewFilesAsync (tuần tự,
-    /// không song song, nên dùng chung vẫn an toàn).
-    /// </summary>
     private async Task RetryFailuresAsync(
         GoogleDriveOptions settings, Guid dedicatedFolderId, CancellationToken ct)
     {
@@ -113,11 +94,6 @@ public class GoogleDriveSyncService(
         }
     }
 
-    /// <summary>
-    /// Một lượt changes.list. GDRIVE-02: đầu tick seed root vào tập đã biết, xử lý Folders trước
-    /// (đa vòng cho grandchild cùng page), rồi nhận file khi Parents giao tập đã biết.
-    /// LUÔN advance PageToken ở cuối, kể cả khi không có file mới.
-    /// </summary>
     private async Task<int> ImportNewFilesAsync(
         GoogleDriveOptions settings, string? pageToken, Guid dedicatedFolderId, CancellationToken ct)
     {
@@ -127,15 +103,10 @@ public class GoogleDriveSyncService(
             ? await client.GetStartPageTokenAsync(ct)
             : pageToken;
 
-        // Giới hạn số file mỗi lượt PHẢI xảy ra ở tầng gọi API (tham số maxResults dưới đây), không
-        // phải bằng cách Take() sau khi đã nhận nguyên trang — nếu không, NextPageToken lưu lại sẽ
-        // khớp với trang ĐẦY ĐỦ trong khi chỉ một phần được xử lý, và phần còn lại mất vĩnh viễn vì
-        // pageToken đã đi qua nó rồi (bug đã xảy ra thật, xem review t6 / commit 575a9db).
         var page = await client.ListChangesAsync(effectiveToken, settings.MaxFilesPerTick, ct);
 
-        await repository.EnsureRootFolderKnownAsync(settings.FolderId, ct);
-        var known = await repository.GetKnownFolderIdsAsync(ct);
-        await AbsorbKnownFoldersAsync(page.Folders, known, ct);
+        var map = await repository.GetKnownFolderMapAsync(ct);
+        await ReconcileFoldersFromChangesAsync(page.Folders, map, ct);
 
         var importedCount = 0;
 
@@ -143,16 +114,19 @@ public class GoogleDriveSyncService(
         {
             ct.ThrowIfCancellationRequested();
 
-            // GDRIVE-02: chỉ nhận file có parent trực tiếp nằm trong cây đã biết.
-            if (file.Parents is null || !file.Parents.Any(known.Contains))
+            var targetFolderId = ResolveMappedMediaFolderId(file.Parents, map);
+            if (targetFolderId is null)
                 continue;
 
-            if (await mediaAssets.ExistsByGoogleDriveFileIdAsync(file.FileId, ct))
+            var existing = await mediaAssets.FindByGoogleDriveFileIdAsync(file.FileId, ct);
+            if (existing is not null)
+            {
+                await mediaAssets.UpdateGoogleDrivePlacementAsync(
+                    existing, targetFolderId.Value, file.Name, ct);
                 continue;
+            }
 
             var extension = Path.GetExtension(file.Name);
-            // .zip và mọi đuôi ngoài whitelist bị chặn CÓ CHỦ ĐÍCH ngay ở bước validate — không
-            // phải lỗi tải, nên không tạo MediaAsset và không ghi vào hàng đợi retry.
             if (string.Equals(extension, ZipExtension, StringComparison.OrdinalIgnoreCase)
                 || !fileStorage.AllowedExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
             {
@@ -161,9 +135,6 @@ public class GoogleDriveSyncService(
 
             if (file.SizeBytes > fileStorage.MaxUploadBytes)
             {
-                // SaveBytesAsync KHÔNG tự kiểm MaxUploadBytes (chỉ SaveAsync cho IFormFile mới
-                // kiểm) — phải so sánh ở đây TRƯỚC khi tải, không thì file khổng lồ vẫn tải trọn
-                // về bộ nhớ rồi mới báo lỗi.
                 await repository.UpsertFailureAsync(
                     file.FileId, file.Name, file.MimeType, file.SizeBytes,
                     $"File vượt quá giới hạn {fileStorage.MaxUploadBytes} bytes", ct);
@@ -173,7 +144,7 @@ public class GoogleDriveSyncService(
             try
             {
                 var data = await client.DownloadFileAsync(file.FileId, ct);
-                await mediaAssets.CreateFromGoogleDriveAsync(data, file, dedicatedFolderId, ct);
+                await mediaAssets.CreateFromGoogleDriveAsync(data, file, targetFolderId.Value, ct);
                 importedCount++;
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
@@ -189,30 +160,82 @@ public class GoogleDriveSyncService(
     }
 
     /// <summary>
-    /// Mở rộng tập đã biết từ page.Folders: bỏ trashed / ngoài cây; thêm vào HashSet cục bộ ngay
-    /// và lặp đến khi ổn định — để thư mục cháu xuất hiện trước cha trong cùng page vẫn nhận đúng.
+    /// GDRIVE-05 Task A: hội tụ đa-pass — (a) tạo mới, (b) đổi tên, (c) di chuyển trong cây.
+    /// Di chuyển ra ngoài cây (cha mới không trong map) để lại cho Task B cascade.
     /// </summary>
-    private async Task AbsorbKnownFoldersAsync(
-        List<GoogleDriveFolderInfo> folders, HashSet<string> known, CancellationToken ct)
+    private async Task ReconcileFoldersFromChangesAsync(
+        List<GoogleDriveFolderInfo> folders,
+        Dictionary<string, GoogleDriveKnownFolderModel> map,
+        CancellationToken ct)
     {
         if (folders.Count == 0) return;
 
-        bool added;
+        bool progressed;
         do
         {
-            added = false;
+            progressed = false;
             foreach (var folder in folders)
             {
                 ct.ThrowIfCancellationRequested();
                 if (folder.Trashed) continue;
                 if (string.IsNullOrWhiteSpace(folder.FolderId)) continue;
-                if (known.Contains(folder.FolderId)) continue;
-                if (folder.ParentIds is null || !folder.ParentIds.Any(known.Contains)) continue;
 
-                await repository.AddKnownFolderAsync(folder.FolderId, ct);
-                known.Add(folder.FolderId);
-                added = true;
+                var driveParentId = folder.ParentIds?
+                    .FirstOrDefault(p => !string.IsNullOrWhiteSpace(p));
+
+                if (!map.TryGetValue(folder.FolderId, out var known))
+                {
+                    // (a) chưa biết — chỉ nhận khi cha đã nằm trong bản đồ.
+                    if (driveParentId is null || !map.TryGetValue(driveParentId, out var parentKnown))
+                        continue;
+
+                    var created = await repository.CreateMappedChildFolderAsync(
+                        folder.FolderId,
+                        folder.Name,
+                        driveParentId,
+                        parentKnown.MediaFolderId,
+                        ct);
+                    map[created.FolderId] = created;
+                    progressed = true;
+                    continue;
+                }
+
+                // (b) đổi tên
+                var desiredName = string.IsNullOrWhiteSpace(folder.Name) ? known.Name : folder.Name.Trim();
+                if (!string.Equals(known.Name, desiredName, StringComparison.Ordinal))
+                {
+                    await repository.RenameMappedMediaFolderAsync(known.MediaFolderId, desiredName, ct);
+                    await repository.UpdateFolderMappingAsync(
+                        known.FolderId, known.DriveParentId, desiredName, ct);
+                    known.Name = desiredName;
+                    progressed = true;
+                }
+
+                // (c) di chuyển TRONG cây — cha mới phải còn trong map; ngoài cây → bỏ qua (Task B).
+                if (driveParentId is not null
+                    && !string.Equals(known.DriveParentId, driveParentId, StringComparison.Ordinal)
+                    && map.TryGetValue(driveParentId, out var newParent))
+                {
+                    await repository.ReparentMappedMediaFolderAsync(
+                        known.MediaFolderId, newParent.MediaFolderId, ct);
+                    await repository.UpdateFolderMappingAsync(
+                        known.FolderId, driveParentId, known.Name, ct);
+                    known.DriveParentId = driveParentId;
+                    progressed = true;
+                }
             }
-        } while (added);
+        } while (progressed);
+    }
+
+    private static Guid? ResolveMappedMediaFolderId(
+        List<string>? parents, Dictionary<string, GoogleDriveKnownFolderModel> map)
+    {
+        if (parents is null || parents.Count == 0) return null;
+        foreach (var parent in parents)
+        {
+            if (map.TryGetValue(parent, out var known))
+                return known.MediaFolderId;
+        }
+        return null;
     }
 }

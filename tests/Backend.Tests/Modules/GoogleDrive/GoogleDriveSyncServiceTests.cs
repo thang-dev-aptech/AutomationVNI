@@ -268,6 +268,7 @@ public class GoogleDriveSyncServiceTests
                 new GoogleDriveFolderInfo
                 {
                     FolderId = childId,
+                    Name = "Child",
                     ParentIds = [Fixture.RootFolderId],
                 },
             ],
@@ -309,11 +310,13 @@ public class GoogleDriveSyncServiceTests
                 new GoogleDriveFolderInfo
                 {
                     FolderId = grandchildId,
+                    Name = "Grandchild",
                     ParentIds = [childId],
                 },
                 new GoogleDriveFolderInfo
                 {
                     FolderId = childId,
+                    Name = "Child",
                     ParentIds = [Fixture.RootFolderId],
                 },
             ],
@@ -355,6 +358,7 @@ public class GoogleDriveSyncServiceTests
                 new GoogleDriveFolderInfo
                 {
                     FolderId = unrelatedId,
+                    Name = "Unrelated",
                     ParentIds = ["some-other-drive-root-not-ours"],
                 },
             ],
@@ -404,6 +408,7 @@ public class GoogleDriveSyncServiceTests
                 new GoogleDriveFolderInfo
                 {
                     FolderId = trashedChildId,
+                    Name = "Trashed",
                     ParentIds = [Fixture.RootFolderId],
                     Trashed = true,
                 },
@@ -416,6 +421,223 @@ public class GoogleDriveSyncServiceTests
         var known = await fixture.GetKnownFolderIdsAsync();
         Assert.Contains(Fixture.RootFolderId, known);
         Assert.DoesNotContain(trashedChildId, known);
+    }
+
+    // ── GDRIVE-05 Task A: create / rename / move-in-tree ─────────────────────
+
+    /// <summary>AC gdrive05-create-test (ce8bdda6) — tạo thư mục con mới.</summary>
+    [Fact]
+    public async Task RunTickAsync_NewChildFolder_CreatesMappedMediaFolderWithCorrectNameAndParent()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+        var dedicatedId = await fixture.GetOrCreateDedicatedFolderAsync();
+
+        const string childId = "gdrive05-child-new";
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "gdrive05-create",
+            Folders =
+            [
+                new GoogleDriveFolderInfo
+                {
+                    FolderId = childId,
+                    Name = "Chiến dịch Q1",
+                    ParentIds = [Fixture.RootFolderId],
+                },
+            ],
+        });
+
+        await fixture.CreateService().RunTickAsync();
+
+        var map = await fixture.GetKnownFolderMapAsync();
+        Assert.True(map.TryGetValue(childId, out var mapping));
+        Assert.Equal("Chiến dịch Q1", mapping!.Name);
+        Assert.Equal(Fixture.RootFolderId, mapping.DriveParentId);
+
+        var media = await fixture.GetMediaFolderAsync(mapping.MediaFolderId);
+        Assert.NotNull(media);
+        Assert.Equal("Chiến dịch Q1", media!.Name);
+        Assert.Equal(dedicatedId, media.ParentFolderId);
+    }
+
+    /// <summary>AC gdrive05-create-test (ce8bdda6) — đổi tên thư mục đã biết.</summary>
+    [Fact]
+    public async Task RunTickAsync_KnownFolderRenamed_UpdatesMediaFolderName()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+
+        const string childId = "gdrive05-child-rename";
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "gdrive05-rename-1",
+            Folders =
+            [
+                new GoogleDriveFolderInfo
+                {
+                    FolderId = childId,
+                    Name = "Tên cũ",
+                    ParentIds = [Fixture.RootFolderId],
+                },
+            ],
+        });
+        await fixture.CreateService().RunTickAsync();
+
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "gdrive05-rename-2",
+            Folders =
+            [
+                new GoogleDriveFolderInfo
+                {
+                    FolderId = childId,
+                    Name = "Tên mới",
+                    ParentIds = [Fixture.RootFolderId],
+                },
+            ],
+        });
+        await fixture.CreateService().RunTickAsync();
+
+        var map = await fixture.GetKnownFolderMapAsync();
+        Assert.Equal("Tên mới", map[childId].Name);
+        var media = await fixture.GetMediaFolderAsync(map[childId].MediaFolderId);
+        Assert.Equal("Tên mới", media!.Name);
+    }
+
+    /// <summary>AC gdrive05-create-test (ce8bdda6) — di chuyển trong cây.</summary>
+    [Fact]
+    public async Task RunTickAsync_KnownFolderMovedWithinTree_UpdatesParentFolderId()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+        var dedicatedId = await fixture.GetOrCreateDedicatedFolderAsync();
+
+        const string folderA = "gdrive05-move-a";
+        const string folderB = "gdrive05-move-b";
+        const string folderC = "gdrive05-move-c";
+
+        // root > A, B, C(parent=A)
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "gdrive05-move-1",
+            Folders =
+            [
+                new GoogleDriveFolderInfo { FolderId = folderA, Name = "A", ParentIds = [Fixture.RootFolderId] },
+                new GoogleDriveFolderInfo { FolderId = folderB, Name = "B", ParentIds = [Fixture.RootFolderId] },
+                new GoogleDriveFolderInfo { FolderId = folderC, Name = "C", ParentIds = [folderA] },
+            ],
+        });
+        await fixture.CreateService().RunTickAsync();
+
+        var mapBefore = await fixture.GetKnownFolderMapAsync();
+        Assert.Equal(dedicatedId, (await fixture.GetMediaFolderAsync(mapBefore[folderA].MediaFolderId))!.ParentFolderId);
+        Assert.Equal(mapBefore[folderA].MediaFolderId,
+            (await fixture.GetMediaFolderAsync(mapBefore[folderC].MediaFolderId))!.ParentFolderId);
+
+        // Di chuyển C: A → B (cả hai vẫn trong cây)
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "gdrive05-move-2",
+            Folders =
+            [
+                new GoogleDriveFolderInfo { FolderId = folderC, Name = "C", ParentIds = [folderB] },
+            ],
+        });
+        await fixture.CreateService().RunTickAsync();
+
+        var map = await fixture.GetKnownFolderMapAsync();
+        Assert.Equal(folderB, map[folderC].DriveParentId);
+        var mediaC = await fixture.GetMediaFolderAsync(map[folderC].MediaFolderId);
+        Assert.Equal(map[folderB].MediaFolderId, mediaC!.ParentFolderId);
+    }
+
+    /// <summary>AC gdrive05-multilevel-same-tick-test (42804a0b).</summary>
+    [Fact]
+    public async Task RunTickAsync_MultilevelNewFoldersSameTick_CreatesCorrectParentChildTree()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+        var dedicatedId = await fixture.GetOrCreateDedicatedFolderAsync();
+
+        const string folderC = "gdrive05-ml-c";
+        const string folderD = "gdrive05-ml-d";
+        // Thứ tự cố ý: D (con) trước C (cha) — multi-pass phải hội tụ trong cùng tick.
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "gdrive05-multilevel",
+            Folders =
+            [
+                new GoogleDriveFolderInfo
+                {
+                    FolderId = folderD,
+                    Name = "D",
+                    ParentIds = [folderC],
+                },
+                new GoogleDriveFolderInfo
+                {
+                    FolderId = folderC,
+                    Name = "C",
+                    ParentIds = [Fixture.RootFolderId],
+                },
+            ],
+        });
+
+        await fixture.CreateService().RunTickAsync();
+
+        var map = await fixture.GetKnownFolderMapAsync();
+        Assert.True(map.ContainsKey(folderC));
+        Assert.True(map.ContainsKey(folderD));
+
+        var mediaC = await fixture.GetMediaFolderAsync(map[folderC].MediaFolderId);
+        var mediaD = await fixture.GetMediaFolderAsync(map[folderD].MediaFolderId);
+        Assert.Equal("C", mediaC!.Name);
+        Assert.Equal(dedicatedId, mediaC.ParentFolderId);
+        Assert.Equal("D", mediaD!.Name);
+        Assert.Equal(mediaC.Id, mediaD.ParentFolderId);
+    }
+
+    /// <summary>GDRIVE-05: file mới nằm đúng MediaFolder cha đã map (không còn luôn dedicated root).</summary>
+    [Fact]
+    public async Task RunTickAsync_FileUnderMappedChild_UsesChildMediaFolderId()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+        var dedicatedId = await fixture.GetOrCreateDedicatedFolderAsync();
+
+        const string childId = "gdrive05-file-parent";
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "gdrive05-file-map",
+            Folders =
+            [
+                new GoogleDriveFolderInfo
+                {
+                    FolderId = childId,
+                    Name = "Ảnh",
+                    ParentIds = [Fixture.RootFolderId],
+                },
+            ],
+            Files =
+            [
+                new GoogleDriveFileInfo
+                {
+                    FileId = "file-in-child",
+                    Name = "shot.jpg",
+                    MimeType = "image/jpeg",
+                    SizeBytes = 10,
+                    Parents = [childId],
+                },
+            ],
+        });
+
+        await fixture.CreateService().RunTickAsync();
+
+        var map = await fixture.GetKnownFolderMapAsync();
+        var assets = await fixture.GetGoogleDriveAssetsAsync();
+        Assert.Single(assets);
+        Assert.Equal(map[childId].MediaFolderId, assets[0].FolderId);
+        Assert.NotEqual(dedicatedId, assets[0].FolderId);
     }
 
     // ── GDRIVE-04: folder chuyên dụng + backfill ────────────────────────────
@@ -585,7 +807,7 @@ public class GoogleDriveSyncServiceTests
         public async Task<MediaAssetModel> CreateExistingAssetAsync(string googleDriveFileId)
         {
             await using var db = new AppDbContext(DbOptions);
-            var dedicatedId = await CreateRepository(db).GetOrCreateDedicatedFolderAsync();
+            var dedicatedId = await CreateRepository(db).GetOrCreateDedicatedFolderAsync(RootFolderId);
             var repo = new MediaAssetRepository(db, new StubUserContext(), new RecordingFileStorageService());
             return await repo.CreateFromGoogleDriveAsync(
                 [1, 2, 3],
@@ -603,7 +825,21 @@ public class GoogleDriveSyncServiceTests
         public async Task<Guid> GetOrCreateDedicatedFolderAsync()
         {
             await using var db = new AppDbContext(DbOptions);
-            return await CreateRepository(db).GetOrCreateDedicatedFolderAsync();
+            return await CreateRepository(db).GetOrCreateDedicatedFolderAsync(RootFolderId);
+        }
+
+        public async Task<Dictionary<string, GoogleDriveKnownFolderModel>> GetKnownFolderMapAsync()
+        {
+            await using var db = new AppDbContext(DbOptions);
+            return await CreateRepository(db).GetKnownFolderMapAsync();
+        }
+
+        public async Task<MediaFolderModel?> GetMediaFolderAsync(Guid id)
+        {
+            await using var db = new AppDbContext(DbOptions);
+            return await db.Set<MediaFolderModel>()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(f => f.Id == id && !f.IsDeleted);
         }
 
         public async Task SeedOrphanGoogleDriveAssetAsync(string googleDriveFileId, string name)

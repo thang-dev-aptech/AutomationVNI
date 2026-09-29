@@ -146,15 +146,18 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         => await Context.Set<MediaAssetModel>()
             .AnyAsync(x => !x.IsDeleted && x.GoogleDriveFileId == fileId, ct);
 
+    public async Task<MediaAssetModel?> FindByGoogleDriveFileIdAsync(
+        string fileId, CancellationToken ct = default)
+        => await Context.Set<MediaAssetModel>()
+            .FirstOrDefaultAsync(x => !x.IsDeleted && x.GoogleDriveFileId == fileId, ct);
+
     /// <summary>
-    /// Nhập file từ Google Drive (GDRIVE-01/GDRIVE-04). FolderId trỏ folder chuyên dụng
-    /// page-less (không thuộc SocialChannel) — caller truyền <paramref name="dedicatedFolderId"/>
-    /// từ GetOrCreateDedicatedFolderAsync.
-    /// OriginalFileName lấy từ <paramref name="file"/>.Name (tên thật trên Drive), KHÔNG dùng
-    /// saveResult.OriginalFileName vì đó chỉ là tên storage key ngẫu nhiên do SaveBytesAsync sinh ra.
+    /// Nhập file từ Google Drive. FolderId = MediaFolder đã map theo cha Drive thật
+    /// (GDRIVE-05) — caller tra bản đồ ánh xạ rồi truyền vào.
+    /// OriginalFileName lấy từ <paramref name="file"/>.Name (tên thật trên Drive).
     /// </summary>
     public async Task<MediaAssetModel> CreateFromGoogleDriveAsync(
-        byte[] data, GoogleDriveFileInfo file, Guid dedicatedFolderId, CancellationToken ct = default)
+        byte[] data, GoogleDriveFileInfo file, Guid folderId, CancellationToken ct = default)
     {
         var extension = Path.GetExtension(file.Name);
         var saveResult = await _fileStorage.SaveBytesAsync(data, "google-drive", extension, file.MimeType, ct);
@@ -167,7 +170,7 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
             MimeType = saveResult.ContentType,
             FileSize = saveResult.SizeBytes,
             Source = MediaSource.GoogleDrive,
-            FolderId = dedicatedFolderId,
+            FolderId = folderId,
             GoogleDriveFileId = file.FileId,
         };
 
@@ -176,6 +179,31 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         ApplyUpdateAudit(entity);
         await Context.SaveChangesAsync(ct);
         return entity;
+    }
+
+    /// <summary>
+    /// GDRIVE-05: cập nhật FolderId / OriginalFileName khi file đã import đổi cha hoặc tên trên Drive.
+    /// </summary>
+    public async Task UpdateGoogleDrivePlacementAsync(
+        MediaAssetModel entity, Guid folderId, string originalFileName, CancellationToken ct = default)
+    {
+        var changed = false;
+        if (entity.FolderId != folderId)
+        {
+            entity.FolderId = folderId;
+            changed = true;
+        }
+
+        var name = originalFileName?.Trim() ?? string.Empty;
+        if (!string.Equals(entity.OriginalFileName, name, StringComparison.Ordinal))
+        {
+            entity.OriginalFileName = name;
+            changed = true;
+        }
+
+        if (!changed) return;
+        ApplyUpdateAudit(entity);
+        await Context.SaveChangesAsync(ct);
     }
 
     public async Task<MediaAssetModel> CreateAsync(

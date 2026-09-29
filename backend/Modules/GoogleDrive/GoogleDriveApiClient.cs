@@ -84,6 +84,7 @@ public class GoogleDriveApiClient(IOptions<GoogleDriveOptions> options) : IGoogl
                 folders.Add(new GoogleDriveFolderInfo
                 {
                     FolderId = file.Id ?? change.FileId ?? string.Empty,
+                    Name = file.Name ?? string.Empty,
                     ParentIds = parentIds,
                     Trashed = false,
                 });
