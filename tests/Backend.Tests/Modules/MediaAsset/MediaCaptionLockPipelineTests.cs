@@ -212,13 +212,17 @@ public class MediaCaptionLockPipelineTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task WorkerPath_GenerateCaptionAsync_IsNotBlockedByLock()
+    public async Task WorkerPath_GenerateCaptionIfEmptyAsync_IsNotBlockedByLock()
     {
         var id = await SeedAssetAsync(MediaCaptionJobItemStatus.Running);
 
         using var scope = _host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        (await db.MediaAssets.SingleAsync(x => x.Id == id)).Caption = null;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
         var intelligence = scope.ServiceProvider.GetRequiredService<MediaIntelligenceService>();
-        await intelligence.GenerateCaptionAsync(id);
+        Assert.True(await intelligence.GenerateCaptionIfEmptyAsync(id));
 
         Assert.Equal("Một\nHai\nBa\nBốn\nNăm", (await GetFieldsAsync(id)).Caption);
     }

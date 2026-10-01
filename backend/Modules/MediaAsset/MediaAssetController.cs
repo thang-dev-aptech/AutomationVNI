@@ -227,7 +227,8 @@ public class MediaAssetController
     [Authorize(Roles = "Admin,ContentManager")]
     public async Task<IActionResult> GenerateCaption(Guid id, CancellationToken ct = default)
     {
-        // Khoá chỉ ở controller (đường người dùng): worker gọi thẳng GenerateCaptionAsync nên không bị chặn.
+        // Khoá áp cho đường người dùng (kiểm sớm ở đây, kiểm lại trong GenerateCaptionAsync sau khi đánh dấu
+        // in-flight): worker gọi GenerateCaptionIfEmptyAsync nên không bị chặn.
         if (await _repo.IsCaptionQueuedAsync(id, ct))
             return CaptionQueuedConflict();
 
@@ -235,6 +236,10 @@ public class MediaAssetController
         {
             var entity = await _intelligence.GenerateCaptionAsync(id, ct);
             return Ok(ApiResponse.Ok(ToResponse(entity), "Đã sinh caption"));
+        }
+        catch (CaptionQueuedException)
+        {
+            return CaptionQueuedConflict();
         }
         catch (KeyNotFoundException ex)
         {

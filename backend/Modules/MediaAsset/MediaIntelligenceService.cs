@@ -1,3 +1,4 @@
+using Backend.Modules.MediaCaption;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
@@ -294,7 +295,12 @@ public class MediaIntelligenceService(
     /// </summary>
     public async Task<MediaAssetModel> GenerateCaptionAsync(Guid mediaId, CancellationToken ct = default)
     {
-        var media = await LoadCaptionTargetAsync(mediaId, ct);
+        // Đánh dấu TRƯỚC khi kiểm khoá để job tạo xen giữa luôn thấy dấu (worker chờ thay vì gọi AI lần hai).
+        using var inFlight = CaptionInFlight.Begin(mediaId);
+        if (await MediaCaptionJobService.IsAssetQueuedAsync(db, mediaId, ct))
+            throw new CaptionQueuedException();
+
+        var media = await LoadCaptionTargetAsync(mediaId, track: true, ct);
         var caption = await GenerateCaptionTextAsync(media, ct);
         media.Caption = caption;
         media.UpdatedAt = DateTime.UtcNow;
@@ -303,28 +309,32 @@ public class MediaIntelligenceService(
     }
 
     /// <summary>
-    /// Đường worker: cùng logic sinh như <see cref="GenerateCaptionAsync"/> nhưng ghi có điều kiện
-    /// nguyên tử (UPDATE ... WHERE Caption rỗng). Người dùng có thể ghi caption trong lúc AI đang chạy
-    /// → không ghi đè, trả false (caller đánh dấu Skipped). Trả true khi đã ghi.
+    /// Đường worker: cùng logic sinh như <see cref="GenerateCaptionAsync"/> nhưng chỉ ghi nếu caption
+    /// vẫn đúng giá trị đã đọc lúc bắt đầu (compare-and-swap trong một câu UPDATE). Chỉ bắt đầu khi caption
+    /// đang "chưa có" theo định nghĩa duy nhất string.IsNullOrWhiteSpace (cùng định nghĩa với CreateAsync
+    /// và worker) — nên không phụ thuộc cách SQLite trim. Người dùng ghi caption trong lúc AI chạy →
+    /// 0 dòng bị ghi, trả false (caller đánh dấu Skipped). Trả true khi đã ghi.
     /// </summary>
     public async Task<bool> GenerateCaptionIfEmptyAsync(Guid mediaId, CancellationToken ct = default)
     {
-        var media = await LoadCaptionTargetAsync(mediaId, ct);
+        var media = await LoadCaptionTargetAsync(mediaId, track: false, ct);
         if (!string.IsNullOrWhiteSpace(media.Caption)) return false;
 
+        var observed = media.Caption;
         var caption = await GenerateCaptionTextAsync(media, ct);
         var now = DateTime.UtcNow;
         var written = await db.MediaAssets
-            .Where(x => x.Id == mediaId && !x.IsDeleted && (x.Caption == null || x.Caption.Trim() == ""))
+            .Where(x => x.Id == mediaId && !x.IsDeleted && x.Caption == observed)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(x => x.Caption, caption)
                 .SetProperty(x => x.UpdatedAt, now), ct);
         return written > 0;
     }
 
-    private async Task<MediaAssetModel> LoadCaptionTargetAsync(Guid mediaId, CancellationToken ct)
+    private async Task<MediaAssetModel> LoadCaptionTargetAsync(Guid mediaId, bool track, CancellationToken ct)
     {
-        var media = await db.MediaAssets.FirstOrDefaultAsync(x => x.Id == mediaId && !x.IsDeleted, ct)
+        var assets = track ? db.MediaAssets : db.MediaAssets.AsNoTracking();
+        var media = await assets.FirstOrDefaultAsync(x => x.Id == mediaId && !x.IsDeleted, ct)
             ?? throw new KeyNotFoundException("Không tìm thấy media");
         if (!media.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("Sinh caption hiện chỉ hỗ trợ file ảnh");

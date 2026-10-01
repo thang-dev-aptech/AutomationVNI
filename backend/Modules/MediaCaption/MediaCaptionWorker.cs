@@ -69,7 +69,7 @@ public class MediaCaptionWorker(
         await db.SaveChangesAsync(ct);
         try
         {
-            var asset = await db.MediaAssets.FirstOrDefaultAsync(x => x.Id == item.MediaAssetId && !x.IsDeleted, ct);
+            var asset = await db.MediaAssets.AsNoTracking().FirstOrDefaultAsync(x => x.Id == item.MediaAssetId && !x.IsDeleted, ct);
             if (asset is null || !string.IsNullOrWhiteSpace(asset.Caption))
             {
                 item.Status = MediaCaptionJobItemStatus.Skipped;
@@ -77,6 +77,9 @@ public class MediaCaptionWorker(
             }
             else
             {
+                // Người dùng đang sinh tay ảnh này → chờ xong; GenerateCaptionAsync đọc lại caption và
+                // bỏ qua (không gọi AI) nếu đã có.
+                await CaptionInFlight.WaitAsync(item.MediaAssetId, InFlightWait, ct);
                 // Ghi có điều kiện: người dùng có thể đã ghi caption trong lúc AI chạy → Skipped, không ghi đè.
                 var written = await GenerateCaptionAsync(intelligence, item.MediaAssetId, ct);
                 item.Status = written ? MediaCaptionJobItemStatus.Succeeded : MediaCaptionJobItemStatus.Skipped;
@@ -97,6 +100,8 @@ public class MediaCaptionWorker(
         if (!active) { job.Status = MediaCaptionJobStatus.Completed; job.FinishedAt = DateTime.UtcNow; }
         await db.SaveChangesAsync(ct);
     }
+
+    protected virtual TimeSpan InFlightWait => TimeSpan.FromMinutes(2);
 
     protected virtual Task<bool> GenerateCaptionAsync(
         MediaIntelligenceService intelligence,
