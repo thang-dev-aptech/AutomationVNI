@@ -36,7 +36,8 @@ public class MediaCaptionJobService(AppDbContext db, MediaFolderRepository folde
             Status = MediaCaptionJobStatus.Queued, CreatedAt = now
         };
         var pending = assets.Where(x => string.IsNullOrWhiteSpace(x.Caption)).ToList();
-        job.Skipped = assets.Count - pending.Count;
+        job.InitialSkipped = assets.Count - pending.Count;
+        job.Skipped = job.InitialSkipped;
         job.Total = pending.Count;
         db.MediaCaptionJobs.Add(job);
         foreach (var asset in pending)
@@ -134,14 +135,12 @@ public class MediaCaptionJobService(AppDbContext db, MediaFolderRepository folde
         var statuses = await db.MediaCaptionJobItems.Where(x => x.JobId == job.Id && !x.IsDeleted)
             .GroupBy(x => x.Status).Select(x => new { Status = x.Key, Count = x.Count() }).ToListAsync(ct);
         int Count(MediaCaptionJobItemStatus status) => statuses.FirstOrDefault(x => x.Status == status)?.Count ?? 0;
-        // Asset đã có caption lúc tạo job không có item theo contract; giữ baseline đó khi
-        // một Pending item bị skip vì người dùng thêm caption trước lúc worker xử lý.
-        var priorItemSkipped = Count(MediaCaptionJobItemStatus.Skipped);
-        var initialSkipped = Math.Max(0, job.Skipped - priorItemSkipped);
+        // Asset đã có caption lúc tạo job không có item theo contract — số đó nằm cố định ở
+        // InitialSkipped; cộng thêm item bị skip vì người dùng tự viết caption trước lúc worker xử lý.
         job.Total = statuses.Sum(x => x.Count);
         job.Succeeded = Count(MediaCaptionJobItemStatus.Succeeded);
         job.Failed = Count(MediaCaptionJobItemStatus.Failed);
-        job.Skipped = initialSkipped + priorItemSkipped;
+        job.Skipped = job.InitialSkipped + Count(MediaCaptionJobItemStatus.Skipped);
     }
 
     internal static MediaCaptionJobResponse ToResponse(MediaCaptionJobModel job, IEnumerable<MediaCaptionJobItemModel> items) => new()

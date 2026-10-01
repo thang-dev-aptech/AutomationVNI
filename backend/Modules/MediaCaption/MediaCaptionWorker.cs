@@ -28,7 +28,7 @@ public class MediaCaptionWorker(
         }
     }
 
-    private async Task RecoverRunningAsync(CancellationToken ct)
+    protected virtual async Task RecoverRunningAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -37,7 +37,7 @@ public class MediaCaptionWorker(
         if (items.Count > 0) await db.SaveChangesAsync(ct);
     }
 
-    private async Task ProcessOneAsync(CancellationToken ct)
+    protected virtual async Task ProcessOneAsync(CancellationToken ct)
     {
         Guid? id;
         using (var scope = scopeFactory.CreateScope())
@@ -53,7 +53,7 @@ public class MediaCaptionWorker(
         await ProcessItemAsync(id.Value, ct);
     }
 
-    private async Task ProcessItemAsync(Guid itemId, CancellationToken ct)
+    protected virtual async Task ProcessItemAsync(Guid itemId, CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -77,7 +77,7 @@ public class MediaCaptionWorker(
             }
             else
             {
-                await intelligence.GenerateCaptionAsync(item.MediaAssetId, ct);
+                await GenerateCaptionAsync(intelligence, item.MediaAssetId, ct);
                 item.Status = MediaCaptionJobItemStatus.Succeeded;
                 item.FinishedAt = DateTime.UtcNow;
             }
@@ -89,10 +89,16 @@ public class MediaCaptionWorker(
             item.FinishedAt = DateTime.UtcNow;
             logger.LogWarning(ex, "Media caption item {ItemId} failed", itemId);
         }
+        await db.SaveChangesAsync(ct);
         await service.RecalculateAsync(job, ct);
         var active = await db.MediaCaptionJobItems.AnyAsync(x => x.JobId == job.Id && !x.IsDeleted &&
             (x.Status == MediaCaptionJobItemStatus.Pending || x.Status == MediaCaptionJobItemStatus.Running), ct);
         if (!active) { job.Status = MediaCaptionJobStatus.Completed; job.FinishedAt = DateTime.UtcNow; }
         await db.SaveChangesAsync(ct);
     }
+
+    protected virtual Task GenerateCaptionAsync(
+        MediaIntelligenceService intelligence,
+        Guid mediaAssetId,
+        CancellationToken ct) => intelligence.GenerateCaptionAsync(mediaAssetId, ct);
 }

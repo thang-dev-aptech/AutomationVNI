@@ -14,6 +14,10 @@ public class MediaCaptionJobModel : BaseEntity
     public int Succeeded { get; set; }
     public int Failed { get; set; }
     public int Skipped { get; set; }
+
+    /// <summary>Số ảnh đã có caption lúc tạo job (không có item) — cố định sau khi tạo. Skipped =
+    /// InitialSkipped + số item bị bỏ qua lúc worker xử lý.</summary>
+    public int InitialSkipped { get; set; }
     public DateTime? FinishedAt { get; set; }
 }
 
