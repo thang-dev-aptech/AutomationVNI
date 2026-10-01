@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   useMediaFolderPageRoots,
   useMediaFolderChildren,
@@ -7,10 +8,19 @@ import {
 
 export const BROWSER_PAGE_SIZE = 20
 const DEFAULT_SELECTION = 'all'
+const FOLDER_PARAM = 'folder'
+const PAGE_PARAM = 'page'
+const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+const isGuid = (value) => typeof value === 'string' && GUID_PATTERN.test(value)
+const isDeniedOrMissing = (error) => [403, 404].includes(error?.response?.status)
 
 /**
- * Cross-Page folder browser: currentFolderId is primary state (null = cross-Page top level),
- * and Page is DERIVED from whichever folder you're inside via the folder's socialChannelId.
+ * Cross-Page folder browser: the open folder lives in the URL (?folder=<id>&page=<socialChannelId>,
+ * null = cross-Page top level), and Page is DERIVED from the `page` param.
+ * The URL is untrusted: a non-GUID folder/page falls back to root without any API call, and a
+ * 403/404 from children/breadcrumb replaces the URL with root. Data only comes from the existing
+ * permission-checked children/breadcrumb endpoints.
  *
  * Top level (currentFolderId === null):
  *   - Loads page-roots endpoint showing root folder for each writable Page
@@ -24,15 +34,39 @@ const DEFAULT_SELECTION = 'all'
  * prevent stale cross-folder responses from overwriting the current view.
  */
 export function useMediaBrowser({ pageSize = BROWSER_PAGE_SIZE } = {}) {
-  // Primary state: current folder object (includes id and socialChannelId).
-  // Both currentFolderId and derivedPageId are derived from this.
-  const [currentFolder, setCurrentFolder] = useState(null)
-  const [selection, setSelection] = useState(DEFAULT_SELECTION)
-  const [pageIndex, setPageIndex] = useState(1)
-  const [expandedFolderIds, setExpandedFolderIds] = useState(new Set())
+  const [searchParams, setSearchParams] = useSearchParams()
+  const rawFolder = searchParams.get(FOLDER_PARAM)
+  const rawPage = searchParams.get(PAGE_PARAM)
+  const hasFolderParams = rawFolder !== null || rawPage !== null
+  const urlIsValid = isGuid(rawFolder) && (rawPage === null || rawPage === '' || isGuid(rawPage))
 
+  const currentFolder = urlIsValid ? { id: rawFolder, socialChannelId: rawPage || null } : null
   const currentFolderId = currentFolder?.id ?? null
   const derivedPageId = currentFolder?.socialChannelId ?? null
+
+  // Selection / file page index are scoped to the open folder, so Back/Forward resets them
+  // exactly like openFolder did when they were plain state.
+  const [selectionState, setSelectionState] = useState({ folderId: null, value: DEFAULT_SELECTION })
+  const [pageState, setPageState] = useState({ folderId: null, index: 1 })
+  const selection = selectionState.folderId === currentFolderId
+    ? selectionState.value
+    : currentFolderId ?? DEFAULT_SELECTION
+  const pageIndex = pageState.folderId === currentFolderId ? pageState.index : 1
+  const [expandedFolderIds, setExpandedFolderIds] = useState(new Set())
+
+  const clearFolderParams = useCallback((options) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.delete(FOLDER_PARAM)
+      next.delete(PAGE_PARAM)
+      return next
+    }, options)
+  }, [setSearchParams])
+
+  // Malformed folder/page in the URL: back to root, no API call was ever made.
+  useEffect(() => {
+    if (hasFolderParams && !urlIsValid) clearFolderParams({ replace: true })
+  }, [hasFolderParams, urlIsValid, clearFolderParams])
 
   // Top-level (cross-Page): load roots when currentFolderId === null
   const pageRootsQuery = useMediaFolderPageRoots({
@@ -55,6 +89,13 @@ export function useMediaBrowser({ pageSize = BROWSER_PAGE_SIZE } = {}) {
     folderId: currentFolderId,
     enabled: currentFolderId !== null,
   })
+
+  // Folder deleted / no permission / other Page: fall back to root instead of showing an error.
+  const folderDenied = currentFolderId !== null
+    && (isDeniedOrMissing(childrenQuery.error) || isDeniedOrMissing(breadcrumbQuery.error))
+  useEffect(() => {
+    if (folderDenied) clearFolderParams({ replace: true })
+  }, [folderDenied, clearFolderParams])
 
   // Auto-expand ancestors when breadcrumb loads
   const ancestors = breadcrumbQuery.data?.ancestors ?? []
@@ -103,9 +144,7 @@ export function useMediaBrowser({ pageSize = BROWSER_PAGE_SIZE } = {}) {
   }, [breadcrumbQuery.data, pageRootsQuery.data, childrenQuery.data, currentFolderId])
 
   const openRoot = () => {
-    setCurrentFolder(null)
-    setSelection(DEFAULT_SELECTION)
-    setPageIndex(1)
+    clearFolderParams()
   }
 
   const openFolder = (folder) => {
@@ -113,9 +152,13 @@ export function useMediaBrowser({ pageSize = BROWSER_PAGE_SIZE } = {}) {
       openRoot()
       return
     }
-    setCurrentFolder(folder)
-    setSelection(folder.id)
-    setPageIndex(1)
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.set(FOLDER_PARAM, folder.id)
+      if (folder.socialChannelId) next.set(PAGE_PARAM, folder.socialChannelId)
+      else next.delete(PAGE_PARAM)
+      return next
+    })
   }
 
   const isLoading = currentFolderId === null
@@ -160,9 +203,9 @@ export function useMediaBrowser({ pageSize = BROWSER_PAGE_SIZE } = {}) {
     // socialChannelId — nhưng breadcrumb luôn nằm trong CÙNG 1 Page với folder đang mở, nên
     // dùng lại derivedPageId hiện tại thay vì đọc từ chính ancestor item.
     openBreadcrumb: (ancestor) => openFolder({ id: ancestor.id, socialChannelId: derivedPageId }),
-    selectAll: () => setSelection('all'),
-    selectUnassigned: () => setSelection('unassigned'),
-    goToPage: (nextIndex) => setPageIndex(nextIndex),
+    selectAll: () => setSelectionState({ folderId: currentFolderId, value: 'all' }),
+    selectUnassigned: () => setSelectionState({ folderId: currentFolderId, value: 'unassigned' }),
+    goToPage: (nextIndex) => setPageState({ folderId: currentFolderId, index: nextIndex }),
     resetToRoot: openRoot,
     expandedFolderIds,
     toggleFolderExpanded: (folderId) => {
