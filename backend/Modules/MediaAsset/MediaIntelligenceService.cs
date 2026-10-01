@@ -71,7 +71,8 @@ public class MediaIntelligenceService(
     AppDbContext db,
     IFileStorageService storage,
     IOptions<AiProvidersOptions> options,
-    ILogger<MediaIntelligenceService> logger)
+    ILogger<MediaIntelligenceService> logger,
+    MediaAiTimeouts? configuredTimeouts = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -281,18 +282,20 @@ public class MediaIntelligenceService(
     /// <summary>Số lần gọi AI tối đa cho một caption (lần đầu + 1 lần retry khi sai số dòng).</summary>
     public const int CaptionMaxAttempts = 2;
 
-    public static TimeSpan CaptionAiRequestTimeout => MediaAiTimeouts.Default.CaptionRequest;
-    public static TimeSpan AnalysisAiRequestTimeout => MediaAiTimeouts.Default.AnalysisRequest;
+    public static TimeSpan CaptionAiRequestTimeout => TimeSpan.FromSeconds(120);
+    public static TimeSpan AnalysisAiRequestTimeout => TimeSpan.FromSeconds(120);
 
     /// <summary>Deadline tổng của một lần sinh caption tay (mọi lần thử chạm timeout + đọc ảnh/DB).
     /// Single generate bị huỷ đúng tại mốc này nên không bao giờ chạy lâu hơn; worker chờ theo nó.</summary>
-    public static TimeSpan CaptionMaxDuration => MediaAiTimeouts.Default.CaptionMaxDuration;
+    public static TimeSpan CaptionMaxDuration =>
+        TimeSpan.FromSeconds(120 * CaptionMaxAttempts + 30);
 
     /// <summary>Thời gian tối đa single generate giữ dấu in-flight (deadline + lưu); worker chờ theo nó.</summary>
-    public static TimeSpan CaptionMaxMarkerHold => MediaAiTimeouts.Default.CaptionMaxMarkerHold;
+    public static TimeSpan CaptionMaxMarkerHold =>
+        CaptionMaxDuration + TimeSpan.FromSeconds(10);
 
-    /// <summary>Mặc định = <see cref="MediaAiTimeouts.Default"/>; test gán giá trị thu nhỏ.</summary>
-    public MediaAiTimeouts Timeouts { get; init; } = MediaAiTimeouts.Default;
+    /// <summary>Timeout cấu hình dùng chung với MediaCaptionWorker; direct test construction có thể override qua init.</summary>
+    public MediaAiTimeouts Timeouts { get; init; } = configuredTimeouts ?? MediaAiTimeouts.Default;
 
     private const string CaptionSystemPrompt = """
         Bạn viết caption Facebook tiếng Việt cho fanpage, dựa trên ảnh được gửi kèm.

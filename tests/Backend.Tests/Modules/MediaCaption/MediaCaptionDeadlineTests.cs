@@ -168,6 +168,23 @@ public sealed class MediaCaptionDeadlineTests : IAsyncLifetime
             $"InFlightWait {wait} < max marker hold {defaults.CaptionMaxMarkerHold} (deadline {defaults.CaptionMaxDuration} + save {defaults.CaptionSave}) + release buffer {MediaCaptionWorker.InFlightReleaseBuffer}");
     }
 
+    [Fact]
+    public void WorkerWaitUsesInjectedTimeoutConfiguration()
+    {
+        var timeouts = MediaAiTimeouts.Default with
+        {
+            CaptionRequest = TimeSpan.FromSeconds(7),
+            CaptionPreparationAllowance = TimeSpan.FromSeconds(3),
+            CaptionSave = TimeSpan.FromSeconds(2)
+        };
+
+        var wait = new TimeoutWaitProbe(timeouts).Wait;
+
+        Assert.Equal(
+            timeouts.CaptionMaxMarkerHold + MediaCaptionWorker.InFlightReleaseBuffer,
+            wait);
+    }
+
     private async Task<Guid> SeedAsync()
     {
         await using var setupDb = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
@@ -179,6 +196,13 @@ public sealed class MediaCaptionDeadlineTests : IAsyncLifetime
         setupDb.MediaAssets.Add(asset);
         await setupDb.SaveChangesAsync();
         return asset.Id;
+    }
+
+    private sealed class TimeoutWaitProbe(MediaAiTimeouts timeouts) : MediaCaptionWorker(
+        new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+        Options.Create(new MediaCaptionWorkerOptions()), NullLogger<MediaCaptionWorker>.Instance, timeouts)
+    {
+        public TimeSpan Wait => InFlightWait;
     }
 
     private sealed class DefaultWaitProbe() : MediaCaptionWorker(

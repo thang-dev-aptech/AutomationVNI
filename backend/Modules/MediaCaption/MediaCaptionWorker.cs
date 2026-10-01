@@ -14,8 +14,11 @@ public class MediaCaptionWorkerOptions
 public class MediaCaptionWorker(
     IServiceScopeFactory scopeFactory,
     IOptions<MediaCaptionWorkerOptions> options,
-    ILogger<MediaCaptionWorker> logger) : BackgroundService
+    ILogger<MediaCaptionWorker> logger,
+    MediaAiTimeouts? configuredTimeouts = null) : BackgroundService
 {
+    private readonly MediaAiTimeouts timeoutConfiguration =
+        configuredTimeouts ?? MediaAiTimeouts.Default;
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.Value.Enabled) return;
@@ -104,7 +107,7 @@ public class MediaCaptionWorker(
     /// <summary>Đệm sau thời gian giữ dấu tối đa của single generate để chắc dấu in-flight đã được gỡ.</summary>
     public static readonly TimeSpan InFlightReleaseBuffer = TimeSpan.FromSeconds(10);
 
-    protected virtual TimeSpan InFlightWait => MediaIntelligenceService.CaptionMaxMarkerHold + InFlightReleaseBuffer;
+    protected virtual TimeSpan InFlightWait => timeoutConfiguration.CaptionMaxMarkerHold + InFlightReleaseBuffer;
 
     protected virtual Task<bool> GenerateCaptionAsync(
         MediaIntelligenceService intelligence,
