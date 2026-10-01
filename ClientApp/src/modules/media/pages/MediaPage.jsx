@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import PageHeader from '@/shared/components/PageHeader'
 import Modal from '@/shared/components/Modal'
 import StatusBadge from '@/shared/components/StatusBadge'
@@ -36,6 +37,7 @@ import {
   useUpdateMediaFolder,
 } from '../hooks/useMediaFolders'
 import { useMediaBrowser } from '../hooks/useMediaBrowser'
+import { useCreateMediaCaptionJob } from '../hooks/useMediaCaptionJobs'
 import {
   useGoogleDrivePipelineState,
   useScanGoogleDriveNow,
@@ -112,6 +114,8 @@ export default function MediaPage() {
   const analyzeLayoutMutation = useAnalyzeLayoutFolder()
   const analyzeLayoutSingleMutation = useAnalyzeLayout()
   const generateCaptionMutation = useGenerateCaption()
+  const createCaptionJobMutation = useCreateMediaCaptionJob()
+  const navigate = useNavigate()
   const [analyzingId, setAnalyzingId] = useState(null)
   const [analyzingLayoutId, setAnalyzingLayoutId] = useState(null)
   const [generatingCaptionId, setGeneratingCaptionId] = useState(null)
@@ -221,6 +225,20 @@ export default function MediaPage() {
     }
   }
 
+  const handleCreateCaptionJob = async () => {
+    if (!currentFolderId) return
+    if (!confirmAction(
+      'Sinh caption cho toàn bộ ảnh trong thư mục này, gồm cả thư mục con. Ảnh đã có caption sẽ được bỏ qua; mỗi ảnh còn lại tốn 1 lượt AI. Tiếp tục?',
+    )) return
+
+    try {
+      const job = await createCaptionJobMutation.mutateAsync(currentFolderId)
+      navigate(`/media/caption-jobs/${job.id}`)
+    } catch (error) {
+      toast.error(getErrorMessage(error))
+    }
+  }
+
   const handleGenerateCaption = async () => {
     if (!detailsAsset) return
     setGeneratingCaptionId(detailsAsset.id)
@@ -248,6 +266,10 @@ export default function MediaPage() {
       setDetailsAsset((prev) => (prev && prev.id === detailsAsset.id ? { ...prev, ...result } : prev))
       toast.success('Đã lưu caption')
     } catch (error) {
+      // Job vừa được tạo ở nơi khác: khoá popup ngay, giữ nguyên nội dung đang gõ (captionDraft).
+      if (error?.response?.data?.errorCode === 'MEDIA_CAPTION_QUEUED') {
+        setDetailsAsset((prev) => (prev && prev.id === detailsAsset.id ? { ...prev, captionQueued: true } : prev))
+      }
       toast.error(getErrorMessage(error))
     } finally {
       setSavingCaption(false)
@@ -656,14 +678,32 @@ export default function MediaPage() {
             </div>
             {currentFolderId && (
               <div className="media-page-filters-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={analyzeLayoutMutation.isPending}
-                  onClick={handleAnalyzeLayoutFolder}
-                >
-                  {analyzeLayoutMutation.isPending ? '⏳ Đang quét...' : '✨ Quét Vùng An Toàn'}
-                </button>
+                {derivedPageId == null ? (
+                  canManageMedia && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={createCaptionJobMutation.isPending}
+                      onClick={handleCreateCaptionJob}
+                    >
+                      {createCaptionJobMutation.isPending ? '⏳ Đang tạo job...' : '✍️ Sinh caption toàn bộ'}
+                    </button>
+                  )
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={analyzeLayoutMutation.isPending}
+                    onClick={handleAnalyzeLayoutFolder}
+                  >
+                    {analyzeLayoutMutation.isPending ? '⏳ Đang quét...' : '✨ Quét Vùng An Toàn'}
+                  </button>
+                )}
+              </div>
+            )}
+            {canManageMedia && (
+              <div className="media-page-filters-actions">
+                <Link to="/media/caption-jobs" className="btn btn-ghost">Job sinh caption</Link>
               </div>
             )}
           </div>
@@ -980,7 +1020,7 @@ export default function MediaPage() {
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
-                    disabled={generatingCaptionId === detailsAsset.id}
+                    disabled={generatingCaptionId === detailsAsset.id || detailsAsset.captionQueued === true}
                     onClick={handleGenerateCaption}
                   >
                     {generatingCaptionId === detailsAsset.id
@@ -993,15 +1033,22 @@ export default function MediaPage() {
                 className="media-details-caption-textarea"
                 rows={6}
                 value={captionDraft}
+                disabled={detailsAsset.captionQueued === true}
                 onChange={(e) => setCaptionDraft(e.target.value)}
                 placeholder="Chưa có caption — bấm Sinh caption hoặc nhập tay."
               />
+              {detailsAsset.captionQueued === true && (
+                <p className="media-details-caption-locked">
+                  Ảnh đang trong hàng chờ sinh caption.{' '}
+                  <Link to="/media/caption-jobs">Xem job</Link>
+                </p>
+              )}
               <div className="media-details-caption-actions">
                 {canManageMedia && (
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm"
-                    disabled={savingCaption}
+                    disabled={savingCaption || detailsAsset.captionQueued === true}
                     onClick={handleSaveCaption}
                   >
                     {savingCaption ? 'Đang lưu...' : 'Lưu'}
