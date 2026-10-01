@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Encodings.Web;
 using Backend.Data;
 using Backend.Modules.MediaAsset;
@@ -176,6 +177,25 @@ public class MediaCaptionAuthPipelineTests : IAsyncLifetime
         Assert.Equal("cũ", await GetCaptionAsync(id));
     }
 
+    [Theory]
+    [InlineData("{\"foo\":1}")]
+    [InlineData("<html>gateway</html>")]
+    [InlineData("{\"choices\":[]}")]
+    public async Task AiMalformedResponse_Returns400AndKeepsCaption(string rawBody)
+    {
+        await using var pipeline = CreatePipelineHost(new RawBodyChatHandler(rawBody));
+        var id = await SeedAssetAsync("image/png");
+
+        var response = await SendAsync(pipeline.Client, id, "Admin");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("MEDIA_CAPTION_FAILED", body);
+        Assert.Contains("AI trả phản hồi không hợp lệ", body);
+        Assert.DoesNotContain("NOT_FOUND", body);
+        Assert.Equal("cũ", await GetCaptionAsync(id));
+    }
+
     private async Task<HttpResponseMessage> SendAsync(Guid id, string? role)
         => await SendAsync(_client, id, role);
 
@@ -265,6 +285,17 @@ file sealed class ThrowingChatHandler(Exception exception) : HttpMessageHandler
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
         => Task.FromException<HttpResponseMessage>(exception);
+}
+
+/// <summary>Trả nguyên body HTTP 200 (không bọc choices) — mô phỏng gateway/AI sai định dạng (F3/F4).</summary>
+file sealed class RawBodyChatHandler(string body) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request, CancellationToken cancellationToken)
+        => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json")
+        });
 }
 
 file sealed class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>

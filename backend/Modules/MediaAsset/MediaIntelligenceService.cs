@@ -741,12 +741,30 @@ public class MediaIntelligenceService(
             throw new InvalidOperationException($"AI phân tích media lỗi HTTP {(int)response.StatusCode}");
         }
 
-        using var doc = JsonDocument.Parse(body);
-        var content = doc.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString();
+        string? content;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            content = doc.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString();
+        }
+        catch (Exception ex) when (
+            ex is JsonException
+            or KeyNotFoundException
+            or InvalidOperationException
+            or IndexOutOfRangeException)
+        {
+            // F3/F4: thiếu choices / body không phải JSON / choices rỗng → không để KeyNotFound
+            // lộ thành 404 "không tìm thấy media", cũng không để JsonException thành 500.
+            logger.LogWarning(
+                "Media AI chat completions returned malformed body: {Body}",
+                body.Length <= 400 ? body : body[..400]);
+            throw new InvalidOperationException("AI trả phản hồi không hợp lệ", ex);
+        }
+
         if (string.IsNullOrWhiteSpace(content))
             throw new InvalidOperationException("AI không trả nội dung phân tích");
         return content;
