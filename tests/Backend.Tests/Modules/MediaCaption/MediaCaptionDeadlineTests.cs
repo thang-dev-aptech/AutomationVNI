@@ -162,8 +162,10 @@ public sealed class MediaCaptionDeadlineTests : IAsyncLifetime
 
         Assert.True(defaults.CaptionSave > TimeSpan.Zero);
         Assert.Equal(defaults.CaptionMaxDuration + defaults.CaptionSave, defaults.CaptionMaxMarkerHold);
-        Assert.True(wait >= defaults.CaptionMaxMarkerHold,
-            $"InFlightWait {wait} < max marker hold {defaults.CaptionMaxMarkerHold} (deadline {defaults.CaptionMaxDuration} + save {defaults.CaptionSave})");
+        // Sau thời gian giữ dấu tối đa (deadline + lưu) worker vẫn phải còn một khoảng đệm > 0.
+        Assert.True(MediaCaptionWorker.InFlightReleaseBuffer > TimeSpan.Zero);
+        Assert.True(wait >= defaults.CaptionMaxMarkerHold + MediaCaptionWorker.InFlightReleaseBuffer,
+            $"InFlightWait {wait} < max marker hold {defaults.CaptionMaxMarkerHold} (deadline {defaults.CaptionMaxDuration} + save {defaults.CaptionSave}) + release buffer {MediaCaptionWorker.InFlightReleaseBuffer}");
     }
 
     private async Task<Guid> SeedAsync()
