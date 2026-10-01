@@ -1,12 +1,15 @@
 using System.Data.Common;
 using Backend.Data;
 using Backend.Modules.MediaAsset;
+using Backend.Modules.MediaCaption;
 using Backend.Modules.MediaFolder;
 using Backend.Tests.Modules.MediaAsset;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Backend.Tests.Modules.MediaCaption;
@@ -127,5 +130,59 @@ public sealed class MediaCaptionDeadlineTests : IAsyncLifetime
             var inDb = await verifyDb.MediaAssets.SingleAsync(x => x.Id == assetId);
             Assert.Equal(expectedCaption, inDb.Caption);
         }
+    }
+
+    [Fact]
+    public async Task GenerateCaptionAsync_SaveExceedsItsOwnLimit_ReportsUnknownOutcomeNotUnchanged()
+    {
+        var interceptor = new HangSaveInterceptor();
+        _dbOptions = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).AddInterceptors(interceptor).Options;
+        var assetId = await SeedAsync();
+        var handler = new GatedChatHandler("{\"lines\":[\"Line 1\", \"Line 2\", \"Line 3\", \"Line 4\", \"Line 5\"]}");
+        handler.Release(0);
+        var timeouts = MediaAiTimeouts.Default with { CaptionSave = TimeSpan.FromMilliseconds(200) };
+        await using var db = new AppDbContext(_dbOptions);
+        var intelligence = new MediaIntelligenceService(new HttpClient(handler), db, new InMemoryImageStorage(),
+            CaptionAiOptions.Create(), NullLogger<MediaIntelligenceService>.Instance) { Timeouts = timeouts };
+
+        var ex = await Assert.ThrowsAsync<TimeoutException>(
+            () => intelligence.GenerateCaptionAsync(assetId).WaitAsync(TimeSpan.FromSeconds(10)));
+
+        Assert.DoesNotContain("caption không đổi", ex.Message);
+        Assert.Contains("không xác nhận được caption đã được lưu", ex.Message);
+        await using var verify = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
+        Assert.Null((await verify.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
+    }
+
+    [Fact]
+    public void WorkerDefaultWaitCoversTheLongestMarkerHoldIncludingSave()
+    {
+        var defaults = MediaAiTimeouts.Default;
+        var wait = new DefaultWaitProbe().Wait;
+
+        Assert.True(defaults.CaptionSave > TimeSpan.Zero);
+        Assert.Equal(defaults.CaptionMaxDuration + defaults.CaptionSave, defaults.CaptionMaxMarkerHold);
+        Assert.True(wait >= defaults.CaptionMaxMarkerHold,
+            $"InFlightWait {wait} < max marker hold {defaults.CaptionMaxMarkerHold} (deadline {defaults.CaptionMaxDuration} + save {defaults.CaptionSave})");
+    }
+
+    private async Task<Guid> SeedAsync()
+    {
+        await using var setupDb = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
+        await setupDb.Database.EnsureCreatedAsync();
+        var asset = new MediaAssetModel
+        {
+            Id = Guid.NewGuid(), FileName = "test.jpg", StoragePath = "test.jpg", FileSize = 100, MimeType = "image/jpeg"
+        };
+        setupDb.MediaAssets.Add(asset);
+        await setupDb.SaveChangesAsync();
+        return asset.Id;
+    }
+
+    private sealed class DefaultWaitProbe() : MediaCaptionWorker(
+        new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+        Options.Create(new MediaCaptionWorkerOptions()), NullLogger<MediaCaptionWorker>.Instance)
+    {
+        public TimeSpan Wait => InFlightWait;
     }
 }

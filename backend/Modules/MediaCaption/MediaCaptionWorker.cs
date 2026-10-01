@@ -101,11 +101,10 @@ public class MediaCaptionWorker(
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>Đệm sau deadline của single generate để chắc dấu in-flight đã được gỡ. 
-    /// Bao gồm cả thời gian lưu DB (SaveChangesAsync dùng token của caller, không bị huỷ bởi deadline).</summary>
+    /// <summary>Đệm sau thời gian giữ dấu tối đa của single generate để chắc dấu in-flight đã được gỡ.</summary>
     public static readonly TimeSpan InFlightReleaseBuffer = TimeSpan.FromSeconds(10);
 
-    protected virtual TimeSpan InFlightWait => MediaIntelligenceService.CaptionMaxDuration + InFlightReleaseBuffer;
+    protected virtual TimeSpan InFlightWait => MediaIntelligenceService.CaptionMaxMarkerHold + InFlightReleaseBuffer;
 
     protected virtual Task<bool> GenerateCaptionAsync(
         MediaIntelligenceService intelligence,

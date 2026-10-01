@@ -288,6 +288,9 @@ public class MediaIntelligenceService(
     /// Single generate bị huỷ đúng tại mốc này nên không bao giờ chạy lâu hơn; worker chờ theo nó.</summary>
     public static TimeSpan CaptionMaxDuration => MediaAiTimeouts.Default.CaptionMaxDuration;
 
+    /// <summary>Thời gian tối đa single generate giữ dấu in-flight (deadline + lưu); worker chờ theo nó.</summary>
+    public static TimeSpan CaptionMaxMarkerHold => MediaAiTimeouts.Default.CaptionMaxMarkerHold;
+
     /// <summary>Mặc định = <see cref="MediaAiTimeouts.Default"/>; test gán giá trị thu nhỏ.</summary>
     public MediaAiTimeouts Timeouts { get; init; } = MediaAiTimeouts.Default;
 
@@ -326,7 +329,20 @@ public class MediaIntelligenceService(
             var caption = await GenerateCaptionTextAsync(media, token);
             media.Caption = caption;
             media.UpdatedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(ct);
+
+            // Đã có caption hợp lệ: lưu ngoài deadline (deadline hết lúc này không được báo "caption không đổi"),
+            // nhưng vẫn có giới hạn riêng để dấu in-flight không bị giữ quá CaptionMaxMarkerHold.
+            using var saveLimit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            saveLimit.CancelAfter(Timeouts.CaptionSave);
+            try
+            {
+                await db.SaveChangesAsync(saveLimit.Token);
+            }
+            catch (OperationCanceledException) when (saveLimit.IsCancellationRequested && !ct.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    $"Lưu caption quá {Timeouts.CaptionSave.TotalSeconds:0} giây, không xác nhận được caption đã được lưu hay chưa — tải lại ảnh để kiểm tra");
+            }
             return media;
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
@@ -972,4 +988,10 @@ public sealed record MediaAiTimeouts(
 
     public TimeSpan CaptionMaxDuration =>
         CaptionRequest * MediaIntelligenceService.CaptionMaxAttempts + CaptionPreparationAllowance;
+
+    /// <summary>Giới hạn riêng cho bước lưu caption của single generate (nằm ngoài deadline).</summary>
+    public TimeSpan CaptionSave { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>Thời gian tối đa single generate giữ dấu in-flight: deadline chuẩn bị + gọi AI, rồi bước lưu.</summary>
+    public TimeSpan CaptionMaxMarkerHold => CaptionMaxDuration + CaptionSave;
 }
