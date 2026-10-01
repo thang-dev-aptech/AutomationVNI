@@ -134,7 +134,7 @@ builder.Services.AddScoped<Backend.Modules.MusicTrack.MusicTrackRepository>();
 // 60s không đủ cho model vision họ Claude qua gateway (đo thực tế: opus-4.6 ~24s cho prompt text,
 // ảnh còn nặng hơn). Timeout quá chặt làm phân tích media fail hàng loạt.
 builder.Services.AddHttpClient<MediaIntelligenceService>(client =>
-    client.Timeout = MediaIntelligenceService.AiRequestTimeout);
+    client.Timeout = MediaIntelligenceService.HttpClientTimeout);
 builder.Services.AddScoped<PostMediaRepository>();
 builder.Services.AddScoped<PostRecycleService>();
 builder.Services.AddScoped<GenerationJobRepository>();

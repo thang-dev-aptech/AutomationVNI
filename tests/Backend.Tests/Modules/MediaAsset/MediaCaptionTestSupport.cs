@@ -69,6 +69,21 @@ internal sealed class GatedChatHandler(params string[] contents) : HttpMessageHa
     }
 }
 
+/// <summary>Trả lời sau <paramref name="delay"/> (tôn trọng token như HttpClient thật) — để test timeout per-call.</summary>
+internal sealed class DelayedChatHandler(TimeSpan delay, string content) : HttpMessageHandler
+{
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        await Task.Delay(delay, cancellationToken);
+        var body = JsonSerializer.Serialize(new { choices = new[] { new { message = new { content } } } });
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json")
+        };
+    }
+}
+
 internal sealed class InMemoryImageStorage : IFileStorageService
 {
     public static readonly byte[] ImageBytes = [0x89, 0x50, 0x4E, 0x47, 1, 2, 3];

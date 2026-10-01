@@ -216,34 +216,38 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
     }
 
     [Fact]
-    public void DefaultInFlightWaitCoversEveryAiAttemptAtItsTimeout()
+    public void DefaultInFlightWaitOutlastsTheSingleGenerateDeadline()
     {
         var wait = new RaceWorker(CreateScopeFactory(new GatedChatHandler()), null).DefaultWait;
 
+        Assert.True(wait >= MediaIntelligenceService.CaptionMaxDuration,
+            $"InFlightWait {wait} < single generate deadline {MediaIntelligenceService.CaptionMaxDuration}");
         Assert.True(
-            wait >= MediaIntelligenceService.AiRequestTimeout * MediaIntelligenceService.CaptionMaxAttempts,
-            $"InFlightWait {wait} < {MediaIntelligenceService.CaptionMaxAttempts} x {MediaIntelligenceService.AiRequestTimeout}");
+            wait >= MediaIntelligenceService.CaptionAiRequestTimeout * MediaIntelligenceService.CaptionMaxAttempts,
+            $"InFlightWait {wait} < {MediaIntelligenceService.CaptionMaxAttempts} x {MediaIntelligenceService.CaptionAiRequestTimeout}");
     }
 
     [Fact]
     public async Task WorkerKeepsWaitingWhileSingleGenerateRunsLongerThanTwoMinutesScaled()
     {
-        // Thời gian thu nhỏ 100 lần: cap cũ 2 phút = 1,2s; một lần sinh tay dùng 90% (attempts x timeout) = 2,16s.
+        // Thời gian thu nhỏ 100 lần, dùng ĐÚNG default của worker: cap cũ 2 phút = 1,2s; một lần sinh tay
+        // chạy 90% (attempts x timeout) = 2,16s, vẫn trong thời gian hợp lệ.
         const double scale = 0.01;
         TimeSpan Scaled(TimeSpan t) => TimeSpan.FromMilliseconds(t.TotalMilliseconds * scale);
         var (folderId, assetId) = await SeedAsync();
         var handler = new GatedChatHandler(
             ScriptedChatHandler.Lines(UserCaption.Split('\n')),
             ScriptedChatHandler.Lines(WorkerCaption.Split('\n')));
+        var factory = CreateScopeFactory(handler);
+        var defaultWait = new RaceWorker(factory, null).DefaultWait;
 
         await using var userDb = new AppDbContext(_dbOptions);
         var userTask = CreateIntelligence(userDb, handler).GenerateCaptionAsync(assetId);
         await handler.Arrived(0).WaitAsync(TimeSpan.FromSeconds(10));
         await CreateJobAsync(folderId);
-        var workerTask = new RaceWorker(CreateScopeFactory(handler), Scaled(MediaIntelligenceService.CaptionMaxDuration))
-            .RunOnceAsync();
+        var workerTask = new RaceWorker(factory, Scaled(defaultWait)).RunOnceAsync();
 
-        await Task.Delay(Scaled(MediaIntelligenceService.AiRequestTimeout * MediaIntelligenceService.CaptionMaxAttempts * 0.9));
+        await Task.Delay(Scaled(MediaIntelligenceService.CaptionAiRequestTimeout * MediaIntelligenceService.CaptionMaxAttempts * 0.9));
         Assert.False(workerTask.IsCompleted);
         Assert.Equal(1, handler.RequestCount);
         handler.Release(0);
@@ -253,6 +257,43 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
         await using var db = new AppDbContext(_dbOptions);
         Assert.Equal(UserCaption, (await db.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
         Assert.Equal(MediaCaptionJobItemStatus.Skipped, (await db.MediaCaptionJobItems.SingleAsync()).Status);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task SlowStorageHitsSingleGenerateDeadline_ReleasesMarker_AndWorkerCallsAiOnce()
+    {
+        // Deadline thu nhỏ: 2 x 100ms + 100ms = 300ms. Storage treo 5s và bỏ qua token.
+        var timeouts = new MediaAiTimeouts(
+            CaptionRequest: TimeSpan.FromMilliseconds(100),
+            AnalysisRequest: MediaAiTimeouts.Default.AnalysisRequest,
+            CaptionPreparationAllowance: TimeSpan.FromMilliseconds(100));
+        var (folderId, assetId) = await SeedAsync();
+        var handler = new GatedChatHandler(ScriptedChatHandler.Lines(WorkerCaption.Split('\n')));
+        handler.Release(0);
+        var slowStorage = new FirstExistsHangsStorage(TimeSpan.FromSeconds(5));
+
+        await using var userDb = new AppDbContext(_dbOptions);
+        var user = new MediaIntelligenceService(new HttpClient(handler), userDb, slowStorage,
+            CaptionAiOptions.Create(), NullLogger<MediaIntelligenceService>.Instance) { Timeouts = timeouts };
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var userTask = user.GenerateCaptionAsync(assetId);
+        await slowStorage.Hanging.WaitAsync(TimeSpan.FromSeconds(10));
+        await CreateJobAsync(folderId);
+        var workerTask = new RaceWorker(CreateScopeFactory(handler), TimeSpan.FromSeconds(30)).RunOnceAsync();
+
+        await Task.Delay(100);
+        Assert.False(workerTask.IsCompleted);
+        Assert.Equal(0, handler.RequestCount);
+
+        var ex = await Assert.ThrowsAsync<TimeoutException>(() => userTask.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Contains("caption không đổi", ex.Message);
+        Assert.True(started.Elapsed < TimeSpan.FromSeconds(2), $"single generate ran {started.Elapsed}");
+        await workerTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await using var db = new AppDbContext(_dbOptions);
+        Assert.Equal(WorkerCaption, (await db.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
+        Assert.Equal(MediaCaptionJobItemStatus.Succeeded, (await db.MediaCaptionJobItems.SingleAsync()).Status);
         Assert.Equal(1, handler.RequestCount);
     }
 
@@ -298,6 +339,29 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
         protected override TimeSpan InFlightWait => inFlightWait ?? base.InFlightWait;
         public TimeSpan DefaultWait => base.InFlightWait;
         public Task RunOnceAsync() => ProcessOneAsync(CancellationToken.None);
+    }
+
+    /// <summary>ExistsAsync lần đầu treo (bỏ qua token, như storage không hợp tác); các lần sau trả ngay.</summary>
+    private sealed class FirstExistsHangsStorage(TimeSpan hang) : Backend.Shared.Storage.IFileStorageService
+    {
+        private readonly InMemoryImageStorage _inner = new();
+        private readonly TaskCompletionSource _hanging = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _calls;
+
+        public Task Hanging => _hanging.Task;
+
+        public async Task<bool> ExistsAsync(string storageKey, CancellationToken ct = default)
+        {
+            if (Interlocked.Increment(ref _calls) != 1) return true;
+            _hanging.TrySetResult();
+            await Task.Delay(hang, CancellationToken.None);
+            return true;
+        }
+
+        public Task<Stream> OpenReadAsync(string storageKey, CancellationToken ct = default) => _inner.OpenReadAsync(storageKey, ct);
+        public Task<Backend.Shared.Storage.FileSaveResult> SaveAsync(Microsoft.AspNetCore.Http.IFormFile file, string folder, CancellationToken ct = default) => _inner.SaveAsync(file, folder, ct);
+        public Task<Backend.Shared.Storage.FileSaveResult> SaveBytesAsync(byte[] data, string folder, string extension, string contentType, CancellationToken ct = default) => _inner.SaveBytesAsync(data, folder, extension, contentType, ct);
+        public Task DeleteAsync(string storageKey, CancellationToken ct = default) => _inner.DeleteAsync(storageKey, ct);
     }
 
     private sealed class StubUserContext : IUserContext

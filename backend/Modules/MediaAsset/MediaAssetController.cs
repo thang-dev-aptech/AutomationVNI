@@ -241,6 +241,11 @@ public class MediaAssetController
         {
             return CaptionQueuedConflict();
         }
+        catch (TimeoutException ex)
+        {
+            // Deadline tổng của single generate (MediaAiTimeouts.CaptionMaxDuration), không phải client huỷ.
+            return BadRequest(ApiResponse.Fail("MEDIA_CAPTION_FAILED", ex.Message));
+        }
         catch (KeyNotFoundException ex)
         {
             return NotFound(ApiResponse.Fail("NOT_FOUND", ex.Message));
