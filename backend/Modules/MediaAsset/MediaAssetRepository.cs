@@ -288,6 +288,7 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         if (request.Description is not null) entity.Description = request.Description.Trim();
         if (request.Tags is not null) entity.Tags = request.Tags;
         if (request.PublicUrl is not null) entity.PublicUrl = request.PublicUrl.Trim();
+        if (request.Caption is not null) entity.Caption = request.Caption.Trim();
         if (request.CategoryId.HasValue) entity.CategoryId = request.CategoryId;
         if (request.CategoryIds is not null) entity.CategoryIds = SerializeCategoryIds(request.CategoryIds);
 
@@ -315,6 +316,7 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         Description = e.Description,
         Tags = e.Tags,
         Keywords = MediaIntelligenceService.ParseKeywords(e.Tags),
+        Caption = e.Caption,
         Width = e.Width,
         Height = e.Height,
         CreatedAt = e.CreatedAt,

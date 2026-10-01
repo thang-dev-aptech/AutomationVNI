@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Backend.Data;
+using Backend.Modules.GoogleDrive;
 using Backend.Shared.Ai;
 using Backend.Shared.Storage;
 using Backend.Shared.Text;
@@ -268,6 +269,120 @@ public class MediaIntelligenceService(
 
         db.MediaAssets.Update(asset);
         await db.SaveChangesAsync(ct);
+    }
+
+    public const int CaptionLineCount = 5;
+
+    private const string CaptionSystemPrompt = """
+        Bạn viết caption Facebook tiếng Việt cho fanpage, dựa trên ảnh được gửi kèm.
+        Yêu cầu bắt buộc:
+        - Viết ĐÚNG 5 dòng, mỗi dòng là 1 câu ngắn, tự nhiên.
+        - Dòng 1 thu hút sự chú ý; dòng 5 là lời kêu gọi nhẹ nhàng (ví dụ mời bình luận, chia sẻ, nhắn tin).
+        - KHÔNG mở đầu bằng "Bức ảnh", "Hình ảnh cho thấy" hay mô tả kiểu chú thích ảnh.
+        - KHÔNG bịa tên người, số liệu, ngày tháng, địa điểm nếu không có trong ảnh hoặc tên thư mục.
+        - KHÔNG dùng hashtag, không đánh số, không gạch đầu dòng.
+        CHỈ trả về JSON hợp lệ, không markdown: {"lines":["dòng 1","dòng 2","dòng 3","dòng 4","dòng 5"]}
+        """;
+
+    /// <summary>
+    /// MEDIA-CAPTION-01: sinh caption Facebook đúng 5 dòng cho MỘT ảnh, chỉ khi người dùng bấm nút
+    /// (không được gọi từ sync/worker/bulk). Ngữ cảnh duy nhất gửi kèm ảnh là tên MediaFolder chứa ảnh
+    /// (bỏ qua dedicated root "Google Drive"). Chỉ ghi cột Caption — không đụng Tags/AltText/Description.
+    /// AI trả sai số dòng → gọi lại 1 lần; vẫn sai → ném lỗi, giữ nguyên caption cũ.
+    /// </summary>
+    public async Task<MediaAssetModel> GenerateCaptionAsync(Guid mediaId, CancellationToken ct = default)
+    {
+        var media = await db.MediaAssets.FirstOrDefaultAsync(x => x.Id == mediaId && !x.IsDeleted, ct)
+            ?? throw new KeyNotFoundException("Không tìm thấy media");
+        if (!media.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Sinh caption hiện chỉ hỗ trợ file ảnh");
+        if (string.IsNullOrWhiteSpace(media.StoragePath) || !await storage.ExistsAsync(media.StoragePath, ct))
+            throw new ArgumentException("File ảnh không tồn tại trên storage");
+
+        string? folderName = null;
+        if (media.FolderId is Guid folderId)
+        {
+            folderName = await db.MediaFolders.AsNoTracking()
+                .Where(f => f.Id == folderId && !f.IsDeleted)
+                .Select(f => f.Name)
+                .FirstOrDefaultAsync(ct);
+            if (string.IsNullOrWhiteSpace(folderName)
+                || string.Equals(folderName.Trim(), GoogleDriveRepository.DedicatedFolderName, StringComparison.Ordinal))
+                folderName = null;
+        }
+
+        await using var stream = await storage.OpenReadAsync(media.StoragePath, ct);
+        using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory, ct);
+
+        var (_, config, model) = ResolveConfig();
+        var dataUrl = $"data:{media.MimeType};base64,{Convert.ToBase64String(memory.ToArray())}";
+        var payload = new
+        {
+            model,
+            messages = new object[]
+            {
+                new { role = "system", content = CaptionSystemPrompt },
+                new
+                {
+                    role = "user",
+                    content = new object[]
+                    {
+                        new { type = "text", text = $"Tên thư mục: {folderName?.Trim() ?? "không có"}\nViết caption 5 dòng cho ảnh này." },
+                        new { type = "image_url", image_url = new { url = dataUrl } }
+                    }
+                }
+            },
+            max_tokens = 600,
+            temperature = 0.7
+        };
+
+        List<string>? lines = null;
+        for (var attempt = 0; attempt < 2 && lines is null; attempt++)
+        {
+            var content = await CallChatCompletionsAsync(config, payload, ct);
+            var parsed = ParseCaptionLines(content);
+            if (parsed.Count == CaptionLineCount)
+                lines = parsed;
+            else
+                logger.LogWarning("Caption AI trả {Count} dòng (lần {Attempt}) cho media {MediaId}",
+                    parsed.Count, attempt + 1, mediaId);
+        }
+        if (lines is null)
+            throw new InvalidOperationException("AI không trả đúng 5 dòng caption");
+
+        media.Caption = string.Join("\n", lines);
+        media.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return media;
+    }
+
+    /// <summary>Đọc {"lines":[...]} (hoặc fallback text nhiều dòng), trim, bỏ dòng rỗng và tiền tố
+    /// đánh số / gạch đầu dòng ("1." "1)" "-" "•" "*").</summary>
+    private static List<string> ParseCaptionLines(string content)
+    {
+        var text = StripJsonFence(content);
+        IEnumerable<string?> raw;
+        try
+        {
+            using var doc = JsonDocument.Parse(text);
+            raw = doc.RootElement.ValueKind == JsonValueKind.Object
+                  && doc.RootElement.TryGetProperty("lines", out var arr)
+                  && arr.ValueKind == JsonValueKind.Array
+                ? arr.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString() : null).ToList()
+                : [];
+        }
+        catch (JsonException)
+        {
+            raw = text.Split('\n');
+        }
+
+        return raw
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .SelectMany(x => x!.Split('\n'))
+            .Select(x => Regex.Replace(x.Trim(), @"^(?:\d+\s*[.)]|[-•*–])\s*", "").Trim())
+            .Where(x => x.Length > 0)
+            .ToList();
     }
 
     public async Task<MediaAnalysisResult> AnalyzeImageAsync(

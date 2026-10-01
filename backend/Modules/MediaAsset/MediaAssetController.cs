@@ -194,6 +194,26 @@ public class MediaAssetController
         }
     }
 
+    /// <summary>MEDIA-CAPTION-01: sinh caption Facebook 5 dòng — chỉ khi người dùng bấm nút.</summary>
+    [HttpPost("{id:guid}/generate-caption")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> GenerateCaption(Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            var entity = await _intelligence.GenerateCaptionAsync(id, ct);
+            return Ok(ApiResponse.Ok(ToResponse(entity), "Đã sinh caption"));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse.Fail("NOT_FOUND", ex.Message));
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return BadRequest(ApiResponse.Fail("MEDIA_CAPTION_FAILED", ex.Message));
+        }
+    }
+
     [HttpPost("analyze-layout-folder/{folderId:guid}")]
     [Authorize(Roles = "Admin,ContentManager")]
     public async Task<IActionResult> AnalyzeLayoutFolder(Guid folderId, CancellationToken ct = default)

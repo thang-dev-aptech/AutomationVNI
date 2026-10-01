@@ -25,6 +25,10 @@ public class MediaAssetModel : BaseEntity
     public string? AltText { get; set; }
     public string? Description { get; set; }
     public string? Tags { get; set; }
+
+    /// <summary>Caption Facebook 5 dòng (nối "\n") do AI sinh khi người dùng bấm nút — cột riêng,
+    /// không đụng AltText/Description/Tags (MEDIA-CAPTION-01).</summary>
+    public string? Caption { get; set; }
     public int? Width { get; set; }
     public int? Height { get; set; }
 
