@@ -358,7 +358,8 @@ public class MediaIntelligenceService(
     }
 
     /// <summary>Đọc {"lines":[...]} (hoặc fallback text nhiều dòng), trim, bỏ dòng rỗng và tiền tố
-    /// đánh số / gạch đầu dòng ("1." "1)" "-" "•" "*").</summary>
+    /// đánh số / gạch đầu dòng thật ("1. " "1) " "- " "• " "* ") — chỉ khi có khoảng trắng phía sau,
+    /// để không cắt số thật ("5.000", "10.10", "2026.").</summary>
     private static List<string> ParseCaptionLines(string content)
     {
         var text = StripJsonFence(content);
@@ -380,7 +381,7 @@ public class MediaIntelligenceService(
         return raw
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .SelectMany(x => x!.Split('\n'))
-            .Select(x => Regex.Replace(x.Trim(), @"^(?:\d+\s*[.)]|[-•*–])\s*", "").Trim())
+            .Select(x => Regex.Replace(x.Trim(), @"^(?:\d{1,2}[.)]\s+|[-•*–]\s+)", "").Trim())
             .Where(x => x.Length > 0)
             .ToList();
     }

@@ -126,6 +126,28 @@ public class MediaIntelligenceCaptionTests : IDisposable
     }
 
     [Fact]
+    public async Task LeadingRealNumbers_AreNotStrippedAsListPrefixes()
+    {
+        // F1: regex cũ `^(?:\d+\s*[.)]|[-•*–])\s*` cắt "5.000" → "000", "2026. Năm" → "Năm".
+        string[] lines =
+        [
+            "5.000 học viên đã tốt nghiệp",
+            "10.10 ưu đãi lớn",
+            "2026. Năm mới",
+            "Chương trình khai giảng tháng 10",
+            "Đăng ký ngay hôm nay",
+        ];
+        var id = await SeedAssetAsync();
+        var handler = new ScriptedChatHandler(ScriptedChatHandler.Lines(lines));
+        var (service, db) = CreateService(handler);
+        await using var _ = db;
+
+        await service.GenerateCaptionAsync(id);
+
+        Assert.Equal(string.Join("\n", lines), (await ReloadAsync(id)).Caption);
+    }
+
+    [Fact]
     public async Task WrongCountThenFive_RetriesOnceAndSucceeds()
     {
         var id = await SeedAssetAsync();
