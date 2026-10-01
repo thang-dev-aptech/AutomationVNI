@@ -1,0 +1,131 @@
+using System.Data.Common;
+using Backend.Data;
+using Backend.Modules.MediaAsset;
+using Backend.Modules.MediaFolder;
+using Backend.Tests.Modules.MediaAsset;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
+
+namespace Backend.Tests.Modules.MediaCaption;
+
+public sealed class MediaCaptionDeadlineTests : IAsyncLifetime
+{
+    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private DbContextOptions<AppDbContext> _dbOptions = null!;
+
+    private sealed class HangSaveInterceptor : SaveChangesInterceptor
+    {
+        public readonly TaskCompletionSource Arrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public readonly TaskCompletionSource Proceed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            // Set flag that we reached SaveChangesAsync
+            Arrived.TrySetResult();
+            
+            // Wait until the test tells us to proceed
+            await Proceed.Task.WaitAsync(cancellationToken);
+            
+            return await base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _connection.OpenAsync();
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _connection.CloseAsync();
+        _connection.Dispose();
+    }
+
+    [Fact]
+    public async Task GenerateCaptionAsync_DeadlineExpiresExactlyDuringSaveChanges_CommitsSuccessfullyAndReturnsCaption()
+    {
+        var interceptor = new HangSaveInterceptor();
+        _dbOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptor)
+            .Options;
+
+        var assetId = Guid.NewGuid();
+        var folderId = Guid.NewGuid();
+
+        // 1. Setup DB directly without interceptor delays
+        await using (var setupDb = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options))
+        {
+            await setupDb.Database.EnsureCreatedAsync();
+            setupDb.MediaFolders.Add(new MediaFolderModel { Id = folderId, Name = "Folder" });
+            setupDb.MediaAssets.Add(new MediaAssetModel
+            {
+                Id = assetId,
+                FileName = "test.jpg",
+                StoragePath = "test.jpg",
+                FileSize = 100,
+                MimeType = "image/jpeg",
+                FolderId = folderId
+            });
+            await setupDb.SaveChangesAsync();
+        }
+
+        // 2. Mock AI HTTP call to return instantly
+        var handler = new GatedChatHandler("{\"lines\":[\"Line 1\", \"Line 2\", \"Line 3\", \"Line 4\", \"Line 5\"]}");
+        handler.Release(0);
+
+        // 3. Configure short deadline
+        var timeouts = new MediaAiTimeouts(
+            CaptionRequest: TimeSpan.FromMilliseconds(500),
+            AnalysisRequest: MediaAiTimeouts.Default.AnalysisRequest,
+            CaptionPreparationAllowance: TimeSpan.FromMilliseconds(500));
+
+        var intelligence = new MediaIntelligenceService(
+            new HttpClient(handler),
+            new AppDbContext(_dbOptions),
+            new InMemoryImageStorage(),
+            CaptionAiOptions.Create(),
+            NullLogger<MediaIntelligenceService>.Instance)
+        {
+            Timeouts = timeouts
+        };
+
+        // 4. Start GenerateCaptionAsync
+        var task = intelligence.GenerateCaptionAsync(assetId);
+
+        // 5. Wait for it to hit SaveChangesAsync
+        var arrivedTask = interceptor.Arrived.Task;
+        var completed = await Task.WhenAny(arrivedTask, task);
+        if (completed == task) 
+        {
+            await task; // This will throw if the task failed
+        }
+        await arrivedTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // 6. At this point, it is blocked inside SaveChangesAsync.
+        // We wait for the deadline to expire (CaptionMaxDuration is 1000ms total, wait 1100ms to be sure)
+        await Task.Delay(1100);
+
+        // 7. Unblock SaveChangesAsync
+        interceptor.Proceed.TrySetResult();
+
+        // 8. It should complete successfully instead of throwing TimeoutException
+        var media = await task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var expectedCaption = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5";
+        Assert.Equal(expectedCaption, media.Caption);
+
+        // 9. Verify in DB
+        await using (var verifyDb = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options))
+        {
+            var inDb = await verifyDb.MediaAssets.SingleAsync(x => x.Id == assetId);
+            Assert.Equal(expectedCaption, inDb.Caption);
+        }
+    }
+}

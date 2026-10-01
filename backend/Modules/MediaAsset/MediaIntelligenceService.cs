@@ -326,7 +326,7 @@ public class MediaIntelligenceService(
             var caption = await GenerateCaptionTextAsync(media, token);
             media.Caption = caption;
             media.UpdatedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(token);
+            await db.SaveChangesAsync(ct);
             return media;
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
