@@ -212,6 +212,19 @@ public class MediaAssetController
         {
             return BadRequest(ApiResponse.Fail("MEDIA_CAPTION_FAILED", ex.Message));
         }
+        catch (HttpRequestException)
+        {
+            return BadRequest(ApiResponse.Fail(
+                "MEDIA_CAPTION_FAILED",
+                "Không kết nối được AI, thử lại sau"));
+        }
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // Timeout HttpClient phía AI — client request chưa bị huỷ.
+            return BadRequest(ApiResponse.Fail(
+                "MEDIA_CAPTION_FAILED",
+                "Không kết nối được AI, thử lại sau"));
+        }
     }
 
     [HttpPost("analyze-layout-folder/{folderId:guid}")]

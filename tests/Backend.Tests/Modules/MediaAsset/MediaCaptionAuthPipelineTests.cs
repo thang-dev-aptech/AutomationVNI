@@ -146,12 +146,83 @@ public class MediaCaptionAuthPipelineTests : IAsyncLifetime
         Assert.Equal("cũ", await GetCaptionAsync(id));
     }
 
+    [Fact]
+    public async Task AiNetworkFailure_Returns400AndKeepsCaption()
+    {
+        await using var pipeline = CreatePipelineHost(new ThrowingChatHandler(new HttpRequestException("DNS failed")));
+        var id = await SeedAssetAsync("image/png");
+
+        var response = await SendAsync(pipeline.Client, id, "Admin");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("MEDIA_CAPTION_FAILED", body);
+        Assert.Contains("Không kết nối được AI, thử lại sau", body);
+        Assert.Equal("cũ", await GetCaptionAsync(id));
+    }
+
+    [Fact]
+    public async Task AiTimeout_Returns400AndKeepsCaption()
+    {
+        await using var pipeline = CreatePipelineHost(new ThrowingChatHandler(new TaskCanceledException("HttpClient timeout")));
+        var id = await SeedAssetAsync("image/png");
+
+        var response = await SendAsync(pipeline.Client, id, "Admin");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("MEDIA_CAPTION_FAILED", body);
+        Assert.Contains("Không kết nối được AI, thử lại sau", body);
+        Assert.Equal("cũ", await GetCaptionAsync(id));
+    }
+
     private async Task<HttpResponseMessage> SendAsync(Guid id, string? role)
+        => await SendAsync(_client, id, role);
+
+    private static async Task<HttpResponseMessage> SendAsync(HttpClient client, Guid id, string? role)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/MediaAsset/{id}/generate-caption");
         if (role is not null)
             request.Headers.Authorization = new AuthenticationHeaderValue(TestAuthHandler.SchemeName, $"{role}:admin-user");
-        return await _client.SendAsync(request);
+        return await client.SendAsync(request);
+    }
+
+    private PipelineHost CreatePipelineHost(HttpMessageHandler aiHandler)
+    {
+        var options = _options;
+        var host = new HostBuilder()
+            .ConfigureWebHost(web =>
+            {
+                web.UseTestServer();
+                web.ConfigureServices(services =>
+                {
+                    services.AddSingleton(options);
+                    services.AddScoped(_ => new AppDbContext(options));
+                    services.AddHttpContextAccessor();
+                    services.AddScoped<IUserContext, HttpUserContext>();
+                    services.AddScoped<MediaFolderRepository>();
+                    services.AddScoped<MediaAssetRepository>();
+                    services.AddSingleton<IFileStorageService, InMemoryImageStorage>();
+                    services.AddSingleton(CaptionAiOptions.Create());
+                    services.AddSingleton(_ => new HttpClient(aiHandler));
+                    services.AddScoped<MediaIntelligenceService>();
+                    services.AddAuthentication(TestAuthHandler.SchemeName)
+                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                            TestAuthHandler.SchemeName, _ => { });
+                    services.AddAuthorization();
+                    services.AddControllers()
+                        .AddApplicationPart(typeof(MediaAssetController).Assembly);
+                });
+                web.Configure(app =>
+                {
+                    app.UseRouting();
+                    app.UseAuthentication();
+                    app.UseAuthorization();
+                    app.UseEndpoints(endpoints => endpoints.MapControllers());
+                });
+            })
+            .Start();
+        return new PipelineHost(host, host.GetTestClient());
     }
 
     private async Task<Guid> SeedAssetAsync(string mimeType)
@@ -175,6 +246,25 @@ public class MediaCaptionAuthPipelineTests : IAsyncLifetime
         await using var db = new AppDbContext(_options);
         return (await db.MediaAssets.AsNoTracking().SingleAsync(x => x.Id == id)).Caption;
     }
+
+    private sealed class PipelineHost(IHost host, HttpClient client) : IAsyncDisposable
+    {
+        public HttpClient Client { get; } = client;
+
+        public async ValueTask DisposeAsync()
+        {
+            Client.Dispose();
+            await host.StopAsync();
+            host.Dispose();
+        }
+    }
+}
+
+file sealed class ThrowingChatHandler(Exception exception) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request, CancellationToken cancellationToken)
+        => Task.FromException<HttpResponseMessage>(exception);
 }
 
 file sealed class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
