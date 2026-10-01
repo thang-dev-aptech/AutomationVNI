@@ -804,18 +804,8 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
     /// </summary>
     public async Task CascadeSoftDeleteAsync(Guid rootFolderId, CancellationToken ct = default)
     {
+        var idsToDelete = await GetDescendantFolderIdsAsync(rootFolderId, ct);
         var allActive = await QueryActive().ToListAsync(ct);
-
-        var idsToDelete = new HashSet<Guid>();
-        var stack = new Stack<Guid>();
-        stack.Push(rootFolderId);
-        while (stack.Count > 0)
-        {
-            var current = stack.Pop();
-            if (!idsToDelete.Add(current)) continue;
-            foreach (var child in allActive.Where(f => f.ParentFolderId == current))
-                stack.Push(child.Id);
-        }
 
         var now = DateTime.UtcNow;
         var user = GetCurrentUserName();
@@ -839,6 +829,25 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
         }
 
         await Context.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Trả về <paramref name="rootId"/> và mọi folder active con cháu của nó.</summary>
+    public async Task<HashSet<Guid>> GetDescendantFolderIdsAsync(
+        Guid rootId, CancellationToken ct = default)
+    {
+        var allActive = await QueryActive().ToListAsync(ct);
+        var descendantIds = new HashSet<Guid>();
+        var stack = new Stack<Guid>();
+        stack.Push(rootId);
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (!descendantIds.Add(current)) continue;
+            foreach (var child in allActive.Where(f => f.ParentFolderId == current))
+                stack.Push(child.Id);
+        }
+
+        return descendantIds;
     }
 
     public static MediaFolderResponse ToResponse(MediaFolderModel f) => new()
@@ -1255,6 +1264,10 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
     /// đâu trên đường đi phải dừng lại và trả false ngay, không được coi là page-less chỉ vì tổ
     /// tiên xa hơn trùng dedicated root.
     /// </summary>
+    /// <summary>Kiểm tra folder có thuộc cây thư mục Google Drive chuyên dụng hay không.</summary>
+    public Task<bool> IsInGoogleDriveTreeAsync(Guid folderId, CancellationToken ct = default)
+        => IsWithinDedicatedTreeAsync(folderId, ct);
+
     private async Task<bool> IsWithinDedicatedTreeAsync(Guid? folderId, CancellationToken ct)
     {
         if (!folderId.HasValue) return false;

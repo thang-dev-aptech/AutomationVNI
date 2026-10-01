@@ -4,6 +4,7 @@ using Backend.Modules.ContentCrawl;
 using Backend.Modules.GenerationJob;
 using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaAsset;
+using Backend.Modules.MediaCaption;
 using Backend.Modules.MediaEmbedding;
 using Backend.Modules.MediaFolder;
 using Backend.Modules.MusicTrack;
@@ -33,6 +34,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<PostModel> Posts => Set<PostModel>();
     public DbSet<MediaAssetModel> MediaAssets => Set<MediaAssetModel>();
     public DbSet<MediaFolderModel> MediaFolders => Set<MediaFolderModel>();
+    public DbSet<MediaCaptionJobModel> MediaCaptionJobs => Set<MediaCaptionJobModel>();
+    public DbSet<MediaCaptionJobItemModel> MediaCaptionJobItems => Set<MediaCaptionJobItemModel>();
     public DbSet<PostMediaModel> PostMedias => Set<PostMediaModel>();
     public DbSet<MusicTrackModel> MusicTracks => Set<MusicTrackModel>();
     public DbSet<GenerationJobModel> GenerationJobs => Set<GenerationJobModel>();
@@ -93,6 +96,27 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasIndex(x => x.IsDeleted);
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.Description).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<MediaCaptionJobModel>(e =>
+        {
+            e.ToTable("MediaCaptionJobs");
+            e.HasKey(x => x.Id);
+            // SQLite partial unique index: một folder chỉ có một job đang chờ/chạy;
+            // lịch sử Completed vẫn được giữ để ListRecentAsync hiển thị.
+            e.HasIndex(x => x.FolderId).IsUnique().HasFilter("IsDeleted = 0 AND Status IN (0, 1)");
+            e.HasIndex(x => x.CreatedAt);
+            e.Property(x => x.FolderName).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<MediaCaptionJobItemModel>(e =>
+        {
+            e.ToTable("MediaCaptionJobItems");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.JobId, x.Status });
+            e.HasIndex(x => x.MediaAssetId);
+            e.Property(x => x.FileName).HasMaxLength(500);
+            e.Property(x => x.Error).HasMaxLength(500);
         });
 
         modelBuilder.Entity<PromptTemplateModel>(e =>
