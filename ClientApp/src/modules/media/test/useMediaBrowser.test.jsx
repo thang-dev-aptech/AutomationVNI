@@ -333,6 +333,20 @@ describe('useMediaBrowser', () => {
       )
     })
 
+    it('page-less (Drive) folder: /media?folder=F2 -> derivedPageId null, children still called', async () => {
+      mediaFolderApi.children.mockResolvedValue(wrapPaged([]))
+      mediaFolderApi.breadcrumb.mockResolvedValue(wrapBreadcrumb([]))
+      const { result } = renderHook(() => useMediaBrowser(), {
+        wrapper: wrapper(`/media?folder=${ID_ROOT_2}`),
+      })
+
+      expect(result.current.currentFolderId).toBe(ID_ROOT_2)
+      expect(result.current.derivedPageId).toBeNull()
+      await waitFor(() => expect(mediaFolderApi.children).toHaveBeenCalledWith(
+        expect.objectContaining({ socialChannelId: null, parentFolderId: ID_ROOT_2 }),
+      ))
+    })
+
     it('/media without params opens root', async () => {
       const { result } = renderHook(() => useMediaBrowser(), { wrapper: wrapper('/media') })
       expect(result.current.currentFolderId).toBeNull()
