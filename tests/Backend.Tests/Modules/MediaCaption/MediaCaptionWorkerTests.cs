@@ -263,8 +263,11 @@ public sealed class MediaCaptionWorkerTests : IAsyncLifetime
             }
         }
 
-        protected override Task GenerateCaptionAsync(MediaIntelligenceService intelligence, Guid mediaAssetId, CancellationToken ct) =>
-            generate?.Invoke(mediaAssetId, ct) ?? Task.CompletedTask;
+        protected override async Task<bool> GenerateCaptionAsync(MediaIntelligenceService intelligence, Guid mediaAssetId, CancellationToken ct)
+        {
+            if (generate is not null) await generate(mediaAssetId, ct);
+            return true;
+        }
     }
 
     private sealed class StubUserContext : IUserContext

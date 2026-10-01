@@ -285,12 +285,44 @@ public class MediaIntelligenceService(
         """;
 
     /// <summary>
-    /// MEDIA-CAPTION-01: sinh caption Facebook đúng 5 dòng cho MỘT ảnh, chỉ khi người dùng bấm nút
-    /// (không được gọi từ sync/worker/bulk). Ngữ cảnh duy nhất gửi kèm ảnh là tên MediaFolder chứa ảnh
-    /// (bỏ qua dedicated root "Google Drive"). Chỉ ghi cột Caption — không đụng Tags/AltText/Description.
+    /// MEDIA-CAPTION-01: sinh caption Facebook đúng 5 dòng cho MỘT ảnh (đường người dùng bấm nút,
+    /// kể cả "Sinh lại" — ghi đè caption cũ của chính ảnh đó). Job nền (MEDIA-CAPTION-02) dùng cùng
+    /// logic sinh qua <see cref="GenerateCaptionIfEmptyAsync"/> nhưng chỉ ghi khi caption còn rỗng.
+    /// Ngữ cảnh duy nhất gửi kèm ảnh là tên MediaFolder chứa ảnh (bỏ qua dedicated root "Google Drive").
+    /// Chỉ ghi cột Caption — không đụng Tags/AltText/Description.
     /// AI trả sai số dòng → gọi lại 1 lần; vẫn sai → ném lỗi, giữ nguyên caption cũ.
     /// </summary>
     public async Task<MediaAssetModel> GenerateCaptionAsync(Guid mediaId, CancellationToken ct = default)
+    {
+        var media = await LoadCaptionTargetAsync(mediaId, ct);
+        var caption = await GenerateCaptionTextAsync(media, ct);
+        media.Caption = caption;
+        media.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return media;
+    }
+
+    /// <summary>
+    /// Đường worker: cùng logic sinh như <see cref="GenerateCaptionAsync"/> nhưng ghi có điều kiện
+    /// nguyên tử (UPDATE ... WHERE Caption rỗng). Người dùng có thể ghi caption trong lúc AI đang chạy
+    /// → không ghi đè, trả false (caller đánh dấu Skipped). Trả true khi đã ghi.
+    /// </summary>
+    public async Task<bool> GenerateCaptionIfEmptyAsync(Guid mediaId, CancellationToken ct = default)
+    {
+        var media = await LoadCaptionTargetAsync(mediaId, ct);
+        if (!string.IsNullOrWhiteSpace(media.Caption)) return false;
+
+        var caption = await GenerateCaptionTextAsync(media, ct);
+        var now = DateTime.UtcNow;
+        var written = await db.MediaAssets
+            .Where(x => x.Id == mediaId && !x.IsDeleted && (x.Caption == null || x.Caption.Trim() == ""))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Caption, caption)
+                .SetProperty(x => x.UpdatedAt, now), ct);
+        return written > 0;
+    }
+
+    private async Task<MediaAssetModel> LoadCaptionTargetAsync(Guid mediaId, CancellationToken ct)
     {
         var media = await db.MediaAssets.FirstOrDefaultAsync(x => x.Id == mediaId && !x.IsDeleted, ct)
             ?? throw new KeyNotFoundException("Không tìm thấy media");
@@ -298,7 +330,11 @@ public class MediaIntelligenceService(
             throw new ArgumentException("Sinh caption hiện chỉ hỗ trợ file ảnh");
         if (string.IsNullOrWhiteSpace(media.StoragePath) || !await storage.ExistsAsync(media.StoragePath, ct))
             throw new ArgumentException("File ảnh không tồn tại trên storage");
+        return media;
+    }
 
+    private async Task<string> GenerateCaptionTextAsync(MediaAssetModel media, CancellationToken ct)
+    {
         string? folderName = null;
         if (media.FolderId is Guid folderId)
         {
@@ -346,15 +382,12 @@ public class MediaIntelligenceService(
                 lines = parsed;
             else
                 logger.LogWarning("Caption AI trả {Count} dòng (lần {Attempt}) cho media {MediaId}",
-                    parsed.Count, attempt + 1, mediaId);
+                    parsed.Count, attempt + 1, media.Id);
         }
         if (lines is null)
             throw new InvalidOperationException("AI không trả đúng 5 dòng caption");
 
-        media.Caption = string.Join("\n", lines);
-        media.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return media;
+        return string.Join("\n", lines);
     }
 
     /// <summary>Đọc {"lines":[...]} (hoặc fallback text nhiều dòng), trim, bỏ dòng rỗng và tiền tố

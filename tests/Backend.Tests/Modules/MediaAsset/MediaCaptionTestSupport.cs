@@ -30,6 +30,45 @@ internal sealed class ScriptedChatHandler(params string[] contents) : HttpMessag
     public static string Lines(params string[] lines) => JsonSerializer.Serialize(new { lines });
 }
 
+/// <summary>Handler có cổng: request thứ i chỉ trả lời sau khi test gọi Release(i); Arrived(i) hoàn tất
+/// khi request thứ i đã tới. Dùng để dựng race giữa nhiều lời gọi AI đang chạy cùng lúc.</summary>
+internal sealed class GatedChatHandler(params string[] contents) : HttpMessageHandler
+{
+    private readonly object _lock = new();
+    private readonly List<TaskCompletionSource> _arrived = [];
+    private readonly List<TaskCompletionSource> _gates = [];
+    private int _next;
+
+    public int RequestCount => Volatile.Read(ref _next);
+
+    public Task Arrived(int index) => Slot(_arrived, index).Task;
+    public void Release(int index) => Slot(_gates, index).TrySetResult();
+
+    private TaskCompletionSource Slot(List<TaskCompletionSource> list, int index)
+    {
+        lock (_lock)
+        {
+            while (list.Count <= index)
+                list.Add(new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+            return list[index];
+        }
+    }
+
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var index = Interlocked.Increment(ref _next) - 1;
+        Slot(_arrived, index).TrySetResult();
+        await Slot(_gates, index).Task.WaitAsync(cancellationToken);
+        var content = index < contents.Length ? contents[index] : "{\"lines\":[]}";
+        var body = JsonSerializer.Serialize(new { choices = new[] { new { message = new { content } } } });
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json")
+        };
+    }
+}
+
 internal sealed class InMemoryImageStorage : IFileStorageService
 {
     public static readonly byte[] ImageBytes = [0x89, 0x50, 0x4E, 0x47, 1, 2, 3];

@@ -77,8 +77,9 @@ public class MediaCaptionWorker(
             }
             else
             {
-                await GenerateCaptionAsync(intelligence, item.MediaAssetId, ct);
-                item.Status = MediaCaptionJobItemStatus.Succeeded;
+                // Ghi có điều kiện: người dùng có thể đã ghi caption trong lúc AI chạy → Skipped, không ghi đè.
+                var written = await GenerateCaptionAsync(intelligence, item.MediaAssetId, ct);
+                item.Status = written ? MediaCaptionJobItemStatus.Succeeded : MediaCaptionJobItemStatus.Skipped;
                 item.FinishedAt = DateTime.UtcNow;
             }
         }
@@ -97,8 +98,8 @@ public class MediaCaptionWorker(
         await db.SaveChangesAsync(ct);
     }
 
-    protected virtual Task GenerateCaptionAsync(
+    protected virtual Task<bool> GenerateCaptionAsync(
         MediaIntelligenceService intelligence,
         Guid mediaAssetId,
-        CancellationToken ct) => intelligence.GenerateCaptionAsync(mediaAssetId, ct);
+        CancellationToken ct) => intelligence.GenerateCaptionIfEmptyAsync(mediaAssetId, ct);
 }
