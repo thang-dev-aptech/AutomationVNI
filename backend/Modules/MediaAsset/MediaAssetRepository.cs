@@ -1,3 +1,4 @@
+using Backend.Modules.MediaCaption;
 using System.Text.Json;
 using Backend.Data;
 using Backend.Modules.GoogleDrive;
@@ -103,12 +104,16 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
                 .Where(f => folderIds.Contains(f.Id))
                 .ToDictionaryAsync(f => f.Id, f => f.SocialChannelId, ct);
 
+        var queuedIds = await MediaCaptionJobService.GetQueuedAssetIdsAsync(
+            Context, paged.Items.Select(x => x.Id), ct);
+
         return new PagedResult<MediaAssetResponse>
         {
             Items = paged.Items
                 .Select(x => ToResponse(
                     x,
-                    x.FolderId.HasValue ? folderChannelMap.GetValueOrDefault(x.FolderId.Value) : null))
+                    x.FolderId.HasValue ? folderChannelMap.GetValueOrDefault(x.FolderId.Value) : null,
+                    queuedIds.Contains(x.Id)))
                 .ToList(),
             Total = paged.Total,
             Index = paged.Index,
@@ -284,6 +289,10 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         var entity = await GetByIdAsync(id, ct);
         if (entity is null) return null;
 
+        // Khoá caption TRƯỚC khi áp bất kỳ field nào: cả request bị từ chối, không ghi nửa chừng.
+        if (request.Caption is not null && await IsCaptionQueuedAsync(id, ct))
+            throw new CaptionQueuedException();
+
         if (request.AltText is not null) entity.AltText = request.AltText.Trim();
         if (request.Description is not null) entity.Description = request.Description.Trim();
         if (request.Tags is not null) entity.Tags = request.Tags;
@@ -297,7 +306,11 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         return entity;
     }
 
-    public static MediaAssetResponse ToResponse(MediaAssetModel e, Guid? socialChannelId = null) => new()
+    public Task<bool> IsCaptionQueuedAsync(Guid id, CancellationToken ct = default)
+        => MediaCaptionJobService.IsAssetQueuedAsync(Context, id, ct);
+
+    public static MediaAssetResponse ToResponse(
+        MediaAssetModel e, Guid? socialChannelId = null, bool captionQueued = false) => new()
     {
         Id = e.Id,
         FileName = e.FileName,
@@ -317,6 +330,7 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         Tags = e.Tags,
         Keywords = MediaIntelligenceService.ParseKeywords(e.Tags),
         Caption = e.Caption,
+        CaptionQueued = captionQueued,
         Width = e.Width,
         Height = e.Height,
         CreatedAt = e.CreatedAt,

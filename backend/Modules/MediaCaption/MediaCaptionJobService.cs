@@ -5,6 +5,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Modules.MediaCaption;
 
+/// <summary>Caption bị khoá vì ảnh đang có item Pending/Running trong caption job (MEDIA_CAPTION_QUEUED).</summary>
+public class CaptionQueuedException()
+    : InvalidOperationException("Ảnh đang trong hàng chờ sinh caption");
+
 public class MediaCaptionJobService(AppDbContext db, MediaFolderRepository folders)
 {
     public async Task<MediaCaptionJobModel> CreateAsync(Guid folderId, CancellationToken ct = default)
@@ -129,6 +133,26 @@ public class MediaCaptionJobService(AppDbContext db, MediaFolderRepository folde
         await RecalculateAsync(job, ct);
         await db.SaveChangesAsync(ct);
     }
+
+    /// <summary>Tập ảnh (trong <paramref name="mediaAssetIds"/>) đang có item Pending/Running thuộc job chưa xoá.
+    /// Một query cho cả lô. Static để repository dùng được mà không đổi DI.</summary>
+    public static async Task<HashSet<Guid>> GetQueuedAssetIdsAsync(
+        AppDbContext db, IEnumerable<Guid> mediaAssetIds, CancellationToken ct = default)
+    {
+        var ids = mediaAssetIds.Distinct().ToList();
+        if (ids.Count == 0) return [];
+        var queued = await (from item in db.MediaCaptionJobItems.AsNoTracking()
+                            join job in db.MediaCaptionJobs.AsNoTracking() on item.JobId equals job.Id
+                            where !item.IsDeleted && !job.IsDeleted && ids.Contains(item.MediaAssetId)
+                                && (item.Status == MediaCaptionJobItemStatus.Pending
+                                    || item.Status == MediaCaptionJobItemStatus.Running)
+                            select item.MediaAssetId).Distinct().ToListAsync(ct);
+        return [.. queued];
+    }
+
+    public static async Task<bool> IsAssetQueuedAsync(
+        AppDbContext db, Guid mediaAssetId, CancellationToken ct = default)
+        => (await GetQueuedAssetIdsAsync(db, [mediaAssetId], ct)).Contains(mediaAssetId);
 
     internal async Task RecalculateAsync(MediaCaptionJobModel job, CancellationToken ct = default)
     {

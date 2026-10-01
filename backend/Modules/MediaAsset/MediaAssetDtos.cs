@@ -80,6 +80,8 @@ public class MediaAssetResponse
     public string? Tags { get; set; }
     public List<string> Keywords { get; set; } = [];
     public string? Caption { get; set; }
+    /// <summary>true khi ảnh có item Pending/Running trong caption job — caption bị khoá với người dùng.</summary>
+    public bool CaptionQueued { get; set; }
     public int? Width { get; set; }
     public int? Height { get; set; }
     public DateTime CreatedAt { get; set; }
