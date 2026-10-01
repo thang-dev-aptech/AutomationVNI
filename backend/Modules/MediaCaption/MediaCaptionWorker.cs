@@ -101,7 +101,7 @@ public class MediaCaptionWorker(
         await db.SaveChangesAsync(ct);
     }
 
-    protected virtual TimeSpan InFlightWait => TimeSpan.FromMinutes(2);
+    protected virtual TimeSpan InFlightWait => MediaIntelligenceService.CaptionMaxDuration;
 
     protected virtual Task<bool> GenerateCaptionAsync(
         MediaIntelligenceService intelligence,

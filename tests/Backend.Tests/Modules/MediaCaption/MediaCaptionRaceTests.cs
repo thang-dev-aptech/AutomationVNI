@@ -215,6 +215,47 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
         Assert.Equal(MediaCaptionJobItemStatus.Skipped, (await verify.MediaCaptionJobItems.SingleAsync()).Status);
     }
 
+    [Fact]
+    public void DefaultInFlightWaitCoversEveryAiAttemptAtItsTimeout()
+    {
+        var wait = new RaceWorker(CreateScopeFactory(new GatedChatHandler()), null).DefaultWait;
+
+        Assert.True(
+            wait >= MediaIntelligenceService.AiRequestTimeout * MediaIntelligenceService.CaptionMaxAttempts,
+            $"InFlightWait {wait} < {MediaIntelligenceService.CaptionMaxAttempts} x {MediaIntelligenceService.AiRequestTimeout}");
+    }
+
+    [Fact]
+    public async Task WorkerKeepsWaitingWhileSingleGenerateRunsLongerThanTwoMinutesScaled()
+    {
+        // Thời gian thu nhỏ 100 lần: cap cũ 2 phút = 1,2s; một lần sinh tay dùng 90% (attempts x timeout) = 2,16s.
+        const double scale = 0.01;
+        TimeSpan Scaled(TimeSpan t) => TimeSpan.FromMilliseconds(t.TotalMilliseconds * scale);
+        var (folderId, assetId) = await SeedAsync();
+        var handler = new GatedChatHandler(
+            ScriptedChatHandler.Lines(UserCaption.Split('\n')),
+            ScriptedChatHandler.Lines(WorkerCaption.Split('\n')));
+
+        await using var userDb = new AppDbContext(_dbOptions);
+        var userTask = CreateIntelligence(userDb, handler).GenerateCaptionAsync(assetId);
+        await handler.Arrived(0).WaitAsync(TimeSpan.FromSeconds(10));
+        await CreateJobAsync(folderId);
+        var workerTask = new RaceWorker(CreateScopeFactory(handler), Scaled(MediaIntelligenceService.CaptionMaxDuration))
+            .RunOnceAsync();
+
+        await Task.Delay(Scaled(MediaIntelligenceService.AiRequestTimeout * MediaIntelligenceService.CaptionMaxAttempts * 0.9));
+        Assert.False(workerTask.IsCompleted);
+        Assert.Equal(1, handler.RequestCount);
+        handler.Release(0);
+        await userTask.WaitAsync(TimeSpan.FromSeconds(10));
+        await workerTask.WaitAsync(TimeSpan.FromSeconds(10));
+
+        await using var db = new AppDbContext(_dbOptions);
+        Assert.Equal(UserCaption, (await db.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
+        Assert.Equal(MediaCaptionJobItemStatus.Skipped, (await db.MediaCaptionJobItems.SingleAsync()).Status);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
     private async Task<MediaCaptionJobModel> CreateJobAsync(Guid folderId)
     {
         await using var jobDb = new AppDbContext(_dbOptions);
@@ -251,10 +292,11 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
         return (folder.Id, asset.Id);
     }
 
-    private sealed class RaceWorker(IServiceScopeFactory scopeFactory, TimeSpan inFlightWait)
+    private sealed class RaceWorker(IServiceScopeFactory scopeFactory, TimeSpan? inFlightWait)
         : MediaCaptionWorker(scopeFactory, Options.Create(new MediaCaptionWorkerOptions()), NullLogger<MediaCaptionWorker>.Instance)
     {
-        protected override TimeSpan InFlightWait => inFlightWait;
+        protected override TimeSpan InFlightWait => inFlightWait ?? base.InFlightWait;
+        public TimeSpan DefaultWait => base.InFlightWait;
         public Task RunOnceAsync() => ProcessOneAsync(CancellationToken.None);
     }
 

@@ -274,6 +274,17 @@ public class MediaIntelligenceService(
 
     public const int CaptionLineCount = 5;
 
+    /// <summary>Timeout của HttpClient gọi AI (Program.cs đăng ký bằng đúng giá trị này).</summary>
+    public static readonly TimeSpan AiRequestTimeout = TimeSpan.FromSeconds(120);
+
+    /// <summary>Số lần gọi AI tối đa cho một caption (lần đầu + 1 lần retry khi sai số dòng).</summary>
+    public const int CaptionMaxAttempts = 2;
+
+    /// <summary>Thời gian tối đa một lần sinh caption có thể chạy hợp lệ: mọi lần thử đều chạm timeout,
+    /// cộng dư cho đọc ảnh/DB. Worker chờ lần sinh tay đúng bằng khoảng này rồi mới tự gọi AI.</summary>
+    public static readonly TimeSpan CaptionMaxDuration =
+        AiRequestTimeout * CaptionMaxAttempts + TimeSpan.FromSeconds(30);
+
     private const string CaptionSystemPrompt = """
         Bạn viết caption Facebook tiếng Việt cho fanpage, dựa trên ảnh được gửi kèm.
         Yêu cầu bắt buộc:
@@ -384,7 +395,7 @@ public class MediaIntelligenceService(
         };
 
         List<string>? lines = null;
-        for (var attempt = 0; attempt < 2 && lines is null; attempt++)
+        for (var attempt = 0; attempt < CaptionMaxAttempts && lines is null; attempt++)
         {
             var content = await CallChatCompletionsAsync(config, payload, ct);
             var parsed = ParseCaptionLines(content);
