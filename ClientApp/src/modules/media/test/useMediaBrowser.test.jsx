@@ -428,6 +428,18 @@ describe('useMediaBrowser', () => {
       expect(currentLocation.search).toBe('')
     })
 
+    it('deleted/missing page-less Drive folder: children + breadcrumb 400 -> root, folder param removed', async () => {
+      mediaFolderApi.children.mockRejectedValue({ response: { status: 400 } })
+      mediaFolderApi.breadcrumb.mockRejectedValue({ response: { status: 400 } })
+      const { result } = renderHook(() => useMediaBrowser(), {
+        wrapper: wrapper(`/media?folder=${ID_ROOT_2}`),
+      })
+
+      await waitFor(() => expect(result.current.currentFolderId).toBeNull())
+      expect(currentLocation.search).toBe('')
+      expect(currentLocation.search).not.toContain('folder')
+    })
+
     it('breadcrumb 404 -> root', async () => {
       mediaFolderApi.children.mockResolvedValue(wrapPaged([]))
       mediaFolderApi.breadcrumb.mockRejectedValue({ response: { status: 404 } })

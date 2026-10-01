@@ -13,7 +13,9 @@ const PAGE_PARAM = 'page'
 const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const isGuid = (value) => typeof value === 'string' && GUID_PATTERN.test(value)
-const isDeniedOrMissing = (error) => [403, 404].includes(error?.response?.status)
+// 400: folder page-less (Drive) đã xoá/không tồn tại — backend coi nó như folder của Page rồi
+// từ chối vì thiếu SocialChannelId (ArgumentException → 400). Cùng nghĩa với 403/404: về root.
+const isDeniedOrMissing = (error) => [400, 403, 404].includes(error?.response?.status)
 
 /**
  * Cross-Page folder browser: the open folder lives in the URL (?folder=<id>&page=<socialChannelId>,
