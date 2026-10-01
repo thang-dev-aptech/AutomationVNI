@@ -142,3 +142,14 @@ export function useAnalyzeLayout() {
     },
   })
 }
+
+/** Sinh caption Facebook 5 dòng cho MỘT ảnh — nút trong popup Chi tiết media. */
+export function useGenerateCaption() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id) => unwrapApiData(await mediaAssetApi.generateCaption(id)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mediaAssetQueryKeys.all })
+    },
+  })
+}

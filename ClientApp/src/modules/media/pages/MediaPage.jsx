@@ -25,6 +25,7 @@ import {
   useUploadMediaBatch,
   useAnalyzeLayoutFolder,
   useAnalyzeLayout,
+  useGenerateCaption,
 } from '../hooks/useMediaAssets'
 import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
@@ -110,8 +111,20 @@ export default function MediaPage() {
   const deleteFolderMutation = useDeleteMediaFolder()
   const analyzeLayoutMutation = useAnalyzeLayoutFolder()
   const analyzeLayoutSingleMutation = useAnalyzeLayout()
+  const generateCaptionMutation = useGenerateCaption()
   const [analyzingId, setAnalyzingId] = useState(null)
   const [analyzingLayoutId, setAnalyzingLayoutId] = useState(null)
+  const [generatingCaptionId, setGeneratingCaptionId] = useState(null)
+  const [captionDraft, setCaptionDraft] = useState('')
+  const [savingCaption, setSavingCaption] = useState(false)
+
+  useEffect(() => {
+    if (detailsAsset) {
+      setCaptionDraft(detailsAsset.caption ?? '')
+    } else {
+      setCaptionDraft('')
+    }
+  }, [detailsAsset?.id, detailsAsset?.caption])
 
   const fileItems = data?.items ?? []
   const filePageSize = data?.size > 0 ? data.size : 48
@@ -205,6 +218,48 @@ export default function MediaPage() {
       )
     } catch (error) {
       toast.error(getErrorMessage(error))
+    }
+  }
+
+  const handleGenerateCaption = async () => {
+    if (!detailsAsset) return
+    setGeneratingCaptionId(detailsAsset.id)
+    try {
+      const result = await generateCaptionMutation.mutateAsync(detailsAsset.id)
+      const caption = result?.caption ?? ''
+      setCaptionDraft(caption)
+      setDetailsAsset((prev) => (prev && prev.id === detailsAsset.id ? { ...prev, ...result } : prev))
+      toast.success('Đã sinh caption')
+    } catch (error) {
+      toast.error(getErrorMessage(error))
+    } finally {
+      setGeneratingCaptionId(null)
+    }
+  }
+
+  const handleSaveCaption = async () => {
+    if (!detailsAsset) return
+    setSavingCaption(true)
+    try {
+      const result = await updateMutation.mutateAsync({
+        id: detailsAsset.id,
+        payload: { caption: captionDraft },
+      })
+      setDetailsAsset((prev) => (prev && prev.id === detailsAsset.id ? { ...prev, ...result } : prev))
+      toast.success('Đã lưu caption')
+    } catch (error) {
+      toast.error(getErrorMessage(error))
+    } finally {
+      setSavingCaption(false)
+    }
+  }
+
+  const handleCopyCaption = async () => {
+    try {
+      await navigator.clipboard.writeText(captionDraft)
+      toast.success('Đã copy caption')
+    } catch {
+      toast.error('Không copy được clipboard')
     }
   }
 
@@ -916,6 +971,53 @@ export default function MediaPage() {
                   Chưa quét — cần quét trước khi dùng ảnh này cho bài Template.
                 </p>
               )}
+            </div>
+
+            <div className="media-details-labels media-details-caption">
+              <div className="media-details-labels-head">
+                <span className="ai-media-keyword-label">Caption Facebook (5 dòng)</span>
+                {canManageMedia && isImageMime(detailsAsset.mimeType) && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={generatingCaptionId === detailsAsset.id}
+                    onClick={handleGenerateCaption}
+                  >
+                    {generatingCaptionId === detailsAsset.id
+                      ? '⏳ Đang sinh...'
+                      : (detailsAsset.caption ? '✍️ Sinh lại' : '✍️ Sinh caption')}
+                  </button>
+                )}
+              </div>
+              <textarea
+                className="media-details-caption-textarea"
+                rows={6}
+                value={captionDraft}
+                onChange={(e) => setCaptionDraft(e.target.value)}
+                placeholder="Chưa có caption — bấm Sinh caption hoặc nhập tay."
+              />
+              <div className="media-details-caption-actions">
+                {canManageMedia && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={savingCaption}
+                    onClick={handleSaveCaption}
+                  >
+                    {savingCaption ? 'Đang lưu...' : 'Lưu'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={handleCopyCaption}
+                >
+                  Copy
+                </button>
+              </div>
+              <p className="media-details-empty">
+                AI có thể sai tên/số liệu — kiểm tra trước khi đăng
+              </p>
             </div>
           </div>
         )}

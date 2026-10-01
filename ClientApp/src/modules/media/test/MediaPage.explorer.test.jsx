@@ -65,6 +65,7 @@ vi.mock('../hooks/useMediaAssets', () => {
     useAnalyzeAllMediaAssets: noop,
     useAnalyzeLayoutFolder: noop,
     useAnalyzeLayout: noop,
+    useGenerateCaption: noop,
   }
 })
 
