@@ -35,13 +35,18 @@ public sealed class MediaAiTimeoutTests : IDisposable
     {
         Assert.Equal(TimeSpan.FromSeconds(120), MediaIntelligenceService.CaptionAiRequestTimeout);
         Assert.Equal(TimeSpan.FromSeconds(120), MediaIntelligenceService.AnalysisAiRequestTimeout);
+        Assert.Equal(TimeSpan.FromSeconds(120), MediaAiTimeouts.Default.CaptionRequest);
+        Assert.Equal(TimeSpan.FromSeconds(120), MediaAiTimeouts.Default.LayoutAnalysisRequest);
+        Assert.Equal(TimeSpan.FromSeconds(120), MediaAiTimeouts.Default.ImageAnalysisRequest);
+        Assert.Equal(TimeSpan.FromSeconds(15), MediaAiTimeouts.Default.MediaPickRequest);
+        Assert.Equal(TimeSpan.FromSeconds(12), MediaAiTimeouts.Default.QueryKeywordRequest);
         Assert.Equal(Timeout.InfiniteTimeSpan, MediaIntelligenceService.HttpClientTimeout);
     }
 
     [Fact]
     public async Task ShortCaptionTimeoutDoesNotShortenAnalysis()
     {
-        var timeouts = MediaAiTimeouts.Default with { CaptionRequest = Short, AnalysisRequest = Long };
+        var timeouts = MediaAiTimeouts.Default with { CaptionRequest = Short, ImageAnalysisRequest = Long };
 
         var analysis = await Create(AnalysisJson, timeouts).Service.AnalyzeImageAsync([1, 2, 3], "image/png");
         Assert.Equal(3, analysis.Keywords.Count);
@@ -58,7 +63,7 @@ public sealed class MediaAiTimeoutTests : IDisposable
     [Fact]
     public async Task ShortAnalysisTimeoutDoesNotShortenCaption()
     {
-        var timeouts = MediaAiTimeouts.Default with { CaptionRequest = Long, AnalysisRequest = Short };
+        var timeouts = MediaAiTimeouts.Default with { CaptionRequest = Long, ImageAnalysisRequest = Short };
 
         var ex = await Assert.ThrowsAsync<TaskCanceledException>(
             () => Create(AnalysisJson, timeouts).Service.AnalyzeImageAsync([1, 2, 3], "image/png"));
@@ -74,7 +79,7 @@ public sealed class MediaAiTimeoutTests : IDisposable
     [Fact]
     public async Task CallerCancellationIsNotReportedAsTimeout()
     {
-        var timeouts = MediaAiTimeouts.Default with { AnalysisRequest = Long };
+        var timeouts = MediaAiTimeouts.Default with { ImageAnalysisRequest = Long };
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 
         var ex = await Assert.ThrowsAnyAsync<OperationCanceledException>(

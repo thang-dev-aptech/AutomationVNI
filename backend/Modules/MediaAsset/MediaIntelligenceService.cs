@@ -234,7 +234,7 @@ public class MediaIntelligenceService(
             temperature = 0.1
         };
 
-        var content = await CallChatCompletionsAsync(config, payload, Timeouts.AnalysisRequest, ct);
+        var content = await CallChatCompletionsAsync(config, payload, Timeouts.LayoutAnalysisRequest, ct);
         var parsed = JsonSerializer.Deserialize<LayoutAnalysisPayload>(StripJsonFence(content), JsonOptions)
             ?? throw new InvalidOperationException("AI không trả metadata layout hợp lệ");
 
@@ -515,7 +515,7 @@ public class MediaIntelligenceService(
             temperature = 0.1
         };
 
-        var content = await CallChatCompletionsAsync(config, payload, Timeouts.AnalysisRequest, ct);
+        var content = await CallChatCompletionsAsync(config, payload, Timeouts.ImageAnalysisRequest, ct);
         var parsed = JsonSerializer.Deserialize<MediaAnalysisPayload>(StripJsonFence(content), JsonOptions)
             ?? throw new InvalidOperationException("AI không trả metadata ảnh hợp lệ");
         var keywords = NormalizeKeywords(parsed.Keywords);
@@ -669,7 +669,7 @@ public class MediaIntelligenceService(
         string content, List<ScoredMedia> scored, int take, CancellationToken ct)
     {
         using var quickCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        quickCts.CancelAfter(TimeSpan.FromSeconds(15));
+        quickCts.CancelAfter(Timeouts.MediaPickRequest);
         var token = quickCts.Token;
 
         var (_, config, model) = ResolveConfig();
@@ -707,7 +707,7 @@ public class MediaIntelligenceService(
             temperature = 0
         };
 
-        var responseText = await CallChatCompletionsAsync(config, payload, Timeouts.AnalysisRequest, token);
+        var responseText = await CallChatCompletionsAsync(config, payload, Timeouts.MediaPickRequest, token);
         var parsed = JsonSerializer.Deserialize<PickPayload>(StripJsonFence(responseText), JsonOptions);
         var byIndex = indexed.ToDictionary(x => x.i, x => x.Media.Id);
 
@@ -734,7 +734,7 @@ public class MediaIntelligenceService(
         {
             // Recommend phải phản hồi nhanh — nếu provider chậm/chết thì cắt sớm và fallback lexical.
             using var quickCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            quickCts.CancelAfter(TimeSpan.FromSeconds(12));
+            quickCts.CancelAfter(Timeouts.QueryKeywordRequest);
             ct = quickCts.Token;
 
             var (_, config, model) = ResolveConfig();
@@ -759,7 +759,7 @@ public class MediaIntelligenceService(
                 temperature = 0.1
             };
 
-            var content = await CallChatCompletionsAsync(config, payload, Timeouts.AnalysisRequest, ct);
+            var content = await CallChatCompletionsAsync(config, payload, Timeouts.QueryKeywordRequest, ct);
             var parsed = JsonSerializer.Deserialize<KeywordPayload>(StripJsonFence(content), JsonOptions);
             var keywords = NormalizeKeywords(parsed?.Keywords);
             if (keywords.Count >= 3) return keywords;
@@ -977,23 +977,46 @@ public class MediaIntelligenceService(
     }
 }
 
-/// <summary>Timeout per-call cho từng đường AI của <see cref="MediaIntelligenceService"/>. Mỗi đường một
-/// hằng số riêng; giá trị hiện tại đều 120s (giữ nguyên hành vi của HttpClient.Timeout chung trước đây).</summary>
+/// <summary>Timeout per-call riêng cho từng đường AI của <see cref="MediaIntelligenceService"/>.</summary>
 public sealed record MediaAiTimeouts(
     TimeSpan CaptionRequest,
-    TimeSpan AnalysisRequest,
+    TimeSpan LayoutAnalysisRequest,
+    TimeSpan ImageAnalysisRequest,
+    TimeSpan MediaPickRequest,
+    TimeSpan QueryKeywordRequest,
     TimeSpan CaptionPreparationAllowance)
 {
     public static readonly MediaAiTimeouts Default = new(
         CaptionRequest: TimeSpan.FromSeconds(120),
-        AnalysisRequest: TimeSpan.FromSeconds(120),
+        LayoutAnalysisRequest: TimeSpan.FromSeconds(120),
+        ImageAnalysisRequest: TimeSpan.FromSeconds(120),
+        MediaPickRequest: TimeSpan.FromSeconds(15),
+        QueryKeywordRequest: TimeSpan.FromSeconds(12),
         CaptionPreparationAllowance: TimeSpan.FromSeconds(30));
 
-    public TimeSpan CaptionMaxDuration =>
-        CaptionRequest * MediaIntelligenceService.CaptionMaxAttempts + CaptionPreparationAllowance;
+    public TimeSpan AnalysisRequest { get; init; } = TimeSpan.FromSeconds(120);
+
+    public MediaAiTimeouts(
+        TimeSpan CaptionRequest,
+        TimeSpan AnalysisRequest,
+        TimeSpan CaptionPreparationAllowance)
+        : this(
+            CaptionRequest,
+            AnalysisRequest,
+            AnalysisRequest,
+            TimeSpan.FromSeconds(15),
+            TimeSpan.FromSeconds(12),
+            CaptionPreparationAllowance)
+    {
+    }
+
 
     /// <summary>Giới hạn riêng cho bước lưu caption của single generate (nằm ngoài deadline).</summary>
     public TimeSpan CaptionSave { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>Deadline tổng của một lần sinh caption tay.</summary>
+    public TimeSpan CaptionMaxDuration =>
+        CaptionRequest * MediaIntelligenceService.CaptionMaxAttempts + CaptionPreparationAllowance;
 
     /// <summary>Thời gian tối đa single generate giữ dấu in-flight: deadline chuẩn bị + gọi AI, rồi bước lưu.</summary>
     public TimeSpan CaptionMaxMarkerHold => CaptionMaxDuration + CaptionSave;
