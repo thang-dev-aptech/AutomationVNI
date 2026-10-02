@@ -195,16 +195,21 @@ public class GoogleDriveSyncServiceTests
             ]
         });
 
-        var result = await fixture.CreateService().RunTickAsync();
-
-        Assert.Equal(2, result.ImportedCount);
+        var snapshot = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(1, snapshot.ImportedCount);
         Assert.Contains("preexisting-1", fixture.Client.DownloadedFileIds);
+        Assert.DoesNotContain("delta-1", fixture.Client.DownloadedFileIds);
+        var afterSnapshot = await fixture.GetStateAsync();
+        Assert.Equal("legacy-cursor", afterSnapshot.PageToken);
+        Assert.NotNull(afterSnapshot.InitialSnapshotCompletedAt);
+
+        var delta = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(1, delta.ImportedCount);
         Assert.Contains("delta-1", fixture.Client.DownloadedFileIds);
         var state = await fixture.GetStateAsync();
         Assert.Equal("legacy-next", state.PageToken);
         Assert.NotEqual("must-not-replace-legacy", state.PageToken);
-        Assert.NotNull(state.InitialSnapshotCompletedAt);
-        Assert.Equal(2, state.LastImportedCount);
+        Assert.Equal(1, state.LastImportedCount);
 
         var treeCallsAfterBackfill = fixture.Client.ListFolderTreeCalls;
         fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "legacy-after", Files = [] });
@@ -273,11 +278,15 @@ public class GoogleDriveSyncServiceTests
             Files = [File("delta-1", "delta.jpg")]
         });
 
-        var result = await fixture.CreateService().RunTickAsync();
-
-        Assert.Equal(2, result.ImportedCount);
+        var snapshot = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(1, snapshot.ImportedCount);
         Assert.DoesNotContain("deleted-1", fixture.Client.DownloadedFileIds);
         Assert.Contains("fresh-1", fixture.Client.DownloadedFileIds);
+        Assert.DoesNotContain("delta-1", fixture.Client.DownloadedFileIds);
+        Assert.Equal("legacy-cursor", (await fixture.GetStateAsync()).PageToken);
+
+        var delta = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(1, delta.ImportedCount);
         Assert.Contains("delta-1", fixture.Client.DownloadedFileIds);
         Assert.Equal(1, await fixture.CountRowsByGoogleDriveFileIdAsync("deleted-1"));
         var deleted = await fixture.GetMediaAssetByGoogleDriveFileIdRawAsync("deleted-1");
@@ -294,7 +303,7 @@ public class GoogleDriveSyncServiceTests
     [Fact]
     public async Task RunTickAsync_SaveFailureOnOneFile_DoesNotAbortTick()
     {
-        await using var fixture = await Fixture.CreateAsync();
+        await using var fixture = await Fixture.CreateAsync(maxRetryAttempts: 1);
         await fixture.SetEnabledAsync(true, completeInitialSnapshot: false);
         await fixture.InstallUniquePoisonTriggerAsync();
         fixture.Client.StartToken = "after-poison";
@@ -382,6 +391,109 @@ public class GoogleDriveSyncServiceTests
         var folder = await fixture.GetMediaFolderAsync(asset.FolderId!.Value);
         Assert.Equal("Album", folder!.Name);
         Assert.NotNull((await fixture.GetStateAsync()).InitialSnapshotCompletedAt);
+    }
+
+    /// <summary>
+    /// N1: snapshot tôn trọng MaxFilesPerTick. Cây 3×trần cần đúng 3 tick, mỗi tick nhập ≤ trần,
+    /// snapshot chỉ xong ở tick cuối. Quét ngay trong lúc một đợt đang chạy không vào được critical section.
+    /// </summary>
+    [Fact]
+    public async Task RunTickAsync_SnapshotLargerThanMaxFilesPerTick_ImportsOneBatchPerTick()
+    {
+        const int maxFiles = 2;
+        await using var fixture = await Fixture.CreateAsync(maxFilesPerTick: maxFiles);
+        await fixture.SetEnabledAsync(true, completeInitialSnapshot: false);
+        fixture.Client.StartToken = "snapshot-cursor";
+        fixture.Client.FolderTree = new GoogleDriveFolderTree
+        {
+            Files = Enumerable.Range(0, maxFiles * 3)
+                .Select(i => File($"snap-{i}", $"snap-{i}.jpg"))
+                .ToList()
+        };
+
+        var batchDownloads = new List<int>();
+        for (var tick = 0; tick < 3; tick++)
+        {
+            fixture.Client.ArmSingleHold();
+            var before = fixture.Client.DownloadedFileIds.Count;
+            var running = fixture.CreateService().RunTickAsync();
+            using var entered = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            await fixture.Client.CriticalSectionEntered.Task.WaitAsync(entered.Token);
+            using var blocked = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+            var scan = fixture.CreateService().RunScanNowAsync(blocked.Token);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => scan);
+            Assert.True(fixture.Client.MaxConcurrentCriticalSections <= 1);
+            fixture.Client.ReleaseCriticalSection();
+            var result = await running;
+            var importedThisTick = fixture.Client.DownloadedFileIds.Count - before;
+            batchDownloads.Add(importedThisTick);
+            Assert.InRange(importedThisTick, 1, maxFiles);
+            Assert.True(result.ImportedCount <= maxFiles);
+            if (tick < 2)
+                Assert.Null((await fixture.GetStateAsync()).InitialSnapshotCompletedAt);
+        }
+
+        Assert.Equal(maxFiles, batchDownloads[0]);
+        Assert.Equal(maxFiles, batchDownloads[1]);
+        Assert.Equal(maxFiles, batchDownloads[2]);
+        var state = await fixture.GetStateAsync();
+        Assert.NotNull(state.InitialSnapshotCompletedAt);
+        Assert.Equal("snapshot-cursor", state.PageToken);
+        Assert.Equal(maxFiles * 3, await fixture.CountMediaAssetsAsync());
+        Assert.Equal(maxFiles * 3, fixture.Client.DownloadedFileIds.Distinct().Count());
+
+        var treeCalls = fixture.Client.ListFolderTreeCalls;
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "after-snapshot", Files = [] });
+        await fixture.CreateService().RunTickAsync();
+        Assert.Equal(treeCalls, fixture.Client.ListFolderTreeCalls);
+        Assert.Equal(maxFiles * 3, await fixture.CountMediaAssetsAsync());
+    }
+
+    /// <summary>
+    /// N2: file snapshot hết MaxRetryAttempts không được tick thường nhập lại. Dòng failure còn LastError.
+    /// Quét ngay thử lại đúng file đó một lần, rồi nhập.
+    /// </summary>
+    [Fact]
+    public async Task RunTickAsync_SnapshotFailureAtMaxAttempts_StaysVisible_UntilScanNowRetries()
+    {
+        await using var fixture = await Fixture.CreateAsync(maxRetryAttempts: 2, maxFilesPerTick: 20);
+        await fixture.SetEnabledAsync(true, completeInitialSnapshot: false);
+        fixture.Client.StartToken = "after-exhausted";
+        fixture.Client.FailDownload("stuck-1", times: 2);
+        fixture.Client.FolderTree = new GoogleDriveFolderTree
+        {
+            Files = [File("stuck-1", "stuck.jpg"), File("ok-1", "ok.jpg")]
+        };
+
+        var first = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(1, first.ImportedCount);
+        var afterFirst = await fixture.GetFailureAsync("stuck-1");
+        Assert.NotNull(afterFirst);
+        Assert.Equal(1, afterFirst!.AttemptCount);
+        Assert.False(string.IsNullOrWhiteSpace(afterFirst.LastError));
+        Assert.Null((await fixture.GetStateAsync()).InitialSnapshotCompletedAt);
+
+        var second = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(0, second.ImportedCount);
+        var exhausted = await fixture.GetFailureAsync("stuck-1");
+        Assert.NotNull(exhausted);
+        Assert.Equal(2, exhausted!.AttemptCount);
+        Assert.NotNull((await fixture.GetStateAsync()).InitialSnapshotCompletedAt);
+
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "delta-after", Files = [] });
+        var ignored = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(0, ignored.ImportedCount);
+        Assert.NotNull(await fixture.GetFailureAsync("stuck-1"));
+        Assert.Equal(2, fixture.Client.DownloadedFileIds.Count(id => id == "stuck-1"));
+
+        var visible = await fixture.GetExhaustedFailuresAsync();
+        Assert.Contains(visible, x => x.GoogleDriveFileId == "stuck-1" && x.LastError != null);
+
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "scan-now", Files = [] });
+        var scanned = await fixture.CreateService().RunScanNowAsync();
+        Assert.Equal(1, scanned.ImportedCount);
+        Assert.Null(await fixture.GetFailureAsync("stuck-1"));
+        Assert.NotNull(await fixture.GetMediaAssetByGoogleDriveFileIdRawAsync("stuck-1"));
     }
 
     private static GoogleDriveFileInfo File(string id, string name, string? parent = null) => new()
@@ -1430,6 +1542,12 @@ public class GoogleDriveSyncServiceTests
             return await CreateRepository(db).GetRetryableFailuresAsync(Settings.MaxRetryAttempts, Settings.MaxFilesPerTick);
         }
 
+        public async Task<List<GoogleDriveImportFailureModel>> GetExhaustedFailuresAsync()
+        {
+            await using var db = new AppDbContext(DbOptions);
+            return await CreateRepository(db).GetExhaustedFailuresAsync(Settings.MaxRetryAttempts, Settings.MaxFilesPerTick);
+        }
+
         public async Task<GoogleDriveImportFailureModel?> GetFailureAsync(string fileId)
         {
             await using var db = new AppDbContext(DbOptions);
@@ -1686,17 +1804,53 @@ public class GoogleDriveSyncServiceTests
             return Task.FromResult(StartToken);
         }
 
-        public async Task<GoogleDriveChangesPage> ListChangesAsync(
-            string? pageToken, int maxResults, CancellationToken ct = default)
+        /// <summary>Khi set, lần vào critical section đầu của một đợt chờ đến khi được nhả.</summary>
+        public TaskCompletionSource? HoldCriticalSection { get; set; }
+        public TaskCompletionSource CriticalSectionEntered { get; private set; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _holdClaimsRemaining;
+
+        public void ReleaseCriticalSection()
+        {
+            var hold = HoldCriticalSection;
+            HoldCriticalSection = null;
+            _holdClaimsRemaining = 0;
+            hold?.TrySetResult();
+        }
+
+        public void ArmSingleHold()
+        {
+            HoldCriticalSection = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            CriticalSectionEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _holdClaimsRemaining = 1;
+        }
+
+        private async Task EnterCriticalSectionAsync(CancellationToken ct)
         {
             var active = Interlocked.Increment(ref _activeCriticalSections);
             lock (_counterLock)
                 MaxConcurrentCriticalSections = Math.Max(MaxConcurrentCriticalSections, active);
+            var hold = HoldCriticalSection;
+            if (hold is not null && Interlocked.Decrement(ref _holdClaimsRemaining) >= 0)
+            {
+                CriticalSectionEntered.TrySetResult();
+                await hold.Task.WaitAsync(ct);
+            }
+            else if (CriticalSectionDelayMs > 0)
+            {
+                await Task.Delay(CriticalSectionDelayMs, ct);
+            }
+        }
+
+        private void LeaveCriticalSection()
+            => Interlocked.Decrement(ref _activeCriticalSections);
+
+        public async Task<GoogleDriveChangesPage> ListChangesAsync(
+            string? pageToken, int maxResults, CancellationToken ct = default)
+        {
+            await EnterCriticalSectionAsync(ct);
             try
             {
-                if (CriticalSectionDelayMs > 0)
-                    await Task.Delay(CriticalSectionDelayMs, ct);
-
                 ListChangesCalls++;
                 MaxResultsSeen.Add(maxResults);
 
@@ -1730,31 +1884,47 @@ public class GoogleDriveSyncServiceTests
             }
             finally
             {
-                Interlocked.Decrement(ref _activeCriticalSections);
+                LeaveCriticalSection();
             }
         }
 
-        public Task<byte[]> DownloadFileAsync(string fileId, CancellationToken ct = default)
+        public async Task<byte[]> DownloadFileAsync(string fileId, CancellationToken ct = default)
         {
-            DownloadedFileIds.Add(fileId);
-            if (_downloadBehaviors.TryGetValue(fileId, out var queue) && queue.Count > 0)
-                return Task.FromResult(queue.Dequeue()());
-            return Task.FromResult(new byte[] { 1, 2, 3 });
-        }
-
-        public Task<GoogleDriveFolderTree> ListFolderTreeAsync(string rootFolderId, CancellationToken ct = default)
-        {
-            CallJournal.Add("ListFolderTree");
-            ListFolderTreeCalls++;
-            if (ListFolderTreeFailures > 0)
+            await EnterCriticalSectionAsync(ct);
+            try
             {
-                ListFolderTreeFailures--;
-                throw new IOException("simulated transient folder listing failure");
+                DownloadedFileIds.Add(fileId);
+                if (_downloadBehaviors.TryGetValue(fileId, out var queue) && queue.Count > 0)
+                    return queue.Dequeue()();
+                return new byte[] { 1, 2, 3 };
             }
+            finally
+            {
+                LeaveCriticalSection();
+            }
+        }
 
-            if (_startTokenCaptured && LateFile is not null)
-                _lateFileVisible = true;
-            return Task.FromResult(FolderTree);
+        public async Task<GoogleDriveFolderTree> ListFolderTreeAsync(string rootFolderId, CancellationToken ct = default)
+        {
+            await EnterCriticalSectionAsync(ct);
+            try
+            {
+                CallJournal.Add("ListFolderTree");
+                ListFolderTreeCalls++;
+                if (ListFolderTreeFailures > 0)
+                {
+                    ListFolderTreeFailures--;
+                    throw new IOException("simulated transient folder listing failure");
+                }
+
+                if (_startTokenCaptured && LateFile is not null)
+                    _lateFileVisible = true;
+                return FolderTree;
+            }
+            finally
+            {
+                LeaveCriticalSection();
+            }
         }
     }
 

@@ -17,7 +17,8 @@ public class GoogleDriveController(
     public async Task<IActionResult> GetPipelineState(CancellationToken ct)
     {
         var state = await repository.GetSyncStateAsync(ct);
-        return Ok(ApiResponse.Ok(ToPipelineStateResponse(state)));
+        var exhausted = await repository.GetExhaustedFailuresAsync(options.Value.MaxRetryAttempts, 20, ct);
+        return Ok(ApiResponse.Ok(ToPipelineStateResponse(state, exhausted)));
     }
 
     [HttpPost("pipeline-state")]
@@ -30,7 +31,7 @@ public class GoogleDriveController(
             request.Enabled,
             User.Identity?.Name ?? "unknown",
             ct);
-        return Ok(ApiResponse.Ok(ToPipelineStateResponse(state),
+        return Ok(ApiResponse.Ok(ToPipelineStateResponse(state, []),
             request.Enabled ? "Đã bật nhập file từ Google Drive" : "Đã dừng nhập file từ Google Drive"));
     }
 
@@ -43,7 +44,7 @@ public class GoogleDriveController(
     [Authorize(Roles = "Admin,ContentManager")]
     public async Task<IActionResult> ScanNow(CancellationToken ct)
     {
-        var result = await syncService.RunTickAsync(ct);
+        var result = await syncService.RunScanNowAsync(ct);
 
         if (!result.Enabled)
             return Ok(ApiResponse.Ok(
@@ -63,11 +64,20 @@ public class GoogleDriveController(
     }
 
     private static GoogleDrivePipelineStateResponse ToPipelineStateResponse(
-        GoogleDriveSyncStateModel state) => new()
+        GoogleDriveSyncStateModel state, IReadOnlyList<GoogleDriveImportFailureModel> exhausted) => new()
         {
             Enabled = state.IsEnabled,
             UpdatedAt = state.UpdatedAt,
-            UpdatedByUserName = state.UpdatedByUserName
+            UpdatedByUserName = state.UpdatedByUserName,
+            ExhaustedFailureCount = exhausted.Count,
+            ExhaustedFailures = exhausted.Select(x => new GoogleDriveExhaustedFailureResponse
+            {
+                GoogleDriveFileId = x.GoogleDriveFileId,
+                FileName = x.FileName,
+                AttemptCount = x.AttemptCount,
+                LastAttemptAt = x.LastAttemptAt,
+                LastError = x.LastError,
+            }).ToList(),
         };
 
     private GoogleDriveScanNowResponse ToScanNowResponse(GoogleDriveSyncResult result) => new()
@@ -90,6 +100,17 @@ public class GoogleDrivePipelineStateResponse
     public bool Enabled { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public string? UpdatedByUserName { get; set; }
+    public int ExhaustedFailureCount { get; set; }
+    public List<GoogleDriveExhaustedFailureResponse> ExhaustedFailures { get; set; } = [];
+}
+
+public class GoogleDriveExhaustedFailureResponse
+{
+    public string GoogleDriveFileId { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public int AttemptCount { get; set; }
+    public DateTime LastAttemptAt { get; set; }
+    public string? LastError { get; set; }
 }
 
 public class GoogleDriveScanNowResponse
