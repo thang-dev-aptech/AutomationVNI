@@ -21,6 +21,7 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
 
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
     private readonly DbContextOptions<AppDbContext> _options;
+    private readonly List<IDisposable> _disposables = new();
 
     public MediaLayoutStorageTimeoutTests()
     {
@@ -30,7 +31,11 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
         db.Database.EnsureCreated();
     }
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose()
+    {
+        foreach (var d in _disposables) d.Dispose();
+        _connection.Dispose();
+    }
 
     [Fact(Timeout = 5000)]
     public async Task AnalyzeLayoutAsync_StorageReadTimeout_ThrowsAndKeepsTags()
@@ -42,8 +47,15 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
         var task = service.AnalyzeLayoutAsync(id);
         await storage.OpenReadStarted.WaitAsync(TimeSpan.FromSeconds(2));
 
-        var exception = await Assert.ThrowsAsync<TimeoutException>(() => task);
-        Assert.Contains("storage", exception.Message, StringComparison.OrdinalIgnoreCase);
+        try
+        {
+            var exception = await Assert.ThrowsAsync<TimeoutException>(() => task);
+            Assert.Contains("storage", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            storage.Release();
+        }
 
         await using var verify = new AppDbContext(_options);
         var asset = await verify.MediaAssets.SingleAsync(x => x.Id == id);
@@ -62,11 +74,20 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
             ("last.png", null));
         var service = Create(storage, StorageTimeout);
 
-        var result = await service.AnalyzeLayoutFolderAsync(folderId);
+        BulkMediaAnalysisResult result;
+        try
+        {
+            result = await service.AnalyzeLayoutFolderAsync(folderId);
+        }
+        finally
+        {
+            storage.Release();
+        }
 
         Assert.Equal(2, result.Analyzed);
         Assert.Equal(1, result.Failed);
-        Assert.Single(result.Errors);
+        var error = Assert.Single(result.Errors);
+        Assert.StartsWith("hung.png", error, StringComparison.OrdinalIgnoreCase);
 
         await using var verify = new AppDbContext(_options);
         var assets = await verify.MediaAssets.OrderBy(x => x.FileName).ToListAsync();
@@ -79,19 +100,43 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
         {
             Assert.Contains("TopBottomSplit", asset.Tags ?? "");
             Assert.Contains("safeTextRegion", asset.Tags ?? "");
+            Assert.Contains("Square", asset.Tags ?? "");
+            Assert.Contains("Primary", asset.Tags ?? "");
             Assert.Equal("AI", asset.UpdatedBy);
         });
     }
 
-    [Fact]
-    public async Task AnalyzeLayoutFolderAsync_CallerCancellation_IsNotReportedAsStorageTimeoutAndStops()
+    [Fact(Timeout = 5000)]
+    public async Task AnalyzeLayoutAsync_CallerCancellation_IsNotReportedAsStorageTimeout()
     {
         var storage = new GatedAnalysisStorage("hung.png");
         var folderId = Guid.NewGuid();
-        await SeedAssetsAsync(folderId,
-            ("first.png", null),
-            ("hung.png", "old-tags"),
-            ("last.png", null));
+        var id = (await SeedAssetsAsync(folderId, ("hung.png", "old-tags")))[0];
+            
+        var service = Create(storage, TimeSpan.FromSeconds(10));
+        using var caller = new CancellationTokenSource();
+
+        var task = service.AnalyzeLayoutAsync(id, caller.Token);
+        await storage.OpenReadStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        caller.Cancel();
+
+        try
+        {
+            var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
+            Assert.IsNotType<TimeoutException>(exception);
+        }
+        finally
+        {
+            storage.Release();
+        }
+    }
+
+    [Fact(Timeout = 5000)]
+    public async Task AnalyzeLayoutFolderAsync_CallerCancellation_StopsAndDoesNotSwallow()
+    {
+        var storage = new GatedAnalysisStorage("hung.png");
+        var folderId = Guid.NewGuid();
+        await SeedAssetsAsync(folderId, ("hung.png", "old-tags"));
             
         var service = Create(storage, TimeSpan.FromSeconds(10));
         using var caller = new CancellationTokenSource();
@@ -100,10 +145,16 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
         await storage.OpenReadStarted.WaitAsync(TimeSpan.FromSeconds(2));
         caller.Cancel();
 
-        var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
-        Assert.IsNotType<TimeoutException>(exception);
+        try
+        {
+            var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
+            Assert.IsNotType<TimeoutException>(exception);
+        }
+        finally
+        {
+            storage.Release();
+        }
         
-        // Ensure bulk process did not swallow the exception
         await using var verify = new AppDbContext(_options);
         var hung = await verify.MediaAssets.SingleAsync(x => x.FileName == "hung.png");
         Assert.Equal("old-tags", hung.Tags);
@@ -112,9 +163,14 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
     private MediaIntelligenceService Create(IFileStorageService storage, TimeSpan timeout)
     {
         var handler = new ImmediateChatHandler(LayoutJson);
+        var client = new HttpClient(handler) { Timeout = MediaIntelligenceService.HttpClientTimeout };
+        var db = new AppDbContext(_options);
+        _disposables.Add(client);
+        _disposables.Add(db);
+
         var service = new MediaIntelligenceService(
-            new HttpClient(handler) { Timeout = MediaIntelligenceService.HttpClientTimeout },
-            new AppDbContext(_options),
+            client,
+            db,
             storage,
             AnalysisOptions.Create(),
             NullLogger<MediaIntelligenceService>.Instance)
@@ -160,6 +216,8 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
         private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task OpenReadStarted => _openReadStarted.Task;
+
+        public void Release() => _release.TrySetResult();
 
         public Task<FileSaveResult> SaveAsync(IFormFile file, string folder, CancellationToken ct = default)
             => throw new NotSupportedException();
