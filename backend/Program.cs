@@ -126,6 +126,7 @@ builder.Services.AddScoped<SocialConnectionRepository>();
 builder.Services.AddScoped<PageContextRepository>();
 builder.Services.AddScoped<Backend.Modules.PromptTemplate.PromptTemplateRepository>();
 builder.Services.AddScoped<PostRepository>();
+builder.Services.AddScoped<PostFromMediaService>();
 builder.Services.AddScoped<PostWorkflowService>();
 builder.Services.AddScoped<MediaAssetRepository>();
 builder.Services.AddScoped<Backend.Modules.MediaFolder.MediaFolderRepository>();

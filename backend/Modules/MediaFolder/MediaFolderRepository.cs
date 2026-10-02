@@ -1237,6 +1237,23 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
             throw new KeyNotFoundException("Page/Kênh không tồn tại.");
     }
 
+    /// <summary>
+    /// Mọi id phải nằm trong QueryWritableChannels. Id không tồn tại hoặc ngoài quyền cùng một
+    /// thông báo, không kèm tên/ID. Không đổi EnsureSocialChannelAccessAsync.
+    /// </summary>
+    public async Task EnsureChannelsWritableAsync(
+        IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
+    {
+        var distinct = ids.Distinct().ToList();
+        if (distinct.Count == 0)
+            throw new KeyNotFoundException("Page/Kênh không tồn tại.");
+
+        var allowedCount = await QueryWritableChannels()
+            .CountAsync(x => distinct.Contains(x.Id), ct);
+        if (allowedCount != distinct.Count)
+            throw new KeyNotFoundException("Page/Kênh không tồn tại.");
+    }
+
     /// <summary>GDRIVE-04: MediaFolder chuyên dụng nếu DedicatedFolderId đã được gán trên sync state.</summary>
     private async Task<MediaFolderModel?> TryGetDedicatedFolderAsync(CancellationToken ct)
     {
