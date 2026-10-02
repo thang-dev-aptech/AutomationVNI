@@ -15,6 +15,7 @@ const OPTIONS = [
     description:
       'AI viết nội dung, hệ thống tự chọn 1 (hoặc nhiều) ảnh Template có sẵn của page rồi ghép chữ đè lên. '
       + 'Page cần có thư mục Media gắn sẵn cho page này (Media > Thư mục).',
+    enabled: () => FEATURES.aiTemplate,
   },
   {
     value: 'media',

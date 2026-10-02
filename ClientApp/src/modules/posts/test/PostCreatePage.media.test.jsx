@@ -105,35 +105,31 @@ describe('PostCreatePage media flow', () => {
     generateCaption.mockResolvedValue({ caption: 'caption gợi ý' })
   })
 
-  it('hides "Sinh toàn bộ bằng AI" by default and preselects the first visible method', async () => {
+  it('shows full-AI and media, hides the template method by default, and preselects full-AI', async () => {
     const user = userEvent.setup()
     render(<MemoryRouter><PostCreatePage /></MemoryRouter>)
 
-    expect(FEATURES.aiFullImage).toBe(false)
-    expect(screen.queryByRole('button', { name: /Sinh toàn bộ bằng AI/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Dùng ảnh có sẵn trong Media/ })).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Tiếp tục' }))
-    expect(screen.getByText('AI sinh text, ghép vào ảnh mẫu')).toBeInTheDocument()
-  })
-
-  it('adds the media method and keeps the two existing AI flows when the AI image flag is on', async () => {
-    FEATURES.aiFullImage = true
-    try {
-    const user = userEvent.setup()
-    render(<MemoryRouter><PostCreatePage /></MemoryRouter>)
-
+    expect(FEATURES.aiFullImage).toBe(true)
+    expect(FEATURES.aiTemplate).toBe(false)
     expect(screen.getByRole('button', { name: /Sinh toàn bộ bằng AI/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Dùng ảnh có sẵn trong Media/ })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Tiếp tục' }))
     await user.click(screen.getByRole('button', { name: 'Gửi AI' }))
     expect(createAndGenerate).toHaveBeenCalledWith({ flow: 'fullai', idea: 'ý tưởng cũ' })
     expect(screen.queryByRole('button', { name: 'Chọn ảnh từ Media' })).not.toBeInTheDocument()
+  })
+
+  it('shows the template method again when its flag is on', () => {
+    FEATURES.aiTemplate = true
+    try {
+      render(<MemoryRouter><PostCreatePage /></MemoryRouter>)
+      expect(screen.getByRole('button', { name: /Sinh toàn bộ bằng AI/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Dùng ảnh có sẵn trong Media/ })).toBeInTheDocument()
     } finally {
-      FEATURES.aiFullImage = false
+      FEATURES.aiTemplate = false
     }
   })
 

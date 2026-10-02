@@ -29,27 +29,30 @@ vi.mock('../hooks/useBulk', () => ({
   useBulkImport: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
-describe('BulkCreatePage generation methods (user request 2026-10-02)', () => {
+const DEFAULTS = { ...FEATURES }
+
+describe('BulkCreatePage generation methods (user request 2026-10-03)', () => {
   afterEach(() => {
-    FEATURES.aiFullImage = false
+    Object.assign(FEATURES, DEFAULTS)
   })
 
-  it('keeps the page but hides "Sinh toàn bộ bằng AI" and never offers the Media option', () => {
-    render(<MemoryRouter><BulkCreatePage /></MemoryRouter>)
-
-    expect(screen.queryByRole('button', { name: /Sinh toàn bộ bằng AI/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Dùng ảnh có sẵn trong Media/ })).not.toBeInTheDocument()
-    // Template là mặc định nên ô số ảnh của Template hiện, checkbox RAG (chỉ của Full AI) không hiện.
-    expect(screen.getByLabelText(/Số ảnh mỗi bài/)).toBeInTheDocument()
-    expect(screen.queryByText(/tự tìm thêm 2–3 ảnh từ kho media/)).not.toBeInTheDocument()
-  })
-
-  it('shows "Sinh toàn bộ bằng AI" again when the flag is on, still without the Media option', () => {
-    FEATURES.aiFullImage = true
+  it('offers only "Sinh toàn bộ bằng AI" by default: no template, no Media option', () => {
     render(<MemoryRouter><BulkCreatePage /></MemoryRouter>)
 
     expect(screen.getByRole('button', { name: /Sinh toàn bộ bằng AI/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Dùng ảnh có sẵn trong Media/ })).not.toBeInTheDocument()
+    // Full AI là mặc định: checkbox RAG của Full AI hiện, ô số ảnh của Template không hiện.
+    expect(screen.getByText(/tự tìm thêm 2–3 ảnh từ kho media/)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Số ảnh mỗi bài/)).not.toBeInTheDocument()
+  })
+
+  it('shows the template method again when its flag is on, still without the Media option', () => {
+    FEATURES.aiTemplate = true
+    render(<MemoryRouter><BulkCreatePage /></MemoryRouter>)
+
+    expect(screen.getByRole('button', { name: /Sinh toàn bộ bằng AI/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Dùng ảnh có sẵn trong Media/ })).not.toBeInTheDocument()
   })
 })

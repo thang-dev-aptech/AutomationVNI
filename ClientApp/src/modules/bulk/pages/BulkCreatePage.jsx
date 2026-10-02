@@ -27,6 +27,7 @@ import {
 import './BulkCreatePage.css'
 
 // Trang hàng loạt chỉ hỗ trợ sinh bằng AI (Full AI / ghép ảnh mẫu), không có luồng ảnh có sẵn trong Media.
+// Nếu cả hai cờ AI đều tắt thì vẫn rơi về Full AI để form luôn có phương pháp hợp lệ.
 const BULK_FLOWS = ['fullai', 'template']
 
 const emptyRow = () => ({ idea: '' })
@@ -54,7 +55,7 @@ export default function BulkCreatePage() {
   const [rows, setRows] = useState([emptyRow(), emptyRow(), emptyRow()])
   const [channelIds, setChannelIds] = useState([])
   const [promptTemplateId, setPromptTemplateId] = useState('')
-  const [flow, setFlow] = useState(() => getVisibleGenerationFlows(BULK_FLOWS)[0]?.value ?? 'template')
+  const [flow, setFlow] = useState(() => getVisibleGenerationFlows(BULK_FLOWS)[0]?.value ?? 'fullai')
   const isTemplateFlow = flow === 'template'
   const [useMedia, setUseMedia] = useState(false)
   const [postTypeId, setPostTypeId] = useState('')

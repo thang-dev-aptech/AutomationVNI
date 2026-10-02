@@ -7,29 +7,53 @@ const DEFAULTS = { ...FEATURES }
 const BULK_FLOWS = ['fullai', 'template']
 const allPermissions = { canViewPosts: true, canViewComments: true, canCreatePost: true }
 
-describe('hiding "Sinh toàn bộ bằng AI" (user request 2026-10-02)', () => {
+describe('UI feature flags (user request 2026-10-03)', () => {
   afterEach(() => {
     Object.assign(FEATURES, DEFAULTS)
   })
 
-  it('ships with the full-AI method hidden', () => {
-    expect(DEFAULTS).toEqual({ aiFullImage: false })
+  it('ships with full-AI shown, template and "Tạo từ chứng chỉ" hidden', () => {
+    expect(DEFAULTS).toEqual({ aiFullImage: true, aiTemplate: false, chungChiBulk: false })
   })
 
-  it('create page: hides full-AI by default, shows it again when the flag is on', () => {
-    expect(getVisibleGenerationFlows().map((o) => o.value)).toEqual(['template', 'media'])
-    FEATURES.aiFullImage = true
+  it('create page methods follow the flags', () => {
+    expect(getVisibleGenerationFlows().map((o) => o.value)).toEqual(['fullai', 'media'])
+    FEATURES.aiTemplate = true
     expect(getVisibleGenerationFlows().map((o) => o.value)).toEqual(['fullai', 'template', 'media'])
   })
 
-  it('bulk page: only AI flows are offered (no media option), full-AI hidden by default', () => {
-    expect(getVisibleGenerationFlows(BULK_FLOWS).map((o) => o.value)).toEqual(['template'])
-    FEATURES.aiFullImage = true
+  it('bulk page offers only AI methods and follows the flags', () => {
+    expect(getVisibleGenerationFlows(BULK_FLOWS).map((o) => o.value)).toEqual(['fullai'])
+    FEATURES.aiTemplate = true
     expect(getVisibleGenerationFlows(BULK_FLOWS).map((o) => o.value)).toEqual(['fullai', 'template'])
   })
 
   it('keeps the bulk create page reachable from the dashboard', () => {
     const links = DASHBOARD_QUICK_LINKS.filter((l) => l.visible(allPermissions)).map((l) => l.to)
     expect(links).toContain('/bulk')
+  })
+})
+
+describe('"Tạo từ chứng chỉ" menu flag', () => {
+  afterEach(() => {
+    Object.assign(FEATURES, DEFAULTS)
+  })
+
+  async function visibleNavTargets() {
+    const { NAV_GROUPS } = await import('@/app/layouts/MainLayout')
+    return NAV_GROUPS.flatMap((g) => (g.children ?? [g]))
+      .filter((item) => item.to && item.visible?.(allPermissions))
+      .map((item) => item.to)
+  }
+
+  it('hides the sidebar item by default but keeps "Tạo hàng loạt"', async () => {
+    const targets = await visibleNavTargets()
+    expect(targets).not.toContain('/bulk-chung-chi')
+    expect(targets).toContain('/bulk')
+  })
+
+  it('shows the sidebar item again when the flag is on', async () => {
+    FEATURES.chungChiBulk = true
+    expect(await visibleNavTargets()).toContain('/bulk-chung-chi')
   })
 })

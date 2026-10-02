@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { usePermissions } from '@/shared/hooks/usePermissions'
+import { FEATURES } from '@/shared/config/features'
 import Topbar from './Topbar'
 import './MainLayout.css'
 
@@ -13,7 +14,7 @@ import './MainLayout.css'
  * Nhóm chứa trang đang mở sẽ TỰ BUNG (xem activeGroup) — vào thẳng một URL rồi mà menu đóng
  * kín thì người dùng không biết mình đang đứng ở đâu trong cây.
  */
-const NAV_GROUPS = [
+export const NAV_GROUPS = [
   {
     kind: 'item',
     to: '/dashboard',
@@ -72,7 +73,7 @@ const NAV_GROUPS = [
           <circle cx="16.5" cy="9" r="1.5" />
         </svg>
       ),
-      visible: (p) => p.canCreatePost,
+      visible: (p) => FEATURES.chungChiBulk && p.canCreatePost,
     },
       {
       to: '/calendar',
