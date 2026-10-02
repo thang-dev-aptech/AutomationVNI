@@ -13,7 +13,7 @@ import { usePageContextList } from '@/modules/page-contexts/hooks/usePageContext
 import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import PostCreateForm from '../components/PostCreateForm'
 import PostFromMediaForm from '../components/PostFromMediaForm'
-import GenerationFlowPicker from '../components/GenerationFlowPicker'
+import GenerationFlowPicker, { getVisibleGenerationFlows } from '../components/GenerationFlowPicker'
 import { useCreateAndGeneratePost } from '../hooks/usePosts'
 
 function flowLabel(flow) {
@@ -25,7 +25,7 @@ function flowLabel(flow) {
 export default function PostCreatePage() {
   const navigate = useNavigate()
   const [flow, setFlow] = useState(null)
-  const [pickerValue, setPickerValue] = useState('fullai')
+  const [pickerValue, setPickerValue] = useState(() => getVisibleGenerationFlows()[0]?.value ?? 'fullai')
   const createMutation = useCreateAndGeneratePost()
   const {
     data: channels = [],

@@ -1,9 +1,12 @@
+import { FEATURES } from '@/shared/config/features'
+
 const OPTIONS = [
   {
     value: 'fullai',
     icon: '🎨',
     title: 'Sinh toàn bộ bằng AI',
     description: 'AI viết nội dung và tự vẽ ảnh banner mới hoàn toàn (Full AI).',
+    enabled: () => FEATURES.aiFullImage,
   },
   {
     value: 'template',
@@ -21,10 +24,15 @@ const OPTIONS = [
   },
 ]
 
+/** Các phương pháp đang hiện — đọc cờ lúc gọi để test bật/tắt được. */
+export function getVisibleGenerationFlows() {
+  return OPTIONS.filter((opt) => !opt.enabled || opt.enabled())
+}
+
 export default function GenerationFlowPicker({ value, onChange }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-      {OPTIONS.map((opt) => {
+      {getVisibleGenerationFlows().map((opt) => {
         const selected = value === opt.value
         return (
           <button

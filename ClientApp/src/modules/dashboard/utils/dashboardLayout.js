@@ -1,4 +1,5 @@
 import { hasRole, ROLES } from '@/shared/auth/permissions'
+import { FEATURES } from '@/shared/config/features'
 
 function formatCount(value) {
   return value === null || value === undefined ? null : value
@@ -150,7 +151,7 @@ export const DASHBOARD_QUICK_LINKS = [
     to: '/bulk',
     label: 'Tạo hàng loạt',
     desc: 'Nhiều ý tưởng × nhiều page, import CSV',
-    visible: (p) => p.canViewPosts,
+    visible: (p) => FEATURES.bulkCreate && p.canViewPosts,
   },
   {
     to: '/comments',

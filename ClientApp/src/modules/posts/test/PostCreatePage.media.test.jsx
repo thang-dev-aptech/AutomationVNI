@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PostCreatePage from '../pages/PostCreatePage'
+import { FEATURES } from '@/shared/config/features'
 
 const navigate = vi.fn()
 const createFromMedia = vi.fn()
@@ -104,7 +105,22 @@ describe('PostCreatePage media flow', () => {
     generateCaption.mockResolvedValue({ caption: 'caption gợi ý' })
   })
 
-  it('adds the media method and keeps the two existing AI flows', async () => {
+  it('hides "Sinh toàn bộ bằng AI" by default and preselects the first visible method', async () => {
+    const user = userEvent.setup()
+    render(<MemoryRouter><PostCreatePage /></MemoryRouter>)
+
+    expect(FEATURES.aiFullImage).toBe(false)
+    expect(screen.queryByRole('button', { name: /Sinh toàn bộ bằng AI/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Dùng ảnh có sẵn trong Media/ })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Tiếp tục' }))
+    expect(screen.getByText('AI sinh text, ghép vào ảnh mẫu')).toBeInTheDocument()
+  })
+
+  it('adds the media method and keeps the two existing AI flows when the AI image flag is on', async () => {
+    FEATURES.aiFullImage = true
+    try {
     const user = userEvent.setup()
     render(<MemoryRouter><PostCreatePage /></MemoryRouter>)
 
@@ -116,6 +132,9 @@ describe('PostCreatePage media flow', () => {
     await user.click(screen.getByRole('button', { name: 'Gửi AI' }))
     expect(createAndGenerate).toHaveBeenCalledWith({ flow: 'fullai', idea: 'ý tưởng cũ' })
     expect(screen.queryByRole('button', { name: 'Chọn ảnh từ Media' })).not.toBeInTheDocument()
+    } finally {
+      FEATURES.aiFullImage = false
+    }
   })
 
   it('opens the picker, shows the cover thumbnail and prefills caption', async () => {
