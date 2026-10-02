@@ -22,6 +22,7 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
     private readonly DbContextOptions<AppDbContext> _options;
     private readonly List<IDisposable> _disposables = new();
+    private readonly List<GatedAnalysisStorage> _storages = new();
 
     public MediaLayoutStorageTimeoutTests()
     {
@@ -33,6 +34,8 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
 
     public void Dispose()
     {
+        // Lưới an toàn: mở mọi gate để không còn OpenReadAsync nào treo sau test, kể cả khi test fail sớm.
+        foreach (var storage in _storages) storage.Release();
         foreach (var d in _disposables) d.Dispose();
         _connection.Dispose();
     }
@@ -40,15 +43,15 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
     [Fact(Timeout = 5000)]
     public async Task AnalyzeLayoutAsync_StorageReadTimeout_ThrowsAndKeepsTags()
     {
-        var storage = new GatedAnalysisStorage("hung.png");
+        var storage = NewGatedStorage("hung.png");
         var id = (await SeedAssetsAsync(Guid.Empty, ("hung.png", "{\"existing\":\"tag\"}")))[0];
         var service = Create(storage, StorageTimeout);
 
         var task = service.AnalyzeLayoutAsync(id);
-        await storage.OpenReadStarted.WaitAsync(TimeSpan.FromSeconds(2));
 
         try
         {
+            await storage.OpenReadStarted.WaitAsync(TimeSpan.FromSeconds(2));
             var exception = await Assert.ThrowsAsync<TimeoutException>(() => task);
             Assert.Contains("storage", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
@@ -66,7 +69,7 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
     [Fact(Timeout = 5000)]
     public async Task AnalyzeLayoutFolderAsync_OneStorageReadTimeout_FailsOneAndContinues()
     {
-        var storage = new GatedAnalysisStorage("hung.png");
+        var storage = NewGatedStorage("hung.png");
         var folderId = Guid.NewGuid();
         var ids = await SeedAssetsAsync(folderId,
             ("first.png", null),
@@ -98,10 +101,17 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
 
         Assert.All(assets.Where(x => x.Id != ids[1]), asset =>
         {
-            Assert.Contains("TopBottomSplit", asset.Tags ?? "");
-            Assert.Contains("safeTextRegion", asset.Tags ?? "");
-            Assert.Contains("Square", asset.Tags ?? "");
-            Assert.Contains("Primary", asset.Tags ?? "");
+            Assert.NotNull(asset.Tags);
+            using var tags = JsonDocument.Parse(asset.Tags!);
+            var root = tags.RootElement;
+            Assert.Equal("TopBottomSplit", root.GetProperty("layoutStyle").GetString());
+            var region = root.GetProperty("safeTextRegion");
+            Assert.Equal(10, region.GetProperty("x").GetInt32());
+            Assert.Equal(20, region.GetProperty("y").GetInt32());
+            Assert.Equal(80, region.GetProperty("width").GetInt32());
+            Assert.Equal(30, region.GetProperty("height").GetInt32());
+            Assert.Equal("Square", root.GetProperty("logoShape").GetString());
+            Assert.Equal("Primary", root.GetProperty("colorSlot").GetString());
             Assert.Equal("AI", asset.UpdatedBy);
         });
     }
@@ -109,7 +119,7 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
     [Fact(Timeout = 5000)]
     public async Task AnalyzeLayoutAsync_CallerCancellation_IsNotReportedAsStorageTimeout()
     {
-        var storage = new GatedAnalysisStorage("hung.png");
+        var storage = NewGatedStorage("hung.png");
         var folderId = Guid.NewGuid();
         var id = (await SeedAssetsAsync(folderId, ("hung.png", "old-tags")))[0];
             
@@ -117,11 +127,11 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
         using var caller = new CancellationTokenSource();
 
         var task = service.AnalyzeLayoutAsync(id, caller.Token);
-        await storage.OpenReadStarted.WaitAsync(TimeSpan.FromSeconds(2));
-        caller.Cancel();
-
         try
         {
+            await storage.OpenReadStarted.WaitAsync(TimeSpan.FromSeconds(2));
+            caller.Cancel();
+
             var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
             Assert.IsNotType<TimeoutException>(exception);
         }
@@ -134,7 +144,7 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
     [Fact(Timeout = 5000)]
     public async Task AnalyzeLayoutFolderAsync_CallerCancellation_StopsAndDoesNotSwallow()
     {
-        var storage = new GatedAnalysisStorage("hung.png");
+        var storage = NewGatedStorage("hung.png");
         var folderId = Guid.NewGuid();
         await SeedAssetsAsync(folderId, ("hung.png", "old-tags"));
             
@@ -142,11 +152,11 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
         using var caller = new CancellationTokenSource();
 
         var task = service.AnalyzeLayoutFolderAsync(folderId, caller.Token);
-        await storage.OpenReadStarted.WaitAsync(TimeSpan.FromSeconds(2));
-        caller.Cancel();
-
         try
         {
+            await storage.OpenReadStarted.WaitAsync(TimeSpan.FromSeconds(2));
+            caller.Cancel();
+
             var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
             Assert.IsNotType<TimeoutException>(exception);
         }
@@ -158,6 +168,14 @@ public sealed class MediaLayoutStorageTimeoutTests : IDisposable
         await using var verify = new AppDbContext(_options);
         var hung = await verify.MediaAssets.SingleAsync(x => x.FileName == "hung.png");
         Assert.Equal("old-tags", hung.Tags);
+        Assert.Null(hung.UpdatedBy);
+    }
+
+    private GatedAnalysisStorage NewGatedStorage(string hangingFile)
+    {
+        var storage = new GatedAnalysisStorage(hangingFile);
+        _storages.Add(storage);
+        return storage;
     }
 
     private MediaIntelligenceService Create(IFileStorageService storage, TimeSpan timeout)
