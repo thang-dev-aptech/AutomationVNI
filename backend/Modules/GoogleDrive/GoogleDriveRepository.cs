@@ -52,6 +52,18 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
         await Context.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Đánh dấu đã import snapshot các file có sẵn. Không đổi PageToken — bản cài đã có cursor
+    /// phải giữ cursor để không mất delta sau đó.
+    /// </summary>
+    public async Task MarkInitialSnapshotCompletedAsync(CancellationToken ct = default)
+    {
+        var state = await Context.Set<GoogleDriveSyncStateModel>()
+            .SingleAsync(x => x.Id == GoogleDriveSyncStateModel.SingletonId, ct);
+        state.InitialSnapshotCompletedAt = DateTime.UtcNow;
+        await Context.SaveChangesAsync(ct);
+    }
+
     public async Task<GoogleDriveSyncStateModel> SetEnabledAsync(
         bool enabled, string userName, CancellationToken ct = default)
     {

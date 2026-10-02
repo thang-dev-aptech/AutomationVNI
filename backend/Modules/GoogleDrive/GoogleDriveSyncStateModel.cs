@@ -31,4 +31,11 @@ public class GoogleDriveSyncStateModel : BaseEntity
     /// không dựa duy nhất vào cột này.
     /// </summary>
     public DateTime? FullTreeReconciledAt { get; set; }
+
+    /// <summary>
+    /// Mốc đã import xong các file có sẵn trước con trỏ changes.list. Null không đồng nghĩa với
+    /// PageToken rỗng: bản cài đã poll bằng token mới (bỏ sót file cũ) vẫn có PageToken. Chỉ set sau
+    /// khi snapshot import thành công.
+    /// </summary>
+    public DateTime? InitialSnapshotCompletedAt { get; set; }
 }

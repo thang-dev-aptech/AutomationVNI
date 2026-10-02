@@ -67,17 +67,17 @@ public class GoogleDriveSyncService(
             }
         }
 
-        await RetryFailuresAsync(settings, dedicatedFolderId, ct);
+        var retriedCount = await RetryFailuresAsync(settings, dedicatedFolderId, ct);
 
         if (!client.IsConfigured())
         {
             var issue = client.DescribeConfigIssue();
             logger.LogWarning("GoogleDriveSyncService chưa cấu hình: {Issue}", issue);
-            return new GoogleDriveSyncResult(Enabled: true, Configured: false, ConfigIssue: issue, ImportedCount: 0);
+            return new GoogleDriveSyncResult(Enabled: true, Configured: false, ConfigIssue: issue, ImportedCount: retriedCount);
         }
 
-        var importedCount = await ImportNewFilesAsync(settings, state.PageToken, dedicatedFolderId, ct);
-        return new GoogleDriveSyncResult(Enabled: true, Configured: true, ConfigIssue: null, ImportedCount: importedCount);
+        var importedCount = await ImportNewFilesAsync(settings, state, dedicatedFolderId, ct);
+        return new GoogleDriveSyncResult(Enabled: true, Configured: true, ConfigIssue: null, ImportedCount: importedCount + retriedCount);
     }
 
     /// <summary>
@@ -142,11 +142,12 @@ public class GoogleDriveSyncService(
         await repository.MarkFullTreeReconciledAsync(ct);
     }
 
-    private async Task RetryFailuresAsync(
+    private async Task<int> RetryFailuresAsync(
         GoogleDriveOptions settings, Guid dedicatedFolderId, CancellationToken ct)
     {
         var failures = await repository.GetRetryableFailuresAsync(
             settings.MaxRetryAttempts, settings.MaxFilesPerTick, ct);
+        var importedCount = 0;
 
         foreach (var failure in failures)
         {
@@ -163,6 +164,7 @@ public class GoogleDriveSyncService(
                 };
                 await mediaAssets.CreateFromGoogleDriveAsync(data, file, dedicatedFolderId, ct);
                 await repository.DeleteFailureAsync(failure.GoogleDriveFileId, ct);
+                importedCount++;
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
@@ -172,18 +174,36 @@ public class GoogleDriveSyncService(
                     ex.Message, ct);
             }
         }
+
+        return importedCount;
     }
 
     private async Task<int> ImportNewFilesAsync(
-        GoogleDriveOptions settings, string? pageToken, Guid dedicatedFolderId, CancellationToken ct)
+        GoogleDriveOptions settings, GoogleDriveSyncStateModel state, Guid dedicatedFolderId, CancellationToken ct)
     {
         var fileStorage = fileStorageOptions.Value;
+        var pageToken = state.PageToken;
+        var importedExisting = 0;
 
-        var effectiveToken = string.IsNullOrWhiteSpace(pageToken)
-            ? await client.GetStartPageTokenAsync(ct)
-            : pageToken;
+        // changes.list với startPageToken mới không chứa file đã có trước con trỏ. Snapshot chỉ chạy
+        // một lần, kể cả bản cài đã có PageToken (lầ poll đầu cũ bỏ sót file). Cursor cũ được giữ.
+        if (!state.InitialSnapshotCompletedAt.HasValue)
+        {
+            var existing = await client.ListFolderTreeAsync(settings.FolderId, ct);
+            importedExisting = await ImportListedFilesAsync(existing.Files, fileStorage, ct);
 
-        var page = await client.ListChangesAsync(effectiveToken, settings.MaxFilesPerTick, ct);
+            if (string.IsNullOrWhiteSpace(pageToken))
+            {
+                var startToken = await client.GetStartPageTokenAsync(ct);
+                await repository.UpdateSyncStateAsync(startToken, importedExisting, ct);
+                await repository.MarkInitialSnapshotCompletedAsync(ct);
+                return importedExisting;
+            }
+
+            await repository.MarkInitialSnapshotCompletedAsync(ct);
+        }
+
+        var page = await client.ListChangesAsync(pageToken, settings.MaxFilesPerTick, ct);
 
         // GetKnownFolderMapAsync tự nâng cấp dòng KnownFolder legacy (MediaFolderId rỗng)
         // về dedicated root — file trong thư mục con GDRIVE-02 cũ không bị bỏ qua âm thầm.
@@ -191,9 +211,22 @@ public class GoogleDriveSyncService(
         await ReconcileFoldersFromChangesAsync(page.Folders, map, ct);
         await ProcessRemovedOrTrashedAsync(page.RemovedOrTrashedIds, map, ct);
 
+        var importedCount = await ImportListedFilesAsync(page.Files, fileStorage, ct);
+        var totalImported = importedExisting + importedCount;
+
+        await repository.UpdateSyncStateAsync(page.NextPageToken, totalImported, ct);
+        return totalImported;
+    }
+
+    private async Task<int> ImportListedFilesAsync(
+        List<GoogleDriveFileInfo> files,
+        FileStorageOptions fileStorage,
+        CancellationToken ct)
+    {
+        var map = await repository.GetKnownFolderMapAsync(ct);
         var importedCount = 0;
 
-        foreach (var file in page.Files)
+        foreach (var file in files)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -238,7 +271,6 @@ public class GoogleDriveSyncService(
             }
         }
 
-        await repository.UpdateSyncStateAsync(page.NextPageToken, importedCount, ct);
         return importedCount;
     }
 

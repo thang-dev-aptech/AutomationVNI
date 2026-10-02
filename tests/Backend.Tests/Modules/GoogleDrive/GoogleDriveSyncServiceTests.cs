@@ -87,6 +87,167 @@ public class GoogleDriveSyncServiceTests
     }
 
     [Fact]
+    public async Task RunTickAsync_FirstScanImportsExistingTree_ThenLaterScanUsesChanges()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true, completeInitialSnapshot: false);
+        fixture.Client.StartToken = "after-snapshot";
+        fixture.Client.FolderTree = new GoogleDriveFolderTree
+        {
+            Files =
+            [
+                new GoogleDriveFileInfo
+                {
+                    FileId = "old-1",
+                    Name = "old.jpg",
+                    MimeType = "image/jpeg",
+                    SizeBytes = 10,
+                    Parents = [Fixture.RootFolderId]
+                }
+            ]
+        };
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "delta-should-not-run",
+            Files =
+            [
+                new GoogleDriveFileInfo
+                {
+                    FileId = "delta-ignored",
+                    Name = "delta.jpg",
+                    MimeType = "image/jpeg",
+                    SizeBytes = 10,
+                    Parents = [Fixture.RootFolderId]
+                }
+            ]
+        });
+
+        var first = await fixture.CreateService().RunTickAsync();
+
+        Assert.Equal(1, first.ImportedCount);
+        Assert.Contains("old-1", fixture.Client.DownloadedFileIds);
+        Assert.DoesNotContain("delta-ignored", fixture.Client.DownloadedFileIds);
+        Assert.Equal(0, fixture.Client.ListChangesCalls);
+        var afterFirst = await fixture.GetStateAsync();
+        Assert.Equal("after-snapshot", afterFirst.PageToken);
+        Assert.NotNull(afterFirst.InitialSnapshotCompletedAt);
+
+        while (fixture.Client.Pages.Count > 0)
+            fixture.Client.Pages.Dequeue();
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "delta-2",
+            Files =
+            [
+                new GoogleDriveFileInfo
+                {
+                    FileId = "new-1",
+                    Name = "new.jpg",
+                    MimeType = "image/jpeg",
+                    SizeBytes = 10,
+                    Parents = [Fixture.RootFolderId]
+                }
+            ]
+        });
+        var second = await fixture.CreateService().RunTickAsync();
+
+        Assert.Equal(1, second.ImportedCount);
+        Assert.Contains("new-1", fixture.Client.DownloadedFileIds);
+        Assert.Equal(1, fixture.Client.ListChangesCalls);
+        Assert.Equal("delta-2", (await fixture.GetStateAsync()).PageToken);
+    }
+
+    [Fact]
+    public async Task RunTickAsync_ExistingCursorWithoutSnapshot_BackfillsTreeAndContinuesChanges()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true, completeInitialSnapshot: false);
+        await fixture.SetPageTokenAsync("legacy-cursor");
+        fixture.Client.StartToken = "must-not-replace-legacy";
+        fixture.Client.FolderTree = new GoogleDriveFolderTree
+        {
+            Files =
+            [
+                new GoogleDriveFileInfo
+                {
+                    FileId = "preexisting-1",
+                    Name = "old.jpg",
+                    MimeType = "image/jpeg",
+                    SizeBytes = 10,
+                    Parents = [Fixture.RootFolderId]
+                }
+            ]
+        };
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "legacy-next",
+            Files =
+            [
+                new GoogleDriveFileInfo
+                {
+                    FileId = "delta-1",
+                    Name = "delta.jpg",
+                    MimeType = "image/jpeg",
+                    SizeBytes = 10,
+                    Parents = [Fixture.RootFolderId]
+                }
+            ]
+        });
+
+        var result = await fixture.CreateService().RunTickAsync();
+
+        Assert.Equal(2, result.ImportedCount);
+        Assert.Contains("preexisting-1", fixture.Client.DownloadedFileIds);
+        Assert.Contains("delta-1", fixture.Client.DownloadedFileIds);
+        var state = await fixture.GetStateAsync();
+        Assert.Equal("legacy-next", state.PageToken);
+        Assert.NotEqual("must-not-replace-legacy", state.PageToken);
+        Assert.NotNull(state.InitialSnapshotCompletedAt);
+        Assert.Equal(2, state.LastImportedCount);
+
+        var treeCallsAfterBackfill = fixture.Client.ListFolderTreeCalls;
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "legacy-after", Files = [] });
+        await fixture.CreateService().RunTickAsync();
+        Assert.Equal(treeCallsAfterBackfill, fixture.Client.ListFolderTreeCalls);
+    }
+
+    [Fact]
+    public async Task RunTickAsync_SuccessfulRetryIsIncludedInImportedCount()
+    {
+        await using var fixture = await Fixture.CreateAsync(maxRetryAttempts: 5);
+        await fixture.SetEnabledAsync(true);
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "seed-token" });
+        await fixture.CreateService().RunTickAsync();
+
+        const string fileId = "retry-count";
+        fixture.Client.FailDownload(fileId, times: 1);
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "after-fail",
+            Files =
+            [
+                new GoogleDriveFileInfo
+                {
+                    FileId = fileId,
+                    Name = "retry.jpg",
+                    MimeType = "image/jpeg",
+                    SizeBytes = 10,
+                    Parents = [Fixture.RootFolderId]
+                }
+            ]
+        });
+        var failed = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(0, failed.ImportedCount);
+
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "after-retry", Files = [] });
+        var retried = await fixture.CreateService().RunTickAsync();
+
+        Assert.Equal(1, retried.ImportedCount);
+        Assert.Contains(fileId, fixture.Client.DownloadedFileIds);
+        Assert.Null(await fixture.GetFailureAsync(fileId));
+    }
+
+    [Fact]
     public async Task RunTickAsync_AdvancesPageTokenOnEmptyPage_AndSkipsAlreadyImportedFile()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -1083,10 +1244,32 @@ public class GoogleDriveSyncServiceTests
         public GoogleDriveSyncService CreateService() =>
             _services.CreateScope().ServiceProvider.GetRequiredService<GoogleDriveSyncService>();
 
-        public async Task SetEnabledAsync(bool enabled)
+        public async Task SetEnabledAsync(bool enabled, bool completeInitialSnapshot = true)
         {
             await using var db = new AppDbContext(DbOptions);
-            await CreateRepository(db).SetEnabledAsync(enabled, "test");
+            var repository = CreateRepository(db);
+            await repository.SetEnabledAsync(enabled, "test");
+            // Test delta giả định đã qua scan đầu. Không đánh dấu thì tick đầu import snapshot
+            // và bỏ qua trang changes.list đã enqueue.
+            if (enabled && completeInitialSnapshot)
+            {
+                var state = await db.Set<GoogleDriveSyncStateModel>()
+                    .SingleAsync(x => x.Id == GoogleDriveSyncStateModel.SingletonId);
+                state.InitialSnapshotCompletedAt = DateTime.UtcNow;
+                if (string.IsNullOrWhiteSpace(state.PageToken))
+                    state.PageToken = "already-tracking";
+                await db.SaveChangesAsync();
+            }
+        }
+
+        public async Task SetPageTokenAsync(string pageToken)
+        {
+            await using var db = new AppDbContext(DbOptions);
+            var state = await db.Set<GoogleDriveSyncStateModel>()
+                .SingleAsync(x => x.Id == GoogleDriveSyncStateModel.SingletonId);
+            state.PageToken = pageToken;
+            state.InitialSnapshotCompletedAt = null;
+            await db.SaveChangesAsync();
         }
 
         public async Task<GoogleDriveSyncStateModel> GetStateAsync()
