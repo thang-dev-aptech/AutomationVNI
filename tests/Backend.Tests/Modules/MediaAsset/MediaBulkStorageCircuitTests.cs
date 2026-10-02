@@ -79,6 +79,64 @@ public sealed class MediaBulkStorageCircuitTests : IDisposable
         Assert.Equal(3, result.Failed);
         Assert.Equal(2, result.Skipped);
         Assert.Equal(new[] { "a.png", "b.png", "c.png", "d.png" }, storage.Opened.ToArray());
+        Assert.Equal(result.Total, result.Analyzed + result.Failed + result.Skipped);
+        Assert.Contains(result.Errors, x => x.Contains("đã dừng sau 3 ảnh liên tiếp", StringComparison.Ordinal)
+            && x.Contains("còn 2 ảnh chưa xử lý", StringComparison.Ordinal));
+        Assert.Equal(1, result.Errors.Count(x => x.Contains("đã dừng sau", StringComparison.Ordinal)));
+    }
+
+    [Fact(Timeout = 8000)]
+    public async Task AnalyzeLayout_ConsecutiveAiTimeouts_DoNotTripCircuit()
+    {
+        var storage = Track(new SelectiveStorage(new HashSet<string>()));
+        var folder = Guid.NewGuid();
+        await SeedAsync(folder, "a.png", "b.png", "c.png", "d.png");
+        var service = Create(storage, new HangingAiHandler(), maxConsecutive: 3, imageTimeout: TimeSpan.FromMilliseconds(40));
+
+        var result = await service.AnalyzeLayoutFolderAsync(folder);
+
+        Assert.Equal(4, result.Total);
+        Assert.Equal(0, result.Analyzed);
+        Assert.Equal(4, result.Failed);
+        Assert.Equal(0, result.Skipped);
+        Assert.Equal(result.Total, result.Analyzed + result.Failed + result.Skipped);
+        Assert.Equal(4, storage.Opened.Count);
+        Assert.DoesNotContain(result.Errors, x => x.Contains("đã dừng sau", StringComparison.Ordinal));
+    }
+
+    [Fact(Timeout = 8000)]
+    public async Task AnalyzeAll_CallerCancellationDuringStorageHang_PropagatesAndStops()
+    {
+        var storage = Track(new SelectiveStorage(new HashSet<string>(["a.png"])));
+        await SeedAsync(Guid.NewGuid(), "a.png", "b.png", "c.png");
+        var service = Create(storage, ImmediateHandler(AnalysisJson), maxConsecutive: 3, storageTimeout: TimeSpan.FromSeconds(30));
+        using var caller = new CancellationTokenSource();
+
+        var task = service.AnalyzeAllAsync(force: true, caller.Token);
+        await storage.WaitUntilOpened("a.png");
+        caller.Cancel();
+
+        var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
+        Assert.IsNotType<TimeoutException>(exception);
+        Assert.Equal(new[] { "a.png" }, storage.Opened.ToArray());
+    }
+
+    [Fact(Timeout = 8000)]
+    public async Task AnalyzeLayout_CallerCancellationDuringStorageHang_PropagatesAndStops()
+    {
+        var storage = Track(new SelectiveStorage(new HashSet<string>(["a.png"])));
+        var folder = Guid.NewGuid();
+        await SeedAsync(folder, "a.png", "b.png", "c.png");
+        var service = Create(storage, ImmediateHandler(LayoutJson), maxConsecutive: 3, storageTimeout: TimeSpan.FromSeconds(30));
+        using var caller = new CancellationTokenSource();
+
+        var task = service.AnalyzeLayoutFolderAsync(folder, caller.Token);
+        await storage.WaitUntilOpened("a.png");
+        caller.Cancel();
+
+        var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
+        Assert.IsNotType<TimeoutException>(exception);
+        Assert.Equal(new[] { "a.png" }, storage.Opened.ToArray());
     }
 
     [Fact(Timeout = 8000)]
@@ -128,7 +186,8 @@ public sealed class MediaBulkStorageCircuitTests : IDisposable
         IFileStorageService storage,
         HttpMessageHandler handler,
         int maxConsecutive,
-        TimeSpan? imageTimeout = null)
+        TimeSpan? imageTimeout = null,
+        TimeSpan? storageTimeout = null)
     {
         var db = new AppDbContext(_options);
         _disposables.Add(db);
@@ -154,7 +213,7 @@ public sealed class MediaBulkStorageCircuitTests : IDisposable
         {
             Timeouts = MediaAiTimeouts.Default with
             {
-                StorageReadTimeout = StorageTimeout,
+                StorageReadTimeout = storageTimeout ?? StorageTimeout,
                 MaxConsecutiveStorageTimeouts = maxConsecutive,
                 ImageAnalysisRequest = imageTimeout ?? TimeSpan.FromSeconds(5),
                 LayoutAnalysisRequest = imageTimeout ?? TimeSpan.FromSeconds(5)
@@ -214,7 +273,22 @@ public sealed class MediaBulkStorageCircuitTests : IDisposable
     private sealed class SelectiveStorage(IReadOnlySet<string> hung) : IFileStorageService
     {
         private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly object _gate = new();
+        private readonly Dictionary<string, TaskCompletionSource> _opened = new(StringComparer.Ordinal);
         public List<string> Opened { get; } = [];
+
+        public Task WaitUntilOpened(string storageKey)
+        {
+            lock (_gate)
+            {
+                if (!_opened.TryGetValue(storageKey, out var opened))
+                {
+                    opened = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _opened[storageKey] = opened;
+                }
+                return opened.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            }
+        }
 
         public void Release() => _release.TrySetResult();
 
@@ -230,6 +304,16 @@ public sealed class MediaBulkStorageCircuitTests : IDisposable
         public async Task<Stream> OpenReadAsync(string storageKey, CancellationToken ct = default)
         {
             Opened.Add(storageKey);
+            TaskCompletionSource opened;
+            lock (_gate)
+            {
+                if (!_opened.TryGetValue(storageKey, out opened!))
+                {
+                    opened = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _opened[storageKey] = opened;
+                }
+            }
+            opened.TrySetResult();
             if (hung.Contains(storageKey))
                 await _release.Task;
             return new MemoryStream(InMemoryImageStorage.ImageBytes);
