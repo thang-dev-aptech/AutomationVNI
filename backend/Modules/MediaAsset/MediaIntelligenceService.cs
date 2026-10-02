@@ -137,9 +137,11 @@ public class MediaIntelligenceService(
             .ToListAsync(ct);
 
         var result = new BulkMediaAnalysisResult { Total = candidates.Count };
-        foreach (var candidate in candidates)
+        var consecutiveStorageTimeouts = 0;
+        for (var index = 0; index < candidates.Count; index++)
         {
             ct.ThrowIfCancellationRequested();
+            var candidate = candidates[index];
             if (!force && ParseKeywords(candidate.Tags).Count > 0)
             {
                 result.Skipped++;
@@ -150,13 +152,28 @@ public class MediaIntelligenceService(
             {
                 await AnalyzeAndSaveAsync(candidate.Id, ct);
                 result.Analyzed++;
+                consecutiveStorageTimeouts = 0;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 throw;
             }
+            catch (TimeoutException ex) when (ex.GetType() == typeof(TimeoutException))
+            {
+                consecutiveStorageTimeouts++;
+                result.Failed++;
+                if (result.Errors.Count < 20)
+                    result.Errors.Add($"{candidate.OriginalFileName ?? candidate.FileName}: {ex.Message}");
+                logger.LogWarning(ex, "Bulk AI tagging failed for media {MediaId}", candidate.Id);
+                if (consecutiveStorageTimeouts >= Timeouts.MaxConsecutiveStorageTimeouts)
+                {
+                    StopRemainingAfterStorageCircuit(result, candidates.Count - index - 1);
+                    break;
+                }
+            }
             catch (Exception ex)
             {
+                consecutiveStorageTimeouts = 0;
                 result.Failed++;
                 if (result.Errors.Count < 20)
                     result.Errors.Add($"{candidate.OriginalFileName ?? candidate.FileName}: {ex.Message}");
@@ -172,22 +189,41 @@ public class MediaIntelligenceService(
         var result = new BulkMediaAnalysisResult();
         var candidates = await db.MediaAssets
             .Where(x => !x.IsDeleted && x.FolderId == folderId && x.MimeType.StartsWith("image/"))
+            .OrderBy(x => x.CreatedAt)
             .ToListAsync(ct);
+        result.Total = candidates.Count;
 
-        foreach (var candidate in candidates)
+        var consecutiveStorageTimeouts = 0;
+        for (var index = 0; index < candidates.Count; index++)
         {
             ct.ThrowIfCancellationRequested();
+            var candidate = candidates[index];
             try
             {
                 await AnalyzeLayoutForAssetAsync(candidate, ct);
                 result.Analyzed++;
+                consecutiveStorageTimeouts = 0;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 throw;
             }
+            catch (TimeoutException ex) when (ex.GetType() == typeof(TimeoutException))
+            {
+                consecutiveStorageTimeouts++;
+                result.Failed++;
+                if (result.Errors.Count < 20)
+                    result.Errors.Add($"{candidate.OriginalFileName ?? candidate.FileName}: {ex.Message}");
+                logger.LogWarning(ex, "Layout analysis failed for media {MediaId}", candidate.Id);
+                if (consecutiveStorageTimeouts >= Timeouts.MaxConsecutiveStorageTimeouts)
+                {
+                    StopRemainingAfterStorageCircuit(result, candidates.Count - index - 1);
+                    break;
+                }
+            }
             catch (Exception ex)
             {
+                consecutiveStorageTimeouts = 0;
                 result.Failed++;
                 if (result.Errors.Count < 20)
                     result.Errors.Add($"{candidate.OriginalFileName ?? candidate.FileName}: {ex.Message}");
@@ -195,6 +231,14 @@ public class MediaIntelligenceService(
             }
         }
         return result;
+    }
+
+    private void StopRemainingAfterStorageCircuit(BulkMediaAnalysisResult result, int remaining)
+    {
+        result.Skipped += remaining;
+        var consecutive = Timeouts.MaxConsecutiveStorageTimeouts;
+        result.Errors.Add(
+            $"storage không phản hồi, đã dừng sau {consecutive} ảnh liên tiếp, còn {remaining} ảnh chưa xử lý");
     }
 
     /// <summary>Quét Vùng An Toàn cho MỘT ảnh (dùng ở popup Chi tiết / Xem ảnh) — khác bản
@@ -1087,6 +1131,9 @@ public sealed record MediaAiTimeouts(
 
     /// <summary>Tổng ngân sách thời gian cho toàn bộ các bước đọc một ảnh từ storage (exists, open, copy).</summary>
     public TimeSpan StorageReadTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Số lần storage timeout liên tiếp trước khi bulk dừng và bỏ qua ảnh còn lại.</summary>
+    public int MaxConsecutiveStorageTimeouts { get; init; } = 3;
 
     /// <summary>Giới hạn riêng cho bước lưu caption của single generate (nằm ngoài deadline).</summary>
     public TimeSpan CaptionSave { get; init; } = TimeSpan.FromSeconds(10);
