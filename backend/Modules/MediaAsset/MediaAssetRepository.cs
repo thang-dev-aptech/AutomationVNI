@@ -157,6 +157,15 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
             .FirstOrDefaultAsync(x => !x.IsDeleted && x.GoogleDriveFileId == fileId, ct);
 
     /// <summary>
+    /// Dedupe import Google Drive. Unique index GoogleDriveFileId tính cả dòng đã xoá mềm,
+    /// nên lookup này phải thấy cả hai. Không dùng cho thao tác chỉ nhằm vào asset đang sống.
+    /// </summary>
+    public async Task<MediaAssetModel?> FindByGoogleDriveFileIdIncludingDeletedAsync(
+        string fileId, CancellationToken ct = default)
+        => await Context.Set<MediaAssetModel>()
+            .FirstOrDefaultAsync(x => x.GoogleDriveFileId == fileId, ct);
+
+    /// <summary>
     /// Nhập file từ Google Drive. FolderId = MediaFolder đã map theo cha Drive thật
     /// (GDRIVE-05) — caller tra bản đồ ánh xạ rồi truyền vào.
     /// OriginalFileName lấy từ <paramref name="file"/>.Name (tên thật trên Drive).

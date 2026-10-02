@@ -64,6 +64,12 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
         await Context.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Bỏ entity lỗi còn kẹt trên DbContext chung sau một SaveChanges thất bại, để failure row
+    /// ghi được trên context sạch.
+    /// </summary>
+    public void DiscardPendingChanges() => Context.ChangeTracker.Clear();
+
     public async Task<GoogleDriveSyncStateModel> SetEnabledAsync(
         bool enabled, string userName, CancellationToken ct = default)
     {

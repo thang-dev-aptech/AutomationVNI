@@ -52,10 +52,10 @@ public class GoogleDriveSyncService(
         // GDRIVE-04/05: dedicated folder + dòng ánh xạ root Drive → MediaFolder.
         var dedicatedFolderId = await repository.GetOrCreateDedicatedFolderAsync(settings.FolderId, ct);
 
-        // GDRIVE-05 Task B: quét toàn cây MỘT LẦN (lazy, giống cách GetOrCreateDedicatedFolderAsync
-        // tự khởi tạo) — lỗi giữa chừng (mạng/timeout) không được làm hỏng cả tick, chỉ log và thử
-        // lại ở tick sau (FullTreeReconciledAt vẫn null cho tới khi thật sự xong).
-        if (client.IsConfigured())
+        // Snapshot lần đầu tự dựng map từ đúng cây vừa liệt kê. Không reconcile riêng trước đó:
+        // một lần ListFolderTree lỗi sẽ bị nuốt ở đây, snapshot chạy với map chỉ có root rồi vẫn
+        // đánh dấu xong, file trong thư mục con mất vĩnh viễn.
+        if (client.IsConfigured() && state.InitialSnapshotCompletedAt.HasValue)
         {
             try
             {
@@ -184,23 +184,51 @@ public class GoogleDriveSyncService(
         var fileStorage = fileStorageOptions.Value;
         var pageToken = state.PageToken;
         var importedExisting = 0;
+        string? capturedStartToken = null;
 
         // changes.list với startPageToken mới không chứa file đã có trước con trỏ. Snapshot chỉ chạy
-        // một lần, kể cả bản cài đã có PageToken (lầ poll đầu cũ bỏ sót file). Cursor cũ được giữ.
+        // một lần, kể cả bản cài đã có PageToken (lần poll đầu cũ bỏ sót file). Cursor cũ được giữ.
         if (!state.InitialSnapshotCompletedAt.HasValue)
         {
-            var existing = await client.ListFolderTreeAsync(settings.FolderId, ct);
-            importedExisting = await ImportListedFilesAsync(existing.Files, fileStorage, ct);
-
+            // Token lấy TRƯỚC lúc liệt kê. File tạo sau thời điểm này nằm trong changes của tick sau;
+            // replay idempotent theo GoogleDriveFileId nên không nhập trùng.
             if (string.IsNullOrWhiteSpace(pageToken))
+                capturedStartToken = await client.GetStartPageTokenAsync(ct);
+
+            GoogleDriveFolderTree tree;
+            try
             {
-                var startToken = await client.GetStartPageTokenAsync(ct);
-                await repository.UpdateSyncStateAsync(startToken, importedExisting, ct);
+                tree = await client.ListFolderTreeAsync(settings.FolderId, ct);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                logger.LogWarning(ex, "Snapshot Google Drive chưa liệt kê được cây — chưa đánh dấu xong");
+                return 0;
+            }
+
+            var unmapped = await ApplyFolderTreeAsync(tree, dedicatedFolderId, ct);
+            var listed = await ImportListedFilesAsync(
+                tree.Files, fileStorage, ct, folderIdsInTree(tree));
+            importedExisting = listed.Imported;
+            unmapped |= listed.SkippedUnmappedInTree;
+
+            if (unmapped)
+            {
+                logger.LogWarning(
+                    "Snapshot Google Drive còn file thuộc thư mục chưa map — chưa đánh dấu xong");
+                return importedExisting;
+            }
+
+            if (capturedStartToken is not null)
+            {
+                await repository.UpdateSyncStateAsync(capturedStartToken, importedExisting, ct);
                 await repository.MarkInitialSnapshotCompletedAsync(ct);
+                await repository.MarkFullTreeReconciledAsync(ct);
                 return importedExisting;
             }
 
             await repository.MarkInitialSnapshotCompletedAsync(ct);
+            await repository.MarkFullTreeReconciledAsync(ct);
         }
 
         var page = await client.ListChangesAsync(pageToken, settings.MaxFilesPerTick, ct);
@@ -211,20 +239,93 @@ public class GoogleDriveSyncService(
         await ReconcileFoldersFromChangesAsync(page.Folders, map, ct);
         await ProcessRemovedOrTrashedAsync(page.RemovedOrTrashedIds, map, ct);
 
-        var importedCount = await ImportListedFilesAsync(page.Files, fileStorage, ct);
+        var importedCount = (await ImportListedFilesAsync(page.Files, fileStorage, ct)).Imported;
         var totalImported = importedExisting + importedCount;
 
         await repository.UpdateSyncStateAsync(page.NextPageToken, totalImported, ct);
         return totalImported;
     }
 
-    private async Task<int> ImportListedFilesAsync(
+    private static HashSet<string> folderIdsInTree(GoogleDriveFolderTree tree)
+    {
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var folder in tree.Folders)
+        {
+            if (!string.IsNullOrWhiteSpace(folder.FolderId))
+                ids.Add(folder.FolderId);
+        }
+        return ids;
+    }
+
+    private sealed record ListedImport(int Imported, bool SkippedUnmappedInTree);
+
+    /// <summary>
+    /// Dựng MediaFolder + bản đồ từ đúng cây vừa liệt kê, rồi đặt lại FolderId cho asset đã import
+    /// nằm ở dedicated root. Không đánh dấu FullTreeReconciledAt — caller quyết định khi nào xong.
+    /// </summary>
+    private async Task<bool> ApplyFolderTreeAsync(
+        GoogleDriveFolderTree tree, Guid dedicatedFolderId, CancellationToken ct)
+    {
+        var map = await repository.GetKnownFolderMapAsync(ct);
+        var folderIdsInTree = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var folder in tree.Folders)
+        {
+            if (!string.IsNullOrWhiteSpace(folder.FolderId))
+                folderIdsInTree.Add(folder.FolderId);
+        }
+
+        var unmapped = false;
+        bool progressed;
+        do
+        {
+            progressed = false;
+            foreach (var folder in tree.Folders)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (string.IsNullOrWhiteSpace(folder.FolderId)) continue;
+                if (map.ContainsKey(folder.FolderId)) continue;
+
+                var parentId = folder.ParentIds.FirstOrDefault(p => !string.IsNullOrWhiteSpace(p));
+                if (parentId is null || !map.TryGetValue(parentId, out var parentKnown))
+                {
+                    if (parentId is not null && folderIdsInTree.Contains(parentId))
+                        unmapped = true;
+                    continue;
+                }
+
+                var created = await repository.CreateMappedChildFolderAsync(
+                    folder.FolderId, folder.Name, parentId, parentKnown.MediaFolderId, ct);
+                map[created.FolderId] = created;
+                progressed = true;
+            }
+        } while (progressed);
+
+        foreach (var file in tree.Files)
+        {
+            ct.ThrowIfCancellationRequested();
+            var parentId = file.Parents.FirstOrDefault(p => !string.IsNullOrWhiteSpace(p));
+            if (parentId is null || !map.TryGetValue(parentId, out var known)) continue;
+            if (known.MediaFolderId == dedicatedFolderId) continue;
+
+            var asset = await mediaAssets.FindByGoogleDriveFileIdAsync(file.FileId, ct);
+            if (asset is null) continue;
+            if (asset.FolderId == known.MediaFolderId) continue;
+
+            await mediaAssets.UpdateGoogleDrivePlacementAsync(asset, known.MediaFolderId, file.Name, ct);
+        }
+
+        return unmapped;
+    }
+
+    private async Task<ListedImport> ImportListedFilesAsync(
         List<GoogleDriveFileInfo> files,
         FileStorageOptions fileStorage,
-        CancellationToken ct)
+        CancellationToken ct,
+        IReadOnlySet<string>? folderIdsInTree = null)
     {
         var map = await repository.GetKnownFolderMapAsync(ct);
         var importedCount = 0;
+        var skippedUnmappedInTree = false;
 
         foreach (var file in files)
         {
@@ -232,11 +333,19 @@ public class GoogleDriveSyncService(
 
             var targetFolderId = ResolveMappedMediaFolderId(file.Parents, map);
             if (targetFolderId is null)
+            {
+                if (folderIdsInTree is not null && file.Parents.Any(parent => folderIdsInTree.Contains(parent)))
+                    skippedUnmappedInTree = true;
                 continue;
+            }
 
-            var existing = await mediaAssets.FindByGoogleDriveFileIdAsync(file.FileId, ct);
+            // Tôn trọng xoá mềm của người dùng: unique index tính cả dòng đã xoá, nhập lại sẽ
+            // chết cả tick. Không đếm là lỗi.
+            var existing = await mediaAssets.FindByGoogleDriveFileIdIncludingDeletedAsync(file.FileId, ct);
             if (existing is not null)
             {
+                if (existing.IsDeleted)
+                    continue;
                 await mediaAssets.UpdateGoogleDrivePlacementAsync(
                     existing, targetFolderId.Value, file.Name, ct);
                 continue;
@@ -266,12 +375,22 @@ public class GoogleDriveSyncService(
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 logger.LogWarning(ex, "Tải file Google Drive {FileId} thất bại", file.FileId);
-                await repository.UpsertFailureAsync(
-                    file.FileId, file.Name, file.MimeType, file.SizeBytes, ex.Message, ct);
+                // Entity lỗi vẫn được track trên DbContext chung. Không bỏ nó thì failure row
+                // (và mọi SaveChanges sau) ném lại, cả tick abort.
+                repository.DiscardPendingChanges();
+                try
+                {
+                    await repository.UpsertFailureAsync(
+                        file.FileId, file.Name, file.MimeType, file.SizeBytes, ex.Message, ct);
+                }
+                catch (Exception failureEx) when (!ct.IsCancellationRequested)
+                {
+                    logger.LogWarning(failureEx, "Không ghi được failure row cho file Google Drive {FileId}", file.FileId);
+                }
             }
         }
 
-        return importedCount;
+        return new ListedImport(importedCount, skippedUnmappedInTree);
     }
 
     /// <summary>

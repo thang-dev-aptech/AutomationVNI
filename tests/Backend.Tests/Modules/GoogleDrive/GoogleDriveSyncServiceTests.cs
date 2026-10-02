@@ -9,6 +9,7 @@ using Backend.Shared.Storage;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -246,6 +247,151 @@ public class GoogleDriveSyncServiceTests
         Assert.Contains(fileId, fixture.Client.DownloadedFileIds);
         Assert.Null(await fixture.GetFailureAsync(fileId));
     }
+
+    /// <summary>
+    /// B1: file Drive trùng asset đã xoá mềm không được nhập lại (unique index tính cả dòng đã xoá).
+    /// Tick không ném, file mới và delta vẫn được nhập, snapshot xong, cursor tiến.
+    /// </summary>
+    [Fact]
+    public async Task RunTickAsync_SoftDeletedDriveAsset_IsNotReimported_AndDoesNotAbortTick()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true, completeInitialSnapshot: false);
+        await fixture.SetPageTokenAsync("legacy-cursor");
+        await fixture.SeedSoftDeletedGoogleDriveAssetAsync("deleted-1", "gone.jpg");
+        fixture.Client.FolderTree = new GoogleDriveFolderTree
+        {
+            Files =
+            [
+                File("deleted-1", "gone.jpg"),
+                File("fresh-1", "fresh.jpg"),
+            ]
+        };
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "legacy-next",
+            Files = [File("delta-1", "delta.jpg")]
+        });
+
+        var result = await fixture.CreateService().RunTickAsync();
+
+        Assert.Equal(2, result.ImportedCount);
+        Assert.DoesNotContain("deleted-1", fixture.Client.DownloadedFileIds);
+        Assert.Contains("fresh-1", fixture.Client.DownloadedFileIds);
+        Assert.Contains("delta-1", fixture.Client.DownloadedFileIds);
+        Assert.Equal(1, await fixture.CountRowsByGoogleDriveFileIdAsync("deleted-1"));
+        var deleted = await fixture.GetMediaAssetByGoogleDriveFileIdRawAsync("deleted-1");
+        Assert.NotNull(deleted);
+        Assert.True(deleted!.IsDeleted);
+        var state = await fixture.GetStateAsync();
+        Assert.NotNull(state.InitialSnapshotCompletedAt);
+        Assert.Equal("legacy-next", state.PageToken);
+    }
+
+    /// <summary>
+    /// B1: lỗi lưu một file (entity lỗi vẫn được track) không được hủy tick. Failure row được ghi, file khác vẫn nhập.
+    /// </summary>
+    [Fact]
+    public async Task RunTickAsync_SaveFailureOnOneFile_DoesNotAbortTick()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true, completeInitialSnapshot: false);
+        await fixture.InstallUniquePoisonTriggerAsync();
+        fixture.Client.StartToken = "after-poison";
+        fixture.Client.FolderTree = new GoogleDriveFolderTree
+        {
+            Files =
+            [
+                File("poison-1", "poison.jpg"),
+                File("good-1", "good.jpg"),
+            ]
+        };
+
+        var result = await fixture.CreateService().RunTickAsync();
+
+        Assert.Equal(1, result.ImportedCount);
+        Assert.Contains("good-1", fixture.Client.DownloadedFileIds);
+        Assert.NotNull(await fixture.GetFailureAsync("poison-1"));
+        Assert.Equal(0, await fixture.CountRowsByGoogleDriveFileIdAsync("poison-1"));
+        var state = await fixture.GetStateAsync();
+        Assert.NotNull(state.InitialSnapshotCompletedAt);
+        Assert.Equal("after-poison", state.PageToken);
+    }
+
+    /// <summary>
+    /// B2: startPageToken lấy TRƯỚC khi liệt kê cây. File tải lên sau lúc liệt kê phải xuất hiện ở tick sau qua changes.list.
+    /// </summary>
+    [Fact]
+    public async Task RunTickAsync_FileUploadedDuringSnapshot_IsImportedOnNextChangesTick()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true, completeInitialSnapshot: false);
+        fixture.Client.StartToken = "after-snapshot";
+        fixture.Client.LateFile = File("late-1", "late.jpg");
+        fixture.Client.FolderTree = new GoogleDriveFolderTree { Files = [File("early-1", "early.jpg")] };
+
+        var first = await fixture.CreateService().RunTickAsync();
+
+        Assert.Equal(1, first.ImportedCount);
+        Assert.Contains("early-1", fixture.Client.DownloadedFileIds);
+        Assert.DoesNotContain("late-1", fixture.Client.DownloadedFileIds);
+        var journal = fixture.Client.CallJournal;
+        Assert.True(journal.IndexOf("GetStartPageToken") < journal.IndexOf("ListFolderTree"),
+            string.Join(",", journal));
+
+        var second = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(1, second.ImportedCount);
+        Assert.Contains("late-1", fixture.Client.DownloadedFileIds);
+    }
+
+    /// <summary>
+    /// B3: lỗi tạm của lần liệt kê cây đầu không được đánh dấu snapshot xong khi file trong thư mục con bị bỏ.
+    /// Tick sau nhập đúng vào thư mục con.
+    /// </summary>
+    [Fact]
+    public async Task RunTickAsync_TransientTreeFailure_DoesNotCompleteSnapshotUntilChildFileImports()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true, completeInitialSnapshot: false);
+        fixture.Client.StartToken = "after-child";
+        fixture.Client.ListFolderTreeFailures = 1;
+        fixture.Client.FolderTree = new GoogleDriveFolderTree
+        {
+            Folders =
+            [
+                new GoogleDriveFolderInfo
+                {
+                    FolderId = "child-1",
+                    Name = "Album",
+                    ParentIds = [Fixture.RootFolderId]
+                }
+            ],
+            Files = [File("nested-1", "nested.jpg", "child-1")]
+        };
+
+        var failed = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(0, failed.ImportedCount);
+        Assert.Null((await fixture.GetStateAsync()).InitialSnapshotCompletedAt);
+        Assert.Null(await fixture.GetMediaAssetByGoogleDriveFileIdRawAsync("nested-1"));
+
+        var recovered = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(1, recovered.ImportedCount);
+        var asset = await fixture.GetMediaAssetByGoogleDriveFileIdRawAsync("nested-1");
+        Assert.NotNull(asset);
+        Assert.False(asset!.IsDeleted);
+        var folder = await fixture.GetMediaFolderAsync(asset.FolderId!.Value);
+        Assert.Equal("Album", folder!.Name);
+        Assert.NotNull((await fixture.GetStateAsync()).InitialSnapshotCompletedAt);
+    }
+
+    private static GoogleDriveFileInfo File(string id, string name, string? parent = null) => new()
+    {
+        FileId = id,
+        Name = name,
+        MimeType = "image/jpeg",
+        SizeBytes = 10,
+        Parents = [parent ?? Fixture.RootFolderId]
+    };
 
     [Fact]
     public async Task RunTickAsync_AdvancesPageTokenOnEmptyPage_AndSkipsAlreadyImportedFile()
@@ -1403,6 +1549,12 @@ public class GoogleDriveSyncServiceTests
         }
 
         public async Task SeedOrphanGoogleDriveAssetAsync(string googleDriveFileId, string name)
+            => await SeedGoogleDriveAssetAsync(googleDriveFileId, name, isDeleted: false);
+
+        public Task SeedSoftDeletedGoogleDriveAssetAsync(string googleDriveFileId, string name)
+            => SeedGoogleDriveAssetAsync(googleDriveFileId, name, isDeleted: true);
+
+        private async Task SeedGoogleDriveAssetAsync(string googleDriveFileId, string name, bool isDeleted)
         {
             await using var db = new AppDbContext(DbOptions);
             db.MediaAssets.Add(new MediaAssetModel
@@ -1417,9 +1569,29 @@ public class GoogleDriveSyncServiceTests
                 FolderId = null,
                 GoogleDriveFileId = googleDriveFileId,
                 CreatedAt = DateTime.UtcNow,
-                IsDeleted = false,
+                IsDeleted = isDeleted,
             });
             await db.SaveChangesAsync();
+        }
+
+        public async Task<int> CountRowsByGoogleDriveFileIdAsync(string googleDriveFileId)
+        {
+            await using var db = new AppDbContext(DbOptions);
+            return await db.MediaAssets.CountAsync(x => x.GoogleDriveFileId == googleDriveFileId);
+        }
+
+        /// <summary>Mô phỏng UNIQUE constraint thất bại sau khi entity đã được track — đúng lỗi save một file.</summary>
+        public async Task InstallUniquePoisonTriggerAsync()
+        {
+            await using var db = new AppDbContext(DbOptions);
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TRIGGER fail_poison_insert
+                BEFORE INSERT ON MediaAssets
+                WHEN NEW.GoogleDriveFileId = 'poison-1'
+                BEGIN
+                    SELECT RAISE(ABORT, 'simulated save failure');
+                END;
+                """);
         }
 
         /// <summary>
@@ -1469,6 +1641,14 @@ public class GoogleDriveSyncServiceTests
         /// <summary>GDRIVE-05 Task B: cây trả về từ ListFolderTreeAsync (ReconcileFullTreeOnceAsync).</summary>
         public GoogleDriveFolderTree FolderTree { get; set; } = new();
         public int ListFolderTreeCalls { get; private set; }
+        /// <summary>Số lần ListFolderTreeAsync đầu ném IOException rồi mới trả cây.</summary>
+        public int ListFolderTreeFailures { get; set; }
+        /// <summary>File tải lên sau khi liệt kê cây. Chỉ xuất hiện ở changes.list nếu start token lấy TRƯỚC lúc liệt kê.</summary>
+        public GoogleDriveFileInfo? LateFile { get; set; }
+        public List<string> CallJournal { get; } = [];
+        private bool _startTokenCaptured;
+        private bool _lateFileVisible;
+        private bool _lateFileEmitted;
         /// <summary>
         /// Backlog "thô" — khi Pages rỗng, mỗi ListChangesAsync tự cắt tối đa maxResults phần tử
         /// từ đây, mô phỏng đúng cách Drive API thật giới hạn PageSize ở tầng SERVER, không phải
@@ -1499,7 +1679,12 @@ public class GoogleDriveSyncServiceTests
         public bool IsConfigured() => true;
         public string? DescribeConfigIssue() => null;
 
-        public Task<string> GetStartPageTokenAsync(CancellationToken ct = default) => Task.FromResult(StartToken);
+        public Task<string> GetStartPageTokenAsync(CancellationToken ct = default)
+        {
+            CallJournal.Add("GetStartPageToken");
+            _startTokenCaptured = true;
+            return Task.FromResult(StartToken);
+        }
 
         public async Task<GoogleDriveChangesPage> ListChangesAsync(
             string? pageToken, int maxResults, CancellationToken ct = default)
@@ -1517,6 +1702,16 @@ public class GoogleDriveSyncServiceTests
 
                 if (Pages.Count > 0)
                     return Pages.Dequeue();
+
+                if (LateFile is not null && _lateFileVisible && !_lateFileEmitted)
+                {
+                    _lateFileEmitted = true;
+                    return new GoogleDriveChangesPage
+                    {
+                        NextPageToken = "after-late",
+                        Files = [LateFile]
+                    };
+                }
 
                 if (Backlog.Count > 0)
                 {
@@ -1549,7 +1744,16 @@ public class GoogleDriveSyncServiceTests
 
         public Task<GoogleDriveFolderTree> ListFolderTreeAsync(string rootFolderId, CancellationToken ct = default)
         {
+            CallJournal.Add("ListFolderTree");
             ListFolderTreeCalls++;
+            if (ListFolderTreeFailures > 0)
+            {
+                ListFolderTreeFailures--;
+                throw new IOException("simulated transient folder listing failure");
+            }
+
+            if (_startTokenCaptured && LateFile is not null)
+                _lateFileVisible = true;
             return Task.FromResult(FolderTree);
         }
     }
