@@ -1,44 +1,25 @@
-.media-folder-picker {
+/* Hình thức thư mục/ảnh/breadcrumb/tìm kiếm lấy từ các component và CSS của màn Media;
+   file này chỉ lo bố cục riêng của popup. */
+.post-media-picker {
   display: flex;
   flex-direction: column;
+  gap: 16px;
+}
+
+.post-media-picker .media-browser-grid {
+  min-height: 0;
+  gap: 20px;
+}
+
+.post-media-picker .media-folder-cards-grid {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.post-media-picker .media-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
   gap: 12px;
 }
 
-.media-folder-picker-search input {
-  width: 100%;
-}
-
-.media-folder-picker-breadcrumb,
-.media-folder-picker-folders,
-.media-folder-picker-files {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.media-folder-picker-files {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-}
-
-.media-folder-picker-files button.is-selected {
-  outline: 2px solid var(--accent, #2563eb);
-}
-
-.media-folder-picker-count {
+.post-media-picker-count {
   margin-right: auto;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  border: 0;
 }

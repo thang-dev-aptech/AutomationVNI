@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import Modal from '@/shared/components/Modal'
-import { getErrorMessage } from '@/shared/utils/apiHelpers'
-import { isImageMime } from '../constants/mediaConstants'
 import { MEDIA_POST_SELECTION_LIMIT } from '../constants.js'
 import { useMediaAssets } from '../hooks/useMediaAssets'
 import { useLocalMediaBrowser } from '../hooks/useLocalMediaBrowser'
 import { useMediaSelection } from '../hooks/useMediaSelection'
+import MediaBrowserGrid from './MediaBrowserGrid'
+// Breadcrumb và ô tìm kiếm dùng đúng class của màn Media (media-folder-breadcrumb, media-folder-search).
+import '../pages/MediaPage.css'
 import './MediaFolderPickerModal.css'
 
 export default function MediaFolderPickerModal({
@@ -53,7 +54,7 @@ export default function MediaFolderPickerModal({
       onClose={onClose}
       footer={(
         <>
-          <span className="media-folder-picker-count">Đã chọn {selection.count} ảnh</span>
+          <span className="post-media-picker-count">Đã chọn {selection.count} ảnh</span>
           <button type="button" className="btn btn-ghost" onClick={onClose}>Huỷ</button>
           <button
             type="button"
@@ -66,9 +67,8 @@ export default function MediaFolderPickerModal({
         </>
       )}
     >
-      <div className="media-folder-picker">
-        <label className="media-folder-picker-search">
-          <span className="sr-only">Tìm ảnh</span>
+      <div className="post-media-picker">
+        <div className="media-folder-search">
           <input
             type="search"
             value={keyword}
@@ -76,52 +76,47 @@ export default function MediaFolderPickerModal({
             aria-label="Tìm ảnh"
             onChange={(event) => setKeyword(event.target.value)}
           />
-        </label>
+        </div>
 
-        <nav className="media-folder-picker-breadcrumb" aria-label="Đường dẫn thư mục">
-          <button type="button" onClick={browser.openRoot}>Tất cả</button>
-          {browser.ancestors.map((ancestor) => (
-            <button key={ancestor.id} type="button" onClick={() => browser.openBreadcrumb(ancestor)}>
-              {ancestor.name}
-            </button>
-          ))}
-        </nav>
-
-        {browser.isLoading && <p>Đang tải thư mục...</p>}
-        {browser.isError && <p>{getErrorMessage(browser.error, 'Không tải được thư mục')}</p>}
-        <ul className="media-folder-picker-folders">
-          {browser.items.map((folder) => (
-            <li key={folder.id}>
-              <button type="button" onClick={() => browser.openFolder(folder)}>
-                📁 {folder.name}
-                {folder.pageName ? ` · ${folder.pageName}` : ''}
+        <MediaBrowserGrid
+          folders={browser.items}
+          files={files}
+          isLoading={browser.isLoading || fileQuery.isLoading}
+          isError={browser.isError || fileQuery.isError}
+          error={browser.error ?? fileQuery.error}
+          onRetry={() => {
+            if (browser.isError) browser.refetch?.()
+            if (fileQuery.isError) fileQuery.refetch?.()
+          }}
+          isRootLevel={!inFolder}
+          onFolderClick={browser.openFolder}
+          selectable
+          isFileSelected={(asset) => selection.isSelected(asset.id)}
+          onFileSelect={selection.toggle}
+          folderBreadcrumb={(
+            <nav className="media-folder-breadcrumb" aria-label="Đường dẫn thư mục">
+              <button
+                type="button"
+                className={`media-folder-breadcrumb-item${!inFolder ? ' is-current' : ''}`}
+                onClick={browser.openRoot}
+              >
+                Thư mục gốc
               </button>
-            </li>
-          ))}
-        </ul>
-
-        {fileQuery.isLoading && <p>Đang tải ảnh...</p>}
-        {fileQuery.isError && <p>{getErrorMessage(fileQuery.error, 'Không tải được ảnh')}</p>}
-        <ul className="media-folder-picker-files">
-          {files.map((asset) => {
-            const image = isImageMime(asset.mimeType)
-            const picked = selection.isSelected(asset.id)
-            return (
-              <li key={asset.id}>
-                <button
-                  type="button"
-                  className={picked ? 'is-selected' : undefined}
-                  disabled={!image}
-                  aria-pressed={image ? picked : undefined}
-                  onClick={() => image && selection.toggle(asset)}
-                >
-                  <span>{asset.originalFileName || asset.fileName}</span>
-                  {!image && <span>Không phải ảnh</span>}
-                </button>
-              </li>
-            )
-          })}
-        </ul>
+              {browser.ancestors.map((ancestor, index) => (
+                <span key={ancestor.id}>
+                  <span className="media-folder-breadcrumb-sep">/</span>
+                  <button
+                    type="button"
+                    className={`media-folder-breadcrumb-item${index === browser.ancestors.length - 1 ? ' is-current' : ''}`}
+                    onClick={() => browser.openBreadcrumb(ancestor)}
+                  >
+                    {ancestor.name}
+                  </button>
+                </span>
+              ))}
+            </nav>
+          )}
+        />
       </div>
     </Modal>
   )

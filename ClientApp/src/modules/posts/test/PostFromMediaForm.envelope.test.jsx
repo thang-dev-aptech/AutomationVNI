@@ -87,12 +87,45 @@ describe('PostFromMediaForm API envelope', () => {
 
     await user.click(screen.getByRole('button', { name: 'Chọn ảnh từ Media' }))
     await user.click(screen.getByRole('button', { name: 'Xác nhận ảnh' }))
+    await user.click(screen.getByRole('button', { name: 'Chọn page' }))
     await user.click(screen.getByLabelText('Page Một'))
     await user.click(screen.getByRole('button', { name: 'Tạo bài' }))
     expect(navigate).toHaveBeenCalledWith('/posts/post-real')
 
+    await user.click(screen.getByRole('button', { name: 'Page Một' }))
     await user.click(screen.getByLabelText('Page Hai'))
     await user.click(screen.getByRole('button', { name: 'Tạo bài' }))
     expect(navigate).toHaveBeenCalledWith('/bulk/batch-real')
+  })
+
+  it('has no category field and sends no categoryId', async () => {
+    postApi.createFromMedia.mockResolvedValueOnce({ data: { success: true, data: { id: 'post-x' } } })
+    const user = userEvent.setup()
+    renderForm()
+
+    expect(screen.queryByLabelText('Danh mục')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Chọn ảnh từ Media' }))
+    await user.click(screen.getByRole('button', { name: 'Xác nhận ảnh' }))
+    await user.click(screen.getByRole('button', { name: 'Chọn page' }))
+    await user.click(screen.getByLabelText('Page Một'))
+    await user.click(screen.getByRole('button', { name: 'Tạo bài' }))
+
+    const payload = postApi.createFromMedia.mock.calls[0][0]
+    expect(payload).toEqual({ mediaIds: ['img-1'], socialChannelIds: ['page-1'], content: 'caption có sẵn' })
+    expect(payload).not.toHaveProperty('categoryId')
+  })
+
+  it('keeps create disabled until a page is chosen from the dropdown', async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await user.click(screen.getByRole('button', { name: 'Chọn ảnh từ Media' }))
+    await user.click(screen.getByRole('button', { name: 'Xác nhận ảnh' }))
+
+    expect(screen.getByRole('button', { name: 'Tạo bài' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Chọn page' }))
+    await user.click(screen.getByLabelText('Page Một'))
+    expect(screen.getByRole('button', { name: 'Tạo bài' })).toBeEnabled()
+    await user.click(screen.getByLabelText('Page Một'))
+    expect(screen.getByRole('button', { name: 'Tạo bài' })).toBeDisabled()
   })
 })

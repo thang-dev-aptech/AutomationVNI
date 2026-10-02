@@ -2,20 +2,20 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
+import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import MediaFolderPickerModal from '@/modules/media/components/MediaFolderPickerModal'
 import { useGenerateCaption } from '@/modules/media/hooks/useMediaAssets'
 import { useWritableMediaFolderPages } from '@/modules/media/hooks/useMediaFolders'
 import { useCreatePostFromMedia } from '../hooks/usePosts'
 import './PostFromMediaForm.css'
 
-export default function PostFromMediaForm({ categories = [] }) {
+export default function PostFromMediaForm() {
   const navigate = useNavigate()
   const [assets, setAssets] = useState([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [caption, setCaption] = useState('')
   const [captionEdited, setCaptionEdited] = useState(false)
   const [pageIds, setPageIds] = useState([])
-  const [categoryId, setCategoryId] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const pagesQuery = useWritableMediaFolderPages()
   const pages = pagesQuery.data ?? []
@@ -37,10 +37,6 @@ export default function PostFromMediaForm({ categories = [] }) {
 
   const removeAsset = (id) => {
     setAssets((prev) => prev.filter((asset) => asset.id !== id))
-  }
-
-  const togglePage = (id) => {
-    setPageIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]))
   }
 
   const suggestCaption = async () => {
@@ -66,7 +62,6 @@ export default function PostFromMediaForm({ categories = [] }) {
         mediaIds: assets.map((asset) => asset.id),
         socialChannelIds: pageIds,
         content: caption.trim(),
-        categoryId: categoryId || null,
       })
       toast.success('Đã tạo bài từ ảnh đã chọn')
       if (pageIds.length > 1) {
@@ -126,34 +121,23 @@ export default function PostFromMediaForm({ categories = [] }) {
         </p>
       </div>
 
-      <fieldset className="form-group">
-        <legend>Page</legend>
-        {pagesQuery.isLoading && <p>Đang tải Page...</p>}
-        {pagesQuery.isError && <p>{getErrorMessage(pagesQuery.error, 'Không tải được Page')}</p>}
-        {pages.map((page) => (
-          <label key={page.id}>
-            <input
-              type="checkbox"
-              checked={pageIds.includes(page.id)}
-              onChange={() => togglePage(page.id)}
-            />
-            {page.pageName}
-          </label>
-        ))}
-      </fieldset>
-
       <div className="form-group">
-        <label htmlFor="post-from-media-category">Danh mục</label>
-        <select
-          id="post-from-media-category"
-          value={categoryId}
-          onChange={(event) => setCategoryId(event.target.value)}
-        >
-          <option value="">Không chọn</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>{category.name}</option>
-          ))}
-        </select>
+        {/* Nguồn Page là writable-pages (đã lọc quyền), không phải /api/SocialChannel. */}
+        <ChannelMultiSelect
+          label="Kênh đăng *"
+          placeholder="Chọn page"
+          channels={pages}
+          value={pageIds}
+          onChange={setPageIds}
+          maxHeight={280}
+        />
+        {pagesQuery.isLoading && <p className="post-from-media-note">Đang tải Page...</p>}
+        {pagesQuery.isError && (
+          <p className="post-from-media-note">{getErrorMessage(pagesQuery.error, 'Không tải được Page')}</p>
+        )}
+        {!pagesQuery.isLoading && !pagesQuery.isError && pages.length === 0 && (
+          <p className="post-from-media-note">Chưa có Page nào bạn được phép đăng bài.</p>
+        )}
       </div>
 
       <button type="submit" className="btn btn-primary" disabled={!canSubmit}>

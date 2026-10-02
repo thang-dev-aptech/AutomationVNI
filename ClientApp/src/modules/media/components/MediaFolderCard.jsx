@@ -8,6 +8,8 @@ export default function MediaFolderCard({
   onDrop,
   onFileDrop,
   canManage = false,
+  // Popup chọn ảnh: thẻ thành nút (focus + Enter/Space) để duyệt bằng bàn phím.
+  interactive = false,
 }) {
   const displayName = folder.name
   const subtitle = folder.pageName || (folder.socialChannelId ? `Page ${folder.socialChannelId}` : '')
@@ -55,6 +57,14 @@ export default function MediaFolderCard({
   return (
     <article
       className="media-folder-card card"
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onKeyDown={interactive ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onClick?.(event)
+        }
+      } : undefined}
       onClick={onClick}
       onContextMenu={(event) => {
         event.preventDefault()

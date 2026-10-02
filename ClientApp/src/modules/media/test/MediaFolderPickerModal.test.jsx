@@ -102,7 +102,7 @@ describe('MediaFolderPickerModal', () => {
       folderId: ROOT,
     }))
 
-    await user.click(screen.getByRole('button', { name: 'Tất cả' }))
+    await user.click(screen.getByRole('button', { name: 'Thư mục gốc' }))
     await waitFor(() => expect(mediaFolderApi.pageRoots).toHaveBeenCalled())
     expect(currentLocation.pathname).toBe('/posts/create')
     expect(currentLocation.search).toBe('?keep=1')
@@ -123,7 +123,7 @@ describe('MediaFolderPickerModal', () => {
     expect(screen.getByRole('button', { name: /b.jpg/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText('Đã chọn 1 ảnh')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Tất cả' }))
+    await user.click(screen.getByRole('button', { name: 'Thư mục gốc' }))
     await user.click(await screen.findByRole('button', { name: /Page Campaign/ }))
     expect(await screen.findByRole('button', { name: /b.jpg/ })).toHaveAttribute('aria-pressed', 'true')
 
@@ -133,6 +133,55 @@ describe('MediaFolderPickerModal', () => {
 
     await user.click(screen.getByRole('button', { name: 'Dùng ảnh đã chọn' }))
     expect(onConfirm).toHaveBeenCalledWith([expect.objectContaining({ id: 'img-b' })])
+  })
+
+  it('renders with the Media screen components and shows the selected state', async () => {
+    mediaFolderApi.children.mockResolvedValue(paged([CHILD_FOLDER]))
+    const { user, container } = renderPicker()
+
+    await screen.findByRole('button', { name: /Page Campaign/ })
+    expect(document.querySelectorAll('.media-folder-card').length).toBe(2)
+    expect(document.querySelector('.media-browser-grid')).not.toBeNull()
+    expect(document.querySelector('.media-folder-search input[type="search"]')).not.toBeNull()
+    expect(document.querySelector('nav.media-folder-breadcrumb')).not.toBeNull()
+    expect(container).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: /Page Campaign/ }))
+    await screen.findByRole('button', { name: /a.jpg/ })
+    expect(document.querySelectorAll('.media-asset-card').length).toBe(3)
+
+    const card = (name) => screen.getByRole('button', { name }).closest('.media-asset-card')
+    expect(card(/a.jpg/)).not.toHaveClass('is-selected')
+    await user.click(screen.getByRole('button', { name: /a.jpg/ }))
+    expect(card(/a.jpg/)).toHaveClass('is-selected')
+    expect(card(/a.jpg/).querySelector('.media-asset-card-check')).not.toBeNull()
+    expect(card(/note.pdf/)).toHaveClass('is-disabled')
+
+    await user.click(screen.getByRole('button', { name: /b.jpg/ }))
+    expect(card(/a.jpg/)).not.toHaveClass('is-selected')
+    expect(card(/b.jpg/)).toHaveClass('is-selected')
+  })
+
+  it('shows no management actions or drag-and-drop in the picker', async () => {
+    const { user } = renderPicker()
+    await user.click(await screen.findByRole('button', { name: /Page Campaign/ }))
+    await screen.findByRole('button', { name: /a.jpg/ })
+
+    expect(screen.queryByRole('button', { name: 'Xóa' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Chi tiết' })).not.toBeInTheDocument()
+    document.querySelectorAll('.media-asset-card').forEach((cardEl) => {
+      expect(cardEl.getAttribute('draggable')).not.toBe('true')
+    })
+  })
+
+  it('opens a folder from the keyboard', async () => {
+    const { user } = renderPicker()
+    const folder = await screen.findByRole('button', { name: /Page Campaign/ })
+    folder.focus()
+    await user.keyboard('{Enter}')
+
+    expect(await screen.findByRole('button', { name: /Album/ })).toBeInTheDocument()
+    expect(mediaFolderApi.children).toHaveBeenCalledWith(expect.objectContaining({ parentFolderId: ROOT }))
   })
 
   it('filters images by the search keyword', async () => {

@@ -25,9 +25,3 @@
   color: var(--text-muted, #888);
   font-size: 0.85rem;
 }
-
-.post-from-media fieldset label {
-  display: flex;
-  gap: 8px;
-  margin-top: 6px;
-}

@@ -8,9 +8,15 @@ export default function MediaAssetCard({
   onDelete,
   onContextMenu,
   canManage = false,
+  // Chế độ chọn (popup chọn ảnh): bấm = chọn/bỏ chọn thay cho xem; ẩn Chi tiết/Xóa, không kéo-thả.
+  selectable = false,
+  selected = false,
+  onSelect,
 }) {
   const displayName = asset.originalFileName || asset.fileName
-  const showPreview = asset.publicUrl && isImageMime(asset.mimeType)
+  const isImage = isImageMime(asset.mimeType)
+  const showPreview = asset.publicUrl && isImage
+  const canDrag = canManage && !selectable
   const isTemplateReady = hasTemplateLayout(asset.tags)
 
   const handleDragStart = (event) => {
@@ -31,9 +37,14 @@ export default function MediaAssetCard({
 
   return (
     <article
-      className="media-asset-card card"
-      draggable={canManage}
-      onDragStart={canManage ? handleDragStart : undefined}
+      className={[
+        'media-asset-card card',
+        selectable && 'is-selectable',
+        selectable && selected && 'is-selected',
+        selectable && !isImage && 'is-disabled',
+      ].filter(Boolean).join(' ')}
+      draggable={canDrag}
+      onDragStart={canDrag ? handleDragStart : undefined}
       onContextMenu={(event) => {
         event.preventDefault()
         event.stopPropagation()
@@ -45,8 +56,13 @@ export default function MediaAssetCard({
       <button
         type="button"
         className="media-asset-card-preview"
-        onClick={() => onView(asset)}
-        title={canManage ? 'Ấn để xem ảnh · kéo để chuyển thư mục' : 'Ấn để xem ảnh'}
+        onClick={selectable ? () => isImage && onSelect?.(asset) : () => onView(asset)}
+        disabled={selectable && !isImage}
+        aria-pressed={selectable && isImage ? selected : undefined}
+        aria-label={selectable ? displayName : undefined}
+        title={selectable
+          ? (isImage ? 'Ấn để chọn ảnh' : 'Không phải ảnh nên không chọn được')
+          : (canManage ? 'Ấn để xem ảnh · kéo để chuyển thư mục' : 'Ấn để xem ảnh')}
       >
         {showPreview ? (
           <img src={asset.publicUrl} alt={asset.altText || displayName} loading="lazy" />
@@ -60,17 +76,25 @@ export default function MediaAssetCard({
             📐 Đã quét Layout
           </span>
         )}
+        {selectable && selected && <span className="media-asset-card-check" aria-hidden="true">✓</span>}
       </button>
-      <div className="media-asset-card-actions">
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => onDetails(asset)}>
-          Chi tiết
-        </button>
-        {canManage && (
-          <button type="button" className="btn btn-danger btn-sm" onClick={() => onDelete(asset)}>
-            Xóa
+      {selectable ? (
+        <div className="media-asset-card-actions">
+          <span className="media-asset-card-pick-name">{displayName}</span>
+          {!isImage && <span className="media-asset-card-pick-note">Không phải ảnh</span>}
+        </div>
+      ) : (
+        <div className="media-asset-card-actions">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onDetails(asset)}>
+            Chi tiết
           </button>
-        )}
-      </div>
+          {canManage && (
+            <button type="button" className="btn btn-danger btn-sm" onClick={() => onDelete(asset)}>
+              Xóa
+            </button>
+          )}
+        </div>
+      )}
     </article>
   )
 }

@@ -130,9 +130,14 @@ describe('PostCreatePage media flow', () => {
     expect(screen.getByRole('img', { name: 'a.jpg' })).toBeInTheDocument()
     expect(screen.getByText('Ảnh bìa')).toBeInTheDocument()
     expect(screen.getByLabelText('Caption')).toHaveValue('caption có sẵn')
+    // Page chọn bằng ChannelMultiSelect như luồng AI, nguồn là writable-pages (không phải SocialChannel).
+    await user.click(screen.getByRole('button', { name: 'Chọn page' }))
     expect(screen.getByLabelText('Page Một')).toBeInTheDocument()
     expect(screen.getByLabelText('Page Hai')).toBeInTheDocument()
     expect(screen.queryByLabelText('Kênh không dùng')).not.toBeInTheDocument()
+    expect(screen.queryByText('Kênh không dùng')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Danh mục')).not.toBeInTheDocument()
+    expect(screen.queryByText('Tin tức')).not.toBeInTheDocument()
   })
 
   it('leaves caption empty when the image has none and does not overwrite typed text', async () => {
@@ -181,8 +186,8 @@ describe('PostCreatePage media flow', () => {
 
     await user.click(screen.getByRole('button', { name: 'Chọn ảnh từ Media' }))
     await user.click(screen.getByRole('button', { name: 'Xác nhận ảnh trong popup' }))
+    await user.click(screen.getByRole('button', { name: 'Chọn page' }))
     await user.click(screen.getByLabelText('Page Một'))
-    await user.selectOptions(screen.getByLabelText('Danh mục'), 'cat-1')
     expect(submit).toBeEnabled()
 
     await user.click(submit)
@@ -190,11 +195,12 @@ describe('PostCreatePage media flow', () => {
       mediaIds: ['img-1'],
       socialChannelIds: [PAGE_1],
       content: 'caption có sẵn',
-      categoryId: 'cat-1',
     })
+    expect(createFromMedia.mock.calls[0][0]).not.toHaveProperty('categoryId')
     expect(navigate).toHaveBeenCalledWith('/posts/post-9')
 
     createFromMedia.mockResolvedValueOnce({ batchId: 'batch-7', created: 2, postIds: ['p1', 'p2'] })
+    await user.click(screen.getByRole('button', { name: 'Page Một' }))
     await user.click(screen.getByLabelText('Page Hai'))
     await user.click(submit)
     expect(createFromMedia).toHaveBeenLastCalledWith(expect.objectContaining({
