@@ -202,6 +202,14 @@ export function useCreateAndGeneratePost() {
   })
 }
 
+export function useCreatePostFromMedia() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload) => unwrapApiData(await postApi.createFromMedia(payload)),
+    onSuccess: () => invalidatePostQueries(queryClient),
+  })
+}
+
 /** Regenerate ở màn preview: gọi endpoint trả về post (đã process + set lại Approved). */
 function useRegenerate(apiFn) {
   const queryClient = useQueryClient()

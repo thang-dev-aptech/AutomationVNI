@@ -26,6 +26,7 @@ export const postApi = {
   queueImageRender: (id) => axiosInstance.post(`/api/Post/${id}/queue-image-render`),
 
   createAndGenerate: (payload) => axiosInstance.post('/api/Post/create-and-generate', payload),
+  createFromMedia: (payload) => axiosInstance.post('/api/Post/from-media', payload),
   regenerateText: (id) => axiosInstance.post(`/api/Post/${id}/regenerate-text`),
   regenerateImage: (id) => axiosInstance.post(`/api/Post/${id}/regenerate-image`),
   setReelsFrames: (id, mediaIds) => axiosInstance.put(`/api/Post/${id}/reels-frames`, { mediaIds }),
