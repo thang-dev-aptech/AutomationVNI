@@ -14,6 +14,7 @@ using Backend.Shared.SocialPublish;
 using Backend.Tests.Modules.MediaFolder;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -212,6 +213,13 @@ public class GenerationJobChungChiGalleryTests : IDisposable
         Assert.Empty(jobs);
     }
 
+    private static IServiceScopeFactory ScopesFor(AppDbContext db)
+    {
+        var services = new ServiceCollection();
+        services.AddScoped(_ => db);
+        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+    }
+
     private GenerationJobPipelineService CreatePipeline()
     {
         var folders = new MediaFolderRepository(_db, _userContext);
@@ -234,6 +242,7 @@ public class GenerationJobChungChiGalleryTests : IDisposable
             Options.Create(new ContentCrawlOptions()),
             Options.Create(new ReelsOptions()),
             _userContext,
+            new AiImageFolderService(ScopesFor(_db), NullLogger<AiImageFolderService>.Instance),
             NullLogger<GenerationJobPipelineService>.Instance);
     }
 

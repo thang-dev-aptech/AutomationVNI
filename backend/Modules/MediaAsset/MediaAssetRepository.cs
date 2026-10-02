@@ -1,5 +1,7 @@
+using Backend.Modules.MediaCaption;
 using System.Text.Json;
 using Backend.Data;
+using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaAsset.Enums;
 using Backend.Modules.MediaFolder;
 using Backend.Shared;
@@ -12,19 +14,22 @@ namespace Backend.Modules.MediaAsset;
 public class MediaAssetRepository : GenericRepository<MediaAssetModel>
 {
     private readonly MediaFolderRepository _folders;
+    private readonly IFileStorageService _fileStorage;
 
-    public MediaAssetRepository(AppDbContext context, IUserContext userContext)
-        : this(context, userContext, new MediaFolderRepository(context, userContext))
+    public MediaAssetRepository(AppDbContext context, IUserContext userContext, IFileStorageService fileStorage)
+        : this(context, userContext, new MediaFolderRepository(context, userContext), fileStorage)
     {
     }
 
     public MediaAssetRepository(
         AppDbContext context,
         IUserContext userContext,
-        MediaFolderRepository folders)
+        MediaFolderRepository folders,
+        IFileStorageService fileStorage)
         : base(context, userContext)
     {
         _folders = folders;
+        _fileStorage = fileStorage;
     }
 
     /// <summary>Chuẩn hoá danh sách loại bài → JSON array Guid (null nếu rỗng, để coi là "dùng chung").</summary>
@@ -99,12 +104,16 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
                 .Where(f => folderIds.Contains(f.Id))
                 .ToDictionaryAsync(f => f.Id, f => f.SocialChannelId, ct);
 
+        var queuedIds = await MediaCaptionJobService.GetQueuedAssetIdsAsync(
+            Context, paged.Items.Select(x => x.Id), ct);
+
         return new PagedResult<MediaAssetResponse>
         {
             Items = paged.Items
                 .Select(x => ToResponse(
                     x,
-                    x.FolderId.HasValue ? folderChannelMap.GetValueOrDefault(x.FolderId.Value) : null))
+                    x.FolderId.HasValue ? folderChannelMap.GetValueOrDefault(x.FolderId.Value) : null,
+                    queuedIds.Contains(x.Id)))
                 .ToList(),
             Total = paged.Total,
             Index = paged.Index,
@@ -135,6 +144,80 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         ApplyUpdateAudit(entity);
         await Context.SaveChangesAsync(ct);
         return entity;
+    }
+
+    /// <summary>Khoá idempotency cho nhập file Google Drive (GDRIVE-01) — chặn import trùng cùng một file.</summary>
+    public async Task<bool> ExistsByGoogleDriveFileIdAsync(string fileId, CancellationToken ct = default)
+        => await Context.Set<MediaAssetModel>()
+            .AnyAsync(x => !x.IsDeleted && x.GoogleDriveFileId == fileId, ct);
+
+    public async Task<MediaAssetModel?> FindByGoogleDriveFileIdAsync(
+        string fileId, CancellationToken ct = default)
+        => await Context.Set<MediaAssetModel>()
+            .FirstOrDefaultAsync(x => !x.IsDeleted && x.GoogleDriveFileId == fileId, ct);
+
+    /// <summary>
+    /// Dedupe import Google Drive. Unique index GoogleDriveFileId tính cả dòng đã xoá mềm,
+    /// nên lookup này phải thấy cả hai. Không dùng cho thao tác chỉ nhằm vào asset đang sống.
+    /// </summary>
+    public async Task<MediaAssetModel?> FindByGoogleDriveFileIdIncludingDeletedAsync(
+        string fileId, CancellationToken ct = default)
+        => await Context.Set<MediaAssetModel>()
+            .FirstOrDefaultAsync(x => x.GoogleDriveFileId == fileId, ct);
+
+    /// <summary>
+    /// Nhập file từ Google Drive. FolderId = MediaFolder đã map theo cha Drive thật
+    /// (GDRIVE-05) — caller tra bản đồ ánh xạ rồi truyền vào.
+    /// OriginalFileName lấy từ <paramref name="file"/>.Name (tên thật trên Drive).
+    /// </summary>
+    public async Task<MediaAssetModel> CreateFromGoogleDriveAsync(
+        byte[] data, GoogleDriveFileInfo file, Guid folderId, CancellationToken ct = default)
+    {
+        var extension = Path.GetExtension(file.Name);
+        var saveResult = await _fileStorage.SaveBytesAsync(data, "google-drive", extension, file.MimeType, ct);
+
+        var entity = new MediaAssetModel
+        {
+            FileName = Path.GetFileName(saveResult.StorageKey),
+            OriginalFileName = file.Name,
+            StoragePath = saveResult.StorageKey,
+            MimeType = saveResult.ContentType,
+            FileSize = saveResult.SizeBytes,
+            Source = MediaSource.GoogleDrive,
+            FolderId = folderId,
+            GoogleDriveFileId = file.FileId,
+        };
+
+        entity = await base.CreateAsync(entity, ct);
+        entity.PublicUrl = MediaAssetUrls.Preview(entity.Id);
+        ApplyUpdateAudit(entity);
+        await Context.SaveChangesAsync(ct);
+        return entity;
+    }
+
+    /// <summary>
+    /// GDRIVE-05: cập nhật FolderId / OriginalFileName khi file đã import đổi cha hoặc tên trên Drive.
+    /// </summary>
+    public async Task UpdateGoogleDrivePlacementAsync(
+        MediaAssetModel entity, Guid folderId, string originalFileName, CancellationToken ct = default)
+    {
+        var changed = false;
+        if (entity.FolderId != folderId)
+        {
+            entity.FolderId = folderId;
+            changed = true;
+        }
+
+        var name = originalFileName?.Trim() ?? string.Empty;
+        if (!string.Equals(entity.OriginalFileName, name, StringComparison.Ordinal))
+        {
+            entity.OriginalFileName = name;
+            changed = true;
+        }
+
+        if (!changed) return;
+        ApplyUpdateAudit(entity);
+        await Context.SaveChangesAsync(ct);
     }
 
     public async Task<MediaAssetModel> CreateAsync(
@@ -215,10 +298,15 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         var entity = await GetByIdAsync(id, ct);
         if (entity is null) return null;
 
+        // Khoá caption TRƯỚC khi áp bất kỳ field nào: cả request bị từ chối, không ghi nửa chừng.
+        if (request.Caption is not null && await IsCaptionQueuedAsync(id, ct))
+            throw new CaptionQueuedException();
+
         if (request.AltText is not null) entity.AltText = request.AltText.Trim();
         if (request.Description is not null) entity.Description = request.Description.Trim();
         if (request.Tags is not null) entity.Tags = request.Tags;
         if (request.PublicUrl is not null) entity.PublicUrl = request.PublicUrl.Trim();
+        if (request.Caption is not null) entity.Caption = request.Caption.Trim();
         if (request.CategoryId.HasValue) entity.CategoryId = request.CategoryId;
         if (request.CategoryIds is not null) entity.CategoryIds = SerializeCategoryIds(request.CategoryIds);
 
@@ -227,7 +315,11 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         return entity;
     }
 
-    public static MediaAssetResponse ToResponse(MediaAssetModel e, Guid? socialChannelId = null) => new()
+    public Task<bool> IsCaptionQueuedAsync(Guid id, CancellationToken ct = default)
+        => MediaCaptionJobService.IsAssetQueuedAsync(Context, id, ct);
+
+    public static MediaAssetResponse ToResponse(
+        MediaAssetModel e, Guid? socialChannelId = null, bool captionQueued = false) => new()
     {
         Id = e.Id,
         FileName = e.FileName,
@@ -246,6 +338,8 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
         Description = e.Description,
         Tags = e.Tags,
         Keywords = MediaIntelligenceService.ParseKeywords(e.Tags),
+        Caption = e.Caption,
+        CaptionQueued = captionQueued,
         Width = e.Width,
         Height = e.Height,
         CreatedAt = e.CreatedAt,

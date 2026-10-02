@@ -1,3 +1,4 @@
+using Backend.Modules.MediaCaption;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
@@ -5,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Backend.Data;
+using Backend.Modules.GoogleDrive;
 using Backend.Shared.Ai;
 using Backend.Shared.Storage;
 using Backend.Shared.Text;
@@ -69,7 +71,8 @@ public class MediaIntelligenceService(
     AppDbContext db,
     IFileStorageService storage,
     IOptions<AiProvidersOptions> options,
-    ILogger<MediaIntelligenceService> logger)
+    ILogger<MediaIntelligenceService> logger,
+    MediaAiTimeouts? configuredTimeouts = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -83,13 +86,32 @@ public class MediaIntelligenceService(
             ?? throw new KeyNotFoundException("Không tìm thấy media");
         if (!media.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("AI tagging hiện chỉ hỗ trợ file ảnh");
-        if (string.IsNullOrWhiteSpace(media.StoragePath) || !await storage.ExistsAsync(media.StoragePath, ct))
-            throw new ArgumentException("File ảnh không tồn tại trên storage");
 
-        await using var stream = await storage.OpenReadAsync(media.StoragePath, ct);
-        using var memory = new MemoryStream();
-        await stream.CopyToAsync(memory, ct);
-        var result = await AnalyzeImageAsync(memory.ToArray(), media.MimeType, ct);
+        using var readDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        readDeadline.CancelAfter(Timeouts.StorageReadTimeout);
+        var readToken = readDeadline.Token;
+
+        // Deadline đọc ảnh chỉ bao 3 bước đọc. Gọi AI và lưu nằm ngoài, để AI timeout không bị
+        // báo nhầm thành storage timeout khi readDeadline đã hết giờ từ trước.
+        byte[] imageBytes;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(media.StoragePath)
+                || !await AwaitStorageAsync(storage.ExistsAsync(media.StoragePath, readToken), readToken))
+                throw new ArgumentException("File ảnh không tồn tại trên storage");
+
+            await using var stream = await AwaitStorageAsync(
+                storage.OpenReadAsync(media.StoragePath, readToken), readToken);
+            using var memory = new MemoryStream();
+            await AwaitStorageAsync(stream.CopyToAsync(memory, readToken), readToken);
+            imageBytes = memory.ToArray();
+        }
+        catch (OperationCanceledException) when (readDeadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw StorageTimeout(Timeouts.StorageReadTimeout);
+        }
+
+        var result = await AnalyzeImageAsync(imageBytes, media.MimeType, ct);
 
         media.AltText = result.AltText;
         media.Description = result.Description;
@@ -115,9 +137,11 @@ public class MediaIntelligenceService(
             .ToListAsync(ct);
 
         var result = new BulkMediaAnalysisResult { Total = candidates.Count };
-        foreach (var candidate in candidates)
+        var consecutiveStorageTimeouts = 0;
+        for (var index = 0; index < candidates.Count; index++)
         {
             ct.ThrowIfCancellationRequested();
+            var candidate = candidates[index];
             if (!force && ParseKeywords(candidate.Tags).Count > 0)
             {
                 result.Skipped++;
@@ -128,13 +152,28 @@ public class MediaIntelligenceService(
             {
                 await AnalyzeAndSaveAsync(candidate.Id, ct);
                 result.Analyzed++;
+                consecutiveStorageTimeouts = 0;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 throw;
             }
+            catch (TimeoutException ex) when (ex.GetType() == typeof(TimeoutException))
+            {
+                consecutiveStorageTimeouts++;
+                result.Failed++;
+                if (result.Errors.Count < 20)
+                    result.Errors.Add($"{candidate.OriginalFileName ?? candidate.FileName}: {ex.Message}");
+                logger.LogWarning(ex, "Bulk AI tagging failed for media {MediaId}", candidate.Id);
+                if (consecutiveStorageTimeouts >= Timeouts.MaxConsecutiveStorageTimeouts)
+                {
+                    StopRemainingAfterStorageCircuit(result, candidates.Count - index - 1);
+                    break;
+                }
+            }
             catch (Exception ex)
             {
+                consecutiveStorageTimeouts = 0;
                 result.Failed++;
                 if (result.Errors.Count < 20)
                     result.Errors.Add($"{candidate.OriginalFileName ?? candidate.FileName}: {ex.Message}");
@@ -150,22 +189,41 @@ public class MediaIntelligenceService(
         var result = new BulkMediaAnalysisResult();
         var candidates = await db.MediaAssets
             .Where(x => !x.IsDeleted && x.FolderId == folderId && x.MimeType.StartsWith("image/"))
+            .OrderBy(x => x.CreatedAt)
             .ToListAsync(ct);
+        result.Total = candidates.Count;
 
-        foreach (var candidate in candidates)
+        var consecutiveStorageTimeouts = 0;
+        for (var index = 0; index < candidates.Count; index++)
         {
             ct.ThrowIfCancellationRequested();
+            var candidate = candidates[index];
             try
             {
                 await AnalyzeLayoutForAssetAsync(candidate, ct);
                 result.Analyzed++;
+                consecutiveStorageTimeouts = 0;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 throw;
             }
+            catch (TimeoutException ex) when (ex.GetType() == typeof(TimeoutException))
+            {
+                consecutiveStorageTimeouts++;
+                result.Failed++;
+                if (result.Errors.Count < 20)
+                    result.Errors.Add($"{candidate.OriginalFileName ?? candidate.FileName}: {ex.Message}");
+                logger.LogWarning(ex, "Layout analysis failed for media {MediaId}", candidate.Id);
+                if (consecutiveStorageTimeouts >= Timeouts.MaxConsecutiveStorageTimeouts)
+                {
+                    StopRemainingAfterStorageCircuit(result, candidates.Count - index - 1);
+                    break;
+                }
+            }
             catch (Exception ex)
             {
+                consecutiveStorageTimeouts = 0;
                 result.Failed++;
                 if (result.Errors.Count < 20)
                     result.Errors.Add($"{candidate.OriginalFileName ?? candidate.FileName}: {ex.Message}");
@@ -173,6 +231,14 @@ public class MediaIntelligenceService(
             }
         }
         return result;
+    }
+
+    private void StopRemainingAfterStorageCircuit(BulkMediaAnalysisResult result, int remaining)
+    {
+        result.Skipped += remaining;
+        var consecutive = Timeouts.MaxConsecutiveStorageTimeouts;
+        result.Errors.Add(
+            $"storage không phản hồi, đã dừng sau {consecutive} ảnh liên tiếp, còn {remaining} ảnh chưa xử lý");
     }
 
     /// <summary>Quét Vùng An Toàn cho MỘT ảnh (dùng ở popup Chi tiết / Xem ảnh) — khác bản
@@ -191,13 +257,27 @@ public class MediaIntelligenceService(
 
     private async Task AnalyzeLayoutForAssetAsync(MediaAssetModel asset, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(asset.StoragePath) || !await storage.ExistsAsync(asset.StoragePath, ct))
-            throw new InvalidOperationException("File ảnh không tồn tại");
+        using var readDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        readDeadline.CancelAfter(Timeouts.StorageReadTimeout);
+        var readToken = readDeadline.Token;
 
-        using var stream = await storage.OpenReadAsync(asset.StoragePath, ct);
-        using var memoryStream = new MemoryStream();
-        await stream.CopyToAsync(memoryStream, ct);
-        var imageBytes = memoryStream.ToArray();
+        byte[] imageBytes;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(asset.StoragePath)
+                || !await AwaitStorageAsync(storage.ExistsAsync(asset.StoragePath, readToken), readToken))
+                throw new InvalidOperationException("File ảnh không tồn tại");
+
+            await using var stream = await AwaitStorageAsync(
+                storage.OpenReadAsync(asset.StoragePath, readToken), readToken);
+            using var memoryStream = new MemoryStream();
+            await AwaitStorageAsync(stream.CopyToAsync(memoryStream, readToken), readToken);
+            imageBytes = memoryStream.ToArray();
+        }
+        catch (OperationCanceledException) when (readDeadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw StorageTimeout(Timeouts.StorageReadTimeout);
+        }
 
         var (providerKey, config, model) = ResolveConfig();
         
@@ -231,7 +311,7 @@ public class MediaIntelligenceService(
             temperature = 0.1
         };
 
-        var content = await CallChatCompletionsAsync(config, payload, ct);
+        var content = await CallChatCompletionsAsync(config, payload, Timeouts.LayoutAnalysisRequest, ct);
         var parsed = JsonSerializer.Deserialize<LayoutAnalysisPayload>(StripJsonFence(content), JsonOptions)
             ?? throw new InvalidOperationException("AI không trả metadata layout hợp lệ");
 
@@ -268,6 +348,210 @@ public class MediaIntelligenceService(
 
         db.MediaAssets.Update(asset);
         await db.SaveChangesAsync(ct);
+    }
+
+    public const int CaptionLineCount = 5;
+
+    /// <summary>Timeout của chính HttpClient (Program.cs): vô hạn, vì mỗi đường AI tự áp timeout
+    /// per-call riêng (<see cref="MediaAiTimeouts"/>) — đổi timeout caption không kéo theo đường khác.</summary>
+    public static readonly TimeSpan HttpClientTimeout = Timeout.InfiniteTimeSpan;
+
+    /// <summary>Số lần gọi AI tối đa cho một caption (lần đầu + 1 lần retry khi sai số dòng).</summary>
+    public const int CaptionMaxAttempts = 2;
+
+    public static TimeSpan CaptionAiRequestTimeout => TimeSpan.FromSeconds(120);
+    public static TimeSpan AnalysisAiRequestTimeout => TimeSpan.FromSeconds(120);
+
+    /// <summary>Deadline tổng của một lần sinh caption tay (mọi lần thử chạm timeout + đọc ảnh/DB).
+    /// Single generate bị huỷ đúng tại mốc này nên không bao giờ chạy lâu hơn; worker chờ theo nó.</summary>
+    public static TimeSpan CaptionMaxDuration =>
+        TimeSpan.FromSeconds(120 * CaptionMaxAttempts + 30);
+
+    /// <summary>Thời gian tối đa single generate giữ dấu in-flight (deadline + lưu); worker chờ theo nó.</summary>
+    public static TimeSpan CaptionMaxMarkerHold =>
+        CaptionMaxDuration + TimeSpan.FromSeconds(10);
+
+    /// <summary>Timeout cấu hình dùng chung với MediaCaptionWorker; direct test construction có thể override qua init.</summary>
+    public MediaAiTimeouts Timeouts { get; init; } = configuredTimeouts ?? MediaAiTimeouts.Default;
+
+    private const string CaptionSystemPrompt = """
+        Bạn viết caption Facebook tiếng Việt cho fanpage, dựa trên ảnh được gửi kèm.
+        Yêu cầu bắt buộc:
+        - Viết ĐÚNG 5 dòng, mỗi dòng là 1 câu ngắn, tự nhiên.
+        - Dòng 1 thu hút sự chú ý; dòng 5 là lời kêu gọi nhẹ nhàng (ví dụ mời bình luận, chia sẻ, nhắn tin).
+        - KHÔNG mở đầu bằng "Bức ảnh", "Hình ảnh cho thấy" hay mô tả kiểu chú thích ảnh.
+        - KHÔNG bịa tên người, số liệu, ngày tháng, địa điểm nếu không có trong ảnh hoặc tên thư mục.
+        - KHÔNG dùng hashtag, không đánh số, không gạch đầu dòng.
+        CHỈ trả về JSON hợp lệ, không markdown: {"lines":["dòng 1","dòng 2","dòng 3","dòng 4","dòng 5"]}
+        """;
+
+    /// <summary>
+    /// MEDIA-CAPTION-01: sinh caption Facebook đúng 5 dòng cho MỘT ảnh (đường người dùng bấm nút,
+    /// kể cả "Sinh lại" — ghi đè caption cũ của chính ảnh đó). Job nền (MEDIA-CAPTION-02) dùng cùng
+    /// logic sinh qua <see cref="GenerateCaptionIfEmptyAsync"/> nhưng chỉ ghi khi caption còn rỗng.
+    /// Ngữ cảnh duy nhất gửi kèm ảnh là tên MediaFolder chứa ảnh (bỏ qua dedicated root "Google Drive").
+    /// Chỉ ghi cột Caption — không đụng Tags/AltText/Description.
+    /// AI trả sai số dòng → gọi lại 1 lần; vẫn sai → ném lỗi, giữ nguyên caption cũ.
+    /// </summary>
+    public async Task<MediaAssetModel> GenerateCaptionAsync(Guid mediaId, CancellationToken ct = default)
+    {
+        // Đánh dấu TRƯỚC khi kiểm khoá để job tạo xen giữa luôn thấy dấu (worker chờ thay vì gọi AI lần hai).
+        using var inFlight = CaptionInFlight.Begin(mediaId);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(Timeouts.CaptionMaxDuration);
+        var token = deadline.Token;
+        try
+        {
+            if (await MediaCaptionJobService.IsAssetQueuedAsync(db, mediaId, token))
+                throw new CaptionQueuedException();
+
+            var media = await LoadCaptionTargetAsync(mediaId, track: true, token);
+            var caption = await GenerateCaptionTextAsync(media, token);
+            media.Caption = caption;
+            media.UpdatedAt = DateTime.UtcNow;
+
+            // Đã có caption hợp lệ: lưu ngoài deadline (deadline hết lúc này không được báo "caption không đổi"),
+            // nhưng vẫn có giới hạn riêng để dấu in-flight không bị giữ quá CaptionMaxMarkerHold.
+            using var saveLimit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            saveLimit.CancelAfter(Timeouts.CaptionSave);
+            try
+            {
+                await db.SaveChangesAsync(saveLimit.Token);
+            }
+            catch (OperationCanceledException) when (saveLimit.IsCancellationRequested && !ct.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    $"Lưu caption quá {Timeouts.CaptionSave.TotalSeconds:0} giây, không xác nhận được caption đã được lưu hay chưa — tải lại ảnh để kiểm tra");
+            }
+            return media;
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Sinh caption quá {Timeouts.CaptionMaxDuration.TotalSeconds:0} giây nên đã dừng, caption không đổi — thử lại sau");
+        }
+    }
+
+    /// <summary>
+    /// Đường worker: cùng logic sinh như <see cref="GenerateCaptionAsync"/> nhưng chỉ ghi nếu caption
+    /// vẫn đúng giá trị đã đọc lúc bắt đầu (compare-and-swap trong một câu UPDATE). Chỉ bắt đầu khi caption
+    /// đang "chưa có" theo định nghĩa duy nhất string.IsNullOrWhiteSpace (cùng định nghĩa với CreateAsync
+    /// và worker) — nên không phụ thuộc cách SQLite trim. Người dùng ghi caption trong lúc AI chạy →
+    /// 0 dòng bị ghi, trả false (caller đánh dấu Skipped). Trả true khi đã ghi.
+    /// </summary>
+    public async Task<bool> GenerateCaptionIfEmptyAsync(Guid mediaId, CancellationToken ct = default)
+    {
+        var media = await LoadCaptionTargetAsync(mediaId, track: false, ct);
+        if (!string.IsNullOrWhiteSpace(media.Caption)) return false;
+
+        var observed = media.Caption;
+        var caption = await GenerateCaptionTextAsync(media, ct);
+        var now = DateTime.UtcNow;
+        var written = await db.MediaAssets
+            .Where(x => x.Id == mediaId && !x.IsDeleted && x.Caption == observed)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Caption, caption)
+                .SetProperty(x => x.UpdatedAt, now), ct);
+        return written > 0;
+    }
+
+    private async Task<MediaAssetModel> LoadCaptionTargetAsync(Guid mediaId, bool track, CancellationToken ct)
+    {
+        var assets = track ? db.MediaAssets : db.MediaAssets.AsNoTracking();
+        var media = await assets.FirstOrDefaultAsync(x => x.Id == mediaId && !x.IsDeleted, ct)
+            ?? throw new KeyNotFoundException("Không tìm thấy media");
+        if (!media.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Sinh caption hiện chỉ hỗ trợ file ảnh");
+        if (string.IsNullOrWhiteSpace(media.StoragePath)
+            || !await AwaitStorageAsync(storage.ExistsAsync(media.StoragePath, ct), ct))
+            throw new ArgumentException("File ảnh không tồn tại trên storage");
+        return media;
+    }
+
+    private async Task<string> GenerateCaptionTextAsync(MediaAssetModel media, CancellationToken ct)
+    {
+        string? folderName = null;
+        if (media.FolderId is Guid folderId)
+        {
+            folderName = await db.MediaFolders.AsNoTracking()
+                .Where(f => f.Id == folderId && !f.IsDeleted)
+                .Select(f => f.Name)
+                .FirstOrDefaultAsync(ct);
+            if (string.IsNullOrWhiteSpace(folderName)
+                || string.Equals(folderName.Trim(), GoogleDriveRepository.DedicatedFolderName, StringComparison.Ordinal))
+                folderName = null;
+        }
+
+        await using var stream = await AwaitStorageAsync(storage.OpenReadAsync(media.StoragePath, ct), ct);
+        using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory, ct);
+
+        var (_, config, model) = ResolveConfig();
+        var dataUrl = $"data:{media.MimeType};base64,{Convert.ToBase64String(memory.ToArray())}";
+        var payload = new
+        {
+            model,
+            messages = new object[]
+            {
+                new { role = "system", content = CaptionSystemPrompt },
+                new
+                {
+                    role = "user",
+                    content = new object[]
+                    {
+                        new { type = "text", text = $"Tên thư mục: {folderName?.Trim() ?? "không có"}\nViết caption 5 dòng cho ảnh này." },
+                        new { type = "image_url", image_url = new { url = dataUrl } }
+                    }
+                }
+            },
+            max_tokens = 600,
+            temperature = 0.7
+        };
+
+        List<string>? lines = null;
+        for (var attempt = 0; attempt < CaptionMaxAttempts && lines is null; attempt++)
+        {
+            var content = await CallChatCompletionsAsync(config, payload, Timeouts.CaptionRequest, ct);
+            var parsed = ParseCaptionLines(content);
+            if (parsed.Count == CaptionLineCount)
+                lines = parsed;
+            else
+                logger.LogWarning("Caption AI trả {Count} dòng (lần {Attempt}) cho media {MediaId}",
+                    parsed.Count, attempt + 1, media.Id);
+        }
+        if (lines is null)
+            throw new InvalidOperationException("AI không trả đúng 5 dòng caption");
+
+        return string.Join("\n", lines);
+    }
+
+    /// <summary>Đọc {"lines":[...]} (hoặc fallback text nhiều dòng), trim, bỏ dòng rỗng và tiền tố
+    /// đánh số / gạch đầu dòng thật ("1. " "1) " "- " "• " "* ") — chỉ khi có khoảng trắng phía sau,
+    /// để không cắt số thật ("5.000", "10.10", "2026.").</summary>
+    private static List<string> ParseCaptionLines(string content)
+    {
+        var text = StripJsonFence(content);
+        IEnumerable<string?> raw;
+        try
+        {
+            using var doc = JsonDocument.Parse(text);
+            raw = doc.RootElement.ValueKind == JsonValueKind.Object
+                  && doc.RootElement.TryGetProperty("lines", out var arr)
+                  && arr.ValueKind == JsonValueKind.Array
+                ? arr.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString() : null).ToList()
+                : [];
+        }
+        catch (JsonException)
+        {
+            raw = text.Split('\n');
+        }
+
+        return raw
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .SelectMany(x => x!.Split('\n'))
+            .Select(x => Regex.Replace(x.Trim(), @"^(?:\d{1,2}[.)]\s+|[-•*–]\s+)", "").Trim())
+            .Where(x => x.Length > 0)
+            .ToList();
     }
 
     public async Task<MediaAnalysisResult> AnalyzeImageAsync(
@@ -308,7 +592,7 @@ public class MediaIntelligenceService(
             temperature = 0.1
         };
 
-        var content = await CallChatCompletionsAsync(config, payload, ct);
+        var content = await CallChatCompletionsAsync(config, payload, Timeouts.ImageAnalysisRequest, ct);
         var parsed = JsonSerializer.Deserialize<MediaAnalysisPayload>(StripJsonFence(content), JsonOptions)
             ?? throw new InvalidOperationException("AI không trả metadata ảnh hợp lệ");
         var keywords = NormalizeKeywords(parsed.Keywords);
@@ -462,7 +746,7 @@ public class MediaIntelligenceService(
         string content, List<ScoredMedia> scored, int take, CancellationToken ct)
     {
         using var quickCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        quickCts.CancelAfter(TimeSpan.FromSeconds(15));
+        quickCts.CancelAfter(Timeouts.MediaPickRequest);
         var token = quickCts.Token;
 
         var (_, config, model) = ResolveConfig();
@@ -500,7 +784,7 @@ public class MediaIntelligenceService(
             temperature = 0
         };
 
-        var responseText = await CallChatCompletionsAsync(config, payload, token);
+        var responseText = await CallChatCompletionsAsync(config, payload, Timeouts.MediaPickRequest, token);
         var parsed = JsonSerializer.Deserialize<PickPayload>(StripJsonFence(responseText), JsonOptions);
         var byIndex = indexed.ToDictionary(x => x.i, x => x.Media.Id);
 
@@ -527,7 +811,7 @@ public class MediaIntelligenceService(
         {
             // Recommend phải phản hồi nhanh — nếu provider chậm/chết thì cắt sớm và fallback lexical.
             using var quickCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            quickCts.CancelAfter(TimeSpan.FromSeconds(12));
+            quickCts.CancelAfter(Timeouts.QueryKeywordRequest);
             ct = quickCts.Token;
 
             var (_, config, model) = ResolveConfig();
@@ -552,7 +836,7 @@ public class MediaIntelligenceService(
                 temperature = 0.1
             };
 
-            var content = await CallChatCompletionsAsync(config, payload, ct);
+            var content = await CallChatCompletionsAsync(config, payload, Timeouts.QueryKeywordRequest, ct);
             var parsed = JsonSerializer.Deserialize<KeywordPayload>(StripJsonFence(content), JsonOptions);
             var keywords = NormalizeKeywords(parsed?.Keywords);
             if (keywords.Count >= 3) return keywords;
@@ -600,9 +884,76 @@ public class MediaIntelligenceService(
         return (provider, config, model);
     }
 
+    /// <summary>Chờ một lời gọi storage nhưng không quá <paramref name="ct"/>, kể cả khi implementation
+    /// bỏ qua token (không thêm timeout riêng — dùng cho đường caption, đã có deadline của caption).</summary>
+    // StorageReadTimeout chỉ bao phần chờ một Task storage đã được tạo. Với implementation
+    // đồng bộ như LocalFileStorageService, File.Exists/new FileStream có thể kẹt trước khi
+    // Task được trả về; timeout này không thể cắt syscall đang chạy.
+    private static Task<T> AwaitStorageAsync<T>(Task<T> task, CancellationToken ct)
+        => AwaitStorageAsync(task, ct, Timeout.InfiniteTimeSpan);
+
+    private static Task AwaitStorageAsync(Task task, CancellationToken ct)
+        => AwaitStorageAsync(task, ct, Timeout.InfiniteTimeSpan);
+
+    /// <summary>Như trên nhưng còn giới hạn bởi <paramref name="timeout"/>: quá hạn → TimeoutException;
+    /// caller tự huỷ → OperationCanceledException như cũ. Kết quả/lỗi về muộn được dispose/observe.</summary>
+    private static async Task AwaitStorageAsync(Task task, CancellationToken ct, TimeSpan timeout)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(timeout);
+        try
+        {
+            await task.WaitAsync(timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (!task.IsCompleted)
+        {
+            ReleaseLateStorageResult(task);
+            if (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                throw StorageTimeout(timeout);
+            throw;
+        }
+    }
+
+    // Timeout bắt đầu có hiệu lực sau khi lời gọi storage đã trả về Task. Nó không bao phủ
+    // syscall đồng bộ bị kẹt trước thời điểm đó; timeout của mount/OS phải xử lý trường hợp này.
+    private static async Task<T> AwaitStorageAsync<T>(Task<T> task, CancellationToken ct, TimeSpan timeout)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(timeout);
+        try
+        {
+            return await task.WaitAsync(timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (!task.IsCompleted)
+        {
+            ReleaseLateStorageResult(task);
+            if (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                throw StorageTimeout(timeout);
+            throw;
+        }
+    }
+
+    private static TimeoutException StorageTimeout(TimeSpan timeout)
+        => new($"Đọc ảnh từ storage quá {timeout.TotalSeconds:0.##} giây");
+
+    /// <summary>Lời gọi bị bỏ lại vẫn có thể hoàn tất sau: observe lỗi (vd. CopyToAsync gặp stream đã
+    /// dispose) để không thành UnobservedTaskException.</summary>
+    private static void ReleaseLateStorageResult(Task task)
+        => _ = task.ContinueWith(static t => _ = t.Exception,
+            CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+
+    /// <summary>Như trên, và dispose kết quả về muộn (stream) để không rò.</summary>
+    private static void ReleaseLateStorageResult<T>(Task<T> task)
+        => _ = task.ContinueWith(static t =>
+        {
+            if (t.IsCompletedSuccessfully) (t.Result as IDisposable)?.Dispose();
+            else _ = t.Exception;
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+
     private async Task<string> CallChatCompletionsAsync(
         AiProviderConfig config,
         object payload,
+        TimeSpan timeout,
         CancellationToken ct)
     {
         var path = config.ChatCompletionsPath.StartsWith('/')
@@ -615,8 +966,27 @@ public class MediaIntelligenceService(
         request.Content = new StringContent(
             JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
 
-        using var response = await httpClient.SendAsync(request, ct);
-        var body = await response.Content.ReadAsStringAsync(ct);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(timeout);
+        HttpResponseMessage response;
+        string body;
+        try
+        {
+            response = await httpClient.SendAsync(request, timeoutCts.Token);
+        }
+        catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw PerCallTimeout(timeout, ex);
+        }
+        using var ownedResponse = response;
+        try
+        {
+            body = await response.Content.ReadAsStringAsync(timeoutCts.Token);
+        }
+        catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw PerCallTimeout(timeout, ex);
+        }
         if (!response.IsSuccessStatusCode)
         {
             logger.LogWarning(
@@ -625,16 +995,40 @@ public class MediaIntelligenceService(
             throw new InvalidOperationException($"AI phân tích media lỗi HTTP {(int)response.StatusCode}");
         }
 
-        using var doc = JsonDocument.Parse(body);
-        var content = doc.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString();
+        string? content;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            content = doc.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString();
+        }
+        catch (Exception ex) when (
+            ex is JsonException
+            or KeyNotFoundException
+            or InvalidOperationException
+            or IndexOutOfRangeException)
+        {
+            // F3/F4: thiếu choices / body không phải JSON / choices rỗng → không để KeyNotFound
+            // lộ thành 404 "không tìm thấy media", cũng không để JsonException thành 500.
+            logger.LogWarning(
+                "Media AI chat completions returned malformed body: {Body}",
+                body.Length <= 400 ? body : body[..400]);
+            throw new InvalidOperationException("AI trả phản hồi không hợp lệ", ex);
+        }
+
         if (string.IsNullOrWhiteSpace(content))
             throw new InvalidOperationException("AI không trả nội dung phân tích");
         return content;
     }
+
+    /// <summary>Cùng dạng lỗi HttpClient.Timeout ném trước đây (TaskCanceledException bọc TimeoutException)
+    /// để mọi chỗ bắt lỗi giữ nguyên hành vi; caller tự huỷ thì không đi qua đây.</summary>
+    private static TaskCanceledException PerCallTimeout(TimeSpan timeout, Exception inner)
+        => new($"AI không phản hồi trong {timeout.TotalSeconds:0} giây",
+            new TimeoutException($"AI request timed out after {timeout.TotalSeconds:0}s", inner));
 
     private static string BuildTagsJson(string? originalTags, MediaAnalysisResult result)
         => JsonSerializer.Serialize(new
@@ -705,4 +1099,57 @@ public class MediaIntelligenceService(
     {
         public List<string>? Keywords { get; set; }
     }
+}
+
+/// <summary>Timeout per-call riêng cho từng đường AI của <see cref="MediaIntelligenceService"/>.</summary>
+public sealed record MediaAiTimeouts(
+    TimeSpan CaptionRequest,
+    TimeSpan LayoutAnalysisRequest,
+    TimeSpan ImageAnalysisRequest,
+    TimeSpan MediaPickRequest,
+    TimeSpan QueryKeywordRequest,
+    TimeSpan CaptionPreparationAllowance)
+{
+    public static readonly MediaAiTimeouts Default = new(
+        CaptionRequest: TimeSpan.FromSeconds(120),
+        LayoutAnalysisRequest: TimeSpan.FromSeconds(120),
+        ImageAnalysisRequest: TimeSpan.FromSeconds(120),
+        MediaPickRequest: TimeSpan.FromSeconds(15),
+        QueryKeywordRequest: TimeSpan.FromSeconds(12),
+        CaptionPreparationAllowance: TimeSpan.FromSeconds(30));
+
+    public TimeSpan AnalysisRequest { get; init; } = TimeSpan.FromSeconds(120);
+
+    public MediaAiTimeouts(
+        TimeSpan CaptionRequest,
+        TimeSpan AnalysisRequest,
+        TimeSpan CaptionPreparationAllowance)
+        : this(
+            CaptionRequest,
+            AnalysisRequest,
+            AnalysisRequest,
+            TimeSpan.FromSeconds(15),
+            TimeSpan.FromSeconds(12),
+            CaptionPreparationAllowance)
+    {
+    }
+
+    /// <summary>
+    /// Tổng ngân sách thời gian cho toàn bộ các bước đọc một ảnh từ storage (exists, open, copy).
+    /// Chỉ áp dụng sau khi mỗi lời gọi storage đã trả Task; không cắt được syscall đồng bộ bị kẹt.
+    /// </summary>
+    public TimeSpan StorageReadTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Số lần storage timeout liên tiếp trước khi bulk dừng và bỏ qua ảnh còn lại.</summary>
+    public int MaxConsecutiveStorageTimeouts { get; init; } = 3;
+
+    /// <summary>Giới hạn riêng cho bước lưu caption của single generate (nằm ngoài deadline).</summary>
+    public TimeSpan CaptionSave { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>Deadline tổng của một lần sinh caption tay.</summary>
+    public TimeSpan CaptionMaxDuration =>
+        CaptionRequest * MediaIntelligenceService.CaptionMaxAttempts + CaptionPreparationAllowance;
+
+    /// <summary>Thời gian tối đa single generate giữ dấu in-flight: deadline chuẩn bị + gọi AI, rồi bước lưu.</summary>
+    public TimeSpan CaptionMaxMarkerHold => CaptionMaxDuration + CaptionSave;
 }

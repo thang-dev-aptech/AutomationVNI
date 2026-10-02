@@ -373,3 +373,69 @@
   top: 0;
   z-index: 2;
 }
+
+.media-details-caption-textarea {
+  display: block;
+  width: 100%;
+  min-height: 7.5rem;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.media-details-caption-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* MEDIA-CAPTION-02: caption job pages + khoá caption */
+.media-caption-job {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.media-caption-job-progress {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  overflow: hidden;
+}
+
+.media-caption-job-progress-bar {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width var(--ease-smooth);
+}
+
+.media-caption-job-counts {
+  margin: 12px 0;
+  color: var(--color-text-muted);
+}
+
+.media-caption-job-thumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+}
+
+.media-caption-job-row-running {
+  background: rgba(45, 108, 182, 0.12);
+  font-weight: 600;
+}
+
+.media-details-caption-locked {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  margin: 4px 0 0;
+}

@@ -5,7 +5,9 @@ using Backend.Modules.Auth;
 using Backend.Modules.Category;
 using Backend.Modules.ContentCrawl;
 using Backend.Modules.GenerationJob;
+using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaAsset;
+using Backend.Modules.MediaCaption;
 using Backend.Modules.MediaEmbedding;
 using Backend.Modules.PageContext;
 using Backend.Modules.PageMessage;
@@ -23,6 +25,7 @@ using Backend.Shared.TikTok;
 using Backend.Shared.SocialPublish;
 using Backend.Shared.SocialComment;
 using Backend.Shared.DevSeed;
+using Backend.Shared.Logging;
 using Backend.Shared.Middleware;
 using Backend.Shared.Repositories;
 using Backend.Shared.Storage;
@@ -35,6 +38,10 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Ship log sang Elasticsearch (ILoggerProvider + bulk background) — console logging mặc định vẫn giữ.
+// Tắt bằng ES_LOGGING_ENABLED=false hoặc bỏ biến; secret chỉ từ env (xem .env.example).
+builder.AddElasticsearchLogging();
 
 // Mặc định .NET: 1 BackgroundService (crawl, gửi mail, đồng bộ comment, refresh token...) ném
 // exception chưa bắt là KÉO SẬP TOÀN BỘ app — kể cả API đăng nhập, không riêng gì worker đó.
@@ -49,6 +56,7 @@ builder.Services.Configure<SeedSettings>(builder.Configuration.GetSection("Seed"
 builder.Services.Configure<FileStorageOptions>(builder.Configuration.GetSection("FileStorage"));
 builder.Services.Configure<SchedulerOptions>(builder.Configuration.GetSection("Scheduler"));
 builder.Services.Configure<GenerationWorkerOptions>(builder.Configuration.GetSection("GenerationWorker"));
+builder.Services.Configure<MediaCaptionWorkerOptions>(builder.Configuration.GetSection("MediaCaptionWorker"));
 builder.Services.Configure<DevSeedOptions>(builder.Configuration.GetSection("DevSeed"));
 builder.Services.Configure<AiProvidersOptions>(builder.Configuration.GetSection("AiProviders"));
 builder.Services.Configure<SocialPublishOptions>(builder.Configuration.GetSection("SocialPublish"));
@@ -118,18 +126,23 @@ builder.Services.AddScoped<SocialConnectionRepository>();
 builder.Services.AddScoped<PageContextRepository>();
 builder.Services.AddScoped<Backend.Modules.PromptTemplate.PromptTemplateRepository>();
 builder.Services.AddScoped<PostRepository>();
+builder.Services.AddScoped<PostFromMediaService>();
 builder.Services.AddScoped<PostWorkflowService>();
 builder.Services.AddScoped<MediaAssetRepository>();
 builder.Services.AddScoped<Backend.Modules.MediaFolder.MediaFolderRepository>();
+builder.Services.AddScoped<MediaCaptionJobService>();
 builder.Services.AddScoped<Backend.Modules.MusicTrack.MusicTrackRepository>();
 // 60s không đủ cho model vision họ Claude qua gateway (đo thực tế: opus-4.6 ~24s cho prompt text,
 // ảnh còn nặng hơn). Timeout quá chặt làm phân tích media fail hàng loạt.
+builder.Services.AddSingleton(MediaAiTimeouts.Default);
 builder.Services.AddHttpClient<MediaIntelligenceService>(client =>
-    client.Timeout = TimeSpan.FromSeconds(120));
+    client.Timeout = MediaIntelligenceService.HttpClientTimeout);
 builder.Services.AddScoped<PostMediaRepository>();
 builder.Services.AddScoped<PostRecycleService>();
 builder.Services.AddScoped<GenerationJobRepository>();
 builder.Services.AddScoped<GenerationJobPipelineService>();
+builder.Services.AddScoped<AiImageFolderService>();
+builder.Services.AddHostedService<AiImageFolderBackfillService>();
 builder.Services.AddScoped<IPublishPipelineService, PublishPipelineService>();
 builder.Services.AddScoped<PublishLogRepository>();
 builder.Services.AddScoped<SocialCommentService>();
@@ -147,6 +160,7 @@ builder.Services.AddHostedService<Backend.Shared.Backup.DatabaseBackupWorker>();
 
 builder.Services.AddHostedService<Backend.Shared.Scheduler.ScheduledPostPublisherService>();
 builder.Services.AddHostedService<Backend.Shared.Generation.PostGenerationWorker>();
+builder.Services.AddHostedService<MediaCaptionWorker>();
 builder.Services.AddHostedService<CommentWebhookHydrationWorker>();
 builder.Services.AddHostedService<CommentReconcileWorker>();
 builder.Services.AddHostedService<PageMessageReconcileWorker>();
@@ -233,6 +247,15 @@ builder.Services.AddHttpClient<HttpArticleFetcher>(client =>
     });
 builder.Services.AddScoped<CrawlSourcePortability>();
 builder.Services.AddHostedService<ContentCrawlWorker>();
+
+// ── Nhập file từ Google Drive (GDRIVE-01) ─────────────────────────────────────
+builder.Services.Configure<GoogleDriveOptions>(builder.Configuration.GetSection("GoogleDrive"));
+builder.Services.AddScoped<IGoogleDriveClient, GoogleDriveApiClient>();
+// GoogleDriveController phụ thuộc trực tiếp vào repository này (state CRUD từ task nền tảng).
+builder.Services.AddScoped<GoogleDriveRepository>();
+// GDRIVE-03: một lượt quét, dùng chung bởi worker định kỳ VÀ endpoint scan-now thủ công.
+builder.Services.AddScoped<GoogleDriveSyncService>();
+builder.Services.AddHostedService<GoogleDriveImportWorker>();
 
 // ═══ Chỉ số page cho dashboard khách hàng ═══
 builder.Services.Configure<Backend.Modules.PageMetrics.PageMetricsOptions>(

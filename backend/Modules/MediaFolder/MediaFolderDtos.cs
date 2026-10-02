@@ -65,6 +65,10 @@ public class CreateMediaFolderAcrossPagesResponse
 
 public class GetMediaFolderChildrenRequest
 {
+    /// <summary>
+    /// Page của folder đang duyệt. GDRIVE-04: khi ParentFolderId là folder chuyên dụng
+    /// Google Drive (page-less), có thể để Guid.Empty — repository bỏ qua EnsureSocialChannelAccess.
+    /// </summary>
     public Guid SocialChannelId { get; set; }
     public Guid? ParentFolderId { get; set; }
     public int Index { get; set; } = 1;
@@ -75,6 +79,10 @@ public class GetMediaFolderChildrenRequest
 
 public class GetMediaFolderBreadcrumbRequest
 {
+    /// <summary>
+    /// Page của folder đích. GDRIVE-04: khi FolderId là folder chuyên dụng Google Drive,
+    /// có thể để Guid.Empty — repository trả breadcrumb chỉ gồm chính folder đó.
+    /// </summary>
     public Guid SocialChannelId { get; set; }
     public Guid FolderId { get; set; }
 }

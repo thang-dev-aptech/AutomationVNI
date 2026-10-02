@@ -4,7 +4,8 @@ public enum MediaSource
 {
     Upload      = 1,
     AIGenerated = 2,
-    Overlay     = 3
+    Overlay     = 3,
+    GoogleDrive = 4
 }
 
 public enum MediaRole

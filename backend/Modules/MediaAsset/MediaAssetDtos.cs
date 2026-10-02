@@ -29,6 +29,8 @@ public class UpdateMediaAssetRequest
     public string? Description { get; set; }
     public string? Tags { get; set; }
     public string? PublicUrl { get; set; }
+    /// <summary>Caption Facebook đã sửa tay — chỉ cập nhật khi khác null.</summary>
+    public string? Caption { get; set; }
     public Guid? CategoryId { get; set; }
     /// <summary>Cập nhật loại bài áp dụng (đa trị). Gửi mảng rỗng để xoá hết.</summary>
     public List<Guid>? CategoryIds { get; set; }
@@ -77,6 +79,9 @@ public class MediaAssetResponse
     public string? Description { get; set; }
     public string? Tags { get; set; }
     public List<string> Keywords { get; set; } = [];
+    public string? Caption { get; set; }
+    /// <summary>true khi ảnh có item Pending/Running trong caption job — caption bị khoá với người dùng.</summary>
+    public bool CaptionQueued { get; set; }
     public int? Width { get; set; }
     public int? Height { get; set; }
     public DateTime CreatedAt { get; set; }

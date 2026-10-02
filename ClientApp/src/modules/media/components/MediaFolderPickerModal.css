@@ -1,0 +1,25 @@
+/* Hình thức thư mục/ảnh/breadcrumb/tìm kiếm lấy từ các component và CSS của màn Media;
+   file này chỉ lo bố cục riêng của popup. */
+.post-media-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.post-media-picker .media-browser-grid {
+  min-height: 0;
+  gap: 20px;
+}
+
+.post-media-picker .media-folder-cards-grid {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.post-media-picker .media-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
+  gap: 12px;
+}
+
+.post-media-picker-count {
+  margin-right: auto;
+}

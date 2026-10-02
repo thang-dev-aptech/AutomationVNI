@@ -18,10 +18,12 @@ export function useMediaFolderTree() {
 export function useMediaFolderPageRoots({
   index = 1,
   size = 20,
+  enabled = true,
 } = {}) {
   return useQuery({
     queryKey: mediaFolderQueryKeys.pageRoots(index, size),
     queryFn: async () => unwrapApiData(await mediaFolderApi.pageRoots({ index, size })),
+    enabled,
     retry: false,
   })
 }
@@ -78,17 +80,18 @@ export function useMediaFolderChildren({
           sortDirection,
         }),
       ),
-    enabled: enabled && Boolean(socialChannelId),
+    enabled: enabled && (Boolean(socialChannelId) || Boolean(parentFolderId)),
     retry: false,
   })
 }
 
-export function useMediaFolderBreadcrumb({ socialChannelId, folderId } = {}) {
+export function useMediaFolderBreadcrumb({ socialChannelId, folderId, enabled = true } = {}) {
   return useQuery({
     queryKey: mediaFolderQueryKeys.breadcrumb(socialChannelId, folderId),
     queryFn: async () =>
       unwrapApiData(await mediaFolderApi.breadcrumb({ socialChannelId, folderId })),
-    enabled: Boolean(socialChannelId) && Boolean(folderId),
+    // GDRIVE-04: folder chuyên dụng page-less (socialChannelId null) vẫn cần breadcrumb.
+    enabled: enabled && Boolean(folderId),
     retry: false,
   })
 }

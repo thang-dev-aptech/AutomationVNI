@@ -9,7 +9,7 @@ export const CHANNELS = [
 ]
 
 export const FOLDER_A_ROOT = {
-  id: 'folder-a-root',
+  id: 'a0000000-0000-4000-8000-000000000001',
   name: 'Campaign A',
   parentFolderId: null,
   socialChannelId: PAGE_A,
@@ -21,7 +21,7 @@ export const FOLDER_A_ROOT = {
 }
 
 export const FOLDER_A_CHILD = {
-  id: 'folder-a-child',
+  id: 'a0000000-0000-4000-8000-000000000002',
   name: 'Child A',
   parentFolderId: FOLDER_A_ROOT.id,
   socialChannelId: PAGE_A,
@@ -33,7 +33,7 @@ export const FOLDER_A_CHILD = {
 }
 
 export const FOLDER_A_GRAND = {
-  id: 'folder-a-grand',
+  id: 'a0000000-0000-4000-8000-000000000003',
   name: 'Grand A',
   parentFolderId: FOLDER_A_CHILD.id,
   socialChannelId: PAGE_A,
@@ -45,7 +45,7 @@ export const FOLDER_A_GRAND = {
 }
 
 export const FOLDER_B_ROOT = {
-  id: 'folder-b-root',
+  id: 'b0000000-0000-4000-8000-000000000001',
   name: 'Campaign B',
   parentFolderId: null,
   socialChannelId: PAGE_B,

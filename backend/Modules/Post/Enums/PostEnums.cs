@@ -56,5 +56,10 @@ public enum GenerationFlow
     /// AI chỉ sinh CHỮ; ảnh lấy nguyên trạng từ thư mục con "chung_chi" dưới root của Page
     /// (Random-N hoặc All). Không overlay, không sinh ảnh AI, không fallback sang FullAI.
     /// </summary>
-    ChungChiGallery = 7
+    ChungChiGallery = 7,
+
+    /// <summary>
+    /// Bài dùng ảnh người dùng chọn sẵn trong Media. Không đi qua GenerateForPostAsync.
+    /// </summary>
+    UserSelectedMedia = 8
 }

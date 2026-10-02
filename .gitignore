@@ -18,6 +18,13 @@ Thumbs.db
 **/appsettings.Production.json
 **/secrets.json
 
+# Google Service Account key (GDRIVE-01) — file khoá thật trỏ tới bởi GoogleDrive:CredentialsPath.
+# Không bao giờ commit; chỉ qua appsettings.Production.json (đã gitignore ở trên), biến môi
+# trường, hoặc đường dẫn mount ngoài trên server.
+**/google-credentials*.json
+**/*service-account*.json
+**/gdrive-credentials*.json
+
 # Ghi chú env đầy đủ tự tay soạn cho việc bàn giao — chứa secret thật (JWT secret, mật khẩu
 # admin, App Secret Meta/Threads, API key AI, Telegram bot token), không phải file mẫu.
 /VNI Automation env production.md
@@ -97,6 +104,7 @@ backend/wwwroot/dist.zip
 /vni_automation.db
 /vni_automation.db.zip
 /vni_automation.db.bak*
+/vni_automation (*).db
 
 # Gói publish/deploy dựng thủ công ngoài quy trình CI — không phải mã nguồn, rất nặng.
 publish_output/
@@ -148,3 +156,12 @@ program_version_*.txt
 # hướng dẫn ở REELS_PLAN.md phần C4 (johnvansickle.com/ffmpeg), không commit để khỏi phình repo
 # vĩnh viễn. `dotnet publish`/build zip vẫn gắp được bình thường vì file nằm sẵn trên đĩa.
 backend/Resources/ffmpeg/
+
+# Artifact cục bộ của agent/tool AI (Continue, PCS) và ghi chú làm việc rời rạc — không phải
+# source chính thức của repo, đã bị xoá khỏi git trên remote (2026-09-29).
+.continue/mcpServers/
+.project-context/
+implement_richtext_template.md
+page-contexts-vni.json
+human_coding_pair.md
+codex-session-*.md

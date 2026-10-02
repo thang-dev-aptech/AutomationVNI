@@ -1,0 +1,27 @@
+.post-from-media {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.post-from-media-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.post-from-media-thumbs img {
+  display: block;
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+}
+
+.post-from-media-note {
+  margin: 4px 0 0;
+  color: var(--text-muted, #888);
+  font-size: 0.85rem;
+}

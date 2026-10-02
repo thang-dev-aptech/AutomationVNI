@@ -4,6 +4,7 @@ import AuthLayout from '@/app/layouts/AuthLayout'
 import ProtectedRoute from '@/app/router/ProtectedRoute'
 import GuestRoute from '@/app/router/GuestRoute'
 import { ROUTE_ROLES } from '@/app/router/routeRoles'
+import { ROLES } from '@/shared/auth/permissions'
 import DashboardPage from '@/modules/dashboard/pages/DashboardPage'
 import PlatformsPage from '@/modules/social-channels/pages/PlatformsPage'
 import PostListPage from '@/modules/posts/pages/PostListPage'
@@ -11,6 +12,8 @@ import PostCalendarPage from '@/modules/posts/pages/PostCalendarPage'
 import PostCreatePage from '@/modules/posts/pages/PostCreatePage'
 import PostDetailPage from '@/modules/posts/pages/PostDetailPage'
 import MediaPage from '@/modules/media/pages/MediaPage'
+import MediaCaptionJobPage from '@/modules/media/pages/MediaCaptionJobPage'
+import MediaCaptionJobListPage from '@/modules/media/pages/MediaCaptionJobListPage'
 import MusicLibraryPage from '@/modules/music/pages/MusicLibraryPage'
 import JobsPage from '@/modules/jobs/pages/JobsPage'
 import PromptTemplateListPage from '@/modules/prompt-templates/pages/PromptTemplateListPage'
@@ -61,6 +64,10 @@ export default function AppRouter() {
           </Route>
           <Route path="/posts/:id" element={<PostDetailPage />} />
           <Route path="/media" element={<MediaPage />} />
+          <Route element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.CONTENT_MANAGER]} />}>
+            <Route path="/media/caption-jobs" element={<MediaCaptionJobListPage />} />
+            <Route path="/media/caption-jobs/:jobId" element={<MediaCaptionJobPage />} />
+          </Route>
           <Route path="/music" element={<MusicLibraryPage />} />
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.templates} />}>
             <Route path="/prompt-templates" element={<PromptTemplateListPage />} />

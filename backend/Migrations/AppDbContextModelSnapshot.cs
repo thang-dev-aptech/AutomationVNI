@@ -861,6 +861,214 @@ namespace backend.Migrations
                     b.ToTable("GenerationJobs", (string)null);
                 });
 
+            modelBuilder.Entity("Backend.Modules.GoogleDrive.GoogleDriveImportFailureModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DriveParentId")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("GoogleDriveFileId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("LastAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MimeType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttemptCount");
+
+                    b.HasIndex("GoogleDriveFileId")
+                        .IsUnique();
+
+                    b.HasIndex("IsDeleted");
+
+                    b.ToTable("GoogleDriveImportFailures", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.GoogleDrive.GoogleDriveKnownFolderModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("DiscoveredAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DriveParentId")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FolderId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("MediaFolderId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FolderId")
+                        .IsUnique();
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("MediaFolderId");
+
+                    b.ToTable("GoogleDriveKnownFolders", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.GoogleDrive.GoogleDriveSyncStateModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("DedicatedFolderId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("FullTreeReconciledAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("InitialSnapshotCompletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
+
+                    b.Property<int>("LastImportedCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastSyncAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PageToken")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedByUserName")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("GoogleDriveSyncState", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("b3e6c8a1-6d1e-4f5c-9a34-6d2f1e8b9c02"),
+                            CreatedAt = new DateTime(2026, 9, 28, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            IsEnabled = true,
+                            LastImportedCount = 0
+                        });
+                });
+
             modelBuilder.Entity("Backend.Modules.MediaAsset.MediaAssetModel", b =>
                 {
                     b.Property<Guid>("Id")
@@ -869,6 +1077,9 @@ namespace backend.Migrations
 
                     b.Property<string>("AltText")
                         .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Caption")
                         .HasColumnType("TEXT");
 
                     b.Property<Guid?>("CategoryId")
@@ -904,6 +1115,10 @@ namespace backend.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<Guid?>("FolderId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("GoogleDriveFileId")
+                        .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("Height")
@@ -950,6 +1165,9 @@ namespace backend.Migrations
                     b.HasIndex("CategoryId");
 
                     b.HasIndex("FolderId");
+
+                    b.HasIndex("GoogleDriveFileId")
+                        .IsUnique();
 
                     b.HasIndex("IsDeleted");
 
@@ -1009,6 +1227,142 @@ namespace backend.Migrations
                     b.HasIndex("PostId", "MediaId");
 
                     b.ToTable("PostMedias", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.MediaCaption.MediaCaptionJobItemModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("MediaAssetId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MediaAssetId");
+
+                    b.HasIndex("JobId", "Status");
+
+                    b.ToTable("MediaCaptionJobItems", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.MediaCaption.MediaCaptionJobModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Failed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("FolderId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FolderName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("InitialSkipped")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Skipped")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Succeeded")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Total")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("FolderId")
+                        .IsUnique()
+                        .HasFilter("IsDeleted = 0 AND Status IN (0, 1)");
+
+                    b.ToTable("MediaCaptionJobs", (string)null);
                 });
 
             modelBuilder.Entity("Backend.Modules.MediaEmbedding.MediaEmbeddingModel", b =>
@@ -1122,6 +1476,11 @@ namespace backend.Migrations
                     b.HasIndex("ParentFolderId");
 
                     b.HasIndex("SocialChannelId");
+
+                    b.HasIndex("SocialChannelId", "ParentFolderId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_MediaFolders_OneActiveAiFolder")
+                        .HasFilter("IsDeleted = 0 AND ParentFolderId IS NOT NULL AND Name = 'Ảnh AI'");
 
                     b.ToTable("MediaFolders", (string)null);
                 });

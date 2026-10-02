@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import PageHeader from '@/shared/components/PageHeader'
 import Modal from '@/shared/components/Modal'
 import StatusBadge from '@/shared/components/StatusBadge'
@@ -25,6 +26,7 @@ import {
   useUploadMediaBatch,
   useAnalyzeLayoutFolder,
   useAnalyzeLayout,
+  useGenerateCaption,
 } from '../hooks/useMediaAssets'
 import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
@@ -35,6 +37,13 @@ import {
   useUpdateMediaFolder,
 } from '../hooks/useMediaFolders'
 import { useMediaBrowser } from '../hooks/useMediaBrowser'
+import { useCreateMediaCaptionJob } from '../hooks/useMediaCaptionJobs'
+import {
+  useGoogleDrivePipelineState,
+  useScanGoogleDriveNow,
+  useSetGoogleDrivePipelineEnabled,
+} from '../hooks/useGoogleDrive'
+import GoogleDrivePipelineSwitch from '../components/GoogleDrivePipelineSwitch'
 import {
   MEDIA_SOURCE_OPTIONS,
   getMediaSourceMeta,
@@ -81,6 +90,13 @@ export default function MediaPage() {
   )
 
   const { data, isLoading, isError, error, refetch } = useMediaAssets(params)
+  const {
+    data: googleDriveState,
+    isLoading: isGoogleDriveStateLoading,
+    isError: isGoogleDriveStateError,
+  } = useGoogleDrivePipelineState(canManageMedia)
+  const setGoogleDriveEnabled = useSetGoogleDrivePipelineEnabled()
+  const scanGoogleDriveNow = useScanGoogleDriveNow()
   const createMutation = useCreateMediaAsset()
   const uploadMutation = useUploadMediaAsset()
   const uploadBatchMutation = useUploadMediaBatch()
@@ -97,8 +113,22 @@ export default function MediaPage() {
   const deleteFolderMutation = useDeleteMediaFolder()
   const analyzeLayoutMutation = useAnalyzeLayoutFolder()
   const analyzeLayoutSingleMutation = useAnalyzeLayout()
+  const generateCaptionMutation = useGenerateCaption()
+  const createCaptionJobMutation = useCreateMediaCaptionJob()
+  const navigate = useNavigate()
   const [analyzingId, setAnalyzingId] = useState(null)
   const [analyzingLayoutId, setAnalyzingLayoutId] = useState(null)
+  const [generatingCaptionId, setGeneratingCaptionId] = useState(null)
+  const [captionDraft, setCaptionDraft] = useState('')
+  const [savingCaption, setSavingCaption] = useState(false)
+
+  useEffect(() => {
+    if (detailsAsset) {
+      setCaptionDraft(detailsAsset.caption ?? '')
+    } else {
+      setCaptionDraft('')
+    }
+  }, [detailsAsset?.id, detailsAsset?.caption])
 
   const fileItems = data?.items ?? []
   const filePageSize = data?.size > 0 ? data.size : 48
@@ -192,6 +222,66 @@ export default function MediaPage() {
       )
     } catch (error) {
       toast.error(getErrorMessage(error))
+    }
+  }
+
+  const handleCreateCaptionJob = async () => {
+    if (!currentFolderId) return
+    if (!confirmAction(
+      'Sinh caption cho toàn bộ ảnh trong thư mục này, gồm cả thư mục con. Ảnh đã có caption sẽ được bỏ qua; mỗi ảnh còn lại tốn 1 lượt AI. Tiếp tục?',
+    )) return
+
+    try {
+      const job = await createCaptionJobMutation.mutateAsync(currentFolderId)
+      navigate(`/media/caption-jobs/${job.id}`)
+    } catch (error) {
+      toast.error(getErrorMessage(error))
+    }
+  }
+
+  const handleGenerateCaption = async () => {
+    if (!detailsAsset) return
+    setGeneratingCaptionId(detailsAsset.id)
+    try {
+      const result = await generateCaptionMutation.mutateAsync(detailsAsset.id)
+      const caption = result?.caption ?? ''
+      setCaptionDraft(caption)
+      setDetailsAsset((prev) => (prev && prev.id === detailsAsset.id ? { ...prev, ...result } : prev))
+      toast.success('Đã sinh caption')
+    } catch (error) {
+      toast.error(getErrorMessage(error))
+    } finally {
+      setGeneratingCaptionId(null)
+    }
+  }
+
+  const handleSaveCaption = async () => {
+    if (!detailsAsset) return
+    setSavingCaption(true)
+    try {
+      const result = await updateMutation.mutateAsync({
+        id: detailsAsset.id,
+        payload: { caption: captionDraft },
+      })
+      setDetailsAsset((prev) => (prev && prev.id === detailsAsset.id ? { ...prev, ...result } : prev))
+      toast.success('Đã lưu caption')
+    } catch (error) {
+      // Job vừa được tạo ở nơi khác: khoá popup ngay, giữ nguyên nội dung đang gõ (captionDraft).
+      if (error?.response?.data?.errorCode === 'MEDIA_CAPTION_QUEUED') {
+        setDetailsAsset((prev) => (prev && prev.id === detailsAsset.id ? { ...prev, captionQueued: true } : prev))
+      }
+      toast.error(getErrorMessage(error))
+    } finally {
+      setSavingCaption(false)
+    }
+  }
+
+  const handleCopyCaption = async () => {
+    try {
+      await navigator.clipboard.writeText(captionDraft)
+      toast.success('Đã copy caption')
+    } catch {
+      toast.error('Không copy được clipboard')
     }
   }
 
@@ -414,6 +504,43 @@ export default function MediaPage() {
     }
   }
 
+  const handleToggleGoogleDrive = async () => {
+    const nextEnabled = !googleDriveState.enabled
+    if (!nextEnabled && !confirmAction(
+      'Dừng nhập file từ Google Drive?\n\n'
+      + 'File thả vào thư mục Drive dùng chung sẽ ngừng tự động hiện lên Media cho đến khi được bật lại.',
+    )) return
+
+    try {
+      await setGoogleDriveEnabled.mutateAsync(nextEnabled)
+      toast.success(nextEnabled
+        ? 'Đã bật nhập file từ Google Drive'
+        : 'Đã dừng nhập file từ Google Drive')
+    } catch (toggleError) {
+      toast.error(getErrorMessage(toggleError))
+    }
+  }
+
+  const handleScanGoogleDriveNow = async () => {
+    try {
+      const result = await scanGoogleDriveNow.mutateAsync()
+      if (!result?.enabled) {
+        toast.warning('Nhập file từ Google Drive đang dừng — bật lên trước khi quét thủ công.')
+        return
+      }
+      if (result?.configured === false) {
+        toast.warning(result?.configIssue || 'Google Drive chưa cấu hình xong.')
+        return
+      }
+      const imported = result?.importedCount ?? 0
+      toast.success(imported > 0
+        ? `Đã quét xong — nhập ${imported} file mới.`
+        : 'Đã quét xong — không có file mới.')
+    } catch (scanError) {
+      toast.error(getErrorMessage(scanError))
+    }
+  }
+
   const handleDeleteFolder = async (folder) => {
     if (!confirmAction(`Xóa thư mục "${folder.name}"? Ảnh bên trong sẽ đưa về "Chưa phân loại".`)) return
     try {
@@ -433,6 +560,35 @@ export default function MediaPage() {
         actions={
           canManageMedia ? (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <GoogleDrivePipelineSwitch
+                checked={Boolean(googleDriveState?.enabled)}
+                disabled={isGoogleDriveStateLoading || isGoogleDriveStateError
+                  || !googleDriveState || setGoogleDriveEnabled.isPending}
+                loading={setGoogleDriveEnabled.isPending}
+                onChange={() => { void handleToggleGoogleDrive() }}
+                title={isGoogleDriveStateError
+                  ? 'Không tải được trạng thái nhập file Google Drive'
+                  : undefined}
+                label={
+                  isGoogleDriveStateLoading
+                    ? 'Đang tải trạng thái Google Drive…'
+                    : isGoogleDriveStateError
+                      ? 'Không tải được trạng thái Google Drive'
+                      : undefined
+                }
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleScanGoogleDriveNow}
+                disabled={!googleDriveState?.enabled || scanGoogleDriveNow.isPending
+                  || isGoogleDriveStateLoading || isGoogleDriveStateError}
+                title={!googleDriveState?.enabled
+                  ? 'Bật Google Drive trước khi quét thủ công'
+                  : 'Quét thư mục Drive dùng chung ngay (không chờ vòng lặp định kỳ)'}
+              >
+                {scanGoogleDriveNow.isPending ? 'Đang quét…' : 'Quét ngay'}
+              </button>
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -522,14 +678,32 @@ export default function MediaPage() {
             </div>
             {currentFolderId && (
               <div className="media-page-filters-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={analyzeLayoutMutation.isPending}
-                  onClick={handleAnalyzeLayoutFolder}
-                >
-                  {analyzeLayoutMutation.isPending ? '⏳ Đang quét...' : '✨ Quét Vùng An Toàn'}
-                </button>
+                {derivedPageId == null ? (
+                  canManageMedia && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={createCaptionJobMutation.isPending}
+                      onClick={handleCreateCaptionJob}
+                    >
+                      {createCaptionJobMutation.isPending ? '⏳ Đang tạo job...' : '✍️ Sinh caption toàn bộ'}
+                    </button>
+                  )
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={analyzeLayoutMutation.isPending}
+                    onClick={handleAnalyzeLayoutFolder}
+                  >
+                    {analyzeLayoutMutation.isPending ? '⏳ Đang quét...' : '✨ Quét Vùng An Toàn'}
+                  </button>
+                )}
+              </div>
+            )}
+            {canManageMedia && (
+              <div className="media-page-filters-actions">
+                <Link to="/media/caption-jobs" className="btn btn-ghost">Job sinh caption</Link>
               </div>
             )}
           </div>
@@ -837,6 +1011,60 @@ export default function MediaPage() {
                   Chưa quét — cần quét trước khi dùng ảnh này cho bài Template.
                 </p>
               )}
+            </div>
+
+            <div className="media-details-labels media-details-caption">
+              <div className="media-details-labels-head">
+                <span className="ai-media-keyword-label">Caption Facebook (5 dòng)</span>
+                {canManageMedia && isImageMime(detailsAsset.mimeType) && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={generatingCaptionId === detailsAsset.id || detailsAsset.captionQueued === true}
+                    onClick={handleGenerateCaption}
+                  >
+                    {generatingCaptionId === detailsAsset.id
+                      ? '⏳ Đang sinh...'
+                      : (detailsAsset.caption ? '✍️ Sinh lại' : '✍️ Sinh caption')}
+                  </button>
+                )}
+              </div>
+              <textarea
+                className="media-details-caption-textarea"
+                rows={6}
+                value={captionDraft}
+                disabled={detailsAsset.captionQueued === true}
+                onChange={(e) => setCaptionDraft(e.target.value)}
+                placeholder="Chưa có caption — bấm Sinh caption hoặc nhập tay."
+              />
+              {detailsAsset.captionQueued === true && (
+                <p className="media-details-caption-locked">
+                  Ảnh đang trong hàng chờ sinh caption.{' '}
+                  <Link to="/media/caption-jobs">Xem job</Link>
+                </p>
+              )}
+              <div className="media-details-caption-actions">
+                {canManageMedia && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={savingCaption || detailsAsset.captionQueued === true}
+                    onClick={handleSaveCaption}
+                  >
+                    {savingCaption ? 'Đang lưu...' : 'Lưu'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={handleCopyCaption}
+                >
+                  Copy
+                </button>
+              </div>
+              <p className="media-details-empty">
+                AI có thể sai tên/số liệu — kiểm tra trước khi đăng
+              </p>
             </div>
           </div>
         )}

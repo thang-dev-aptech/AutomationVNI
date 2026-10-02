@@ -12,8 +12,15 @@ import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromp
 import { usePageContextList } from '@/modules/page-contexts/hooks/usePageContexts'
 import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import PostCreateForm from '../components/PostCreateForm'
+import PostFromMediaForm from '../components/PostFromMediaForm'
 import GenerationFlowPicker from '../components/GenerationFlowPicker'
 import { useCreateAndGeneratePost } from '../hooks/usePosts'
+
+function flowLabel(flow) {
+  if (flow === 'template') return 'AI sinh text, ghép vào ảnh mẫu'
+  if (flow === 'media') return 'Dùng ảnh có sẵn trong Media'
+  return 'Sinh toàn bộ bằng AI'
+}
 
 export default function PostCreatePage() {
   const navigate = useNavigate()
@@ -95,7 +102,7 @@ export default function PostCreatePage() {
         <div className="card card-body" style={{ maxWidth: 720 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <span style={{ fontSize: '0.85rem', color: 'var(--text-muted, #888)' }}>
-              Phương pháp: <strong>{flow === 'template' ? 'AI sinh text, ghép vào ảnh mẫu' : 'Sinh toàn bộ bằng AI'}</strong>
+              Phương pháp: <strong>{flowLabel(flow)}</strong>
             </span>
             <button type="button" className="btn btn-ghost" onClick={() => setFlow(null)}>
               Đổi phương pháp
@@ -109,7 +116,10 @@ export default function PostCreatePage() {
               onRetry={refetchChannels}
             />
           )}
-          {!isLoading && !channelsError && channels.length === 0 && (
+          {!isLoading && !channelsError && flow === 'media' && (
+            <PostFromMediaForm categories={categories} />
+          )}
+          {!isLoading && !channelsError && flow !== 'media' && channels.length === 0 && (
             <EmptyState
               message="Chưa có kênh nào được kết nối. Hãy kết nối kênh trước khi tạo bài."
               action={(
@@ -119,7 +129,7 @@ export default function PostCreatePage() {
               )}
             />
           )}
-          {!isLoading && !channelsError && channels.length > 0 && (
+          {!isLoading && !channelsError && flow !== 'media' && channels.length > 0 && (
             <PostCreateForm
               flow={flow}
               channels={channels}

@@ -152,6 +152,31 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         return await base.CreateAsync(entity, cancellationToken);
     }
 
+    /// <summary>
+    /// Draft từ ảnh Media người dùng chọn. Không gắn template và không đưa vào hàng đợi AI.
+    /// </summary>
+    public async Task<PostModel> CreateUserSelectedDraftAsync(
+        string title,
+        string content,
+        Guid socialChannelId,
+        Guid? categoryId,
+        Guid? batchId,
+        CancellationToken ct = default)
+    {
+        var entity = new PostModel
+        {
+            Title = title,
+            Content = content,
+            SocialChannelId = socialChannelId,
+            CategoryId = categoryId,
+            GenerationFlow = GenerationFlow.UserSelectedMedia,
+            BatchId = batchId,
+            UserId = GetCurrentUserId(),
+            Status = PostStatus.Draft,
+        };
+        return await base.CreateAsync(entity, ct);
+    }
+
     /// <summary>Tạo hàng loạt post (fan-out items × channels) ở Status=Queued cho worker sinh nền.</summary>
     public async Task<BulkCreateResult> BulkCreateAsync(
         BulkCreatePostRequest request,

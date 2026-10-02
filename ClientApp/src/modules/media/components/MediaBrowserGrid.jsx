@@ -34,6 +34,10 @@ export default function MediaBrowserGrid({
   totalFilePages = 1,
   onFilePageChange,
   isUploading = false,
+  // Chế độ chọn (popup chọn ảnh trên trang tạo bài): xem MediaAssetCard.
+  selectable = false,
+  isFileSelected,
+  onFileSelect,
 }) {
   const [isDragOverGrid, setIsDragOverGrid] = useState(false)
   const hasFolders = folders.length > 0
@@ -177,6 +181,7 @@ export default function MediaBrowserGrid({
                 onDrop={onFolderDrop}
                 onFileDrop={onFileDrop}
                 canManage={canManage}
+                interactive={selectable}
               />
             ))}
           </div>
@@ -199,6 +204,9 @@ export default function MediaBrowserGrid({
                 onDelete={onFileDelete}
                 onContextMenu={onFileContextMenu}
                 canManage={canManage}
+                selectable={selectable}
+                selected={selectable && Boolean(isFileSelected?.(asset))}
+                onSelect={onFileSelect}
               />
             ))}
           </div>

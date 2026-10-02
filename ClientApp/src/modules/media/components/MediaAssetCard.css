@@ -385,3 +385,50 @@
   font-size: 0.82rem;
   color: var(--color-text-muted);
 }
+
+/* Chế độ chọn ảnh (popup chọn ảnh cho bài đăng) — chỉ áp khi card có .is-selectable. */
+.media-asset-card.is-selected {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary), var(--shadow-md);
+}
+
+.media-asset-card.is-disabled {
+  opacity: 0.55;
+}
+
+.media-asset-card.is-disabled:hover {
+  transform: none;
+  box-shadow: var(--shadow-sm);
+  border-color: var(--color-border);
+}
+
+.media-asset-card.is-disabled .media-asset-card-preview {
+  cursor: not-allowed;
+}
+
+.media-asset-card-check {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.media-asset-card-pick-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.media-asset-card-pick-note {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}

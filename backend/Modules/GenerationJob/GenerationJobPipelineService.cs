@@ -42,6 +42,7 @@ public class GenerationJobPipelineService(
     IOptions<ContentCrawlOptions> crawlOptions,
     IOptions<ReelsOptions> reelsOptions,
     IUserContext userContext,
+    AiImageFolderService aiImageFolderService,
     ILogger<GenerationJobPipelineService> logger)
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -1403,6 +1404,28 @@ public class GenerationJobPipelineService(
             Height = image.Height,
             Tags = image.Tags
         }, ct);
+
+        try
+        {
+            var aiFolderId = await aiImageFolderService.GetOrCreateAiFolderIdAsync(post.SocialChannelId, ct);
+            if (aiFolderId is Guid folderId)
+            {
+                mediaAsset.FolderId = folderId;
+                await context.SaveChangesAsync(ct);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex,
+                "Không gán được folder Ảnh AI cho media {MediaId} của post {PostId}; ảnh vẫn được lưu",
+                mediaAsset.Id,
+                post.Id);
+        }
 
         await mediaAssetRepository.SetPreviewUrlAsync(mediaAsset, ct);
         try

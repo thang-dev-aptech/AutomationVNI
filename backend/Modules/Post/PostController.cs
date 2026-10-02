@@ -20,6 +20,7 @@ public class PostController
     private readonly PublishLog.IPublishPipelineService _publishPipeline;
     private readonly PageContextRepository _pageContextRepository;
     private readonly MediaAsset.PostMediaRepository _postMediaRepository;
+    private readonly PostFromMediaService _fromMedia;
 
     public PostController(
         PostRepository repository,
@@ -28,7 +29,8 @@ public class PostController
         GenerationJob.GenerationJobPipelineService generationPipeline,
         PublishLog.IPublishPipelineService publishPipeline,
         PageContextRepository pageContextRepository,
-        MediaAsset.PostMediaRepository postMediaRepository) : base(repository)
+        MediaAsset.PostMediaRepository postMediaRepository,
+        PostFromMediaService fromMedia) : base(repository)
     {
         _repo = repository;
         _workflow = workflow;
@@ -37,6 +39,7 @@ public class PostController
         _publishPipeline = publishPipeline;
         _pageContextRepository = pageContextRepository;
         _postMediaRepository = postMediaRepository;
+        _fromMedia = fromMedia;
     }
 
     protected override string EntityLabel => "bài viết";
@@ -218,6 +221,33 @@ public class PostController
         var final = await _workflow.GetPostAsync(post.Id, ct);
         var response = await _repo.GetResponseByIdAsync(final!.Id, ct);
         return Ok(ApiResponse.Ok(response!, "Đã tạo bài và sinh nội dung xong"));
+    }
+
+    /// <summary>
+    /// Tạo bài Approved từ ảnh Media đã chọn. Không gọi AI. Một Page trả PostResponse;
+    /// nhiều Page trả batch để điều hướng /bulk/{batchId}.
+    /// </summary>
+    [HttpPost("from-media")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> CreateFromMedia(
+        [FromBody] CreatePostFromMediaRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _fromMedia.CreateAsync(request, ct);
+            if (result.Post is not null)
+                return Ok(ApiResponse.Ok(result.Post, "Đã tạo bài từ ảnh đã chọn"));
+
+            return Ok(ApiResponse.Ok(result.Batch!, $"Đã tạo {result.Batch!.Created} bài từ ảnh đã chọn"));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse.Fail("NOT_FOUND", ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse.Fail("VALIDATION_ERROR", ex.Message));
+        }
     }
 
     /// <summary>

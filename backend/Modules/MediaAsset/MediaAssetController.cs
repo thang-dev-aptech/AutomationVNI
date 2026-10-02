@@ -1,3 +1,4 @@
+using Backend.Modules.MediaCaption;
 using Backend.Shared;
 using Backend.Shared.Storage;
 using Microsoft.AspNetCore.Authorization;
@@ -47,9 +48,36 @@ public class MediaAssetController
     public override Task<IActionResult> Create([FromBody] CreateMediaAssetRequest request, CancellationToken ct)
         => base.Create(request, ct);
 
+    // Tự dựng response (không gọi base) để captionQueued phản ánh đúng sau khi cập nhật.
     [Authorize(Roles = "Admin,ContentManager")]
-    public override Task<IActionResult> Update(Guid id, [FromBody] UpdateMediaAssetRequest request, CancellationToken ct)
-        => base.Update(id, request, ct);
+    public override async Task<IActionResult> Update(Guid id, [FromBody] UpdateMediaAssetRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var entity = await UpdateEntityAsync(id, request, ct);
+            if (entity is null)
+                return NotFound(ApiResponse.Fail("NOT_FOUND", $"Không tìm thấy {EntityLabel}"));
+            return Ok(ApiResponse.Ok(await ToResponseWithQueueAsync(entity, ct), $"Cập nhật {EntityLabel} thành công"));
+        }
+        catch (CaptionQueuedException)
+        {
+            return CaptionQueuedConflict();
+        }
+    }
+
+    public override async Task<IActionResult> GetById(Guid id, CancellationToken ct)
+    {
+        var entity = await _repo.GetByIdAsync(id, ct);
+        if (entity is null)
+            return NotFound(ApiResponse.Fail("NOT_FOUND", $"Không tìm thấy {EntityLabel}"));
+        return Ok(ApiResponse.Ok(await ToResponseWithQueueAsync(entity, ct)));
+    }
+
+    private async Task<MediaAssetResponse> ToResponseWithQueueAsync(MediaAssetModel entity, CancellationToken ct)
+        => MediaAssetRepository.ToResponse(entity, null, await _repo.IsCaptionQueuedAsync(entity.Id, ct));
+
+    private ObjectResult CaptionQueuedConflict()
+        => Conflict(ApiResponse.Fail("MEDIA_CAPTION_QUEUED", "Ảnh đang trong hàng chờ sinh caption"));
 
     [Authorize(Roles = "Admin,ContentManager")]
     public override Task<IActionResult> SoftDelete(Guid id, CancellationToken ct)
@@ -138,7 +166,7 @@ public class MediaAssetController
         try
         {
             var entity = await _intelligence.AnalyzeAndSaveAsync(id, ct);
-            return Ok(ApiResponse.Ok(ToResponse(entity), "AI đã phân tích và gắn keyword"));
+            return Ok(ApiResponse.Ok(await ToResponseWithQueueAsync(entity, ct), "AI đã phân tích và gắn keyword"));
         }
         catch (KeyNotFoundException ex)
         {
@@ -182,7 +210,7 @@ public class MediaAssetController
         try
         {
             var entity = await _intelligence.AnalyzeLayoutAsync(id, ct);
-            return Ok(ApiResponse.Ok(ToResponse(entity), "Đã quét Vùng An Toàn"));
+            return Ok(ApiResponse.Ok(await ToResponseWithQueueAsync(entity, ct), "Đã quét Vùng An Toàn"));
         }
         catch (KeyNotFoundException ex)
         {
@@ -191,6 +219,53 @@ public class MediaAssetController
         catch (Exception ex)
         {
             return BadRequest(ApiResponse.Fail("MEDIA_LAYOUT_ANALYSIS_FAILED", ex.Message));
+        }
+    }
+
+    /// <summary>MEDIA-CAPTION-01: sinh caption Facebook 5 dòng — chỉ khi người dùng bấm nút.</summary>
+    [HttpPost("{id:guid}/generate-caption")]
+    [Authorize(Roles = "Admin,ContentManager")]
+    public async Task<IActionResult> GenerateCaption(Guid id, CancellationToken ct = default)
+    {
+        // Khoá áp cho đường người dùng (kiểm sớm ở đây, kiểm lại trong GenerateCaptionAsync sau khi đánh dấu
+        // in-flight): worker gọi GenerateCaptionIfEmptyAsync nên không bị chặn.
+        if (await _repo.IsCaptionQueuedAsync(id, ct))
+            return CaptionQueuedConflict();
+
+        try
+        {
+            var entity = await _intelligence.GenerateCaptionAsync(id, ct);
+            return Ok(ApiResponse.Ok(ToResponse(entity), "Đã sinh caption"));
+        }
+        catch (CaptionQueuedException)
+        {
+            return CaptionQueuedConflict();
+        }
+        catch (TimeoutException ex)
+        {
+            // Deadline tổng của single generate (MediaAiTimeouts.CaptionMaxDuration), không phải client huỷ.
+            return BadRequest(ApiResponse.Fail("MEDIA_CAPTION_FAILED", ex.Message));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse.Fail("NOT_FOUND", ex.Message));
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return BadRequest(ApiResponse.Fail("MEDIA_CAPTION_FAILED", ex.Message));
+        }
+        catch (HttpRequestException)
+        {
+            return BadRequest(ApiResponse.Fail(
+                "MEDIA_CAPTION_FAILED",
+                "Không kết nối được AI, thử lại sau"));
+        }
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // Timeout HttpClient phía AI — client request chưa bị huỷ.
+            return BadRequest(ApiResponse.Fail(
+                "MEDIA_CAPTION_FAILED",
+                "Không kết nối được AI, thử lại sau"));
         }
     }
 

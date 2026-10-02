@@ -2,7 +2,9 @@ using Backend.Modules.ApiLog;
 using Backend.Modules.Category;
 using Backend.Modules.ContentCrawl;
 using Backend.Modules.GenerationJob;
+using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaAsset;
+using Backend.Modules.MediaCaption;
 using Backend.Modules.MediaEmbedding;
 using Backend.Modules.MediaFolder;
 using Backend.Modules.MusicTrack;
@@ -32,6 +34,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<PostModel> Posts => Set<PostModel>();
     public DbSet<MediaAssetModel> MediaAssets => Set<MediaAssetModel>();
     public DbSet<MediaFolderModel> MediaFolders => Set<MediaFolderModel>();
+    public DbSet<MediaCaptionJobModel> MediaCaptionJobs => Set<MediaCaptionJobModel>();
+    public DbSet<MediaCaptionJobItemModel> MediaCaptionJobItems => Set<MediaCaptionJobItemModel>();
     public DbSet<PostMediaModel> PostMedias => Set<PostMediaModel>();
     public DbSet<MusicTrackModel> MusicTracks => Set<MusicTrackModel>();
     public DbSet<GenerationJobModel> GenerationJobs => Set<GenerationJobModel>();
@@ -54,6 +58,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<ContentFingerprintModel> ContentFingerprints => Set<ContentFingerprintModel>();
     public DbSet<ContentCrawlPipelineStateModel> ContentCrawlPipelineStates
         => Set<ContentCrawlPipelineStateModel>();
+    public DbSet<GoogleDriveSyncStateModel> GoogleDriveSyncStates
+        => Set<GoogleDriveSyncStateModel>();
+    public DbSet<GoogleDriveImportFailureModel> GoogleDriveImportFailures
+        => Set<GoogleDriveImportFailureModel>();
+    public DbSet<GoogleDriveKnownFolderModel> GoogleDriveKnownFolders
+        => Set<GoogleDriveKnownFolderModel>();
     public DbSet<ShortLinkModel> ShortLinks => Set<ShortLinkModel>();
     public DbSet<Backend.Modules.NewsSite.NewsArticleModel> NewsArticles
         => Set<Backend.Modules.NewsSite.NewsArticleModel>();
@@ -84,8 +94,34 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasIndex(x => x.ParentFolderId);
             e.HasIndex(x => x.SocialChannelId);
             e.HasIndex(x => x.IsDeleted);
+            // Một Page chỉ một folder "Ảnh AI" active ngay dưới folder gốc.
+            e.HasIndex(x => new { x.SocialChannelId, x.ParentFolderId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0 AND ParentFolderId IS NOT NULL AND Name = 'Ảnh AI'")
+                .HasDatabaseName("IX_MediaFolders_OneActiveAiFolder");
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.Description).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<MediaCaptionJobModel>(e =>
+        {
+            e.ToTable("MediaCaptionJobs");
+            e.HasKey(x => x.Id);
+            // SQLite partial unique index: một folder chỉ có một job đang chờ/chạy;
+            // lịch sử Completed vẫn được giữ để ListRecentAsync hiển thị.
+            e.HasIndex(x => x.FolderId).IsUnique().HasFilter("IsDeleted = 0 AND Status IN (0, 1)");
+            e.HasIndex(x => x.CreatedAt);
+            e.Property(x => x.FolderName).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<MediaCaptionJobItemModel>(e =>
+        {
+            e.ToTable("MediaCaptionJobItems");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.JobId, x.Status });
+            e.HasIndex(x => x.MediaAssetId);
+            e.Property(x => x.FileName).HasMaxLength(500);
+            e.Property(x => x.Error).HasMaxLength(500);
         });
 
         modelBuilder.Entity<PromptTemplateModel>(e =>
@@ -188,6 +224,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.AltText).HasMaxLength(500);
             e.Property(x => x.Description).HasColumnType("TEXT");
             e.Property(x => x.Tags).HasColumnType("TEXT");
+            e.Property(x => x.GoogleDriveFileId).HasMaxLength(200);
+            // SQLite coi mỗi NULL là khác biệt trong chỉ mục UNIQUE, nên upload/AI/overlay
+            // (GoogleDriveFileId=null) không đụng ràng buộc — chỉ chặn trùng file Drive thật.
+            e.HasIndex(x => x.GoogleDriveFileId).IsUnique();
         });
 
         modelBuilder.Entity<PostMediaModel>(e =>
@@ -429,6 +469,47 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
                 IsEnabled = true,
                 CreatedAt = new DateTime(2026, 9, 22, 0, 0, 0, DateTimeKind.Utc)
             });
+        });
+
+        modelBuilder.Entity<GoogleDriveSyncStateModel>(e =>
+        {
+            e.ToTable("GoogleDriveSyncState");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.IsEnabled).HasDefaultValue(true);
+            e.Property(x => x.UpdatedByUserName).HasMaxLength(200);
+            e.Property(x => x.PageToken).HasMaxLength(1000);
+            e.HasData(new GoogleDriveSyncStateModel
+            {
+                Id = GoogleDriveSyncStateModel.SingletonId,
+                IsEnabled = true,
+                CreatedAt = new DateTime(2026, 9, 28, 0, 0, 0, DateTimeKind.Utc)
+            });
+        });
+
+        modelBuilder.Entity<GoogleDriveImportFailureModel>(e =>
+        {
+            e.ToTable("GoogleDriveImportFailures");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.GoogleDriveFileId).IsUnique();
+            e.HasIndex(x => x.AttemptCount);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.GoogleDriveFileId).HasMaxLength(200);
+            e.Property(x => x.FileName).HasMaxLength(500);
+            e.Property(x => x.MimeType).HasMaxLength(100);
+            e.Property(x => x.LastError).HasColumnType("TEXT");
+            e.Property(x => x.DriveParentId).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<GoogleDriveKnownFolderModel>(e =>
+        {
+            e.ToTable("GoogleDriveKnownFolders");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.FolderId).IsUnique();
+            e.HasIndex(x => x.MediaFolderId);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.FolderId).HasMaxLength(200);
+            e.Property(x => x.DriveParentId).HasMaxLength(200);
+            e.Property(x => x.Name).HasMaxLength(500);
         });
 
         modelBuilder.Entity<CrawlRunModel>(e =>

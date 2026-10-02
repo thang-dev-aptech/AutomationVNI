@@ -84,6 +84,15 @@ public class BulkCreateResult
     public List<Guid> PostIds { get; set; } = [];
 }
 
+public class CreatePostFromMediaRequest
+{
+    public List<Guid> MediaIds { get; set; } = [];
+    public List<Guid> SocialChannelIds { get; set; } = [];
+    public string Content { get; set; } = string.Empty;
+    public string? Title { get; set; }
+    public Guid? CategoryId { get; set; }
+}
+
 public class BulkChungChiItem
 {
     /// <summary>Ý tưởng → Title + prompt text.</summary>

@@ -20,6 +20,7 @@ export const mediaAssetApi = {
     axiosInstance.post(`/api/MediaAsset/analyze-all?force=${force}`),
   analyzeLayoutFolder: (folderId) => axiosInstance.post(`/api/MediaAsset/analyze-layout-folder/${folderId}`),
   analyzeLayout: (id) => axiosInstance.post(`/api/MediaAsset/${id}/analyze-layout`),
+  generateCaption: (id) => axiosInstance.post(`/api/MediaAsset/${id}/generate-caption`),
   recommend: (payload) => axiosInstance.post('/api/MediaAsset/recommend', payload),
 }
 
