@@ -140,6 +140,8 @@ builder.Services.AddScoped<PostMediaRepository>();
 builder.Services.AddScoped<PostRecycleService>();
 builder.Services.AddScoped<GenerationJobRepository>();
 builder.Services.AddScoped<GenerationJobPipelineService>();
+builder.Services.AddScoped<AiImageFolderService>();
+builder.Services.AddHostedService<AiImageFolderBackfillService>();
 builder.Services.AddScoped<IPublishPipelineService, PublishPipelineService>();
 builder.Services.AddScoped<PublishLogRepository>();
 builder.Services.AddScoped<SocialCommentService>();

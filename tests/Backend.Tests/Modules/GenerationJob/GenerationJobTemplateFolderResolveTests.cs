@@ -144,6 +144,7 @@ public class GenerationJobTemplateFolderResolveTests : IDisposable
             Options.Create(new ContentCrawlOptions()),
             Options.Create(new ReelsOptions()),
             _userContext,
+            new AiImageFolderService(_db, NullLogger<AiImageFolderService>.Instance),
             NullLogger<GenerationJobPipelineService>.Instance);
     }
 
