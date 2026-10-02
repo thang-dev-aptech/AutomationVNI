@@ -54,6 +54,28 @@ dotnet ef database update
 
 SQLite file: `Data/vni_automation.db` (theo `ConnectionStrings:Default`).
 
+## FileStorage
+
+Backend mặc định lưu file ngoài `wwwroot`, với `FileStorage:RootPath` là
+`Storage/Files` tương đối với ContentRoot. `backend/appsettings.Production.json` không ghi đè
+`RootPath` trong repository hiện tại; production có thể vẫn override bằng cấu hình ngoài repo.
+
+`LocalFileStorageService.ExistsAsync` và `OpenReadAsync` thực hiện `File.Exists` và constructor
+`FileStream` đồng bộ trước khi trả `Task`. Vì vậy `StorageReadTimeout` chỉ giới hạn thời gian
+sau khi lời gọi storage đã trả `Task`; nó không cắt được syscall đồng bộ đang kẹt. Repository
+và máy dev hiện chưa chứng minh production đang dùng ổ mạng: `findmnt` trên máy dev không có
+NFS/CIFS, và không có thông tin truy cập máy production thật trong repo.
+
+Nếu production đặt `RootPath` trên NFS hoặc SMB, cấu hình timeout ở mount/OS thay vì giả định
+ứng dụng sẽ cắt được syscall:
+
+- NFS: xem xét các tùy chọn mount `soft`, `timeo`, `retrans` theo chính sách vận hành và phiên
+  bản client; không sao chép giá trị dev vào production nếu chưa được xác nhận.
+- SMB/CIFS: cấu hình timeout/retry ở mount hoặc client theo chính sách vận hành; giá trị cụ thể
+  phụ thuộc kernel, `mount.cifs` và hạ tầng máy chủ.
+
+Các giá trị timeout mount đang dùng trên production chưa được xác minh trong repository này.
+
 ## Dev seed
 
 Bật trong `appsettings.Development.json`:

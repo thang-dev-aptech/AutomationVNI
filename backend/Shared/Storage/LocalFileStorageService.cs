@@ -80,6 +80,8 @@ public class LocalFileStorageService : IFileStorageService
         ct.ThrowIfCancellationRequested();
         var physicalPath = GetSafePhysicalPath(storageKey);
 
+        // File.Exists và constructor FileStream chạy đồng bộ trước khi Task được trả về.
+        // Nếu syscall bị kẹt trên storage/ổ mạng, StorageReadTimeout ở tầng caller không cắt được nó.
         if (!File.Exists(physicalPath))
             throw new FileNotFoundException("Không tìm thấy file");
 
@@ -93,6 +95,8 @@ public class LocalFileStorageService : IFileStorageService
         try
         {
             var physicalPath = GetSafePhysicalPath(storageKey);
+            // File.Exists chạy đồng bộ trước khi Task được trả về; timeout của caller chỉ có thể
+            // áp dụng sau khi lời gọi này đã trả Task, không cắt được syscall đang bị kẹt.
             return Task.FromResult(File.Exists(physicalPath));
         }
         catch (ArgumentException)

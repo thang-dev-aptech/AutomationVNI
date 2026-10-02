@@ -886,6 +886,9 @@ public class MediaIntelligenceService(
 
     /// <summary>Chờ một lời gọi storage nhưng không quá <paramref name="ct"/>, kể cả khi implementation
     /// bỏ qua token (không thêm timeout riêng — dùng cho đường caption, đã có deadline của caption).</summary>
+    // StorageReadTimeout chỉ bao phần chờ một Task storage đã được tạo. Với implementation
+    // đồng bộ như LocalFileStorageService, File.Exists/new FileStream có thể kẹt trước khi
+    // Task được trả về; timeout này không thể cắt syscall đang chạy.
     private static Task<T> AwaitStorageAsync<T>(Task<T> task, CancellationToken ct)
         => AwaitStorageAsync(task, ct, Timeout.InfiniteTimeSpan);
 
@@ -911,6 +914,8 @@ public class MediaIntelligenceService(
         }
     }
 
+    // Timeout bắt đầu có hiệu lực sau khi lời gọi storage đã trả về Task. Nó không bao phủ
+    // syscall đồng bộ bị kẹt trước thời điểm đó; timeout của mount/OS phải xử lý trường hợp này.
     private static async Task<T> AwaitStorageAsync<T>(Task<T> task, CancellationToken ct, TimeSpan timeout)
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -1129,7 +1134,10 @@ public sealed record MediaAiTimeouts(
     {
     }
 
-    /// <summary>Tổng ngân sách thời gian cho toàn bộ các bước đọc một ảnh từ storage (exists, open, copy).</summary>
+    /// <summary>
+    /// Tổng ngân sách thời gian cho toàn bộ các bước đọc một ảnh từ storage (exists, open, copy).
+    /// Chỉ áp dụng sau khi mỗi lời gọi storage đã trả Task; không cắt được syscall đồng bộ bị kẹt.
+    /// </summary>
     public TimeSpan StorageReadTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
     /// <summary>Số lần storage timeout liên tiếp trước khi bulk dừng và bỏ qua ảnh còn lại.</summary>
