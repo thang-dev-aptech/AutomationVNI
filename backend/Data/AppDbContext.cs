@@ -94,6 +94,11 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasIndex(x => x.ParentFolderId);
             e.HasIndex(x => x.SocialChannelId);
             e.HasIndex(x => x.IsDeleted);
+            // Một Page chỉ một folder "Ảnh AI" active ngay dưới folder gốc.
+            e.HasIndex(x => new { x.SocialChannelId, x.ParentFolderId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0 AND ParentFolderId IS NOT NULL AND Name = 'Ảnh AI'")
+                .HasDatabaseName("IX_MediaFolders_OneActiveAiFolder");
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.Description).HasMaxLength(500);
         });

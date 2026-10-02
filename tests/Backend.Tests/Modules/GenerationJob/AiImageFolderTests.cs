@@ -53,8 +53,8 @@ public sealed class AiImageFolderTests : IDisposable
             await db.SaveChangesAsync();
         }
 
-        var first = await NewService(NewDb()).GetOrCreateAiFolderIdAsync(page);
-        var second = await NewService(NewDb()).GetOrCreateAiFolderIdAsync(page);
+        var first = await NewService().GetOrCreateAiFolderIdAsync(page);
+        var second = await NewService().GetOrCreateAiFolderIdAsync(page);
 
         Assert.Equal(first, second);
         await using var verify = NewDb();
@@ -72,8 +72,8 @@ public sealed class AiImageFolderTests : IDisposable
         await SeedRootAsync(page);
 
         var ids = await Task.WhenAll(
-            Task.Run(() => NewService(NewDb()).GetOrCreateAiFolderIdAsync(page)),
-            Task.Run(() => NewService(NewDb()).GetOrCreateAiFolderIdAsync(page)));
+            Task.Run(() => NewService().GetOrCreateAiFolderIdAsync(page)),
+            Task.Run(() => NewService().GetOrCreateAiFolderIdAsync(page)));
 
         Assert.Equal(ids[0], ids[1]);
         await using var verify = NewDb();
@@ -95,7 +95,7 @@ public sealed class AiImageFolderTests : IDisposable
             await db.SaveChangesAsync();
         }
 
-        var id = await NewService(NewDb()).GetOrCreateAiFolderIdAsync(page);
+        var id = await NewService().GetOrCreateAiFolderIdAsync(page);
 
         Assert.Equal(existing, id);
     }
@@ -105,7 +105,7 @@ public sealed class AiImageFolderTests : IDisposable
     {
         var page = Guid.NewGuid();
 
-        var id = await NewService(NewDb()).GetOrCreateAiFolderIdAsync(page);
+        var id = await NewService().GetOrCreateAiFolderIdAsync(page);
 
         Assert.Null(id);
         await using var verify = NewDb();
@@ -290,7 +290,7 @@ public sealed class AiImageFolderTests : IDisposable
         var jobFail = await SeedImageJobAsync(postFail);
         await using (var db = NewDb())
         {
-            var result = await Pipeline(db, new MemoryStorage(), new ThrowingFolderService(db)).ProcessAsync(jobFail);
+            var result = await Pipeline(db, new MemoryStorage(), new ThrowingFolderService(Scopes())).ProcessAsync(jobFail);
             Assert.Equal(JobStatus.Completed, result.JobStatus);
             Assert.Null((await db.MediaAssets.SingleAsync(x => x.Id == result.MediaAssetId)).FolderId);
             Assert.Equal(PostStatus.WaitingReview, (await db.Posts.SingleAsync(x => x.Id == postFail)).Status);
@@ -345,12 +345,12 @@ public sealed class AiImageFolderTests : IDisposable
             Options.Create(new ContentCrawlOptions()),
             Options.Create(new ReelsOptions()),
             user,
-            folders ?? new AiImageFolderService(db, NullLogger<AiImageFolderService>.Instance),
+            folders ?? NewService(),
             NullLogger<GenerationJobPipelineService>.Instance);
     }
 
-    private sealed class ThrowingFolderService(AppDbContext db)
-        : AiImageFolderService(db, NullLogger<AiImageFolderService>.Instance)
+    private sealed class ThrowingFolderService(IServiceScopeFactory scopes)
+        : AiImageFolderService(scopes, NullLogger<AiImageFolderService>.Instance)
     {
         public override Task<Guid?> GetOrCreateAiFolderIdAsync(Guid socialChannelId, CancellationToken ct = default)
             => throw new InvalidOperationException("folder failed");
@@ -406,6 +406,12 @@ public sealed class AiImageFolderTests : IDisposable
 
     private AppDbContext NewDb() => new(_options);
 
-    private static AiImageFolderService NewService(AppDbContext db)
-        => new(db, NullLogger<AiImageFolderService>.Instance);
+    private AiImageFolderService NewService() => new(Scopes(), NullLogger<AiImageFolderService>.Instance);
+
+    private IServiceScopeFactory Scopes()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped(_ => NewDb());
+        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+    }
 }

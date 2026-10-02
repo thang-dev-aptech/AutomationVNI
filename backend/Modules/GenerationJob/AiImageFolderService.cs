@@ -6,19 +6,23 @@ namespace Backend.Modules.GenerationJob;
 
 /// <summary>
 /// Get-or-create folder "Ảnh AI" ngay dưới folder gốc của một Page.
-/// Không tự tạo folder gốc. Semaphore xử lý MaxConcurrency=2 của worker trên cùng process.
+/// Dùng DbContext riêng để SaveChanges không ghi các thay đổi đang pending của caller.
+/// Unique index là ranh giới thật giữa các process; lock trong process chỉ giảm va chạm.
 /// </summary>
-public class AiImageFolderService(AppDbContext db, ILogger<AiImageFolderService> logger)
+public class AiImageFolderService(IServiceScopeFactory scopes, ILogger<AiImageFolderService> logger)
 {
     public const string FolderName = "Ảnh AI";
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
     public virtual async Task<Guid?> GetOrCreateAiFolderIdAsync(Guid socialChannelId, CancellationToken ct = default)
     {
+        await using var scope = scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
         await Gate.WaitAsync(ct);
         try
         {
-            var existing = await FindActiveAiFolderIdAsync(socialChannelId, ct);
+            var existing = await FindActiveAiFolderIdAsync(db, socialChannelId, ct);
             if (existing is not null) return existing;
 
             var root = await db.MediaFolders.AsNoTracking()
@@ -36,18 +40,24 @@ public class AiImageFolderService(AppDbContext db, ILogger<AiImageFolderService>
                 return null;
             }
 
-            var created = new MediaFolderModel
+            db.MediaFolders.Add(new MediaFolderModel
             {
                 Id = Guid.NewGuid(),
                 Name = FolderName,
                 ParentFolderId = root.Id,
                 SocialChannelId = root.SocialChannelId,
                 CreatedAt = DateTime.UtcNow
-            };
-            db.MediaFolders.Add(created);
-            await db.SaveChangesAsync(ct);
+            });
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex)
+            {
+                logger.LogInformation(ex, "Folder Ảnh AI của Page {SocialChannelId} đã được tạo đồng thời", socialChannelId);
+            }
 
-            return await FindActiveAiFolderIdAsync(socialChannelId, ct) ?? created.Id;
+            return await FindActiveAiFolderIdAsync(db, socialChannelId, ct);
         }
         finally
         {
@@ -55,7 +65,7 @@ public class AiImageFolderService(AppDbContext db, ILogger<AiImageFolderService>
         }
     }
 
-    private Task<Guid?> FindActiveAiFolderIdAsync(Guid socialChannelId, CancellationToken ct)
+    private static Task<Guid?> FindActiveAiFolderIdAsync(AppDbContext db, Guid socialChannelId, CancellationToken ct)
         => db.MediaFolders.AsNoTracking()
             .Where(x => !x.IsDeleted
                 && x.SocialChannelId == socialChannelId
