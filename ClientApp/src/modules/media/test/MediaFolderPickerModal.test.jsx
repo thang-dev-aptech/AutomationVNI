@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -80,6 +80,17 @@ describe('MediaFolderPickerModal', () => {
     mediaFolderApi.children.mockResolvedValue(paged([CHILD_FOLDER]))
     mediaFolderApi.breadcrumb.mockResolvedValue({ data: { ancestors: [ROOT_FOLDER] } })
     mediaAssetApi.filter.mockResolvedValue(paged([IMG_A, IMG_B, PDF]))
+  })
+
+  it('shows the Google Drive folder on its own row above the Page folders', async () => {
+    renderPicker()
+
+    await screen.findByRole('button', { name: /Page Campaign/ })
+    const driveGroup = screen.getByTestId('media-folder-group-drive')
+    const pageGroup = screen.getByTestId('media-folder-group-pages')
+    expect(within(driveGroup).getByRole('button', { name: /Google Drive/ })).toBeInTheDocument()
+    expect(within(driveGroup).queryByRole('button', { name: /Page Campaign/ })).not.toBeInTheDocument()
+    expect(within(pageGroup).getByRole('button', { name: /Page Campaign/ })).toBeInTheDocument()
   })
 
   it('lists page roots and the Google Drive tree without changing the page URL', async () => {
