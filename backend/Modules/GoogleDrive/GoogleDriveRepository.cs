@@ -116,7 +116,7 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
     /// <summary>Tạo mới hoặc cộng dồn AttemptCount cho file đã lỗi từ trước, khoá theo GoogleDriveFileId.</summary>
     public async Task<GoogleDriveImportFailureModel> UpsertFailureAsync(
         string googleDriveFileId, string fileName, string mimeType, long sizeBytes,
-        string? error, CancellationToken ct = default)
+        string? error, CancellationToken ct = default, string? driveParentId = null)
     {
         var existing = await Context.Set<GoogleDriveImportFailureModel>()
             .FirstOrDefaultAsync(x => x.GoogleDriveFileId == googleDriveFileId, ct);
@@ -132,6 +132,7 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
                 AttemptCount = 1,
                 LastAttemptAt = DateTime.UtcNow,
                 LastError = error,
+                DriveParentId = string.IsNullOrWhiteSpace(driveParentId) ? null : driveParentId,
             };
             return await CreateAsync(entity, ct);
         }
@@ -142,6 +143,8 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
         existing.AttemptCount += 1;
         existing.LastAttemptAt = DateTime.UtcNow;
         existing.LastError = error;
+        if (!string.IsNullOrWhiteSpace(driveParentId))
+            existing.DriveParentId = driveParentId;
         ApplyUpdateAudit(existing);
         await Context.SaveChangesAsync(ct);
         return existing;

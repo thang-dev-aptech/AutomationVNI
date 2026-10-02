@@ -29,7 +29,8 @@ public class GoogleDriveSyncService(
     private static readonly SemaphoreSlim Lock = new(1, 1);
 
     /// <summary>
-    /// Quét ngay chạy đúng một tick thường. File đã đạt MaxRetryAttempts không được thử lại ở đây.
+    /// Quét ngay chạy đúng một tick thường. Alias của RunTickAsync cho test khóa;
+    /// không có đường retry riêng. File đã đạt MaxRetryAttempts không được thử lại.
     /// </summary>
     public Task<GoogleDriveSyncResult> RunScanNowAsync(CancellationToken ct = default)
         => RunTickAsync(ct);
@@ -157,6 +158,7 @@ public class GoogleDriveSyncService(
             settings.MaxRetryAttempts, budget, ct);
         var importedCount = 0;
         var fileStorage = fileStorageOptions.Value;
+        var map = await repository.GetKnownFolderMapAsync(ct);
 
         foreach (var failure in failures)
         {
@@ -189,7 +191,12 @@ public class GoogleDriveSyncService(
                     MimeType = failure.MimeType,
                     SizeBytes = failure.SizeBytes,
                 };
-                await mediaAssets.CreateFromGoogleDriveAsync(data, file, dedicatedFolderId, ct);
+                var targetFolderId = ResolveMappedMediaFolderId(
+                    string.IsNullOrWhiteSpace(failure.DriveParentId)
+                        ? []
+                        : [failure.DriveParentId],
+                    map) ?? dedicatedFolderId;
+                await mediaAssets.CreateFromGoogleDriveAsync(data, file, targetFolderId, ct);
                 await repository.DeleteFailureAsync(failure.GoogleDriveFileId, ct);
                 importedCount++;
             }
@@ -214,10 +221,11 @@ public class GoogleDriveSyncService(
         {
             await repository.UpsertFailureAsync(
                 failure.GoogleDriveFileId, failure.FileName, failure.MimeType, failure.SizeBytes,
-                error, ct);
+                error, ct, driveParentId: failure.DriveParentId);
         }
         catch (Exception failureEx) when (!ct.IsCancellationRequested)
         {
+            repository.DiscardPendingChanges();
             logger.LogWarning(
                 failureEx, "Không ghi được failure row cho file Google Drive {FileId}", failure.GoogleDriveFileId);
         }
@@ -454,11 +462,22 @@ public class GoogleDriveSyncService(
                 continue;
             }
 
+            var driveParentId = file.Parents.FirstOrDefault(parent => !string.IsNullOrWhiteSpace(parent));
+            var existingFailure = await repository.FindFailureAsync(file.FileId, ct);
+            if (existingFailure is not null)
+            {
+                var stillRetryable = existingFailure.AttemptCount < options.Value.MaxRetryAttempts;
+                var oversized = file.SizeBytes > fileStorage.MaxUploadBytes;
+                if (stillRetryable || oversized)
+                    continue;
+            }
+
             if (file.SizeBytes > fileStorage.MaxUploadBytes)
             {
                 await repository.UpsertFailureAsync(
                     file.FileId, file.Name, file.MimeType, file.SizeBytes,
-                    $"File vượt quá giới hạn {fileStorage.MaxUploadBytes} bytes", ct);
+                    $"File vượt quá giới hạn {fileStorage.MaxUploadBytes} bytes", ct,
+                    driveParentId: driveParentId);
                 continue;
             }
 
@@ -478,10 +497,12 @@ public class GoogleDriveSyncService(
                 try
                 {
                     await repository.UpsertFailureAsync(
-                        file.FileId, file.Name, file.MimeType, file.SizeBytes, ex.Message, ct);
+                        file.FileId, file.Name, file.MimeType, file.SizeBytes, ex.Message, ct,
+                        driveParentId: driveParentId);
                 }
                 catch (Exception failureEx) when (!ct.IsCancellationRequested)
                 {
+                    repository.DiscardPendingChanges();
                     logger.LogWarning(failureEx, "Không ghi được failure row cho file Google Drive {FileId}", file.FileId);
                 }
             }

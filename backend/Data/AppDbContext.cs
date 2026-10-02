@@ -497,6 +497,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.FileName).HasMaxLength(500);
             e.Property(x => x.MimeType).HasMaxLength(100);
             e.Property(x => x.LastError).HasColumnType("TEXT");
+            e.Property(x => x.DriveParentId).HasMaxLength(200);
         });
 
         modelBuilder.Entity<GoogleDriveKnownFolderModel>(e =>

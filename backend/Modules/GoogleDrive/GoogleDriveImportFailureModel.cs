@@ -16,4 +16,7 @@ public class GoogleDriveImportFailureModel : BaseEntity
     public int AttemptCount { get; set; }
     public DateTime LastAttemptAt { get; set; }
     public string? LastError { get; set; }
+
+    /// <summary>Id thư mục cha trên Drive tại lần ghi lỗi. Retry resolve MediaFolder từ id này.</summary>
+    public string? DriveParentId { get; set; }
 }
