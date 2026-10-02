@@ -322,6 +322,27 @@ public class PostFromMediaPipelineTests : IAsyncLifetime
         Assert.Equal(postsBefore, await CountPostsAsync());
     }
 
+    [Fact]
+    public async Task MissingOrDeletedCategory_Returns400AndCreatesNothing()
+    {
+        var channel = await SeedChannelAsync("Page A", "actor");
+        var media = await SeedMediaAsync("ok.jpg");
+        var deletedCategory = await SeedCategoryAsync(isDeleted: true);
+        var postsBefore = await CountPostsAsync();
+
+        foreach (var categoryId in new[] { Guid.NewGuid(), deletedCategory })
+        {
+            var payload = Payload([media], [channel], "Nội dung");
+            payload.CategoryId = categoryId;
+            using var response = await SendAsync("ContentManager", "actor", payload);
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Contains("VALIDATION_ERROR", body);
+        }
+
+        Assert.Equal(postsBefore, await CountPostsAsync());
+    }
+
     private async Task<HttpResponseMessage> SendAsync(
         string? role, string? user, CreatePostFromMediaRequest payload)
     {
@@ -345,6 +366,22 @@ public class PostFromMediaPipelineTests : IAsyncLifetime
         SocialChannelIds = channelIds.ToList(),
         Content = content,
     };
+
+    private async Task<Guid> SeedCategoryAsync(bool isDeleted = false)
+    {
+        await using var db = new AppDbContext(_options);
+        var category = new Backend.Modules.Category.CategoryModel
+        {
+            Id = Guid.NewGuid(),
+            Name = "Đã xoá",
+            Slug = "da-xoa",
+            IsDeleted = isDeleted,
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.Set<Backend.Modules.Category.CategoryModel>().Add(category);
+        await db.SaveChangesAsync();
+        return category.Id;
+    }
 
     private async Task<Guid> SeedChannelAsync(string name, string createdBy)
     {

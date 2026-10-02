@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { toast } from '@/shared/stores/toastStore'
 import { isImageMime } from '../constants/mediaConstants'
 import { MEDIA_POST_SELECTION_LIMIT } from '../constants.js'
@@ -14,24 +14,26 @@ export function useMediaSelection({
   initial = [],
 } = {}) {
   const [selected, setSelected] = useState(() => toImageMap(initial))
+  const selectedRef = useRef(selected)
+  selectedRef.current = selected
 
   const toggle = useCallback((asset) => {
     if (!asset?.id || !isImageMime(asset.mimeType)) return
-    setSelected((prev) => {
-      if (prev.has(asset.id)) {
-        const next = new Map(prev)
-        next.delete(asset.id)
-        return next
-      }
-      if (limit <= 1) return new Map([[asset.id, asset]])
-      if (prev.size >= limit) {
-        toast.warning(`Chỉ chọn tối đa ${limit} ảnh`)
-        return prev
-      }
+    const prev = selectedRef.current
+    if (prev.has(asset.id)) {
       const next = new Map(prev)
-      next.set(asset.id, asset)
-      return next
-    })
+      next.delete(asset.id)
+      selectedRef.current = next
+      setSelected(next)
+      return
+    }
+    if (limit > 1 && prev.size >= limit) {
+      toast.warning(`Chỉ chọn tối đa ${limit} ảnh`)
+      return
+    }
+    const next = limit <= 1 ? new Map([[asset.id, asset]]) : new Map(prev).set(asset.id, asset)
+    selectedRef.current = next
+    setSelected(next)
   }, [limit])
 
   const clear = useCallback(() => setSelected(new Map()), [])

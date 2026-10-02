@@ -24,7 +24,7 @@ describe('useMediaSelection', () => {
 
     act(() => result.current.toggle(image('d')))
     expect(result.current.items.map((asset) => asset.id)).toEqual(['a', 'b', 'c'])
-    expect(toast.warning).toHaveBeenCalled()
+    expect(toast.warning).toHaveBeenCalledTimes(1)
 
     act(() => result.current.toggle({ id: 'pdf', mimeType: 'application/pdf' }))
     expect(result.current.count).toBe(3)

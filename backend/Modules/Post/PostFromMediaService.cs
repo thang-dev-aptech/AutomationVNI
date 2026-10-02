@@ -1,4 +1,5 @@
 using Backend.Data;
+using Backend.Modules.Category;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaFolder;
 using Backend.Modules.Post.Enums;
@@ -38,6 +39,14 @@ public class PostFromMediaService(
             throw new ArgumentException("Phải chọn ít nhất một Page");
         if (channelIds.Distinct().Count() != channelIds.Count)
             throw new ArgumentException("Danh sách Page bị trùng");
+
+        if (request.CategoryId is Guid categoryId)
+        {
+            var categoryExists = await context.Set<CategoryModel>()
+                .AnyAsync(x => x.Id == categoryId && !x.IsDeleted, ct);
+            if (!categoryExists)
+                throw new ArgumentException("Danh mục không tồn tại");
+        }
 
         await EnsureMediaUsableAsync(mediaIds, ct);
         await mediaFolders.EnsureChannelsWritableAsync(channelIds, ct);

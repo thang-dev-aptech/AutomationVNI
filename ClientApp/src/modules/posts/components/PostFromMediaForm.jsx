@@ -70,10 +70,10 @@ export default function PostFromMediaForm({ categories = [] }) {
       })
       toast.success('Đã tạo bài từ ảnh đã chọn')
       if (pageIds.length > 1) {
-        navigate(`/bulk/${created?.batch?.batchId}`)
+        navigate(`/bulk/${created?.batchId}`)
         return
       }
-      navigate(`/posts/${created?.post?.id}`)
+      navigate(`/posts/${created?.id}`)
     } catch (error) {
       setErrorMessage(getErrorMessage(error))
     }

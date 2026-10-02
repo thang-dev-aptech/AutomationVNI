@@ -100,7 +100,7 @@ describe('PostCreatePage media flow', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     pickerAssets = [IMG]
-    createFromMedia.mockResolvedValue({ post: { id: 'post-9' }, batch: null })
+    createFromMedia.mockResolvedValue({ id: 'post-9' })
     generateCaption.mockResolvedValue({ caption: 'caption gợi ý' })
   })
 
@@ -194,7 +194,7 @@ describe('PostCreatePage media flow', () => {
     })
     expect(navigate).toHaveBeenCalledWith('/posts/post-9')
 
-    createFromMedia.mockResolvedValueOnce({ post: null, batch: { batchId: 'batch-7' } })
+    createFromMedia.mockResolvedValueOnce({ batchId: 'batch-7', created: 2, postIds: ['p1', 'p2'] })
     await user.click(screen.getByLabelText('Page Hai'))
     await user.click(submit)
     expect(createFromMedia).toHaveBeenLastCalledWith(expect.objectContaining({
