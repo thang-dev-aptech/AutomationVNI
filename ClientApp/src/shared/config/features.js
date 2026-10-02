@@ -4,7 +4,6 @@
  */
 export const FEATURES = {
   // Tạm ẩn theo yêu cầu người dùng 2026-10-02: lựa chọn "Sinh toàn bộ bằng AI" khi tạo bài.
+  // Áp dụng cho cả trang tạo bài (/posts/create) và trang Tạo hàng loạt (/bulk).
   aiFullImage: false,
-  // Tạm ẩn theo yêu cầu người dùng 2026-10-02: trang "Tạo hàng loạt" (/bulk).
-  bulkCreate: false,
 }

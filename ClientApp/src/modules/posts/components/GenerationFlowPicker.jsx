@@ -24,15 +24,18 @@ const OPTIONS = [
   },
 ]
 
-/** Các phương pháp đang hiện — đọc cờ lúc gọi để test bật/tắt được. */
-export function getVisibleGenerationFlows() {
-  return OPTIONS.filter((opt) => !opt.enabled || opt.enabled())
+/**
+ * Các phương pháp đang hiện — đọc cờ lúc gọi để test bật/tắt được.
+ * `allowed`: giới hạn theo trang (vd. Tạo hàng loạt không hỗ trợ 'media'); bỏ trống = tất cả.
+ */
+export function getVisibleGenerationFlows(allowed) {
+  return OPTIONS.filter((opt) => (!allowed || allowed.includes(opt.value)) && (!opt.enabled || opt.enabled()))
 }
 
-export default function GenerationFlowPicker({ value, onChange }) {
+export default function GenerationFlowPicker({ value, onChange, allowed }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-      {getVisibleGenerationFlows().map((opt) => {
+      {getVisibleGenerationFlows(allowed).map((opt) => {
         const selected = value === opt.value
         return (
           <button

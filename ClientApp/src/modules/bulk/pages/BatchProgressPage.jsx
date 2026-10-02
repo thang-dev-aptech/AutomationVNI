@@ -7,7 +7,6 @@ import { formatDateTime, getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
 import { getPostStatusMeta } from '@/modules/posts/constants/postStatus'
 import { useBatch, useBulkApprove, useBulkCancelSchedule, useBulkSchedule } from '../hooks/useBulk'
-import { FEATURES } from '@/shared/config/features'
 
 export default function BatchProgressPage() {
   const { batchId } = useParams()
@@ -85,7 +84,7 @@ export default function BatchProgressPage() {
       <PageHeader
         title="Tiến độ batch"
         description={`${data?.total ?? 0} bài${pending > 0 ? ' — đang sinh nội dung nền (xong → Đã duyệt)...' : ''}`}
-        actions={FEATURES.bulkCreate ? <Link to="/bulk" className="btn btn-secondary">+ Tạo lô mới</Link> : undefined}
+        actions={<Link to="/bulk" className="btn btn-secondary">+ Tạo lô mới</Link>}
       />
 
       {/* Tổng quan trạng thái */}

@@ -11,7 +11,6 @@ import { toast } from '@/shared/stores/toastStore'
 import { useChungChiEligiblePages } from '@/modules/media/hooks/useMediaFolders'
 import { bulkApi } from '../services/bulkApi'
 import './BulkCreatePage.css'
-import { FEATURES } from '@/shared/config/features'
 
 const DEFAULT_CHUNG_CHI_IDEA = 'Chứng chỉ'
 
@@ -79,7 +78,7 @@ export default function BulkChungChiPage() {
       <PageHeader
         title="Tạo hàng loạt từ chứng chỉ"
         description="Mỗi kênh một bài; ảnh lấy nguyên trạng từ thư mục chung_chi của từng Page — không overlay"
-        actions={FEATURES.bulkCreate ? <Link to="/bulk" className="btn btn-secondary">Tạo hàng loạt thường</Link> : undefined}
+        actions={<Link to="/bulk" className="btn btn-secondary">Tạo hàng loạt thường</Link>}
       />
 
       {channels.length === 0 && (

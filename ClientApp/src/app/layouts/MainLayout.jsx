@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { usePermissions } from '@/shared/hooks/usePermissions'
-import { FEATURES } from '@/shared/config/features'
 import Topbar from './Topbar'
 import './MainLayout.css'
 
@@ -60,7 +59,7 @@ const NAV_GROUPS = [
           <path d="M4 6H2a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2" />
         </svg>
       ),
-      visible: (p) => FEATURES.bulkCreate && p.canCreatePost,
+      visible: (p) => p.canCreatePost,
     },
       {
       to: '/bulk-chung-chi',

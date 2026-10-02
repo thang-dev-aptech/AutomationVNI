@@ -32,7 +32,6 @@ import NotFoundPage from '@/shared/pages/NotFoundPage'
 import DataDeletionPage from '@/shared/pages/DataDeletionPage'
 import PrivacyPolicyPage from '@/shared/pages/PrivacyPolicyPage'
 import TermsPage from '@/shared/pages/TermsPage'
-import { FEATURES } from '@/shared/config/features'
 
 export default function AppRouter() {
   return (
@@ -59,10 +58,7 @@ export default function AppRouter() {
           <Route path="/calendar" element={<PostCalendarPage />} />
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.postsCreate} />}>
             <Route path="/posts/create" element={<PostCreatePage />} />
-            <Route
-              path="/bulk"
-              element={FEATURES.bulkCreate ? <BulkCreatePage /> : <Navigate to="/posts/create" replace />}
-            />
+            <Route path="/bulk" element={<BulkCreatePage />} />
             <Route path="/bulk-chung-chi" element={<BulkChungChiPage />} />
             <Route path="/bulk/:batchId" element={<BatchProgressPage />} />
           </Route>
