@@ -86,20 +86,35 @@ public class MediaIntelligenceService(
             ?? throw new KeyNotFoundException("Không tìm thấy media");
         if (!media.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("AI tagging hiện chỉ hỗ trợ file ảnh");
-        if (string.IsNullOrWhiteSpace(media.StoragePath) || !await storage.ExistsAsync(media.StoragePath, ct))
-            throw new ArgumentException("File ảnh không tồn tại trên storage");
 
-        await using var stream = await storage.OpenReadAsync(media.StoragePath, ct);
-        using var memory = new MemoryStream();
-        await stream.CopyToAsync(memory, ct);
-        var result = await AnalyzeImageAsync(memory.ToArray(), media.MimeType, ct);
+        using var readDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        readDeadline.CancelAfter(Timeouts.StorageReadTimeout);
+        var readToken = readDeadline.Token;
 
-        media.AltText = result.AltText;
-        media.Description = result.Description;
-        media.Tags = BuildTagsJson(media.Tags, result);
-        media.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return media;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(media.StoragePath)
+                || !await AwaitStorageAsync(storage.ExistsAsync(media.StoragePath, readToken), readToken))
+                throw new ArgumentException("File ảnh không tồn tại trên storage");
+
+            await using var stream = await AwaitStorageAsync(
+                storage.OpenReadAsync(media.StoragePath, readToken), readToken);
+            using var memory = new MemoryStream();
+            await AwaitStorageAsync(stream.CopyToAsync(memory, readToken), readToken);
+
+            var result = await AnalyzeImageAsync(memory.ToArray(), media.MimeType, ct);
+
+            media.AltText = result.AltText;
+            media.Description = result.Description;
+            media.Tags = BuildTagsJson(media.Tags, result);
+            media.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return media;
+        }
+        catch (OperationCanceledException) when (readDeadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw StorageTimeout(Timeouts.StorageReadTimeout);
+        }
     }
 
     /// <summary>
@@ -194,13 +209,27 @@ public class MediaIntelligenceService(
 
     private async Task AnalyzeLayoutForAssetAsync(MediaAssetModel asset, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(asset.StoragePath) || !await storage.ExistsAsync(asset.StoragePath, ct))
-            throw new InvalidOperationException("File ảnh không tồn tại");
+        using var readDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        readDeadline.CancelAfter(Timeouts.StorageReadTimeout);
+        var readToken = readDeadline.Token;
 
-        using var stream = await storage.OpenReadAsync(asset.StoragePath, ct);
-        using var memoryStream = new MemoryStream();
-        await stream.CopyToAsync(memoryStream, ct);
-        var imageBytes = memoryStream.ToArray();
+        byte[] imageBytes;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(asset.StoragePath)
+                || !await AwaitStorageAsync(storage.ExistsAsync(asset.StoragePath, readToken), readToken))
+                throw new InvalidOperationException("File ảnh không tồn tại");
+
+            await using var stream = await AwaitStorageAsync(
+                storage.OpenReadAsync(asset.StoragePath, readToken), readToken);
+            using var memoryStream = new MemoryStream();
+            await AwaitStorageAsync(stream.CopyToAsync(memoryStream, readToken), readToken);
+            imageBytes = memoryStream.ToArray();
+        }
+        catch (OperationCanceledException) when (readDeadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw StorageTimeout(Timeouts.StorageReadTimeout);
+        }
 
         var (providerKey, config, model) = ResolveConfig();
         
@@ -808,23 +837,65 @@ public class MediaIntelligenceService(
     }
 
     /// <summary>Chờ một lời gọi storage nhưng không quá <paramref name="ct"/>, kể cả khi implementation
-    /// bỏ qua token. Kết quả về muộn (stream) được dispose để không rò.</summary>
-    private static async Task<T> AwaitStorageAsync<T>(Task<T> task, CancellationToken ct)
+    /// bỏ qua token (không thêm timeout riêng — dùng cho đường caption, đã có deadline của caption).</summary>
+    private static Task<T> AwaitStorageAsync<T>(Task<T> task, CancellationToken ct)
+        => AwaitStorageAsync(task, ct, Timeout.InfiniteTimeSpan);
+
+    private static Task AwaitStorageAsync(Task task, CancellationToken ct)
+        => AwaitStorageAsync(task, ct, Timeout.InfiniteTimeSpan);
+
+    /// <summary>Như trên nhưng còn giới hạn bởi <paramref name="timeout"/>: quá hạn → TimeoutException;
+    /// caller tự huỷ → OperationCanceledException như cũ. Kết quả/lỗi về muộn được dispose/observe.</summary>
+    private static async Task AwaitStorageAsync(Task task, CancellationToken ct, TimeSpan timeout)
     {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(timeout);
         try
         {
-            return await task.WaitAsync(ct);
+            await task.WaitAsync(timeoutCts.Token);
         }
         catch (OperationCanceledException) when (!task.IsCompleted)
         {
-            _ = task.ContinueWith(static t =>
-            {
-                if (t.IsCompletedSuccessfully) (t.Result as IDisposable)?.Dispose();
-                else _ = t.Exception;
-            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            ReleaseLateStorageResult(task);
+            if (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                throw StorageTimeout(timeout);
             throw;
         }
     }
+
+    private static async Task<T> AwaitStorageAsync<T>(Task<T> task, CancellationToken ct, TimeSpan timeout)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(timeout);
+        try
+        {
+            return await task.WaitAsync(timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (!task.IsCompleted)
+        {
+            ReleaseLateStorageResult(task);
+            if (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                throw StorageTimeout(timeout);
+            throw;
+        }
+    }
+
+    private static TimeoutException StorageTimeout(TimeSpan timeout)
+        => new($"Đọc ảnh từ storage quá {timeout.TotalSeconds:0.##} giây");
+
+    /// <summary>Lời gọi bị bỏ lại vẫn có thể hoàn tất sau: observe lỗi (vd. CopyToAsync gặp stream đã
+    /// dispose) để không thành UnobservedTaskException.</summary>
+    private static void ReleaseLateStorageResult(Task task)
+        => _ = task.ContinueWith(static t => _ = t.Exception,
+            CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+
+    /// <summary>Như trên, và dispose kết quả về muộn (stream) để không rò.</summary>
+    private static void ReleaseLateStorageResult<T>(Task<T> task)
+        => _ = task.ContinueWith(static t =>
+        {
+            if (t.IsCompletedSuccessfully) (t.Result as IDisposable)?.Dispose();
+            else _ = t.Exception;
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
     private async Task<string> CallChatCompletionsAsync(
         AiProviderConfig config,
@@ -1010,6 +1081,8 @@ public sealed record MediaAiTimeouts(
     {
     }
 
+    /// <summary>Tổng ngân sách thời gian cho toàn bộ các bước đọc một ảnh từ storage (exists, open, copy).</summary>
+    public TimeSpan StorageReadTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
     /// <summary>Giới hạn riêng cho bước lưu caption của single generate (nằm ngoài deadline).</summary>
     public TimeSpan CaptionSave { get; init; } = TimeSpan.FromSeconds(10);
