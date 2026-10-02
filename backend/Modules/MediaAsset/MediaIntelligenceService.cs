@@ -91,6 +91,9 @@ public class MediaIntelligenceService(
         readDeadline.CancelAfter(Timeouts.StorageReadTimeout);
         var readToken = readDeadline.Token;
 
+        // Deadline đọc ảnh chỉ bao 3 bước đọc. Gọi AI và lưu nằm ngoài, để AI timeout không bị
+        // báo nhầm thành storage timeout khi readDeadline đã hết giờ từ trước.
+        byte[] imageBytes;
         try
         {
             if (string.IsNullOrWhiteSpace(media.StoragePath)
@@ -101,20 +104,21 @@ public class MediaIntelligenceService(
                 storage.OpenReadAsync(media.StoragePath, readToken), readToken);
             using var memory = new MemoryStream();
             await AwaitStorageAsync(stream.CopyToAsync(memory, readToken), readToken);
-
-            var result = await AnalyzeImageAsync(memory.ToArray(), media.MimeType, ct);
-
-            media.AltText = result.AltText;
-            media.Description = result.Description;
-            media.Tags = BuildTagsJson(media.Tags, result);
-            media.UpdatedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(ct);
-            return media;
+            imageBytes = memory.ToArray();
         }
         catch (OperationCanceledException) when (readDeadline.IsCancellationRequested && !ct.IsCancellationRequested)
         {
             throw StorageTimeout(Timeouts.StorageReadTimeout);
         }
+
+        var result = await AnalyzeImageAsync(imageBytes, media.MimeType, ct);
+
+        media.AltText = result.AltText;
+        media.Description = result.Description;
+        media.Tags = BuildTagsJson(media.Tags, result);
+        media.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return media;
     }
 
     /// <summary>

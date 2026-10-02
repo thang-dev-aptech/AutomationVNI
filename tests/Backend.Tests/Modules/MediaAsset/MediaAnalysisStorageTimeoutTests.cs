@@ -99,6 +99,38 @@ public sealed class MediaAnalysisStorageTimeoutTests : IDisposable
     }
 
     [Fact]
+    public async Task AnalyzeAndSave_AiTimeoutAfterReadDeadline_IsNotReportedAsStorageTimeout()
+    {
+        // Storage trả ngay; AI treo tới khi hết timeout per-call, lúc đó deadline đọc ảnh đã hết từ lâu.
+        // Lỗi phải là AI timeout (TaskCanceledException bọc TimeoutException), không phải storage timeout.
+        var id = (await SeedAssetsAsync(("ok.png", "old-tags", "old-alt", "old-description")))[0];
+        var service = new MediaIntelligenceService(
+            new HttpClient(new HangingChatHandler()) { Timeout = MediaIntelligenceService.HttpClientTimeout },
+            new AppDbContext(_options),
+            new InMemoryImageStorage(),
+            AnalysisOptions.Create(),
+            NullLogger<MediaIntelligenceService>.Instance)
+        {
+            Timeouts = MediaAiTimeouts.Default with
+            {
+                StorageReadTimeout = TimeSpan.FromMilliseconds(50),
+                ImageAnalysisRequest = TimeSpan.FromMilliseconds(300)
+            }
+        };
+
+        var exception = await Assert.ThrowsAsync<TaskCanceledException>(() => service.AnalyzeAndSaveAsync(id));
+
+        Assert.IsType<TimeoutException>(exception.InnerException);
+        Assert.DoesNotContain("storage", exception.Message, StringComparison.OrdinalIgnoreCase);
+
+        await using var verify = new AppDbContext(_options);
+        var asset = await verify.MediaAssets.SingleAsync(x => x.Id == id);
+        Assert.Equal("old-tags", asset.Tags);
+        Assert.Equal("old-alt", asset.AltText);
+        Assert.Equal("old-description", asset.Description);
+    }
+
+    [Fact]
     public async Task CaptionPath_IsNotLimitedByStorageReadTimeout()
     {
         // Đường caption chỉ bị giới hạn bởi deadline của caption, không phải StorageReadTimeout của đường phân tích.
@@ -164,33 +196,14 @@ public sealed class MediaAnalysisStorageTimeoutTests : IDisposable
         }
     }
 
-    private sealed class GatedAnalysisStorage(string hangingFile) : IFileStorageService
+    /// <summary>AI không bao giờ trả lời; chỉ kết thúc khi token bị huỷ (timeout per-call).</summary>
+    private sealed class HangingChatHandler : HttpMessageHandler
     {
-        private readonly TaskCompletionSource _openReadStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public Task OpenReadStarted => _openReadStarted.Task;
-
-        public Task<FileSaveResult> SaveAsync(IFormFile file, string folder, CancellationToken ct = default)
-            => throw new NotSupportedException();
-
-        public Task<FileSaveResult> SaveBytesAsync(byte[] data, string folder, string extension, string contentType, CancellationToken ct = default)
-            => throw new NotSupportedException();
-
-        public Task<bool> ExistsAsync(string storageKey, CancellationToken ct = default)
-            => Task.FromResult(true);
-
-        public async Task<Stream> OpenReadAsync(string storageKey, CancellationToken ct = default)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            if (!string.Equals(storageKey, hangingFile, StringComparison.Ordinal))
-                return new MemoryStream(InMemoryImageStorage.ImageBytes);
-
-            _openReadStarted.TrySetResult();
-            await _release.Task;
-            return new MemoryStream(InMemoryImageStorage.ImageBytes);
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            throw new InvalidOperationException("unreachable");
         }
-
-        public Task DeleteAsync(string storageKey, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     /// <summary>Storage chậm nhưng vẫn hoàn tất (mô phỏng độ trễ, không dùng để đồng bộ).</summary>
