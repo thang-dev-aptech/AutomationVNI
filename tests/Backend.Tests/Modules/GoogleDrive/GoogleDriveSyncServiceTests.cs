@@ -303,7 +303,7 @@ public class GoogleDriveSyncServiceTests
     [Fact]
     public async Task RunTickAsync_SaveFailureOnOneFile_DoesNotAbortTick()
     {
-        await using var fixture = await Fixture.CreateAsync(maxRetryAttempts: 1);
+        await using var fixture = await Fixture.CreateAsync();
         await fixture.SetEnabledAsync(true, completeInitialSnapshot: false);
         await fixture.InstallUniquePoisonTriggerAsync();
         fixture.Client.StartToken = "after-poison";
@@ -451,10 +451,10 @@ public class GoogleDriveSyncServiceTests
 
     /// <summary>
     /// N2: file snapshot hết MaxRetryAttempts không được tick thường nhập lại. Dòng failure còn LastError.
-    /// Quét ngay thử lại đúng file đó một lần, rồi nhập.
+    /// Quét ngay không thử lại file đã hết lượt.
     /// </summary>
     [Fact]
-    public async Task RunTickAsync_SnapshotFailureAtMaxAttempts_StaysVisible_UntilScanNowRetries()
+    public async Task RunTickAsync_ExhaustedFailure_StaysVisible_AndScanNowDoesNotRetry()
     {
         await using var fixture = await Fixture.CreateAsync(maxRetryAttempts: 2, maxFilesPerTick: 20);
         await fixture.SetEnabledAsync(true, completeInitialSnapshot: false);
@@ -471,7 +471,7 @@ public class GoogleDriveSyncServiceTests
         Assert.NotNull(afterFirst);
         Assert.Equal(1, afterFirst!.AttemptCount);
         Assert.False(string.IsNullOrWhiteSpace(afterFirst.LastError));
-        Assert.Null((await fixture.GetStateAsync()).InitialSnapshotCompletedAt);
+        Assert.NotNull((await fixture.GetStateAsync()).InitialSnapshotCompletedAt);
 
         var second = await fixture.CreateService().RunTickAsync();
         Assert.Equal(0, second.ImportedCount);
@@ -489,19 +489,195 @@ public class GoogleDriveSyncServiceTests
         var visible = await fixture.GetExhaustedFailuresAsync();
         Assert.Contains(visible, x => x.GoogleDriveFileId == "stuck-1" && x.LastError != null);
 
+        var beforeScan = fixture.Client.DownloadedFileIds.Count(id => id == "stuck-1");
         fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "scan-now", Files = [] });
         var scanned = await fixture.CreateService().RunScanNowAsync();
-        Assert.Equal(1, scanned.ImportedCount);
-        Assert.Null(await fixture.GetFailureAsync("stuck-1"));
-        Assert.NotNull(await fixture.GetMediaAssetByGoogleDriveFileIdRawAsync("stuck-1"));
+        Assert.Equal(0, scanned.ImportedCount);
+        Assert.NotNull(await fixture.GetFailureAsync("stuck-1"));
+        Assert.Equal(2, (await fixture.GetFailureAsync("stuck-1"))!.AttemptCount);
+        Assert.Equal(beforeScan, fixture.Client.DownloadedFileIds.Count(id => id == "stuck-1"));
     }
 
-    private static GoogleDriveFileInfo File(string id, string name, string? parent = null) => new()
+    /// <summary>F1a: lỗi lưu kéo dài không hủy tick. AttemptCount tăng tới max mặc định rồi dừng.</summary>
+    [Fact]
+    public async Task RunTickAsync_PersistentSaveFailure_DoesNotAbortTick_AndStopsAtMaxAttempts()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true, completeInitialSnapshot: false);
+        await fixture.InstallUniquePoisonTriggerAsync();
+        fixture.Client.StartToken = "after-poison-loop";
+        fixture.Client.FolderTree = new GoogleDriveFolderTree
+        {
+            Files = [File("poison-1", "poison.jpg"), File("good-1", "good.jpg")]
+        };
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "delta-1",
+            Files = [File("delta-1", "delta.jpg")]
+        });
+
+        for (var tick = 1; tick <= 5; tick++)
+        {
+            await fixture.CreateService().RunTickAsync();
+            Assert.Equal(tick, (await fixture.GetFailureAsync("poison-1"))!.AttemptCount);
+        }
+
+        Assert.Contains("good-1", fixture.Client.DownloadedFileIds);
+        Assert.Contains("delta-1", fixture.Client.DownloadedFileIds);
+        Assert.NotNull((await fixture.GetStateAsync()).InitialSnapshotCompletedAt);
+        Assert.Equal(5, fixture.Client.DownloadedFileIds.Count(id => id == "poison-1"));
+
+        await fixture.CreateService().RunTickAsync();
+        Assert.Equal(5, (await fixture.GetFailureAsync("poison-1"))!.AttemptCount);
+        Assert.Equal(5, fixture.Client.DownloadedFileIds.Count(id => id == "poison-1"));
+    }
+
+    /// <summary>F1b: delta lỗi rồi nhập lại thành công thì xoá failure row, tick sau không ném.</summary>
+    [Fact]
+    public async Task RunTickAsync_DeltaFailureThenSuccess_DeletesFailureAndLaterTickDoesNotThrow()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+        fixture.Client.FailDownload("flaky-delta", times: 2);
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "fail-delta",
+            Files = [File("flaky-delta", "flaky.jpg")]
+        });
+
+        var failed = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(0, failed.ImportedCount);
+        Assert.NotNull(await fixture.GetFailureAsync("flaky-delta"));
+
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "ok-delta",
+            Files = [File("flaky-delta", "flaky.jpg")]
+        });
+        var recovered = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(1, recovered.ImportedCount);
+        Assert.Null(await fixture.GetFailureAsync("flaky-delta"));
+
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "after-delta", Files = [] });
+        var next = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(0, next.ImportedCount);
+        Assert.Null(await fixture.GetFailureAsync("flaky-delta"));
+    }
+
+    /// <summary>F2: mỗi tick một lần thử. Thành công thì xoá failure, tick sau không ném.</summary>
+    [Fact]
+    public async Task RunTickAsync_SnapshotFailureThenSuccess_RetriesOncePerTickAndDeletesFailure()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true, completeInitialSnapshot: false);
+        fixture.Client.StartToken = "after-flaky";
+        fixture.Client.FailDownload("flaky-1", times: 2);
+        fixture.Client.FolderTree = new GoogleDriveFolderTree { Files = [File("flaky-1", "flaky.jpg")] };
+
+        for (var tick = 1; tick <= 2; tick++)
+        {
+            var before = fixture.Client.DownloadedFileIds.Count;
+            var result = await fixture.CreateService().RunTickAsync();
+            Assert.Equal(0, result.ImportedCount);
+            Assert.Equal(before + 1, fixture.Client.DownloadedFileIds.Count);
+            Assert.Equal(tick, (await fixture.GetFailureAsync("flaky-1"))!.AttemptCount);
+        }
+
+        var recovered = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(1, recovered.ImportedCount);
+        Assert.Null(await fixture.GetFailureAsync("flaky-1"));
+        Assert.Equal(3, fixture.Client.DownloadedFileIds.Count(id => id == "flaky-1"));
+
+        var next = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(0, next.ImportedCount);
+        Assert.Equal(3, fixture.Client.DownloadedFileIds.Count);
+    }
+
+    /// <summary>F3: oversize không chiếm slot sau khi đã ghi failure. File nhỏ vào, snapshot xong, changes chạy.</summary>
+    [Fact]
+    public async Task RunTickAsync_OversizedFiles_DoNotBlockSmallerFileOrChanges()
+    {
+        await using var fixture = await Fixture.CreateAsync(maxFilesPerTick: 2);
+        await fixture.SetEnabledAsync(true, completeInitialSnapshot: false);
+        fixture.Client.StartToken = "after-size";
+        await fixture.SeedFailureAttemptsAsync("big-1", 5);
+        await fixture.SeedFailureAttemptsAsync("big-2", 5);
+        fixture.Client.FolderTree = new GoogleDriveFolderTree
+        {
+            Files =
+            [
+                File("big-1", "big-1.jpg", sizeBytes: 9_000_000),
+                File("big-2", "big-2.jpg", sizeBytes: 9_000_000),
+                File("small-1", "small.jpg"),
+            ]
+        };
+
+        var completed = false;
+        for (var i = 0; i < 4 && !completed; i++)
+        {
+            await fixture.CreateService().RunTickAsync();
+            completed = (await fixture.GetStateAsync()).InitialSnapshotCompletedAt.HasValue;
+        }
+
+        Assert.True(completed);
+        Assert.Contains("small-1", fixture.Client.DownloadedFileIds);
+
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "delta-size",
+            Files = [File("delta-size", "delta.jpg")]
+        });
+        var delta = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(1, delta.ImportedCount);
+        Assert.True(fixture.Client.ListChangesCalls > 0);
+    }
+
+    /// <summary>N2-a: file hết lượt nhập được qua delta thì không còn trong danh sách hết lượt, Quét ngay không ném.</summary>
+    [Fact]
+    public async Task RunTickAsync_ExhaustedFileImportedByDelta_ScanNowDoesNotThrow()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+        await fixture.SeedFailureAttemptsAsync("late-ok", 5);
+        Assert.Contains(await fixture.GetExhaustedFailuresAsync(), x => x.GoogleDriveFileId == "late-ok");
+
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage
+        {
+            NextPageToken = "imported",
+            Files = [File("late-ok", "late-ok.jpg")]
+        });
+        var imported = await fixture.CreateService().RunTickAsync();
+        Assert.Equal(1, imported.ImportedCount);
+        Assert.Null(await fixture.GetFailureAsync("late-ok"));
+
+        var scanned = await fixture.CreateService().RunScanNowAsync();
+        Assert.Equal(0, scanned.ImportedCount);
+        Assert.DoesNotContain(await fixture.GetExhaustedFailuresAsync(), x => x.GoogleDriveFileId == "late-ok");
+    }
+
+    /// <summary>Quét ngay không tải và không tăng attempt của file đã hết lượt.</summary>
+    [Fact]
+    public async Task RunScanNowAsync_DoesNotDownloadOrIncrementExhaustedFailure()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.SetEnabledAsync(true);
+        await fixture.SeedFailureAttemptsAsync("done-1", 5);
+        fixture.Client.Pages.Enqueue(new GoogleDriveChangesPage { NextPageToken = "scan", Files = [] });
+
+        var scanned = await fixture.CreateService().RunScanNowAsync();
+
+        Assert.Equal(0, scanned.ImportedCount);
+        Assert.Equal(5, (await fixture.GetFailureAsync("done-1"))!.AttemptCount);
+        Assert.DoesNotContain("done-1", fixture.Client.DownloadedFileIds);
+    }
+
+    private static GoogleDriveFileInfo File(
+        string id, string name, string? parent = null, long sizeBytes = 10) => new()
     {
         FileId = id,
         Name = name,
         MimeType = "image/jpeg",
-        SizeBytes = 10,
+        SizeBytes = sizeBytes,
         Parents = [parent ?? Fixture.RootFolderId]
     };
 
@@ -1553,6 +1729,14 @@ public class GoogleDriveSyncServiceTests
             await using var db = new AppDbContext(DbOptions);
             return await db.Set<GoogleDriveImportFailureModel>()
                 .FirstOrDefaultAsync(x => x.GoogleDriveFileId == fileId);
+        }
+
+        public async Task SeedFailureAttemptsAsync(string fileId, int attempts)
+        {
+            await using var db = new AppDbContext(DbOptions);
+            var repository = CreateRepository(db);
+            for (var i = 0; i < attempts; i++)
+                await repository.UpsertFailureAsync(fileId, fileId + ".jpg", "image/jpeg", 10, "seed");
         }
 
         public async Task<HashSet<string>> GetKnownFolderIdsAsync()

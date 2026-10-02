@@ -29,21 +29,17 @@ public class GoogleDriveSyncService(
     private static readonly SemaphoreSlim Lock = new(1, 1);
 
     /// <summary>
-    /// Quét ngay: thử lại một đợt các file đã hết MaxRetryAttempts. Không đổi chính sách GDRIVE-01 của worker
-    /// định kỳ — tick thường vẫn chỉ lấy AttemptCount dưới MaxRetryAttempts.
+    /// Quét ngay chạy đúng một tick thường. File đã đạt MaxRetryAttempts không được thử lại ở đây.
     /// </summary>
     public Task<GoogleDriveSyncResult> RunScanNowAsync(CancellationToken ct = default)
-        => RunLockedAsync(includeExhaustedFailures: true, ct);
+        => RunTickAsync(ct);
 
-    public Task<GoogleDriveSyncResult> RunTickAsync(CancellationToken ct = default)
-        => RunLockedAsync(includeExhaustedFailures: false, ct);
-
-    private async Task<GoogleDriveSyncResult> RunLockedAsync(bool includeExhaustedFailures, CancellationToken ct)
+    public async Task<GoogleDriveSyncResult> RunTickAsync(CancellationToken ct = default)
     {
         await Lock.WaitAsync(ct);
         try
         {
-            return await RunTickCoreAsync(includeExhaustedFailures, ct);
+            return await RunTickCoreAsync(ct);
         }
         finally
         {
@@ -51,7 +47,7 @@ public class GoogleDriveSyncService(
         }
     }
 
-    private async Task<GoogleDriveSyncResult> RunTickCoreAsync(bool includeExhaustedFailures, CancellationToken ct)
+    private async Task<GoogleDriveSyncResult> RunTickCoreAsync(CancellationToken ct)
     {
         var settings = options.Value;
         var state = await repository.GetSyncStateAsync(ct);
@@ -77,8 +73,8 @@ public class GoogleDriveSyncService(
             }
         }
 
-        // File đạt MaxRetryAttempts không được worker tự thử lại. Quét ngay là cách thử lại thủ công.
-        var retriedCount = await RetryFailuresAsync(settings, dedicatedFolderId, includeExhaustedFailures, ct);
+        // Chỉ file AttemptCount < MaxRetryAttempts. Quét ngay dùng cùng đường này.
+        var retriedCount = await RetryFailuresAsync(settings, dedicatedFolderId, ct);
 
         if (!client.IsConfigured())
         {
@@ -154,24 +150,37 @@ public class GoogleDriveSyncService(
     }
 
     private async Task<int> RetryFailuresAsync(
-        GoogleDriveOptions settings, Guid dedicatedFolderId, bool includeExhausted, CancellationToken ct)
+        GoogleDriveOptions settings, Guid dedicatedFolderId, CancellationToken ct)
     {
         var budget = Math.Max(1, settings.MaxFilesPerTick);
         var failures = await repository.GetRetryableFailuresAsync(
             settings.MaxRetryAttempts, budget, ct);
-        if (includeExhausted && failures.Count < budget)
-        {
-            var exhausted = await repository.GetExhaustedFailuresAsync(
-                settings.MaxRetryAttempts, budget - failures.Count, ct);
-            failures.AddRange(exhausted);
-        }
         var importedCount = 0;
+        var fileStorage = fileStorageOptions.Value;
 
         foreach (var failure in failures)
         {
             ct.ThrowIfCancellationRequested();
             try
             {
+                // Một lần thử/tick: snapshot bỏ qua file đã có failure row, chỉ đường này được tải lại.
+                var existing = await mediaAssets.FindByGoogleDriveFileIdIncludingDeletedAsync(
+                    failure.GoogleDriveFileId, ct);
+                if (existing is not null)
+                {
+                    await repository.DeleteFailureAsync(failure.GoogleDriveFileId, ct);
+                    continue;
+                }
+
+                if (failure.SizeBytes > fileStorage.MaxUploadBytes)
+                {
+                    await RecordRetryFailureAsync(
+                        failure,
+                        $"File vượt quá giới hạn {fileStorage.MaxUploadBytes} bytes",
+                        ct);
+                    continue;
+                }
+
                 var data = await client.DownloadFileAsync(failure.GoogleDriveFileId, ct);
                 var file = new GoogleDriveFileInfo
                 {
@@ -187,13 +196,31 @@ public class GoogleDriveSyncService(
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 logger.LogWarning(ex, "Thử lại file Google Drive {FileId} vẫn lỗi", failure.GoogleDriveFileId);
-                await repository.UpsertFailureAsync(
-                    failure.GoogleDriveFileId, failure.FileName, failure.MimeType, failure.SizeBytes,
-                    ex.Message, ct);
+                repository.DiscardPendingChanges();
+                await RecordRetryFailureAsync(failure, ex.Message, ct);
             }
         }
 
         return importedCount;
+    }
+
+    /// <summary>
+    /// Ghi failure sau khi entity lỗi đã bị bỏ. Lỗi ghi không được hủy tick.
+    /// </summary>
+    private async Task RecordRetryFailureAsync(
+        GoogleDriveImportFailureModel failure, string? error, CancellationToken ct)
+    {
+        try
+        {
+            await repository.UpsertFailureAsync(
+                failure.GoogleDriveFileId, failure.FileName, failure.MimeType, failure.SizeBytes,
+                error, ct);
+        }
+        catch (Exception failureEx) when (!ct.IsCancellationRequested)
+        {
+            logger.LogWarning(
+                failureEx, "Không ghi được failure row cho file Google Drive {FileId}", failure.GoogleDriveFileId);
+        }
     }
 
     private async Task<int> ImportNewFilesAsync(
@@ -251,14 +278,8 @@ public class GoogleDriveSyncService(
             var listed = await ImportListedFilesAsync(pending, fileStorage, ct, folderIds);
             importedExisting = listed.Imported;
             unmapped |= listed.SkippedUnmappedInTree;
-            var stillRetryable = false;
-            foreach (var file in pending)
-            {
-                var failure = await repository.FindFailureAsync(file.FileId, ct);
-                if (failure is not null && failure.AttemptCount < settings.MaxRetryAttempts)
-                    stillRetryable = true;
-            }
-            snapshotRemaining = unmapped || remainingAfterBatch > 0 || stillRetryable;
+            // File đã có failure row do RetryFailuresAsync lo, không giữ snapshot mở vì chúng.
+            snapshotRemaining = unmapped || remainingAfterBatch > 0;
 
             if (snapshotRemaining)
             {
@@ -322,11 +343,13 @@ public class GoogleDriveSyncService(
             return false;
         }
 
-        if (file.SizeBytes > fileStorage.MaxUploadBytes)
-            return true;
-
+        // Đã có failure row: chỉ RetryFailuresAsync được thử trong tick này. File hết lượt
+        // hoặc bị từ chối (oversize đã ghi) không chiếm slot snapshot.
         var failure = await repository.FindFailureAsync(file.FileId, ct);
-        return failure is null || failure.AttemptCount < options.Value.MaxRetryAttempts;
+        if (failure is not null)
+            return false;
+
+        return true;
     }
 
     private sealed record ListedImport(int Imported, bool SkippedUnmappedInTree);
@@ -416,6 +439,7 @@ public class GoogleDriveSyncService(
             var existing = await mediaAssets.FindByGoogleDriveFileIdIncludingDeletedAsync(file.FileId, ct);
             if (existing is not null)
             {
+                await repository.DeleteFailureAsync(file.FileId, ct);
                 if (existing.IsDeleted)
                     continue;
                 await mediaAssets.UpdateGoogleDrivePlacementAsync(
@@ -442,6 +466,7 @@ public class GoogleDriveSyncService(
             {
                 var data = await client.DownloadFileAsync(file.FileId, ct);
                 await mediaAssets.CreateFromGoogleDriveAsync(data, file, targetFolderId.Value, ct);
+                await repository.DeleteFailureAsync(file.FileId, ct);
                 importedCount++;
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)

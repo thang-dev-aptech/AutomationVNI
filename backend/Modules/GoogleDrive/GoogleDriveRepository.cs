@@ -96,7 +96,7 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
             .Take(Math.Max(1, batchSize))
             .ToListAsync(ct);
 
-    /// <summary>File đã đạt MaxRetryAttempts. Worker không tự thử lại; dùng cho hiển thị và Quét ngay.</summary>
+    /// <summary>File đã đạt MaxRetryAttempts. Worker và Quét ngay đều không thử lại.</summary>
     public async Task<List<GoogleDriveImportFailureModel>> GetExhaustedFailuresAsync(
         int maxAttempts, int batchSize, CancellationToken ct = default)
         => await QueryActive()
@@ -104,6 +104,9 @@ public class GoogleDriveRepository(AppDbContext context, IUserContext userContex
             .OrderByDescending(x => x.LastAttemptAt)
             .Take(Math.Max(1, batchSize))
             .ToListAsync(ct);
+
+    public async Task<int> CountExhaustedFailuresAsync(int maxAttempts, CancellationToken ct = default)
+        => await QueryActive().CountAsync(x => x.AttemptCount >= maxAttempts, ct);
 
     public async Task<GoogleDriveImportFailureModel?> FindFailureAsync(
         string googleDriveFileId, CancellationToken ct = default)

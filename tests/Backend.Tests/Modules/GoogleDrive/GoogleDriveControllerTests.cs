@@ -89,6 +89,55 @@ public class GoogleDriveControllerTests
         await connection.DisposeAsync();
     }
 
+    [Fact]
+    public async Task PipelineState_ExhaustedCountIsUncapped_AndPostReturnsSameCount()
+    {
+        var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        var dbOptions = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
+        await using (var db = new AppDbContext(dbOptions))
+        {
+            await db.Database.EnsureCreatedAsync();
+            for (var i = 0; i < 21; i++)
+            {
+                db.Add(new GoogleDriveImportFailureModel
+                {
+                    GoogleDriveFileId = $"exhausted-{i}",
+                    FileName = $"exhausted-{i}.jpg",
+                    MimeType = "image/jpeg",
+                    SizeBytes = 10,
+                    AttemptCount = 5,
+                    LastAttemptAt = DateTime.UtcNow,
+                    LastError = "hết lượt",
+                });
+            }
+
+            await db.SaveChangesAsync();
+        }
+
+        using var host = CreateApiHost(dbOptions);
+        using var client = host.GetTestClient();
+
+        using (var get = new HttpRequestMessage(HttpMethod.Get, "/api/GoogleDrive/pipeline-state"))
+        {
+            Authorize(get, "Viewer", "viewer-user");
+            using var response = await client.SendAsync(get);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+            var data = body.GetProperty("data");
+            Assert.Equal(21, data.GetProperty("exhaustedFailureCount").GetInt32());
+            Assert.Equal(20, data.GetProperty("exhaustedFailures").GetArrayLength());
+        }
+
+        using var post = PipelineStateRequest(true, "Admin", "admin-user");
+        using var postResponse = await client.SendAsync(post);
+        Assert.Equal(HttpStatusCode.OK, postResponse.StatusCode);
+        var postBody = await postResponse.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(21, postBody.GetProperty("data").GetProperty("exhaustedFailureCount").GetInt32());
+
+        await connection.DisposeAsync();
+    }
+
     private static HttpRequestMessage ScanNowRequest(string role, string userName)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "/api/GoogleDrive/scan-now");
