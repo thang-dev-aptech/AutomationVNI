@@ -1,0 +1,44 @@
+.media-folder-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.media-folder-picker-search input {
+  width: 100%;
+}
+
+.media-folder-picker-breadcrumb,
+.media-folder-picker-folders,
+.media-folder-picker-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.media-folder-picker-files {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+.media-folder-picker-files button.is-selected {
+  outline: 2px solid var(--accent, #2563eb);
+}
+
+.media-folder-picker-count {
+  margin-right: auto;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}

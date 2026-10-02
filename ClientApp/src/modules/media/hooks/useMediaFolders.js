@@ -18,10 +18,12 @@ export function useMediaFolderTree() {
 export function useMediaFolderPageRoots({
   index = 1,
   size = 20,
+  enabled = true,
 } = {}) {
   return useQuery({
     queryKey: mediaFolderQueryKeys.pageRoots(index, size),
     queryFn: async () => unwrapApiData(await mediaFolderApi.pageRoots({ index, size })),
+    enabled,
     retry: false,
   })
 }
