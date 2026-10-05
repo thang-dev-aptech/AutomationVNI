@@ -9,12 +9,13 @@ namespace Backend.Modules.SocialChannel;
 /// Thứ tự hiển thị Page/kênh (R-028): tên chứa "vni" (không phân biệt hoa/thường) lên trước, trong mỗi
 /// nhóm A→Z theo tên rồi theo Id. Dịch được sang SQL SQLite để áp TRƯỚC Skip/Take.
 ///
-/// Giới hạn đã biết: SQLite lower()/so sánh mặc định chỉ xử lý ASCII, nên chữ có dấu tiếng Việt được so
-/// theo mã ký tự (đứng sau 'z'), khác Intl.Collator('vi') của frontend. Nhóm VNi luôn đúng; thứ tự
-/// A→Z chỉ lệch với tên bắt đầu/khác nhau ở chữ có dấu.
+/// Nhóm VNi dùng lower() ASCII (chuỗi "vni" không dấu). A→Z dùng collation SQLite "VI"
+/// (CultureInfo vi-VN), khớp Intl.Collator('vi') trên bộ tên kiểm thử dùng chung với frontend.
 /// </summary>
 public static class PageOrdering
 {
+    public const string VietnameseCollation = "VI";
+
     private const string VniMarker = "vni";
 
     private static readonly MethodInfo ToLowerMethod =
@@ -22,6 +23,13 @@ public static class PageOrdering
 
     private static readonly MethodInfo ContainsMethod =
         typeof(string).GetMethod(nameof(string.Contains), [typeof(string)])!;
+
+    private static readonly MethodInfo CollateMethod =
+        typeof(RelationalDbFunctionsExtensions)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Single(m => m.Name == nameof(RelationalDbFunctionsExtensions.Collate)
+                && m.GetParameters().Length == 3)
+            .MakeGenericMethod(typeof(string));
 
     public static IOrderedQueryable<SocialChannelModel> OrderByVniFirst(
         this IQueryable<SocialChannelModel> source)
@@ -38,7 +46,12 @@ public static class PageOrdering
         var group = Expression.Lambda<Func<T, int>>(
             Expression.Condition(isVni, Expression.Constant(0), Expression.Constant(1)),
             name.Parameters);
-        var alphabetical = Expression.Lambda<Func<T, string>>(lowered, name.Parameters);
+        var collated = Expression.Call(
+            CollateMethod,
+            Expression.Constant(EF.Functions),
+            name.Body,
+            Expression.Constant(VietnameseCollation));
+        var alphabetical = Expression.Lambda<Func<T, string>>(collated, name.Parameters);
 
         return source.OrderBy(group).ThenBy(alphabetical).ThenBy(id);
     }

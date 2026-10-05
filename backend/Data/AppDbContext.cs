@@ -1,3 +1,4 @@
+using System.Globalization;
 using Backend.Modules.ApiLog;
 using Backend.Modules.Category;
 using Backend.Modules.ContentCrawl;
@@ -19,13 +20,20 @@ using Backend.Modules.ShortLink;
 using Backend.Modules.SocialConnection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Data;
 
 public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, Guid>
 {
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
+    {
+        // Connection đã mở sẵn (test) không kích hoạt interceptor ConnectionOpened ⇒ đăng ký tại đây,
+        // mỗi connection đúng một lần (Microsoft.Data.Sqlite tự áp lại collation khi connection mở).
+        if (Database.IsRelational() && Database.GetDbConnection() is SqliteConnection sqlite)
+            SqliteVietnameseCollation.Register(sqlite);
+    }
 
     public DbSet<CategoryModel> Categories => Set<CategoryModel>();
     public DbSet<SocialChannelModel> SocialChannels => Set<SocialChannelModel>();
@@ -645,6 +653,32 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.TitleSnippet).HasMaxLength(500);
         });
     }
+}
+
+/// <summary>
+/// Collation SQLite "VI": CompareInfo của CultureInfo("vi-VN"). Đã đối chiếu với Intl.Collator('vi')
+/// trên bộ tên dùng chung với channelSort.test.js (Alpha, Ân Thi, Ba Vì, Đà Nẵng, Zeta) — cùng thứ tự.
+/// </summary>
+public static class SqliteVietnameseCollation
+{
+    private static readonly CompareInfo Vietnamese =
+        CultureInfo.GetCultureInfo("vi-VN").CompareInfo;
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<SqliteConnection, object> Registered = new();
+
+    /// <summary>Đăng ký một lần cho mỗi connection (đăng ký lại khi có statement đang chạy sẽ lỗi).</summary>
+    public static void Register(SqliteConnection connection)
+    {
+        lock (Registered)
+        {
+            if (Registered.TryGetValue(connection, out _)) return;
+            connection.CreateCollation(PageOrdering.VietnameseCollation, Compare);
+            Registered.Add(connection, new object());
+        }
+    }
+
+    public static int Compare(string? left, string? right)
+        => Vietnamese.Compare(left ?? string.Empty, right ?? string.Empty, CompareOptions.None);
 }
 
 public class ApplicationUser : IdentityUser<Guid> { }

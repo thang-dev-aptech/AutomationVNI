@@ -21,6 +21,20 @@ describe('sortChannelsVniFirst', () => {
     expect(names(sortChannelsVniFirst(input))).toEqual(['An', 'Ân', 'Bắc', 'Dũng', 'Đà Nẵng', 'Đông'])
   })
 
+  // Cùng bộ tên + kỳ vọng với tests/Backend.Tests/Modules/SocialChannel/PageOrderingTests.cs Expected.
+  it('matches the backend pinned Vietnamese order for the shared name set', () => {
+    const input = [
+      ch('1', 'Zeta'), ch('2', 'VNi Hà Nội'), ch('3', 'Alpha'), ch('4', 'vni sài gòn'),
+      ch('5', 'Beta VNI'), ch('6', 'Đà Nẵng'), ch('7', 'Ân Thi'), ch('8', 'Ba Vì'),
+      ch('9', 'VNi Đông Anh'), ch('10', 'VNi Bắc Ninh'),
+    ]
+
+    expect(names(sortChannelsVniFirst(input))).toEqual([
+      'Beta VNI', 'VNi Bắc Ninh', 'VNi Đông Anh', 'VNi Hà Nội', 'vni sài gòn',
+      'Alpha', 'Ân Thi', 'Ba Vì', 'Đà Nẵng', 'Zeta',
+    ])
+  })
+
   it('breaks ties by id and is deterministic for equal names', () => {
     const input = [ch('b', 'Same'), ch('a', 'Same'), ch('c', 'Same')]
 

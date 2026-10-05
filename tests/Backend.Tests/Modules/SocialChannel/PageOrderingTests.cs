@@ -25,11 +25,21 @@ namespace Backend.Tests.Modules.SocialChannel;
 public sealed class PageOrderingTests : IDisposable
 {
     private const string Owner = "owner";
-    private static readonly string[] Expected = ["Beta VNI", "VNi Hà Nội", "vni sài gòn", "Alpha", "Zeta"];
 
-    // (tên, phút tạo): CreatedAt giảm dần ⇒ Zeta, Alpha, vni sài gòn, Beta VNI, VNi Hà Nội.
+    // Cùng bộ tên + kỳ vọng với ClientApp/src/shared/utils/channelSort.test.js
+    // ("matches the backend pinned Vietnamese order for the shared name set").
+    private static readonly string[] Expected =
+    [
+        "Beta VNI", "VNi Bắc Ninh", "VNi Đông Anh", "VNi Hà Nội", "vni sài gòn",
+        "Alpha", "Ân Thi", "Ba Vì", "Đà Nẵng", "Zeta",
+    ];
+
+    // CreatedAt giảm dần cố ý khác VNi-first + collation VI (Đ/Â đứng sau z theo mã ký tự).
     private static readonly (string Name, int Minutes)[] Seed =
-        [("Zeta", 50), ("Alpha", 40), ("vni sài gòn", 30), ("Beta VNI", 20), ("VNi Hà Nội", 10)];
+    [
+        ("Zeta", 90), ("Đà Nẵng", 80), ("Alpha", 70), ("Ân Thi", 60), ("vni sài gòn", 50),
+        ("Ba Vì", 40), ("Beta VNI", 30), ("VNi Đông Anh", 20), ("VNi Hà Nội", 10), ("VNi Bắc Ninh", 5),
+    ];
 
     private readonly SqliteConnection _connection;
     private readonly AppDbContext _db;
@@ -101,12 +111,14 @@ public sealed class PageOrderingTests : IDisposable
 
         var page1 = await repo.FilterAsync(new SocialChannelFilterRequest { Index = 1, Size = 2 });
         var page2 = await repo.FilterAsync(new SocialChannelFilterRequest { Index = 2, Size = 2 });
-        var page3 = await repo.FilterAsync(new SocialChannelFilterRequest { Index = 3, Size = 2 });
+        var page4 = await repo.FilterAsync(new SocialChannelFilterRequest { Index = 4, Size = 2 });
+        var page5 = await repo.FilterAsync(new SocialChannelFilterRequest { Index = 5, Size = 2 });
 
-        Assert.Equal(["Beta VNI", "VNi Hà Nội"], page1.Items.Select(x => x.PageName));
-        Assert.Equal(["vni sài gòn", "Alpha"], page2.Items.Select(x => x.PageName));
-        Assert.Equal(["Zeta"], page3.Items.Select(x => x.PageName));
-        Assert.All(new[] { page1, page2, page3 }, p => Assert.Equal(5, p.Total));
+        Assert.Equal(["Beta VNI", "VNi Bắc Ninh"], page1.Items.Select(x => x.PageName));
+        Assert.Equal(["VNi Đông Anh", "VNi Hà Nội"], page2.Items.Select(x => x.PageName));
+        Assert.Equal(["Ân Thi", "Ba Vì"], page4.Items.Select(x => x.PageName));
+        Assert.Equal(["Đà Nẵng", "Zeta"], page5.Items.Select(x => x.PageName));
+        Assert.All(new[] { page1, page2, page4, page5 }, p => Assert.Equal(10, p.Total));
     }
 
     [Fact]
@@ -124,7 +136,9 @@ public sealed class PageOrderingTests : IDisposable
     {
         var paged = await ChannelRepo().PaginatePublicAsync(null, 1, 10);
 
-        Assert.Equal(["Zeta", "Alpha", "vni sài gòn", "Beta VNI", "VNi Hà Nội"], paged.Items.Select(x => x.PageName));
+        Assert.Equal(
+            ["Zeta", "Đà Nẵng", "Alpha", "Ân Thi", "vni sài gòn", "Ba Vì", "Beta VNI", "VNi Đông Anh", "VNi Hà Nội", "VNi Bắc Ninh"],
+            paged.Items.Select(x => x.PageName));
     }
 
     // ── MediaFolder ─────────────────────────────────────────────────────────
@@ -142,12 +156,14 @@ public sealed class PageOrderingTests : IDisposable
 
         var page1 = await repo.GetPageRootsAsync(new GetMediaFolderPageRootsRequest { Index = 1, Size = 2 });
         var page2 = await repo.GetPageRootsAsync(new GetMediaFolderPageRootsRequest { Index = 2, Size = 2 });
-        var page3 = await repo.GetPageRootsAsync(new GetMediaFolderPageRootsRequest { Index = 3, Size = 2 });
+        var page4 = await repo.GetPageRootsAsync(new GetMediaFolderPageRootsRequest { Index = 4, Size = 2 });
+        var page5 = await repo.GetPageRootsAsync(new GetMediaFolderPageRootsRequest { Index = 5, Size = 2 });
 
-        Assert.Equal(["Google Drive", "Beta VNI", "VNi Hà Nội"], page1.Items.Select(x => x.Name));
-        Assert.Equal(["vni sài gòn", "Alpha"], page2.Items.Select(x => x.Name));
-        Assert.Equal(["Zeta"], page3.Items.Select(x => x.Name));
-        Assert.Equal(6, page1.Total);
+        Assert.Equal(["Google Drive", "Beta VNI", "VNi Bắc Ninh"], page1.Items.Select(x => x.Name));
+        Assert.Equal(["VNi Đông Anh", "VNi Hà Nội"], page2.Items.Select(x => x.Name));
+        Assert.Equal(["Ân Thi", "Ba Vì"], page4.Items.Select(x => x.Name));
+        Assert.Equal(["Đà Nẵng", "Zeta"], page5.Items.Select(x => x.Name));
+        Assert.Equal(11, page1.Total);
     }
 
     [Fact]
@@ -161,7 +177,9 @@ public sealed class PageOrderingTests : IDisposable
         var withoutRoot = await repo.GetWritablePagesAsync(withoutRoot: true);
 
         Assert.Equal(Expected, all.Select(x => x.PageName));
-        Assert.Equal(["Beta VNI", "VNi Hà Nội", "Alpha"], withoutRoot.Select(x => x.PageName));
+        Assert.Equal(
+            ["Beta VNI", "VNi Bắc Ninh", "VNi Đông Anh", "VNi Hà Nội", "Alpha", "Ân Thi", "Ba Vì", "Đà Nẵng"],
+            withoutRoot.Select(x => x.PageName));
     }
 
     [Fact]
@@ -174,7 +192,9 @@ public sealed class PageOrderingTests : IDisposable
 
         var pages = await FolderRepo(user).GetWritablePagesAsync();
 
-        Assert.Equal(["Beta VNI", "VNi Hà Nội", "Zeta"], pages.Select(x => x.PageName));
+        Assert.Equal(
+            ["Beta VNI", "VNi Bắc Ninh", "VNi Đông Anh", "VNi Hà Nội", "Ân Thi", "Ba Vì", "Đà Nẵng", "Zeta"],
+            pages.Select(x => x.PageName));
     }
 
     [Fact]
@@ -229,29 +249,25 @@ public sealed class PageOrderingTests : IDisposable
     [Fact]
     public async Task PageContextFilter_OrdersByChannelNameNotBrandName_AcrossPages()
     {
-        var brands = new Dictionary<string, string>
-        {
-            ["Zeta"] = "AAA Brand", ["VNi Hà Nội"] = "MMM Brand", ["Alpha"] = "ZZZ Brand",
-            ["vni sài gòn"] = "BBB Brand", ["Beta VNI"] = "CCC Brand",
-        };
-        foreach (var (channel, brand) in brands)
+        foreach (var name in Expected)
             _db.PageContexts.Add(new PageContextModel
             {
-                Id = Guid.NewGuid(), SocialChannelId = _channels[channel].Id, BrandName = brand,
-                CreatedAt = _channels[channel].CreatedAt, // thứ tự cũ (CreatedAt giảm dần) khác thứ tự mong đợi
+                Id = Guid.NewGuid(), SocialChannelId = _channels[name].Id, BrandName = $"Brand {name}",
+                CreatedAt = _channels[name].CreatedAt, // thứ tự cũ (CreatedAt giảm dần) khác thứ tự mong đợi
             });
         await _db.SaveChangesAsync();
         var repo = new PageContextRepository(_db, _admin);
 
         var page1 = await repo.FilterAsync(new PageContextFilterRequest { Index = 1, Size = 2 });
         var page2 = await repo.FilterAsync(new PageContextFilterRequest { Index = 2, Size = 2 });
-        var page3 = await repo.FilterAsync(new PageContextFilterRequest { Index = 3, Size = 2 });
+        var page4 = await repo.FilterAsync(new PageContextFilterRequest { Index = 4, Size = 2 });
+        var page5 = await repo.FilterAsync(new PageContextFilterRequest { Index = 5, Size = 2 });
 
-        // Beta VNI, VNi Hà Nội | vni sài gòn, Alpha | Zeta
-        Assert.Equal(["CCC Brand", "MMM Brand"], page1.Items.Select(x => x.BrandName));
-        Assert.Equal(["BBB Brand", "ZZZ Brand"], page2.Items.Select(x => x.BrandName));
-        Assert.Equal(["AAA Brand"], page3.Items.Select(x => x.BrandName));
-        Assert.Equal(5, page1.Total);
+        Assert.Equal(["Brand Beta VNI", "Brand VNi Bắc Ninh"], page1.Items.Select(x => x.BrandName));
+        Assert.Equal(["Brand VNi Đông Anh", "Brand VNi Hà Nội"], page2.Items.Select(x => x.BrandName));
+        Assert.Equal(["Brand Ân Thi", "Brand Ba Vì"], page4.Items.Select(x => x.BrandName));
+        Assert.Equal(["Brand Đà Nẵng", "Brand Zeta"], page5.Items.Select(x => x.BrandName));
+        Assert.Equal(10, page1.Total);
     }
 
     [Fact]
@@ -290,6 +306,6 @@ public sealed class PageOrderingTests : IDisposable
         // Bot HTML-encode tên (Esc) để gửi Telegram; giải mã lại trước khi so sánh.
         var names = reply.Text.Split('\n').Where(l => l.StartsWith("· "))
             .Select(l => System.Net.WebUtility.HtmlDecode(l[2..])).ToList();
-        Assert.Equal(["Beta VNI", "VNi Hà Nội", "vni sài gòn", "Zeta"], names);
+        Assert.Equal(Expected.Where(n => n != "Alpha"), names);
     }
 }
