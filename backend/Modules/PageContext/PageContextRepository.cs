@@ -1,4 +1,5 @@
 using Backend.Data;
+using Backend.Modules.SocialChannel;
 using Backend.Shared;
 using Backend.Shared.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -24,7 +25,14 @@ public class PageContextRepository : GenericRepository<PageContextModel>
         if (request.SocialChannelId.HasValue)
             query = query.Where(x => x.SocialChannelId == request.SocialChannelId.Value);
 
-        var paged = await PaginateAsync(query, request.Index, request.Size, ct);
+        // Hiển thị theo TÊN KÊNH (SocialChannel.PageName), chưa có kênh thì BrandName — khớp nhãn trên UI.
+        var channels = Context.Set<SocialChannelModel>();
+        var paged = await query
+            .OrderByVniFirst(
+                x => channels.Where(c => c.Id == x.SocialChannelId && !c.IsDeleted)
+                    .Select(c => c.PageName).FirstOrDefault() ?? x.BrandName,
+                x => x.Id)
+            .PaginateOrderedAsync(request.Index, request.Size, ct);
         return new PagedResult<PageContextResponse>
         {
             Items = paged.Items.Select(ToResponse).ToList(),

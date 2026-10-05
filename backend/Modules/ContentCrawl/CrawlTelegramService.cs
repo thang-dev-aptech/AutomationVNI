@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using Backend.Data;
 using Backend.Modules.ContentCrawl.Enums;
+using Backend.Modules.SocialChannel;
 using Backend.Shared.Text;
 using Microsoft.EntityFrameworkCore;
 using Backend.Shared.Notification;
@@ -587,7 +588,7 @@ public class CrawlTelegramService(
     {
         var channels = await context.SocialChannels
             .Where(c => !c.IsDeleted && c.IsActive)
-            .OrderBy(c => c.PageName)
+            .OrderByVniFirst()
             .Select(c => c.PageName)
             .ToListAsync(ct);
 

@@ -29,7 +29,7 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
             .Where(x => x.IsActive)
             .Where(x => x.SocialConnectionId == null
                         || liveConnectionIds.Contains(x.SocialConnectionId.Value))
-            .OrderByDescending(x => x.CreatedAt)
+            .OrderByVniFirst()
             .ToListAsync(cancellationToken);
     }
 
@@ -63,7 +63,7 @@ public class SocialChannelRepository : GenericRepository<SocialChannelModel>
         if (request.SocialConnectionId.HasValue)
             query = query.Where(x => x.SocialConnectionId == request.SocialConnectionId.Value);
 
-        var paged = await PaginateAsync(query, request.Index, request.Size, ct);
+        var paged = await query.OrderByVniFirst().PaginateOrderedAsync(request.Index, request.Size, ct);
         return new PagedResult<SocialChannelResponse>
         {
             Items = paged.Items.Select(ToResponse).ToList(),
