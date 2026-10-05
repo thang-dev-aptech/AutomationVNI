@@ -243,10 +243,10 @@ export default function MediaPage() {
     if (!detailsAsset) return
     setGeneratingCaptionId(detailsAsset.id)
     try {
-      // Page của thư mục đang mở; thư mục Drive / "chưa phân loại" không thuộc Page ⇒ không gửi gì.
-      const result = await generateCaptionMutation.mutateAsync(
-        derivedPageId ? { id: detailsAsset.id, socialChannelId: derivedPageId } : { id: detailsAsset.id },
-      )
+      // KHÔNG gửi socialChannelId: Page đang mở trên URL / trong lưới có thể không phải Page của thư mục thật
+      // chứa ảnh (URL sửa tay, kết quả tìm kiếm, thư mục Page khác). Backend dùng Page của thư mục chứa ảnh
+      // (nếu người gọi được ghi Page đó), ảnh Drive / không thư mục dùng mặc định chung.
+      const result = await generateCaptionMutation.mutateAsync({ id: detailsAsset.id })
       const caption = result?.caption ?? ''
       setCaptionDraft(caption)
       setDetailsAsset((prev) => (prev && prev.id === detailsAsset.id ? { ...prev, ...result } : prev))

@@ -257,22 +257,32 @@ describe('MEDIA-CAPTION-03 image-caption-ui-test (AC 92587ba5): popup Chi tiết
     expect(screen.queryByText(/5 dòng/)).not.toBeInTheDocument()
   })
 
-  it('sends the Page of the open folder when generating', async () => {
-    await openDetailsIn(`/media?folder=${PAGE_FOLDER}&page=${PAGE_ID}`)
-    fireEvent.click(screen.getByRole('button', { name: '✍️ Sinh caption' }))
-
-    await waitFor(() => expect(generateCaptionMutate).toHaveBeenCalledWith({
-      id: FILE_ASSET.id, socialChannelId: PAGE_ID,
-    }))
-  })
-
-  it('sends no Page for a folder outside any Page (Google Drive tree)', async () => {
-    await openDetailsIn(`/media?folder=${DRIVE_FOLDER}`)
+  it.each([
+    ['a folder of a Page', `/media?folder=${PAGE_FOLDER}&page=${PAGE_ID}`],
+    ['a folder in the Google Drive tree', `/media?folder=${DRIVE_FOLDER}`],
+    ['the root list', '/media'],
+  ])('never sends socialChannelId from the popup (%s): the backend uses the image\'s own folder', async (_label, entry) => {
+    await openDetailsIn(entry)
     fireEvent.click(screen.getByRole('button', { name: '✍️ Sinh caption' }))
 
     await waitFor(() => expect(generateCaptionMutate).toHaveBeenCalledTimes(1))
     expect(generateCaptionMutate.mock.calls[0][0]).toEqual({ id: FILE_ASSET.id })
     expect(generateCaptionMutate.mock.calls[0][0]).not.toHaveProperty('socialChannelId')
+  })
+
+  it('does not trust the Page in the URL when the image belongs to another Page', async () => {
+    // Ảnh thuộc Page B nhưng URL (sửa tay / kết quả tìm kiếm) đang trỏ Page A: popup vẫn không gửi Page nào.
+    const otherPage = '22222222-2222-4222-8222-222222222222'
+    useMediaAssets.mockImplementation(() => ({
+      data: { items: [{ ...FILE_ASSET, socialChannelId: otherPage }], total: 1, size: 48 },
+      isLoading: false, isError: false, error: null, refetch: vi.fn(),
+    }))
+    await openDetailsIn(`/media?folder=${PAGE_FOLDER}&page=${PAGE_ID}`)
+    fireEvent.click(screen.getByRole('button', { name: '✍️ Sinh caption' }))
+
+    await waitFor(() => expect(generateCaptionMutate).toHaveBeenCalledTimes(1))
+    expect(generateCaptionMutate.mock.calls[0][0]).not.toHaveProperty('socialChannelId')
+    expect(JSON.stringify(generateCaptionMutate.mock.calls[0][0])).not.toContain(PAGE_ID)
   })
 
   it('409 on generate: error toast and the text being typed is kept', async () => {
