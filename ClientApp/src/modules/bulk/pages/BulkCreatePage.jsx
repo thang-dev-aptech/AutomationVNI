@@ -54,7 +54,8 @@ export default function BulkCreatePage() {
 
   const [rows, setRows] = useState([emptyRow(), emptyRow(), emptyRow()])
   const [channelIds, setChannelIds] = useState([])
-  const [promptTemplateId, setPromptTemplateId] = useState('')
+  // Chỉ 2 lựa chọn danh mục (R-030): 'pagecontext' (mỗi page dùng PageContext của nó) hoặc 'default'.
+  const [categoryChoice, setCategoryChoice] = useState('pagecontext')
   const [flow, setFlow] = useState(() => getVisibleGenerationFlows(BULK_FLOWS)[0]?.value ?? 'fullai')
   const isTemplateFlow = flow === 'template'
   const [useMedia, setUseMedia] = useState(false)
@@ -79,6 +80,10 @@ export default function BulkCreatePage() {
   const { data: channels = [], isLoading: channelsLoading } = useSocialChannelAll()
   const { data: tplData } = usePromptTemplateList({ isActive: true, index: 1, size: 100 })
   const categoryTemplates = tplData?.items ?? []
+  // Danh mục mặc định (⭐) trong số danh mục đang active; không có thì lựa chọn 2 bị khoá.
+  const defaultTemplate = categoryTemplates.find((t) => t.isDefault) ?? null
+  const effectiveCategoryChoice = categoryChoice === 'default' && defaultTemplate ? 'default' : 'pagecontext'
+  const promptTemplateId = effectiveCategoryChoice === 'default' ? defaultTemplate.id : ''
   const { data: categoryData } = useCategoryList({ index: 1, size: 200 })
   const categories = categoryData?.items ?? []
   const { data: pageContextData } = usePageContextList({ index: 1, size: 200 })
@@ -117,6 +122,11 @@ export default function BulkCreatePage() {
     [channelIds, contextByChannel],
   )
   const categoryRequired = needCategoryCount > 0
+
+  // Gợi ý khi có page thiếu PageContext mà chưa chọn danh mục mặc định (dùng cho hint, nút Tạo và import CSV).
+  const missingContextHint = (count) => (defaultTemplate
+    ? `${count} page chưa có PageContext — chọn "Dùng danh mục mặc định: ${defaultTemplate.name}" ở trên hoặc setup Page Context cho các page đó.`
+    : `${count} page chưa có PageContext và chưa có danh mục mặc định (⭐) — setup Page Context hoặc đặt một danh mục làm mặc định.`)
 
   const skeletonChannels = useMemo(() => {
     const set = new Set(skelChannelIds)
@@ -194,7 +204,7 @@ export default function BulkCreatePage() {
       (id) => !isPageContextTemplateReady(contextByChannel.get(id)),
     ).length
     if (needCat > 0 && !promptTemplateId) {
-      toast.error(`${needCat} page chưa có PageContext — chọn danh mục ghi đè trước khi import`)
+      toast.error(missingContextHint(needCat))
       return
     }
 
@@ -235,7 +245,7 @@ export default function BulkCreatePage() {
       return false
     }
     if (categoryRequired && !promptTemplateId) {
-      toast.error('Có page chưa có PageContext — hãy chọn danh mục')
+      toast.error(missingContextHint(needCategoryCount))
       return false
     }
     return true
@@ -399,17 +409,22 @@ export default function BulkCreatePage() {
               <label htmlFor="bulk-category">Danh mục (tuỳ chọn — ghi đè PageContext)</label>
               <select
                 id="bulk-category"
-                value={promptTemplateId}
-                onChange={(e) => setPromptTemplateId(e.target.value)}
+                value={effectiveCategoryChoice}
+                onChange={(e) => setCategoryChoice(e.target.value)}
                 style={{ maxWidth: 360 }}
               >
-                <option value="">Dùng mặc định PageContext từng page</option>
-                {categoryTemplates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}{t.isDefault ? ' ⭐' : ''}
-                  </option>
-                ))}
+                <option value="pagecontext">Dùng mặc định PageContext từng page</option>
+                <option value="default" disabled={!defaultTemplate}>
+                  {defaultTemplate
+                    ? `Dùng danh mục mặc định: ${defaultTemplate.name} ⭐`
+                    : 'Dùng danh mục mặc định (chưa có)'}
+                </option>
               </select>
+              {!defaultTemplate && (
+                <p className="bulk-field-hint">
+                  Chưa có danh mục mặc định (⭐) — đặt một danh mục làm mặc định ở Danh mục template để chọn được lựa chọn này.
+                </p>
+              )}
             </div>
           </div>
 
@@ -569,7 +584,9 @@ export default function BulkCreatePage() {
             {channelIds.length > 0 && (
               <p className="bulk-block__hint">
                 {categoryRequired
-                  ? `${needCategoryCount} page chưa có PageContext — bắt buộc chọn danh mục ở trên.`
+                  ? (promptTemplateId
+                    ? `${needCategoryCount} page chưa có PageContext — sẽ dùng danh mục mặc định "${defaultTemplate.name}".`
+                    : missingContextHint(needCategoryCount))
                   : 'Tất cả page đã chọn có PageContext — mỗi page dùng prompt riêng.'}
               </p>
             )}
