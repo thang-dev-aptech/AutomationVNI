@@ -29,7 +29,6 @@ namespace Backend.Tests.Modules.MediaAsset;
 /// </summary>
 public class MediaCaptionAuthPipelineTests : IAsyncLifetime
 {
-    private static readonly string[] FiveLines = ["Một", "Hai", "Ba", "Bốn", "Năm"];
 
     private readonly SqliteConnection _connection;
     private readonly DbContextOptions<AppDbContext> _options;
@@ -45,7 +44,7 @@ public class MediaCaptionAuthPipelineTests : IAsyncLifetime
         using (var seedDb = new AppDbContext(_options))
             seedDb.Database.EnsureCreated();
 
-        _ai = new ScriptedChatHandler(Enumerable.Repeat(ScriptedChatHandler.Lines(FiveLines), 10).ToArray());
+        _ai = new ScriptedChatHandler(Enumerable.Repeat(CaptionAi.Json("Bài thử"), 10).ToArray());
         var options = _options;
         var ai = _ai;
         _host = new HostBuilder()
@@ -104,7 +103,7 @@ public class MediaCaptionAuthPipelineTests : IAsyncLifetime
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("\"caption\"", body);
-        Assert.Equal("Một\nHai\nBa\nBốn\nNăm", await GetCaptionAsync(id));
+        Assert.Equal(CaptionAi.Expected("Bài thử"), await GetCaptionAsync(id));
     }
 
     [Theory]

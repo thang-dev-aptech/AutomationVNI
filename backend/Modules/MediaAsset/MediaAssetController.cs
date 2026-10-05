@@ -222,11 +222,20 @@ public class MediaAssetController
         }
     }
 
-    /// <summary>MEDIA-CAPTION-01: sinh caption Facebook 5 dòng — chỉ khi người dùng bấm nút.</summary>
+    /// <summary>
+    /// MEDIA-CAPTION-01/03: sinh caption Facebook (cấu trúc như bài Full AI) — chỉ khi người dùng bấm nút.
+    /// <paramref name="socialChannelId"/> (tuỳ chọn) chọn Page có PageContext dùng cho bài viết; phải là Page người
+    /// gọi có quyền ghi, ngoài quyền hoặc không tồn tại → 404 chung, KHÔNG gọi AI. Không truyền thì dùng Page của
+    /// thư mục chứa ảnh (nếu người gọi có quyền ghi Page đó), ảnh không thuộc Page (vd. Drive) dùng mặc định chung.
+    /// </summary>
     [HttpPost("{id:guid}/generate-caption")]
     [Authorize(Roles = "Admin,ContentManager")]
-    public async Task<IActionResult> GenerateCaption(Guid id, CancellationToken ct = default)
+    public async Task<IActionResult> GenerateCaption(
+        Guid id, [FromQuery] Guid? socialChannelId = null, CancellationToken ct = default)
     {
+        if (socialChannelId is Guid requested && !await _repo.CanWritePageAsync(requested, ct))
+            return NotFound(ApiResponse.Fail("NOT_FOUND", "Page/Kênh không tồn tại."));
+
         // Khoá áp cho đường người dùng (kiểm sớm ở đây, kiểm lại trong GenerateCaptionAsync sau khi đánh dấu
         // in-flight): worker gọi GenerateCaptionIfEmptyAsync nên không bị chặn.
         if (await _repo.IsCaptionQueuedAsync(id, ct))
@@ -234,7 +243,16 @@ public class MediaAssetController
 
         try
         {
-            var entity = await _intelligence.GenerateCaptionAsync(id, ct);
+            // Không chọn Page ⇒ Page của thư mục, nhưng chỉ khi người gọi được ghi Page đó (không mượn PageContext
+            // của Page ngoài quyền); ngược lại rơi về mặc định chung thay vì báo lỗi, giữ nguyên hành vi cũ.
+            var pageId = socialChannelId;
+            if (pageId is null)
+            {
+                var folderPage = await _intelligence.GetFolderPageIdAsync(id, ct);
+                if (folderPage is Guid fp && await _repo.CanWritePageAsync(fp, ct)) pageId = fp;
+            }
+
+            var entity = await _intelligence.GenerateCaptionForPageAsync(id, pageId, ct);
             return Ok(ApiResponse.Ok(ToResponse(entity), "Đã sinh caption"));
         }
         catch (CaptionQueuedException)

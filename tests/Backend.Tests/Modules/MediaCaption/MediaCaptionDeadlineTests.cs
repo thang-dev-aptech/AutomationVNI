@@ -80,7 +80,7 @@ public sealed class MediaCaptionDeadlineTests : IAsyncLifetime
         }
 
         // 2. Mock AI HTTP call to return instantly
-        var handler = new GatedChatHandler("{\"lines\":[\"Line 1\", \"Line 2\", \"Line 3\", \"Line 4\", \"Line 5\"]}");
+        var handler = new GatedChatHandler(CaptionAi.Json("Nội dung kiểm thử"));
         handler.Release(0);
 
         // 3. Configure short deadline
@@ -121,7 +121,7 @@ public sealed class MediaCaptionDeadlineTests : IAsyncLifetime
         // 8. It should complete successfully instead of throwing TimeoutException
         var media = await task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        var expectedCaption = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5";
+        var expectedCaption = CaptionAi.Expected("Nội dung kiểm thử");
         Assert.Equal(expectedCaption, media.Caption);
 
         // 9. Verify in DB
@@ -138,7 +138,7 @@ public sealed class MediaCaptionDeadlineTests : IAsyncLifetime
         var interceptor = new HangSaveInterceptor();
         _dbOptions = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).AddInterceptors(interceptor).Options;
         var assetId = await SeedAsync();
-        var handler = new GatedChatHandler("{\"lines\":[\"Line 1\", \"Line 2\", \"Line 3\", \"Line 4\", \"Line 5\"]}");
+        var handler = new GatedChatHandler(CaptionAi.Json("Nội dung kiểm thử"));
         handler.Release(0);
         var timeouts = MediaAiTimeouts.Default with { CaptionSave = TimeSpan.FromMilliseconds(200) };
         await using var db = new AppDbContext(_dbOptions);

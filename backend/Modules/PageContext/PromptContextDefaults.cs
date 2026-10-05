@@ -53,9 +53,9 @@ public sealed record PromptContextDefaults(
         if (socialChannelId is not Guid channelId || channelId == Guid.Empty)
             return From(null, null, category);
 
-        var pageContext = await db.Set<PageContextModel>()
+        var pageContext = await db.Set<PageContextModel>().AsNoTracking()
             .FirstOrDefaultAsync(x => !x.IsDeleted && x.SocialChannelId == channelId, ct);
-        var channelName = await db.Set<SocialChannelModel>()
+        var channelName = await db.Set<SocialChannelModel>().AsNoTracking()
             .Where(x => !x.IsDeleted && x.Id == channelId)
             .Select(x => x.PageName)
             .FirstOrDefaultAsync(ct);

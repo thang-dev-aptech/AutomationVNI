@@ -14,9 +14,6 @@ namespace Backend.Tests.Modules.MediaAsset;
 /// <summary>MEDIA-CAPTION-01 (R-023): GenerateCaptionAsync + update Caption.</summary>
 public class MediaIntelligenceCaptionTests : IDisposable
 {
-    private static readonly string[] FiveLines =
-        ["Câu mở đầu thu hút", "Câu hai", "Câu ba", "Câu bốn", "Bình luận cho chúng mình biết nhé"];
-
     private const string SeedTags =
         "{\"keywords\":[\"khai giảng\",\"học sinh\",\"sân trường\"],\"safeTextRegion\":{\"x\":10,\"y\":20,\"width\":80,\"height\":30},\"layoutStyle\":\"FreeText\"}";
     private const string SeedAlt = "Học sinh xếp hàng trên sân trường";
@@ -95,87 +92,100 @@ public class MediaIntelligenceCaptionTests : IDisposable
         return user[1].GetProperty("image_url").GetProperty("url").GetString()!;
     }
 
-    // ---- AC 73433ad7 caption-five-lines-test ----
+    // ---- AC 73433ad7 caption-retry-or-unchanged-test + R-029 AC 1d27c6a5 image-caption-format-test ----
 
     [Fact]
-    public async Task FiveLines_SavedJoinedWithNewline()
+    public async Task ValidJson_IsComposedByTheFullAiHelper()
     {
         var id = await SeedAssetAsync();
-        var handler = new ScriptedChatHandler(ScriptedChatHandler.Lines(FiveLines));
+        var handler = new ScriptedChatHandler(CaptionAi.Json(
+            "Hook 🌞\n• ý 1\n• ý 2", headline: "Khai giảng.", cta: "Inbox ngay 💬",
+            hashtags: ["khaigiang", "#hocsinh", "khaigiang"]));
         var (service, db) = CreateService(handler);
         await using var _ = db;
 
         await service.GenerateCaptionAsync(id);
 
-        Assert.Equal(string.Join("\n", FiveLines), (await ReloadAsync(id)).Caption);
+        Assert.Equal(
+            "KHAI GIẢNG\n\nHook 🌞\n• ý 1\n• ý 2\n\nInbox ngay 💬\n\n#khaigiang #hocsinh",
+            (await ReloadAsync(id)).Caption);
         Assert.Single(handler.RequestBodies);
     }
 
     [Fact]
-    public async Task NumberAndBulletPrefixes_AreStripped()
+    public async Task MissingCtaAndHashtags_FallBackToFullAiDefaults()
     {
         var id = await SeedAssetAsync();
-        var handler = new ScriptedChatHandler(
-            "```json\n" + ScriptedChatHandler.Lines("1. Một", "- Hai", "• Ba", "  ", "4) Bốn", "* Năm") + "\n```");
+        var handler = new ScriptedChatHandler("{\"caption\":\"Thân bài\"}");
         var (service, db) = CreateService(handler);
         await using var _ = db;
 
         await service.GenerateCaptionAsync(id);
 
-        Assert.Equal("Một\nHai\nBa\nBốn\nNăm", (await ReloadAsync(id)).Caption);
+        // Không PageContext: CTA mặc định và hashtag mặc định của Full AI.
+        Assert.Equal(
+            "Thân bài\n\nInbox ngay để được tư vấn chi tiết nhé 💬\n\n#Chung #Facebook #Marketing #BanHang",
+            (await ReloadAsync(id)).Caption);
     }
 
     [Fact]
-    public async Task LeadingRealNumbers_AreNotStrippedAsListPrefixes()
+    public async Task FencedJson_StringHashtags_AndCaseInsensitiveKeys_AreAccepted()
     {
-        // F1: regex cũ `^(?:\d+\s*[.)]|[-•*–])\s*` cắt "5.000" → "000", "2026. Năm" → "Năm".
-        string[] lines =
-        [
-            "5.000 học viên đã tốt nghiệp",
-            "10.10 ưu đãi lớn",
-            "2026. Năm mới",
-            "Chương trình khai giảng tháng 10",
-            "Đăng ký ngay hôm nay",
-        ];
         var id = await SeedAssetAsync();
-        var handler = new ScriptedChatHandler(ScriptedChatHandler.Lines(lines));
+        var handler = new ScriptedChatHandler(
+            "```json\n{\"Caption\":\"Nội dung\",\"Hashtags\":\"#a, b #c\",\"CTA\":\"Gọi ngay\",\"BannerHeadline\":\"Tiêu đề\"}\n```");
         var (service, db) = CreateService(handler);
         await using var _ = db;
 
         await service.GenerateCaptionAsync(id);
 
-        Assert.Equal(string.Join("\n", lines), (await ReloadAsync(id)).Caption);
+        Assert.Equal("TIÊU ĐỀ\n\nNội dung\n\nGọi ngay\n\n#a #b #c", (await ReloadAsync(id)).Caption);
     }
 
     [Fact]
-    public async Task WrongCountThenFive_RetriesOnceAndSucceeds()
+    public async Task MoreThanEightHashtags_AreCapped()
     {
         var id = await SeedAssetAsync();
-        var handler = new ScriptedChatHandler(
-            ScriptedChatHandler.Lines(FiveLines[..4]), ScriptedChatHandler.Lines(FiveLines));
+        var tags = Enumerable.Range(1, 12).Select(i => $"t{i}").ToArray();
+        var (service, db) = CreateService(new ScriptedChatHandler(CaptionAi.Json("Nội dung", hashtags: tags)));
+        await using var _ = db;
+
+        await service.GenerateCaptionAsync(id);
+
+        Assert.EndsWith("#t1 #t2 #t3 #t4 #t5 #t6 #t7 #t8", (await ReloadAsync(id)).Caption);
+    }
+
+    [Theory]
+    [InlineData("{\"caption\":\"   \"}")]
+    [InlineData("{\"hashtags\":[\"#a\"]}")]
+    [InlineData("không phải JSON")]
+    [InlineData("[\"mảng\"]")]
+    [InlineData("{\"lines\":[\"định\",\"dạng\",\"cũ\",\"5\",\"dòng\"]}")]
+    public async Task InvalidThenValid_RetriesOnceAndSucceeds(string invalidFirstReply)
+    {
+        var id = await SeedAssetAsync();
+        var handler = new ScriptedChatHandler(invalidFirstReply, CaptionAi.Json("Bài hợp lệ"));
         var (service, db) = CreateService(handler);
         await using var _ = db;
 
         await service.GenerateCaptionAsync(id);
 
         Assert.Equal(2, handler.RequestBodies.Count);
-        Assert.Equal(string.Join("\n", FiveLines), (await ReloadAsync(id)).Caption);
+        Assert.Equal(CaptionAi.Expected("Bài hợp lệ"), (await ReloadAsync(id)).Caption);
     }
 
     [Fact]
-    public async Task WrongCountTwice_ThrowsAndKeepsOldCaption()
+    public async Task InvalidTwice_ThrowsAndKeepsOldCaption()
     {
         var id = await SeedAssetAsync(caption: "caption cũ");
         var handler = new ScriptedChatHandler(
-            ScriptedChatHandler.Lines(FiveLines[..4]),
-            ScriptedChatHandler.Lines([.. FiveLines, "dòng thứ sáu"]),
-            ScriptedChatHandler.Lines(FiveLines));
+            "{\"caption\":\"\"}", "không phải JSON", CaptionAi.Json("lần thứ ba không bao giờ được gọi"));
         var (service, db) = CreateService(handler);
         await using var _ = db;
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.GenerateCaptionAsync(id));
 
-        Assert.Equal("AI không trả đúng 5 dòng caption", ex.Message);
+        Assert.Equal("AI không trả caption hợp lệ", ex.Message);
         Assert.Equal(2, handler.RequestBodies.Count);
         Assert.Equal("caption cũ", (await ReloadAsync(id)).Caption);
     }
@@ -186,7 +196,7 @@ public class MediaIntelligenceCaptionTests : IDisposable
     public async Task Success_DoesNotTouchTagsAltTextDescription()
     {
         var id = await SeedAssetAsync();
-        var handler = new ScriptedChatHandler(ScriptedChatHandler.Lines(FiveLines));
+        var handler = new ScriptedChatHandler(CaptionAi.Json("Bài mới"));
         var (service, db) = CreateService(handler);
         await using var _ = db;
 
@@ -206,7 +216,7 @@ public class MediaIntelligenceCaptionTests : IDisposable
     {
         var folderId = await SeedFolderAsync("2026-10 Khai giảng");
         var id = await SeedAssetAsync(folderId);
-        var handler = new ScriptedChatHandler(ScriptedChatHandler.Lines(FiveLines));
+        var handler = new ScriptedChatHandler(CaptionAi.Json("Bài mới"));
         var (service, db) = CreateService(handler);
         await using var _ = db;
 
@@ -225,7 +235,7 @@ public class MediaIntelligenceCaptionTests : IDisposable
     public async Task NoFolder_SendsNoFolderName()
     {
         var id = await SeedAssetAsync();
-        var handler = new ScriptedChatHandler(ScriptedChatHandler.Lines(FiveLines));
+        var handler = new ScriptedChatHandler(CaptionAi.Json("Bài mới"));
         var (service, db) = CreateService(handler);
         await using var _ = db;
 
@@ -241,7 +251,7 @@ public class MediaIntelligenceCaptionTests : IDisposable
     {
         var folderId = await SeedFolderAsync(GoogleDriveRepository.DedicatedFolderName);
         var id = await SeedAssetAsync(folderId);
-        var handler = new ScriptedChatHandler(ScriptedChatHandler.Lines(FiveLines));
+        var handler = new ScriptedChatHandler(CaptionAi.Json("Bài mới"));
         var (service, db) = CreateService(handler);
         await using var _ = db;
 
@@ -258,7 +268,7 @@ public class MediaIntelligenceCaptionTests : IDisposable
     {
         var folderId = await SeedFolderAsync("Thư mục đã xoá", deleted: true);
         var id = await SeedAssetAsync(folderId);
-        var handler = new ScriptedChatHandler(ScriptedChatHandler.Lines(FiveLines));
+        var handler = new ScriptedChatHandler(CaptionAi.Json("Bài mới"));
         var (service, db) = CreateService(handler);
         await using var _ = db;
 
@@ -268,10 +278,10 @@ public class MediaIntelligenceCaptionTests : IDisposable
     }
 
     [Fact]
-    public async Task SystemPrompt_ContainsGuardrails()
+    public async Task SystemPrompt_CarriesTheFullAiRulesAndTheImageGuardrails()
     {
         var id = await SeedAssetAsync();
-        var handler = new ScriptedChatHandler(ScriptedChatHandler.Lines(FiveLines));
+        var handler = new ScriptedChatHandler(CaptionAi.Json("Bài mới"));
         var (service, db) = CreateService(handler);
         await using var _ = db;
 
@@ -279,18 +289,26 @@ public class MediaIntelligenceCaptionTests : IDisposable
 
         using var doc = JsonDocument.Parse(handler.RequestBodies.Single());
         var system = doc.RootElement.GetProperty("messages")[0].GetProperty("content").GetString()!;
-        Assert.Contains("ĐÚNG 5 dòng", system);
-        Assert.Contains("Bức ảnh", system);
+        // Cùng khối cấu trúc với Full AI: hook + emoji, 2–4 ý bullet, CTA riêng, hashtag không nhồi giữa bài.
+        Assert.Contains(Backend.Shared.Ai.FacebookCaptionRules.Structure, system);
+        Assert.Contains("Hook 1 câu", system);
+        Assert.Contains("bullet", system);
+        Assert.Contains("emoji", system);
+        Assert.Contains("80–160 từ", system);
+        // Ràng buộc riêng của bài viết từ ảnh.
         Assert.Contains("KHÔNG bịa", system);
-        Assert.Contains("hashtag", system);
-        Assert.Contains("{\"lines\"", system);
+        Assert.Contains("Bức ảnh", system);
+        Assert.Contains("Hình ảnh cho thấy", system);
+        foreach (var key in new[] { "\"caption\"", "\"hashtags\"", "\"cta\"", "\"bannerHeadline\"" })
+            Assert.Contains(key, system);
+        Assert.DoesNotContain("{\"lines\"", system);
     }
 
     [Fact]
     public async Task NonImage_ThrowsArgumentException_WithoutCallingAi()
     {
         var id = await SeedAssetAsync(mimeType: "video/mp4");
-        var handler = new ScriptedChatHandler(ScriptedChatHandler.Lines(FiveLines));
+        var handler = new ScriptedChatHandler(CaptionAi.Json("Bài mới"));
         var (service, db) = CreateService(handler);
         await using var _ = db;
 

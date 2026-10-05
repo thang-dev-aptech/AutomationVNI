@@ -53,7 +53,7 @@ public sealed class MediaCaptionTimeoutPipelineTests : IAsyncLifetime
     public async Task StorageDeadline_Returns400MediaCaptionFailed_AndKeepsCaption()
     {
         var storage = new HangingStorage();
-        await using var pipeline = CreatePipeline(new ScriptedChatHandler(ScriptedChatHandler.Lines("1", "2", "3", "4", "5")), storage, ShortTimeouts);
+        await using var pipeline = CreatePipeline(new ScriptedChatHandler(CaptionAi.Json("Bài thử")), storage, ShortTimeouts);
         var id = await SeedAssetAsync();
 
         var requestTask = SendAsync(pipeline.Client, id);
@@ -71,7 +71,7 @@ public sealed class MediaCaptionTimeoutPipelineTests : IAsyncLifetime
     public async Task AiPerCallTimeout_Returns400MediaCaptionFailed_AndKeepsCaption()
     {
         await using var pipeline = CreatePipeline(
-            new DelayedChatHandler(TimeSpan.FromSeconds(5), ScriptedChatHandler.Lines("1", "2", "3", "4", "5")),
+            new DelayedChatHandler(TimeSpan.FromSeconds(5), CaptionAi.Json("Bài thử")),
             new InMemoryImageStorage(),
             MediaAiTimeouts.Default with { CaptionRequest = ShortTimeout });
         var id = await SeedAssetAsync();
