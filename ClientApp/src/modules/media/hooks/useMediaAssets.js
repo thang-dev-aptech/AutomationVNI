@@ -143,11 +143,15 @@ export function useAnalyzeLayout() {
   })
 }
 
-/** Sinh caption Facebook 5 dòng cho MỘT ảnh — nút trong popup Chi tiết media. */
+/**
+ * Sinh caption Facebook (bài đăng như Full AI) cho MỘT ảnh. Biến: `{ id, socialChannelId? }` — socialChannelId
+ * là Page có PageContext dùng cho bài viết; bỏ qua thì backend dùng Page của thư mục chứa ảnh.
+ */
 export function useGenerateCaption() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (id) => unwrapApiData(await mediaAssetApi.generateCaption(id)),
+    mutationFn: async ({ id, socialChannelId }) =>
+      unwrapApiData(await mediaAssetApi.generateCaption(id, socialChannelId)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: mediaAssetQueryKeys.all })
     },

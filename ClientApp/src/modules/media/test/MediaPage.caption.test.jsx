@@ -137,7 +137,7 @@ function renderPage(entry = '/media') {
 async function openDetailsPopup() {
   await screen.findByText('Campaign A')
   fireEvent.click(screen.getByRole('button', { name: 'Chi tiết' }))
-  expect(await screen.findByText('Caption Facebook (5 dòng)')).toBeInTheDocument()
+  expect(await screen.findByText('Caption Facebook')).toBeInTheDocument()
 }
 
 describe('MEDIA-CAPTION-01 MediaPage caption block (AC 1d94cc25)', () => {
@@ -184,8 +184,10 @@ describe('MEDIA-CAPTION-01 MediaPage caption block (AC 1d94cc25)', () => {
     await openDetailsPopup()
     fireEvent.click(screen.getByRole('button', { name: '✍️ Sinh caption' }))
     await waitFor(() => {
-      expect(generateCaptionMutate).toHaveBeenCalledWith(FILE_ASSET.id)
+      expect(generateCaptionMutate).toHaveBeenCalledWith({ id: FILE_ASSET.id })
     })
+    // Đang ở danh sách gốc (không thuộc Page nào) ⇒ KHÔNG gửi socialChannelId.
+    expect(generateCaptionMutate.mock.calls[0][0]).not.toHaveProperty('socialChannelId')
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/Chưa có caption/)).toHaveValue(CAPTION_FIVE_LINES)
     })
@@ -227,6 +229,66 @@ describe('MEDIA-CAPTION-01 MediaPage caption block (AC 1d94cc25)', () => {
 const DRIVE_FOLDER = 'd0000000-0000-4000-8000-000000000001'
 const PAGE_FOLDER = 'e0000000-0000-4000-8000-000000000002'
 const PAGE_ID = '11111111-1111-4111-8111-111111111111'
+
+describe('MEDIA-CAPTION-03 image-caption-ui-test (AC 92587ba5): popup Chi tiết media', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    generateCaptionMutate.mockResolvedValue({ ...FILE_ASSET, caption: 'Bài mới' })
+    useMediaAssets.mockImplementation(() => ({
+      data: { items: [FILE_ASSET], total: 1, size: 48 },
+      isLoading: false, isError: false, error: null, refetch: vi.fn(),
+    }))
+    mediaFolderApi.searchGlobal.mockResolvedValue(wrapPaged([]))
+    mediaFolderApi.pageRoots.mockResolvedValue(wrapPaged([]))
+    mediaFolderApi.children.mockResolvedValue(wrapPaged([]))
+    mediaFolderApi.breadcrumb.mockResolvedValue({ data: { success: true, data: { ancestors: [] } } })
+  })
+
+  async function openDetailsIn(entry) {
+    renderPage(entry)
+    fireEvent.click(await screen.findByRole('button', { name: 'Chi tiết' }))
+    await screen.findByText('Caption Facebook')
+  }
+
+  it('relabels the block: no longer says 5 dòng', async () => {
+    await openDetailsIn(`/media?folder=${PAGE_FOLDER}&page=${PAGE_ID}`)
+
+    expect(screen.getByText('Caption Facebook')).toBeInTheDocument()
+    expect(screen.queryByText(/5 dòng/)).not.toBeInTheDocument()
+  })
+
+  it('sends the Page of the open folder when generating', async () => {
+    await openDetailsIn(`/media?folder=${PAGE_FOLDER}&page=${PAGE_ID}`)
+    fireEvent.click(screen.getByRole('button', { name: '✍️ Sinh caption' }))
+
+    await waitFor(() => expect(generateCaptionMutate).toHaveBeenCalledWith({
+      id: FILE_ASSET.id, socialChannelId: PAGE_ID,
+    }))
+  })
+
+  it('sends no Page for a folder outside any Page (Google Drive tree)', async () => {
+    await openDetailsIn(`/media?folder=${DRIVE_FOLDER}`)
+    fireEvent.click(screen.getByRole('button', { name: '✍️ Sinh caption' }))
+
+    await waitFor(() => expect(generateCaptionMutate).toHaveBeenCalledTimes(1))
+    expect(generateCaptionMutate.mock.calls[0][0]).toEqual({ id: FILE_ASSET.id })
+    expect(generateCaptionMutate.mock.calls[0][0]).not.toHaveProperty('socialChannelId')
+  })
+
+  it('409 on generate: error toast and the text being typed is kept', async () => {
+    generateCaptionMutate.mockRejectedValueOnce(Object.assign(new Error('conflict'), {
+      response: { status: 409, data: { errorCode: 'MEDIA_CAPTION_QUEUED', message: 'Ảnh đang trong hàng chờ sinh caption' } },
+    }))
+    await openDetailsIn(`/media?folder=${PAGE_FOLDER}&page=${PAGE_ID}`)
+    const textarea = screen.getByPlaceholderText(/Chưa có caption/)
+    fireEvent.change(textarea, { target: { value: 'đang gõ dở' } })
+
+    fireEvent.click(screen.getByRole('button', { name: '✍️ Sinh caption' }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Ảnh đang trong hàng chờ sinh caption'))
+    expect(screen.getByPlaceholderText(/Chưa có caption/)).toHaveValue('đang gõ dở')
+  })
+})
 
 describe('MEDIA-CAPTION-02 caption-job-ui-test (AC 07f817bc a,b): nút Sinh caption toàn bộ', () => {
   beforeEach(() => {

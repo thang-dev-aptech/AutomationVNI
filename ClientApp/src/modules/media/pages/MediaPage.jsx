@@ -243,7 +243,10 @@ export default function MediaPage() {
     if (!detailsAsset) return
     setGeneratingCaptionId(detailsAsset.id)
     try {
-      const result = await generateCaptionMutation.mutateAsync(detailsAsset.id)
+      // Page của thư mục đang mở; thư mục Drive / "chưa phân loại" không thuộc Page ⇒ không gửi gì.
+      const result = await generateCaptionMutation.mutateAsync(
+        derivedPageId ? { id: detailsAsset.id, socialChannelId: derivedPageId } : { id: detailsAsset.id },
+      )
       const caption = result?.caption ?? ''
       setCaptionDraft(caption)
       setDetailsAsset((prev) => (prev && prev.id === detailsAsset.id ? { ...prev, ...result } : prev))
@@ -1015,7 +1018,7 @@ export default function MediaPage() {
 
             <div className="media-details-labels media-details-caption">
               <div className="media-details-labels-head">
-                <span className="ai-media-keyword-label">Caption Facebook (5 dòng)</span>
+                <span className="ai-media-keyword-label">Caption Facebook</span>
                 {canManageMedia && isImageMime(detailsAsset.mimeType) && (
                   <button
                     type="button"

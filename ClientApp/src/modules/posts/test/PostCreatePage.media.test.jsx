@@ -179,7 +179,7 @@ describe('PostCreatePage media flow', () => {
     await user.click(screen.getByRole('button', { name: 'Chọn ảnh từ Media' }))
     await user.click(screen.getByRole('button', { name: 'Xác nhận ảnh trong popup' }))
     await user.click(screen.getByRole('button', { name: '✨ Gợi ý caption' }))
-    expect(generateCaption).toHaveBeenCalledWith('img-1')
+    expect(generateCaption).toHaveBeenCalledWith({ id: 'img-1' })
     expect(screen.getByLabelText('Caption')).toHaveValue('caption gợi ý')
 
     generateCaption.mockRejectedValueOnce(Object.assign(new Error('conflict'), {
@@ -190,6 +190,32 @@ describe('PostCreatePage media flow', () => {
     await user.click(screen.getByRole('button', { name: '✨ Gợi ý caption' }))
     expect(screen.getByLabelText('Caption')).toHaveValue('giữ lại')
     expect(toast.error).toHaveBeenCalledWith('Ảnh đang chờ caption')
+  })
+
+  it('suggestion is generated with the FIRST selected Page (in selection order), or none if no Page is chosen', async () => {
+    const user = userEvent.setup()
+    render(<MemoryRouter><PostCreatePage /></MemoryRouter>)
+    await openMediaFlow(user)
+    await user.click(screen.getByRole('button', { name: 'Chọn ảnh từ Media' }))
+    await user.click(screen.getByRole('button', { name: 'Xác nhận ảnh trong popup' }))
+
+    // Chưa chọn Page ⇒ không gửi socialChannelId (key không tồn tại, không phải undefined).
+    await user.click(screen.getByRole('button', { name: '✨ Gợi ý caption' }))
+    expect(generateCaption.mock.calls[0][0]).toEqual({ id: 'img-1' })
+    expect(generateCaption.mock.calls[0][0]).not.toHaveProperty('socialChannelId')
+
+    // Chọn "Page Hai" TRƯỚC "Page Một" (khác thứ tự hiển thị) ⇒ Page đầu tiên đã chọn là Page Hai.
+    await user.click(screen.getByRole('button', { name: 'Chọn page' }))
+    await user.click(screen.getByLabelText('Page Hai'))
+    await user.click(screen.getByLabelText('Page Một'))
+    await user.click(screen.getByRole('button', { name: '✨ Gợi ý caption' }))
+    expect(generateCaption).toHaveBeenLastCalledWith({ id: 'img-1', socialChannelId: PAGE_2 })
+
+    // Bỏ Page Hai ⇒ Page đầu tiên còn lại là Page Một. (Bấm nút gợi ý đã đóng dropdown nên mở lại.)
+    await user.click(screen.getByRole('button', { name: 'Đã chọn 2 page' }))
+    await user.click(screen.getByLabelText('Page Hai'))
+    await user.click(screen.getByRole('button', { name: '✨ Gợi ý caption' }))
+    expect(generateCaption).toHaveBeenLastCalledWith({ id: 'img-1', socialChannelId: PAGE_1 })
   })
 
   it('disables create until an image, caption and page are set, then navigates', async () => {

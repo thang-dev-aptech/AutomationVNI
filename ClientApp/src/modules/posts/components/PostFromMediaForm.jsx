@@ -43,7 +43,11 @@ export default function PostFromMediaForm() {
     if (!cover) return
     const typed = caption
     try {
-      const result = await captionMutation.mutateAsync(cover.id)
+      // PageContext của Page ĐẦU TIÊN người dùng đã chọn; chưa chọn Page thì không gửi (backend dùng mặc định chung).
+      const firstPageId = pageIds[0]
+      const result = await captionMutation.mutateAsync(
+        firstPageId ? { id: cover.id, socialChannelId: firstPageId } : { id: cover.id },
+      )
       const next = result?.caption ?? ''
       if (next) setCaption(next)
       toast.success('Đã gợi ý caption. Caption này cũng được lưu vào ảnh.')
@@ -117,7 +121,8 @@ export default function PostFromMediaForm() {
           ✨ Gợi ý caption
         </button>
         <p className="post-from-media-note">
-          Gợi ý caption cũng lưu caption vào ảnh. Kiểm tra nội dung trước khi đăng.
+          Gợi ý theo thương hiệu, giọng điệu, CTA và hashtag của Page đầu tiên bạn chọn (chưa chọn Page thì dùng mặc định chung).
+          Caption cũng được lưu vào ảnh — kiểm tra nội dung trước khi đăng.
         </p>
       </div>
 
