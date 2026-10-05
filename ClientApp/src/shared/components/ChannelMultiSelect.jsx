@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { sortChannelsVniFirst } from '@/shared/utils/channelSort'
 import './ChannelMultiSelect.css'
 
 /**
  * Dropdown multi-select kênh (page) — giống combobox: ô trigger → panel search + checkbox.
  */
 export default function ChannelMultiSelect({
-  channels = [],
+  channels: channelsProp = [],
   value = [],
   onChange,
   getBadge,
@@ -18,6 +19,8 @@ export default function ChannelMultiSelect({
   const rootRef = useRef(null)
   const searchRef = useRef(null)
   const selected = useMemo(() => new Set(value), [value])
+  // VNi trước rồi A→Z; lọc/chip/chọn-tất-cả đều theo thứ tự này.
+  const channels = useMemo(() => sortChannelsVniFirst(channelsProp), [channelsProp])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()

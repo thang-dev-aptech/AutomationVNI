@@ -23,6 +23,7 @@ import {
   useTikTokConnectUrl,
   useUpdateSocialChannel,
 } from '../hooks/useSocialChannels'
+import { sortChannelsVniFirst } from '@/shared/utils/channelSort'
 import './PlatformsPage.css'
 
 export default function PlatformsPage() {
@@ -62,14 +63,14 @@ export default function PlatformsPage() {
 
   const orphanChannels = useMemo(() => {
     const kw = keyword.trim().toLowerCase()
-    return allChannels.filter((ch) => {
+    return sortChannelsVniFirst(allChannels.filter((ch) => {
       if (ch.socialConnectionId) return false
       if (!kw) return true
       return (
         ch.pageName?.toLowerCase().includes(kw) ||
         ch.externalPageId?.toLowerCase().includes(kw)
       )
-    })
+    }))
   }, [allChannels, keyword])
 
   const filteredConnections = useMemo(() => {

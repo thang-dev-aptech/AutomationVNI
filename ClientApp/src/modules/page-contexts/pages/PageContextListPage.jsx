@@ -8,6 +8,7 @@ import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialCh
 import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
 import { toast } from '@/shared/stores/toastStore'
 import Modal from '@/shared/components/Modal'
+import { sortChannelsVniFirst } from '@/shared/utils/channelSort'
 import PageContextFormModal from '../components/PageContextFormModal'
 import {
   useCreatePageContext,
@@ -72,7 +73,7 @@ export default function PageContextListPage() {
 
   const missingChannels = useMemo(() => {
     const withContext = new Set(items.map((i) => i.socialChannelId))
-    return channels.filter((c) => c.isActive !== false && !withContext.has(c.id))
+    return sortChannelsVniFirst(channels.filter((c) => c.isActive !== false && !withContext.has(c.id)))
   }, [channels, items])
 
   const openCreate = () => {

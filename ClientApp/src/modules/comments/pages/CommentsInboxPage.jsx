@@ -27,6 +27,7 @@ import {
   useSetCommentStatus,
   useSyncComments,
 } from '../hooks/useComments'
+import { sortChannelsVniFirst } from '@/shared/utils/channelSort'
 import './CommentsInboxPage.css'
 
 function CommentNode({ comment, depth = 0 }) {
@@ -77,6 +78,7 @@ export default function CommentsInboxPage() {
   }), [platform, channelId, status, unrepliedOnly, keyword])
 
   const { data: channels = [] } = useSocialChannelAll()
+  const sortedChannels = useMemo(() => sortChannelsVniFirst(channels), [channels])
   const { data: summary } = useCommentSummary()
   const { data, isLoading, isError, error, refetch } = useCommentInbox(params)
   const { data: thread, isLoading: threadLoading } = useCommentThread(selectedId)
@@ -185,7 +187,7 @@ export default function CommentsInboxPage() {
             <label htmlFor="c-channel">Kênh</label>
             <select id="c-channel" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
               <option value="">Tất cả</option>
-              {channels.map((c) => (
+              {sortedChannels.map((c) => (
                 <option key={c.id} value={c.id}>{c.pageName}</option>
               ))}
             </select>
