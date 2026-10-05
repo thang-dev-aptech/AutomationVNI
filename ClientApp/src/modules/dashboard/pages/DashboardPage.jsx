@@ -15,7 +15,6 @@ import JobHealthPanel from '../components/JobHealthPanel'
 import ChannelHealthPanel from '../components/ChannelHealthPanel'
 import { buildStatCards, DASHBOARD_QUICK_LINKS } from '../utils/dashboardLayout'
 import './DashboardPage.css'
-import { FEATURES } from '@/shared/config/features'
 
 /**
  * Trang này phục vụ HAI người khác nhau, nên chia làm hai tầng:
@@ -59,21 +58,6 @@ export default function DashboardPage() {
           </button>
         }
       />
-
-      <div className="card card-body dashboard-whats-new">
-        <h2 className="dashboard-whats-new__title">Có gì mới</h2>
-        <ul className="dashboard-whats-new__list">
-          <li>Thanh phân trang thư mục dính cạnh tiêu đề «Thư mục» trên trang Media.</li>
-          <li>Lưới ảnh/tệp phân trang riêng — không còn phải cuộn hết một lần.</li>
-          <li>Kéo-thả file từ máy vào thẻ thư mục hoặc lưới trên trang Media.</li>
-          {FEATURES.chungChiBulk && (
-            <li>
-              Tạo bài hàng loạt từ thư mục chung_chi —{' '}
-              <Link to="/bulk-chung-chi">Tạo từ chứng chỉ</Link>.
-            </li>
-          )}
-        </ul>
-      </div>
 
       {metrics.isLoading && <LoadingState message="Đang tải số liệu fanpage..." />}
 
