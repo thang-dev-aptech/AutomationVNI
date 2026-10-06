@@ -124,6 +124,11 @@ builder.Services.AddScoped<CategoryRepository>();
 builder.Services.AddScoped<Backend.Modules.ChannelGroup.ChannelGroupRepository>();
 builder.Services.AddScoped<Backend.Modules.ChannelGroup.ChannelGroupImportService>();
 builder.Services.AddScoped<Backend.Modules.Campaign.CampaignRepository>();
+builder.Services.AddScoped<Backend.Modules.Campaign.CampaignGenerationService>();
+builder.Services.AddScoped<Backend.Modules.Post.RecycleSourcePicker>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.Configure<Backend.Modules.Campaign.CampaignWorkerOptions>(
+    builder.Configuration.GetSection("CampaignWorker"));
 builder.Services.AddScoped<SocialChannelRepository>();
 builder.Services.AddScoped<SocialConnectionRepository>();
 builder.Services.AddScoped<PageContextRepository>();
@@ -164,6 +169,7 @@ builder.Services.AddHostedService<Backend.Shared.Backup.DatabaseBackupWorker>();
 
 builder.Services.AddHostedService<Backend.Shared.Scheduler.ScheduledPostPublisherService>();
 builder.Services.AddHostedService<Backend.Shared.Generation.PostGenerationWorker>();
+builder.Services.AddHostedService<Backend.Modules.Campaign.CampaignWorker>();
 builder.Services.AddHostedService<MediaCaptionWorker>();
 builder.Services.AddHostedService<CommentWebhookHydrationWorker>();
 builder.Services.AddHostedService<CommentReconcileWorker>();

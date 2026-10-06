@@ -430,6 +430,8 @@ public class CampaignRepository : GenericRepository<CampaignModel>
         foreach (var post in posts)
         {
             post.Status = PostStatus.Cancelled;
+            // Giải phóng khe để Tiếp tục/Sửa có thể sinh lại (unique CampaignId+channel+slot).
+            post.CampaignSlotAt = null;
             post.UpdatedAt = now;
             post.UpdatedBy = actor;
         }

@@ -107,6 +107,7 @@ public sealed class PostCalendarFiltersTests : IAsyncLifetime
                     services.AddScoped<PostMediaRepository>();
                     services.AddScoped<PostWorkflowService>();
                     services.AddScoped<PostFromMediaService>();
+                    services.AddScoped<RecycleSourcePicker>();
                     services.AddScoped<PostRecycleService>();
                     services.AddScoped<AiImageFolderService>();
                     services.AddScoped<MediaIntelligenceService>();
