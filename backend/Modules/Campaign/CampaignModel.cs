@@ -24,4 +24,9 @@ public class CampaignModel : BaseEntity
     /// <summary>Ngày kết thúc tuỳ chọn (≥ StartDate).</summary>
     public DateTime? EndDate { get; set; }
     public CampaignStatus Status { get; set; } = CampaignStatus.Running;
+    /// <summary>
+    /// Id người tạo chiến dịch (AspNetUsers). Gán lúc tạo, không đổi khi sửa.
+    /// Worker dùng làm Post.UserId khi sinh bài.
+    /// </summary>
+    public Guid? CreatedByUserId { get; set; }
 }

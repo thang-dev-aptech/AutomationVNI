@@ -240,6 +240,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Status);
             e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => x.CreatedByUserId);
             e.Property(x => x.Name).HasMaxLength(300);
             e.Property(x => x.WeekdaysJson).HasColumnType("TEXT");
             e.Property(x => x.PublishTimesJson).HasColumnType("TEXT");

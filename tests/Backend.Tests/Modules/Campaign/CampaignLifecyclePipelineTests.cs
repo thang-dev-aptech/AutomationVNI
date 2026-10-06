@@ -432,6 +432,16 @@ public sealed class CampaignLifecyclePipelineTests : IAsyncLifetime
         Assert.Equal(PostStatus.Scheduled, await GetPostStatusAsync(postId));
     }
 
+    [Fact]
+    public async Task Create_SetsCreatedByUserId_FromAuthenticatedUser()
+    {
+        var channel = await SeedChannelAsync("ch-author");
+        var id = await CreateViaApiAsync(channel, "AuthorViaApi");
+        await using var db = new AppDbContext(_options);
+        var camp = await db.Campaigns.SingleAsync(c => c.Id == id);
+        Assert.Equal(ActorUserId, camp.CreatedByUserId);
+    }
+
     // --- helpers ---
 
     private static CreateCampaignRequest ValidCreate(Guid channelId, string name) => new()

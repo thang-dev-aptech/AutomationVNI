@@ -105,6 +105,8 @@ public class CampaignRepository : GenericRepository<CampaignModel>
             StartDate = start,
             EndDate = end,
             Status = CampaignStatus.Running,
+            // Tác giả chiến dịch = người tạo; không đổi khi sửa (NB2 / campaign-post-author).
+            CreatedByUserId = UserContext.GetCurrentUserId(),
         };
 
         await using var tx = await Context.Database.BeginTransactionAsync(ct);

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Backend.Data;
 using Backend.Modules.Campaign.Enums;
 using Backend.Modules.ChannelGroup;
+using Backend.Modules.MediaAsset;
 using Backend.Modules.Post;
 using Backend.Modules.Post.Enums;
 using Backend.Modules.SocialChannel;
@@ -92,6 +93,14 @@ public class CampaignGenerationService(
                 continue;
             }
 
+            if (campaign.CreatedByUserId is null)
+            {
+                logger.LogWarning(
+                    "Campaign {CampaignId} thiếu CreatedByUserId — bài sinh sẽ dùng Guid.Empty",
+                    campaign.Id);
+            }
+
+            var authorUserId = campaign.CreatedByUserId ?? Guid.Empty;
             var sourceIndex = 0;
             foreach (var slotUtc in slots)
             {
@@ -122,7 +131,7 @@ public class CampaignGenerationService(
                     SourcePostId = source.Id,
                     CampaignId = campaign.Id,
                     CampaignSlotAt = slotUtc,
-                    UserId = Guid.Empty,
+                    UserId = authorUserId,
                     CreatedAt = nowUtc,
                     CreatedBy = actor,
                     ApprovedBy = keepOld ? actor : null,
@@ -143,8 +152,9 @@ public class CampaignGenerationService(
                 }
                 catch (DbUpdateException ex) when (IsUniqueViolation(ex))
                 {
-                    // Worker song song / chạy lại — unique DB là ranh giới thật.
-                    context.ChangeTracker.Clear();
+                    // Chỉ detach bài/media vừa thêm — KHÔNG Clear() toàn tracker
+                    // (Clear làm mất entity chiến dịch → PersistWarningsAsync không lưu được).
+                    DetachAddedForPost(newPost.Id);
                     skipped++;
                     logger.LogDebug(
                         ex,
@@ -320,14 +330,38 @@ public class CampaignGenerationService(
         }
     }
 
-    private static bool IsUniqueViolation(DbUpdateException ex)
+    /// <summary>
+    /// Gỡ bài + PostMedia vừa Add khỏi tracker sau unique collision, giữ nguyên
+    /// các entity chiến dịch đã nạp (để PersistWarningsAsync vẫn SaveChanges được).
+    /// </summary>
+    private void DetachAddedForPost(Guid postId)
     {
+        var toDetach = context.ChangeTracker.Entries()
+            .Where(e => e.State == EntityState.Added)
+            .Where(e =>
+                (e.Entity is PostModel p && p.Id == postId)
+                || (e.Entity is PostMediaModel m && m.PostId == postId))
+            .ToList();
+        foreach (var entry in toDetach)
+            entry.State = EntityState.Detached;
+    }
+
+    /// <summary>
+    /// Chỉ SQLITE_CONSTRAINT_UNIQUE (2067) hoặc PRIMARYKEY (1555).
+    /// SQLITE_CONSTRAINT chung (19) / NOT NULL / CHECK không được nuốt thành skipped.
+    /// </summary>
+    internal static bool IsUniqueViolation(DbUpdateException ex)
+    {
+        const int sqliteConstraintUnique = 2067;
+        const int sqliteConstraintPrimaryKey = 1555;
         for (var inner = ex.InnerException; inner is not null; inner = inner.InnerException)
         {
-            if (inner is SqliteException sqlite && sqlite.SqliteErrorCode == 19)
+            if (inner is SqliteException sqlite
+                && (sqlite.SqliteExtendedErrorCode == sqliteConstraintUnique
+                    || sqlite.SqliteExtendedErrorCode == sqliteConstraintPrimaryKey))
+            {
                 return true;
-            if (inner.Message.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase))
-                return true;
+            }
         }
         return false;
     }
