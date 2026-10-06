@@ -1,5 +1,6 @@
 using System.Globalization;
 using Backend.Modules.ApiLog;
+using Backend.Modules.Campaign;
 using Backend.Modules.Category;
 using Backend.Modules.ChannelGroup;
 using Backend.Modules.ContentCrawl;
@@ -46,6 +47,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<SocialChannelModel> SocialChannels => Set<SocialChannelModel>();
     public DbSet<ChannelGroupModel> ChannelGroups => Set<ChannelGroupModel>();
     public DbSet<ChannelGroupMemberModel> ChannelGroupMembers => Set<ChannelGroupMemberModel>();
+    public DbSet<CampaignModel> Campaigns => Set<CampaignModel>();
+    public DbSet<CampaignChannelModel> CampaignChannels => Set<CampaignChannelModel>();
+    public DbSet<CampaignChannelGroupModel> CampaignChannelGroups => Set<CampaignChannelGroupModel>();
     public DbSet<SocialConnectionModel> SocialConnections => Set<SocialConnectionModel>();
     public DbSet<PageContextModel> PageContexts => Set<PageContextModel>();
     public DbSet<PostModel> Posts => Set<PostModel>();
@@ -229,6 +233,44 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.PromptTemplateImage).HasColumnType("TEXT");
         });
 
+        // Chiến dịch — không FK constraint; JSON lịch + junction kênh/nhóm.
+        modelBuilder.Entity<CampaignModel>(e =>
+        {
+            e.ToTable("Campaigns");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Status);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.Name).HasMaxLength(300);
+            e.Property(x => x.WeekdaysJson).HasColumnType("TEXT");
+            e.Property(x => x.PublishTimesJson).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<CampaignChannelModel>(e =>
+        {
+            e.ToTable("CampaignChannels");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CampaignId);
+            e.HasIndex(x => x.SocialChannelId);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => new { x.CampaignId, x.SocialChannelId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0")
+                .HasDatabaseName("IX_CampaignChannels_Campaign_Channel_Active");
+        });
+
+        modelBuilder.Entity<CampaignChannelGroupModel>(e =>
+        {
+            e.ToTable("CampaignChannelGroups");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CampaignId);
+            e.HasIndex(x => x.ChannelGroupId);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => new { x.CampaignId, x.ChannelGroupId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0")
+                .HasDatabaseName("IX_CampaignChannelGroups_Campaign_Group_Active");
+        });
+
         modelBuilder.Entity<PostModel>(e =>
         {
             e.ToTable("Posts");
@@ -239,7 +281,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasIndex(x => x.Status);
             e.HasIndex(x => x.ScheduledPublishAt);
             e.HasIndex(x => x.BatchId);
+            e.HasIndex(x => x.CampaignId);
             e.HasIndex(x => x.IsDeleted);
+            // Idempotent khe chiến dịch — chỉ khi CampaignId có giá trị.
+            e.HasIndex(x => new { x.CampaignId, x.SocialChannelId, x.CampaignSlotAt })
+                .IsUnique()
+                .HasFilter("CampaignId IS NOT NULL")
+                .HasDatabaseName("IX_Posts_Campaign_Channel_Slot");
             e.Property(x => x.Title).HasMaxLength(500);
             e.Property(x => x.Content).HasColumnType("TEXT");
             e.Property(x => x.ExternalPostId).HasMaxLength(500);
