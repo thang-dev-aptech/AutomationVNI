@@ -130,3 +130,83 @@ export function monthLabel(year, month) {
 }
 
 export const WEEKDAY_LABELS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
+
+/** Nhãn cột tuần đầy đủ theo ảnh SO9. */
+export const WEEKDAY_FULL_LABELS = [
+  'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật',
+]
+
+/** Cộng/trừ ngày trên chuỗi YYYY-MM-DD (lịch dân sự, khớp buildMonthGrid). */
+export function shiftYmd(ymd, days) {
+  const [y, m, d] = ymd.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  dt.setUTCDate(dt.getUTCDate() + days)
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`
+}
+
+/**
+ * Thứ Hai (YYYY-MM-DD) của tuần giờ VN chứa `value` (Date/ISO hoặc ymd).
+ * Tuần: Thứ 2 → Chủ nhật.
+ */
+export function startOfVnWeek(value) {
+  const ymd = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? value
+    : toVnYmd(value)
+  if (!ymd) return ''
+  const [y, m, d] = ymd.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  const mondayFirst = (dt.getUTCDay() + 6) % 7
+  dt.setUTCDate(dt.getUTCDate() - mondayFirst)
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`
+}
+
+/**
+ * 7 ô Thứ 2→CN của tuần bắt đầu `weekStartYmd` (phải là Thứ Hai).
+ * headerLabel dạng "Thứ 2 05".
+ */
+export function buildWeekGrid(weekStartYmd) {
+  const todayYmd = toVnYmd(new Date())
+  const [y, m, d] = weekStartYmd.split('-').map(Number)
+  const cursor = new Date(Date.UTC(y, m - 1, d))
+  const cells = []
+
+  for (let i = 0; i < 7; i += 1) {
+    const cy = cursor.getUTCFullYear()
+    const cm = cursor.getUTCMonth() + 1
+    const cd = cursor.getUTCDate()
+    const ymd = `${cy}-${pad2(cm)}-${pad2(cd)}`
+    cells.push({
+      ymd,
+      day: cd,
+      month: cm,
+      year: cy,
+      weekdayLabel: WEEKDAY_FULL_LABELS[i],
+      headerLabel: `${WEEKDAY_FULL_LABELS[i]} ${pad2(cd)}`,
+      isToday: ymd === todayYmd,
+      isPast: ymd < todayYmd,
+      isWeekend: i >= 5,
+    })
+    cursor.setUTCDate(cd + 1)
+  }
+
+  return cells
+}
+
+/** Nhãn thanh điều hướng tuần: "05/10 - 11/10". */
+export function weekRangeLabel(weekStartYmd) {
+  const cells = buildWeekGrid(weekStartYmd)
+  const first = cells[0]
+  const last = cells[6]
+  return `${pad2(first.day)}/${pad2(first.month)} - ${pad2(last.day)}/${pad2(last.month)}`
+}
+
+/** Khoảng UTC nửa mở [from, to) bao trọn tuần. */
+export function weekRangeUtc(weekStartYmd) {
+  const cells = buildWeekGrid(weekStartYmd)
+  const toExclusive = vnMidnightToUtc(cells[6].ymd)
+  toExclusive.setUTCDate(toExclusive.getUTCDate() + 1)
+  return {
+    fromUtc: vnMidnightToUtc(cells[0].ymd).toISOString(),
+    toUtc: toExclusive.toISOString(),
+  }
+}

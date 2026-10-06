@@ -1,38 +1,47 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatTimeShort } from '@/shared/utils/apiHelpers'
+import { CALENDAR_STATUS_GROUPS } from '../constants/calendarStatus'
+import WeekView, {
+  POST_TYPE_COLORS,
+  eventTimeOf,
+  statusBorderColor,
+} from './calendar/WeekView'
 import {
   WEEKDAY_LABELS,
   buildMonthGrid,
   monthLabel,
+  shiftYmd,
+  startOfVnWeek,
   toVnYmd,
+  weekRangeLabel,
 } from '../utils/calendarGrid'
 import './PostCalendar.css'
 
-/** Số bài hiện tối đa trong 1 ô trước khi thu gọn thành "+N bài". */
+/** Số bài hiện tối đa trong 1 ô tháng trước khi thu gọn thành "+N bài". */
 const MAX_VISIBLE_PER_DAY = 3
-
 const STATUS_SCHEDULED = 5
-const STATUS_PUBLISHED = 7
-const STATUS_FAILED = 8
-
-/**
- * Mốc thời gian dùng để xếp bài vào ô ngày: bài chưa đăng thì theo giờ đã lên lịch,
- * bài đã đăng thì theo giờ đăng thật.
- */
-function eventTimeOf(post) {
-  return post.status === STATUS_SCHEDULED
-    ? post.scheduledPublishAt
-    : (post.publishedAt || post.scheduledPublishAt)
-}
 
 function toneOf(post, isOverdue) {
   if (isOverdue) return 'overdue'
-  if (post.status === STATUS_PUBLISHED) return 'published'
-  if (post.status === STATUS_FAILED) return 'failed'
+  const group = CALENDAR_STATUS_GROUPS.find((g) => g.statuses.includes(post.status))
+  if (group?.key === 'published') return 'published'
+  if (group?.key === 'failed') return 'failed'
   return 'scheduled'
 }
 
+/** Tuần mặc định khi mở dạng Tuần: tuần chứa hôm nay nếu cùng tháng cursor, không thì tuần ngày 1. */
+function defaultWeekStart(year, month) {
+  const todayYmd = toVnYmd(new Date())
+  const [ty, tm] = todayYmd.split('-').map(Number)
+  if (ty === year && tm === month) return startOfVnWeek(todayYmd)
+  return startOfVnWeek(`${year}-${String(month).padStart(2, '0')}-01`)
+}
+
+/**
+ * Lịch Tuần / Tháng (giờ VN). Toolbar: Tuần|Tháng, ‹ ›, Hôm nay.
+ * Kéo-thả bài Chờ đăng sang ngày tương lai giữ giờ; chặn quá khứ.
+ */
 export default function PostCalendar({
   year,
   month,
@@ -43,14 +52,24 @@ export default function PostCalendar({
   onToday,
   onReschedule,
   isRescheduling = false,
+  onMonthCursorChange,
 }) {
   const navigate = useNavigate()
+  const [density, setDensity] = useState('month')
+  const [weekStartYmd, setWeekStartYmd] = useState(() => defaultWeekStart(year, month))
   const [expandedDay, setExpandedDay] = useState(null)
   const [dragOverYmd, setDragOverYmd] = useState(null)
+  const monthCursorRef = useRef({ year, month })
+
+  // Khi cursor tháng đổi từ URL/toolbar — căn tuần về tuần hợp lý của tháng mới.
+  useEffect(() => {
+    if (monthCursorRef.current.year === year && monthCursorRef.current.month === month) return
+    monthCursorRef.current = { year, month }
+    setWeekStartYmd(defaultWeekStart(year, month))
+  }, [year, month])
 
   const cells = useMemo(() => buildMonthGrid(year, month), [year, month])
 
-  /** Gom bài vào từng ô theo ngày VN, mỗi ô đã sắp xếp theo giờ tăng dần. */
   const postsByDay = useMemo(() => {
     const map = {}
     for (const post of posts) {
@@ -69,14 +88,33 @@ export default function PostCalendar({
 
   const todayYmd = toVnYmd(new Date())
 
+  function syncMonthFromYmd(ymd) {
+    const [y, m] = ymd.split('-').map(Number)
+    if (y !== year || m !== month) {
+      onMonthCursorChange?.(y, m)
+    }
+  }
+
+  function goToday() {
+    const start = startOfVnWeek(new Date())
+    setWeekStartYmd(start)
+    const [y, m] = todayYmd.split('-').map(Number)
+    onToday?.()
+    onMonthCursorChange?.(y, m)
+  }
+
+  function shiftWeek(deltaWeeks) {
+    const next = shiftYmd(weekStartYmd, deltaWeeks * 7)
+    setWeekStartYmd(next)
+    syncMonthFromYmd(next)
+  }
+
   function handleDragStart(event, post) {
     event.dataTransfer.setData('text/plain', post.id)
     event.dataTransfer.effectAllowed = 'move'
   }
 
   function handleDragOver(event, cell) {
-    // Ngày quá khứ không nhận thả: backend từ chối mọi lịch <= hiện tại, chặn sớm ở đây
-    // để khỏi tốn một vòng gọi API chỉ để nhận lỗi.
     if (cell.isPast) return
     event.preventDefault()
     event.dataTransfer.dropEffect = 'move'
@@ -90,105 +128,190 @@ export default function PostCalendar({
 
     const postId = event.dataTransfer.getData('text/plain')
     const post = posts.find((p) => p.id === postId)
-    if (!post) return
-    if (toVnYmd(eventTimeOf(post)) === cell.ymd) return // thả lại đúng chỗ cũ
+    if (!post || post.status !== STATUS_SCHEDULED) return
+    if (toVnYmd(eventTimeOf(post)) === cell.ymd) return
 
     onReschedule?.(post, cell.ymd)
   }
 
+  function renderChip(post) {
+    const time = eventTimeOf(post)
+    const isOverdue = post.status === STATUS_SCHEDULED && toVnYmd(time) < todayYmd
+    const draggable = post.status === STATUS_SCHEDULED
+    const channelName = channelMap[post.socialChannelId] || post.channelName || ''
+    const typeColor = POST_TYPE_COLORS[post.postType] || POST_TYPE_COLORS['Văn bản']
+    const border = statusBorderColor(post.status)
+
+    return (
+      <button
+        key={post.id}
+        type="button"
+        draggable={draggable}
+        onDragStart={(e) => handleDragStart(e, post)}
+        onClick={() => navigate(`/posts/${post.id}`)}
+        className={`post-calendar-chip is-rich tone-${toneOf(post, isOverdue)}${draggable ? ' is-draggable' : ''}`}
+        style={{ borderLeftColor: border }}
+        title={`${formatTimeShort(time)} · ${post.title}${
+          channelName ? ` · ${channelName}` : ''
+        }${isOverdue ? ' · Quá hạn chưa đăng' : ''}`}
+        data-testid={`month-chip-${post.id}`}
+      >
+        <span className="post-calendar-chip-time">{formatTimeShort(time)}</span>
+        <span
+          className="post-calendar-type-dot"
+          style={{ background: typeColor }}
+          title={post.postType || 'Văn bản'}
+          aria-hidden
+        />
+        {channelName ? (
+          <span className="post-calendar-chip-channel">{channelName}</span>
+        ) : null}
+        <span className="post-calendar-chip-title">{post.title}</span>
+      </button>
+    )
+  }
+
   return (
-    <div className="post-calendar">
+    <div className="post-calendar" data-testid="post-calendar">
       <div className="post-calendar-toolbar">
-        <div className="post-calendar-nav">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onPrevMonth}>‹</button>
-          <span className="post-calendar-month">{monthLabel(year, month)}</span>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onNextMonth}>›</button>
+        <div className="post-calendar-density" role="tablist" aria-label="Dạng lịch">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={density === 'week'}
+            className={`post-calendar-density-btn${density === 'week' ? ' is-active' : ''}`}
+            onClick={() => {
+              setWeekStartYmd(defaultWeekStart(year, month))
+              setDensity('week')
+            }}
+          >
+            Tuần
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={density === 'month'}
+            className={`post-calendar-density-btn${density === 'month' ? ' is-active' : ''}`}
+            onClick={() => setDensity('month')}
+          >
+            Tháng
+          </button>
         </div>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={onToday}>
+
+        <div className="post-calendar-nav">
+          {density === 'week' ? (
+            <>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => shiftWeek(-1)}
+                aria-label="Tuần trước"
+              >
+                ‹
+              </button>
+              <span className="post-calendar-month" data-testid="week-range-label">
+                {weekRangeLabel(weekStartYmd)}
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => shiftWeek(1)}
+                aria-label="Tuần sau"
+              >
+                ›
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onPrevMonth} aria-label="Tháng trước">
+                ‹
+              </button>
+              <span className="post-calendar-month">{monthLabel(year, month)}</span>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onNextMonth} aria-label="Tháng sau">
+                ›
+              </button>
+            </>
+          )}
+        </div>
+
+        <button type="button" className="btn btn-secondary btn-sm" onClick={goToday}>
           Hôm nay
         </button>
       </div>
 
-      <div className="post-calendar-weekdays">
-        {WEEKDAY_LABELS.map((label) => (
-          <div key={label} className="post-calendar-weekday">{label}</div>
-        ))}
-      </div>
+      {density === 'week' ? (
+        <WeekView
+          weekStartYmd={weekStartYmd}
+          posts={posts}
+          channelMap={channelMap}
+          onReschedule={onReschedule}
+          isRescheduling={isRescheduling}
+        />
+      ) : (
+        <>
+          <div className="post-calendar-weekdays">
+            {WEEKDAY_LABELS.map((label) => (
+              <div key={label} className="post-calendar-weekday">{label}</div>
+            ))}
+          </div>
 
-      <div className={`post-calendar-grid${isRescheduling ? ' is-busy' : ''}`}>
-        {cells.map((cell) => {
-          const dayPosts = postsByDay[cell.ymd] ?? []
-          const isExpanded = expandedDay === cell.ymd
-          const visible = isExpanded ? dayPosts : dayPosts.slice(0, MAX_VISIBLE_PER_DAY)
-          const hiddenCount = dayPosts.length - visible.length
+          <div
+            className={`post-calendar-grid${isRescheduling ? ' is-busy' : ''}`}
+            data-testid="month-grid"
+          >
+            {cells.map((cell) => {
+              const dayPosts = postsByDay[cell.ymd] ?? []
+              const isExpanded = expandedDay === cell.ymd
+              const visible = isExpanded ? dayPosts : dayPosts.slice(0, MAX_VISIBLE_PER_DAY)
+              const hiddenCount = dayPosts.length - visible.length
 
-          const classes = [
-            'post-calendar-cell',
-            cell.isCurrentMonth ? '' : 'is-outside',
-            cell.isToday ? 'is-today' : '',
-            cell.isPast ? 'is-past' : '',
-            dragOverYmd === cell.ymd ? 'is-drop-target' : '',
-          ].filter(Boolean).join(' ')
+              const classes = [
+                'post-calendar-cell',
+                cell.isCurrentMonth ? '' : 'is-outside',
+                cell.isToday ? 'is-today' : '',
+                cell.isPast ? 'is-past' : '',
+                dragOverYmd === cell.ymd ? 'is-drop-target' : '',
+              ].filter(Boolean).join(' ')
 
-          return (
-            <div
-              key={cell.ymd}
-              className={classes}
-              onDragOver={(e) => handleDragOver(e, cell)}
-              onDragLeave={() => setDragOverYmd((prev) => (prev === cell.ymd ? null : prev))}
-              onDrop={(e) => handleDrop(e, cell)}
-            >
-              <div className="post-calendar-daynum">{cell.day}</div>
+              return (
+                <div
+                  key={cell.ymd}
+                  className={classes}
+                  data-ymd={cell.ymd}
+                  onDragOver={(e) => handleDragOver(e, cell)}
+                  onDragLeave={() => setDragOverYmd((prev) => (prev === cell.ymd ? null : prev))}
+                  onDrop={(e) => handleDrop(e, cell)}
+                >
+                  <div className="post-calendar-daynum">{cell.day}</div>
+                  <div className="post-calendar-events">
+                    {visible.map((post) => renderChip(post))}
 
-              <div className="post-calendar-events">
-                {visible.map((post) => {
-                  const time = eventTimeOf(post)
-                  const isOverdue = post.status === STATUS_SCHEDULED
-                    && toVnYmd(time) < todayYmd
-                  const draggable = post.status === STATUS_SCHEDULED
+                    {hiddenCount > 0 && (
+                      <button
+                        type="button"
+                        className="post-calendar-more"
+                        onClick={() => setExpandedDay(cell.ymd)}
+                      >
+                        +{hiddenCount} bài
+                      </button>
+                    )}
 
-                  return (
-                    <button
-                      key={post.id}
-                      type="button"
-                      draggable={draggable}
-                      onDragStart={(e) => handleDragStart(e, post)}
-                      onClick={() => navigate(`/posts/${post.id}`)}
-                      className={`post-calendar-chip tone-${toneOf(post, isOverdue)}${draggable ? ' is-draggable' : ''}`}
-                      title={`${formatTimeShort(time)} · ${post.title}${
-                        channelMap[post.socialChannelId] ? ` · ${channelMap[post.socialChannelId]}` : ''
-                      }${isOverdue ? ' · Quá hạn chưa đăng' : ''}`}
-                    >
-                      <span className="post-calendar-chip-time">{formatTimeShort(time)}</span>
-                      <span className="post-calendar-chip-title">{post.title}</span>
-                    </button>
-                  )
-                })}
-
-                {hiddenCount > 0 && (
-                  <button
-                    type="button"
-                    className="post-calendar-more"
-                    onClick={() => setExpandedDay(cell.ymd)}
-                  >
-                    +{hiddenCount} bài
-                  </button>
-                )}
-
-                {isExpanded && dayPosts.length > MAX_VISIBLE_PER_DAY && (
-                  <button
-                    type="button"
-                    className="post-calendar-more"
-                    onClick={() => setExpandedDay(null)}
-                  >
-                    Thu gọn
-                  </button>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+                    {isExpanded && dayPosts.length > MAX_VISIBLE_PER_DAY && (
+                      <button
+                        type="button"
+                        className="post-calendar-more"
+                        onClick={() => setExpandedDay(null)}
+                      >
+                        Thu gọn
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
     </div>
   )
 }

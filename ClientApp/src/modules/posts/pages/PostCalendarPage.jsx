@@ -3,9 +3,13 @@ import PageHeader from '@/shared/components/PageHeader'
 import LoadingState from '@/shared/components/LoadingState'
 import ErrorState from '@/shared/components/ErrorState'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
+import { toast } from '@/shared/stores/toastStore'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import { useChannelGroupAll } from '@/modules/social-channels/hooks/useChannelGroups'
 import CalendarFilterSidebar from '../components/calendar/CalendarFilterSidebar'
+import PostCalendar from '../components/PostCalendar'
+import { withVnDate } from '../utils/calendarGrid'
+import { useSchedulePost } from '../hooks/usePosts'
 import {
   useCalendarFacets,
   useCalendarPosts,
@@ -28,7 +32,7 @@ function ViewPlaceholder({ title, hint }) {
 
 /**
  * Khung trang Lịch SO9: sidebar bộ lọc + chuyển chế độ + state trên URL.
- * Nội dung từng chế độ (Tuần/Tháng, danh sách, theo kênh) do t6–t8 lắp vào.
+ * Chế độ Lịch = PostCalendar (Tuần/Tháng). Danh sách / Theo kênh = placeholder t7–t8.
  */
 export default function PostCalendarPage() {
   const [filterOpen, setFilterOpen] = useState(false)
@@ -40,6 +44,9 @@ export default function PostCalendarPage() {
     setView,
     channelMode,
     setChannelMode,
+    year,
+    month,
+    setMonthCursor,
     statusKeys,
     toggleStatusKey,
     channelIds,
@@ -57,24 +64,63 @@ export default function PostCalendarPage() {
 
   const { data: channels = [] } = useSocialChannelAll()
   const { data: groups = [] } = useChannelGroupAll()
+  const channelMap = useMemo(
+    () => Object.fromEntries(channels.map((c) => [c.id, c.pageName])),
+    [channels],
+  )
 
   const facetsQuery = useCalendarFacets(filterRequest)
   const postsQuery = useCalendarPosts(filterRequest, {
     enabled: view === CALENDAR_VIEWS.calendar,
   })
+  const scheduleMutation = useSchedulePost()
 
   const authors = facetsQuery.data?.authors ?? []
   const categories = facetsQuery.data?.categories ?? []
-
-  const viewLabel = useMemo(
-    () => CALENDAR_VIEW_OPTIONS.find((o) => o.key === view)?.label ?? 'Lịch',
-    [view],
-  )
 
   const shellClass = [
     'calendar-shell',
     filterOpen ? 'is-filter-open' : '',
   ].filter(Boolean).join(' ')
+
+  function shiftMonth(delta) {
+    const next = new Date(Date.UTC(year, month - 1 + delta, 1))
+    setMonthCursor(next.getUTCFullYear(), next.getUTCMonth() + 1)
+  }
+
+  function goToday() {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+    }).formatToParts(new Date())
+    const get = (type) => Number(parts.find((p) => p.type === type)?.value)
+    setMonthCursor(get('year'), get('month'))
+  }
+
+  /** Kéo-thả sang ngày mới: giữ giờ-phút VN cũ, chỉ đổi ngày. */
+  function handleReschedule(post, targetYmd) {
+    const source = post.scheduledPublishAt
+    if (!source) return
+    const newDate = withVnDate(source, targetYmd)
+
+    if (newDate.getTime() <= Date.now()) {
+      toast.error('Không thể đặt lịch vào thời điểm đã qua')
+      return
+    }
+
+    scheduleMutation.mutate(
+      {
+        id: post.id,
+        scheduledAt: newDate.toISOString(),
+        timezone: 'Asia/Ho_Chi_Minh',
+      },
+      {
+        onSuccess: () => toast.success('Đã đổi lịch đăng'),
+        onError: (err) => toast.error(getErrorMessage(err)),
+      },
+    )
+  }
 
   return (
     <div>
@@ -163,9 +209,17 @@ export default function PostCalendarPage() {
           )}
 
           {view === CALENDAR_VIEWS.calendar && !postsQuery.isLoading && !postsQuery.isError && (
-            <ViewPlaceholder
-              title="Chế độ Lịch"
-              hint={`Placeholder t6 — Tuần/Tháng. Đang có ${postsQuery.data?.length ?? 0} bài trong khoảng lọc (${viewLabel}).`}
+            <PostCalendar
+              year={year}
+              month={month}
+              posts={postsQuery.data ?? []}
+              channelMap={channelMap}
+              onPrevMonth={() => shiftMonth(-1)}
+              onNextMonth={() => shiftMonth(1)}
+              onToday={goToday}
+              onReschedule={handleReschedule}
+              isRescheduling={scheduleMutation.isPending}
+              onMonthCursorChange={setMonthCursor}
             />
           )}
 

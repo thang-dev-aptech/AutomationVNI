@@ -39,7 +39,7 @@ vi.mock('../hooks/useCalendarQuery', async (importOriginal) => {
       refetch: vi.fn(),
     }),
     useCalendarPosts: () => ({
-      data: [{ id: 'p1', title: 'Demo' }],
+      data: [{ id: 'p1', title: 'Demo', status: 5, scheduledPublishAt: '2026-10-09T02:00:00Z' }],
       isLoading: false,
       isError: false,
       refetch: vi.fn(),
@@ -52,6 +52,10 @@ vi.mock('../hooks/useCalendarQuery', async (importOriginal) => {
     }),
   }
 })
+
+vi.mock('../hooks/usePosts', () => ({
+  useSchedulePost: () => ({ mutate: vi.fn(), isPending: false }),
+}))
 
 function renderPage(initialEntry = '/calendar') {
   const client = new QueryClient({
@@ -110,7 +114,7 @@ describe('Calendar shell — AC calendar-views-ui-test (a)(e)', () => {
     const router = renderPage('/calendar')
 
     expect(screen.getByRole('tab', { name: 'Lịch' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByText('Chế độ Lịch')).toBeInTheDocument()
+    expect(screen.getByTestId('post-calendar')).toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: 'Danh sách' }))
     expect(screen.getByText('Chế độ Danh sách')).toBeInTheDocument()
