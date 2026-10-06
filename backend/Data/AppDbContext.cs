@@ -1,6 +1,7 @@
 using System.Globalization;
 using Backend.Modules.ApiLog;
 using Backend.Modules.Category;
+using Backend.Modules.ChannelGroup;
 using Backend.Modules.ContentCrawl;
 using Backend.Modules.GenerationJob;
 using Backend.Modules.GoogleDrive;
@@ -37,6 +38,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
 
     public DbSet<CategoryModel> Categories => Set<CategoryModel>();
     public DbSet<SocialChannelModel> SocialChannels => Set<SocialChannelModel>();
+    public DbSet<ChannelGroupModel> ChannelGroups => Set<ChannelGroupModel>();
+    public DbSet<ChannelGroupMemberModel> ChannelGroupMembers => Set<ChannelGroupMemberModel>();
     public DbSet<SocialConnectionModel> SocialConnections => Set<SocialConnectionModel>();
     public DbSet<PageContextModel> PageContexts => Set<PageContextModel>();
     public DbSet<PostModel> Posts => Set<PostModel>();
@@ -160,6 +163,29 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.ExternalPageId).HasMaxLength(200);
             e.Property(x => x.AccessToken).HasColumnType("TEXT");
             e.Property(x => x.RefreshToken).HasColumnType("TEXT");
+        });
+
+        // Nhóm kênh — không FK constraint; unique tên/cặp member enforce ở repo + index.
+        modelBuilder.Entity<ChannelGroupModel>(e =>
+        {
+            e.ToTable("ChannelGroups");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Description).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<ChannelGroupMemberModel>(e =>
+        {
+            e.ToTable("ChannelGroupMembers");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.ChannelGroupId);
+            e.HasIndex(x => x.SocialChannelId);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => new { x.ChannelGroupId, x.SocialChannelId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0")
+                .HasDatabaseName("IX_ChannelGroupMembers_Group_Channel_Active");
         });
 
         modelBuilder.Entity<SocialConnectionModel>(e =>
