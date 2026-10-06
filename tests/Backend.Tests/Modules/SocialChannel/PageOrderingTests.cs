@@ -299,7 +299,8 @@ public sealed class PageOrderingTests : IDisposable
         await _db.SaveChangesAsync();
         var service = new CrawlTelegramService(
             _db, null!, null!, null!, null!, null!, null!, null!,
-            Options.Create(new TelegramOptions()), NullLogger<CrawlTelegramService>.Instance);
+            Options.Create(new TelegramOptions()), Options.Create(new ContentCrawlOptions()),
+            NullLogger<CrawlTelegramService>.Instance);
 
         var reply = await service.HandleCommandAsync(1, "/page");
 

@@ -80,7 +80,9 @@ public class ContentCrawlWorker(
 
         await FetchDueSourcesAsync(settings, ct);
         await ProcessArticlesAsync(ct);
-        await ComposeQueuedArticlesAsync(ct);
+        // Đăng web tắt: vẫn cào + chấm điểm, chỉ không viết bài đang xếp hàng (giữ nguyên hàng đợi).
+        if (settings.WebsitePublishEnabled)
+            await ComposeQueuedArticlesAsync(ct);
     }
 
     /// <summary>

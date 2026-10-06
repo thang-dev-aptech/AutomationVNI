@@ -383,6 +383,7 @@ public class ContentCrawlController(
             TotalActiveSources = sources.Count,
             LastRunAt = sources.Max(s => s.LastRunAt),
             TwoGateFlow = crawlOptions.Value.TwoGateFlow,
+            WebsitePublishEnabled = crawlOptions.Value.WebsitePublishEnabled,
             CrawlScheduleTimes = crawlOptions.Value.CrawlScheduleTimes,
         }));
     }

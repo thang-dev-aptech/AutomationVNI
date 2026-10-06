@@ -32,6 +32,7 @@ public class NewsSiteController(
     NewsFanpageService fanpage,
     NewsDedupService dedup,
     Microsoft.Extensions.Options.IOptions<NewsSiteOptions> newsOptions,
+    Microsoft.Extensions.Options.IOptions<Backend.Modules.ContentCrawl.ContentCrawlOptions> crawlOptions,
     NewsSiteBuilder builder) : ControllerBase
 {
     [HttpGet]
@@ -93,6 +94,10 @@ public class NewsSiteController(
     [Authorize(Roles = "Admin,ContentManager,Reviewer")]
     public async Task<IActionResult> Compose(Guid crawledArticleId, CancellationToken ct)
     {
+        if (!crawlOptions.Value.WebsitePublishEnabled)
+            return BadRequest(ApiResponse.Fail("WEBSITE_PUBLISH_DISABLED",
+                Backend.Modules.ContentCrawl.ContentCrawlOptions.WebsitePublishDisabledMessage));
+
         var crawled = await context.Set<CrawledArticleModel>()
             .FirstOrDefaultAsync(x => x.Id == crawledArticleId && !x.IsDeleted, ct);
         if (crawled is null) return NotFound(ApiResponse.Fail("NOT_FOUND", "Không tìm thấy tin"));

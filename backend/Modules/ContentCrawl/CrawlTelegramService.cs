@@ -31,6 +31,7 @@ public class CrawlTelegramService(
     Backend.Modules.Notification.NotificationService notifications,
     TelegramClient telegram,
     IOptions<TelegramOptions> options,
+    IOptions<ContentCrawlOptions> crawlOptions,
     ILogger<CrawlTelegramService> logger)
 {
     /// <summary>
@@ -70,11 +71,10 @@ public class CrawlTelegramService(
             // cho: " — trông như đã hẹn đăng, thực ra không page nào biết.
             //
             // Chọn page nằm ở /fb, sau khi bài đã lên web và có URL riêng để dán vào bình luận.
-            List<List<TelegramButton>> buttons =
-            [
-                [new TelegramButton("✅ Đưa lên web", $"ok:{code}"),
-                 new TelegramButton("🗑 Bỏ", $"no:{code}")],
-            ];
+            // Đăng web tắt (NEWS-PUBLISH-OFF-01) thì chỉ còn nút Bỏ — nút "Đưa lên web" bấm vào chỉ nhận lời từ chối.
+            List<List<TelegramButton>> buttons = crawlOptions.Value.WebsitePublishEnabled
+                ? [[new TelegramButton("✅ Đưa lên web", $"ok:{code}"), new TelegramButton("🗑 Bỏ", $"no:{code}")]]
+                : [[new TelegramButton("🗑 Bỏ", $"no:{code}")]];
 
             // Ảnh minh hoạ chỉ để NHÌN cho dễ trong lúc duyệt — không bao giờ đăng lại lên
             // fanpage (bản quyền toà soạn), đó cũng là lý do ImportThumbnails mặc định false.
@@ -383,6 +383,10 @@ public class CrawlTelegramService(
 
     private async Task<string> ApproveAsync(long chatId, string arg, CancellationToken ct)
     {
+        // Trả lời thẳng: lỗi ném ra từ pipeline bị HandleCommandAsync nuốt thành câu chung chung.
+        if (crawlOptions.Value.TwoGateFlow && !crawlOptions.Value.WebsitePublishEnabled)
+            return "⛔ " + ContentCrawlOptions.WebsitePublishDisabledMessage;
+
         var bits = arg.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         var (article, error) = await ResolveAsync(bits.Length > 0 ? bits[0] : "", ct);
         if (article is null) return error!;
