@@ -79,6 +79,18 @@ vi.mock('@/shared/components/ChannelMultiSelect', () => ({
   },
 }))
 
+vi.mock('../components/ChannelGroupImportModal', () => ({
+  default: function MockImportModal({ open, onClose }) {
+    if (!open) return null
+    return (
+      <div role="dialog" aria-label="Nhập CSV nhóm kênh">
+        <h2>Nhập CSV nhóm kênh</h2>
+        <button type="button" onClick={onClose}>Đóng import</button>
+      </div>
+    )
+  },
+}))
+
 vi.mock('@/shared/components/Modal', () => ({
   default: function MockModal({ open, title, children, footer, onClose }) {
     if (!open) return null
@@ -202,16 +214,25 @@ describe('ChannelGroupTab (channel-group-ui-test)', () => {
     })
   })
 
-  it('Viewer does not see create/edit/delete buttons', () => {
+  it('Viewer does not see create/edit/delete/import buttons', () => {
     usePermissions.mockReturnValue({
       hasRole: () => false,
     })
     render(<ChannelGroupTab />)
 
     expect(screen.queryByRole('button', { name: /\+ Tạo nhóm/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Nhập CSV/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Sửa$/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Xóa$/ })).not.toBeInTheDocument()
     expect(screen.getByText('Miền Bắc')).toBeInTheDocument()
+  })
+
+  it('Admin Nhập CSV opens import modal', async () => {
+    const user = userEvent.setup()
+    render(<ChannelGroupTab />)
+
+    await user.click(screen.getByRole('button', { name: /Nhập CSV/ }))
+    expect(screen.getByRole('dialog', { name: /Nhập CSV nhóm kênh/ })).toBeInTheDocument()
   })
 
   it('shows backend 400 message on create failure', async () => {

@@ -37,3 +37,19 @@ export function useDeleteChannelGroup() {
     onSuccess: () => invalidateChannelGroups(queryClient),
   })
 }
+
+export function usePreviewChannelGroupImport() {
+  return useMutation({
+    mutationFn: async ({ file, mode }) =>
+      unwrapApiData(await channelGroupApi.previewImport(file, mode)),
+  })
+}
+
+export function useCommitChannelGroupImport() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ file, mode }) =>
+      unwrapApiData(await channelGroupApi.commitImport(file, mode)),
+    onSuccess: () => invalidateChannelGroups(queryClient),
+  })
+}

@@ -15,11 +15,12 @@ import {
   useDeleteChannelGroup,
   useUpdateChannelGroup,
 } from '../hooks/useChannelGroups'
+import ChannelGroupImportModal from './ChannelGroupImportModal'
 import './ChannelGroupTab.css'
 
 /**
  * Tab quản lý nhóm kênh trên trang Platforms.
- * Chỉ Admin/ContentManager thấy nút tạo/sửa/xoá (khớp api/ChannelGroup).
+ * Chỉ Admin/ContentManager thấy nút tạo/sửa/xoá/Nhập CSV (khớp api/ChannelGroup).
  */
 export default function ChannelGroupTab() {
   const { hasRole } = usePermissions()
@@ -43,6 +44,7 @@ export default function ChannelGroupTab() {
   const deleteMutation = useDeleteChannelGroup()
 
   const [modalOpen, setModalOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -125,9 +127,18 @@ export default function ChannelGroupTab() {
       <div className="channel-group-tab-toolbar">
         <h2 className="platforms-section-title">Nhóm kênh</h2>
         {canManageGroups && (
-          <button type="button" className="btn btn-primary" onClick={openCreate}>
-            + Tạo nhóm
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setImportOpen(true)}
+            >
+              Nhập CSV
+            </button>
+            <button type="button" className="btn btn-primary" onClick={openCreate}>
+              + Tạo nhóm
+            </button>
+          </div>
         )}
       </div>
 
@@ -183,6 +194,11 @@ export default function ChannelGroupTab() {
           </table>
         </div>
       )}
+
+      <ChannelGroupImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+      />
 
       <Modal
         open={modalOpen}
