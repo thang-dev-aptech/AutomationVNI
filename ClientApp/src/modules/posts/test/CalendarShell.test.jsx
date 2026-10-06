@@ -137,7 +137,7 @@ describe('Calendar shell — AC calendar-views-ui-test (a)(e)', () => {
     })
 
     await user.click(screen.getByRole('tab', { name: 'Theo kênh' }))
-    expect(screen.getByText('Chế độ Theo kênh')).toBeInTheDocument()
+    expect(screen.getByTestId('channel-timeline-view')).toBeInTheDocument()
     await waitFor(() => {
       expect(router.state.location.search).toContain('view=by-channel')
     })
@@ -147,12 +147,13 @@ describe('Calendar shell — AC calendar-views-ui-test (a)(e)', () => {
     renderPage('/calendar?view=by-channel&status=draft,scheduled&channelMode=group')
 
     expect(screen.getByRole('tab', { name: 'Theo kênh' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByText('Chế độ Theo kênh')).toBeInTheDocument()
+    expect(screen.getByTestId('channel-timeline-view')).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'Nhóm kênh' })).toBeChecked()
     expect(screen.getByLabelText('Nháp')).toBeChecked()
     expect(screen.getByLabelText('Chờ đăng')).toBeChecked()
     expect(screen.getByLabelText('Thành công')).not.toBeChecked()
-    expect(screen.getByText('Miền Bắc')).toBeInTheDocument()
+    // Sidebar filter + timeline row both show group name
+    expect(screen.getAllByText('Miền Bắc').length).toBeGreaterThanOrEqual(1)
   })
 
   it('(a) toggling filters writes URL; remount from URL keeps filters', async () => {

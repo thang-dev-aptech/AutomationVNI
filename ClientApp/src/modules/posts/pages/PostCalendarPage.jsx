@@ -7,6 +7,7 @@ import { toast } from '@/shared/stores/toastStore'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import { useChannelGroupAll } from '@/modules/social-channels/hooks/useChannelGroups'
 import CalendarFilterSidebar from '../components/calendar/CalendarFilterSidebar'
+import ChannelTimelineView from '../components/calendar/ChannelTimelineView'
 import ScheduleListView from '../components/calendar/ScheduleListView'
 import PostCalendar from '../components/PostCalendar'
 import { withVnDate } from '../utils/calendarGrid'
@@ -22,18 +23,9 @@ import {
 } from '../constants/calendarStatus'
 import '../components/calendar/CalendarShell.css'
 
-function ViewPlaceholder({ title, hint }) {
-  return (
-    <div className="calendar-view-placeholder" data-testid="calendar-view-placeholder">
-      <strong>{title}</strong>
-      <span>{hint}</span>
-    </div>
-  )
-}
-
 /**
  * Khung trang Lịch SO9: sidebar bộ lọc + chuyển chế độ + state trên URL.
- * Chế độ Lịch = PostCalendar (Tuần/Tháng). Danh sách / Theo kênh = placeholder t7–t8.
+ * Chế độ Lịch / Danh sách / Theo kênh đều lắp component tương ứng.
  */
 export default function PostCalendarPage() {
   const [filterOpen, setFilterOpen] = useState(false)
@@ -72,7 +64,7 @@ export default function PostCalendarPage() {
 
   const facetsQuery = useCalendarFacets(filterRequest)
   const postsQuery = useCalendarPosts(filterRequest, {
-    enabled: view === CALENDAR_VIEWS.calendar,
+    enabled: view === CALENDAR_VIEWS.calendar || view === CALENDAR_VIEWS.byChannel,
   })
   const scheduleMutation = useSchedulePost()
 
@@ -228,10 +220,25 @@ export default function PostCalendarPage() {
             <ScheduleListView filterRequest={filterRequest} />
           )}
 
-          {view === CALENDAR_VIEWS.byChannel && (
-            <ViewPlaceholder
-              title="Chế độ Theo kênh"
-              hint="Placeholder t8 — lưới kênh × ngày, chấm màu loại bài."
+          {view === CALENDAR_VIEWS.byChannel && postsQuery.isLoading && <LoadingState />}
+          {view === CALENDAR_VIEWS.byChannel && postsQuery.isError && (
+            <ErrorState
+              message={getErrorMessage(postsQuery.error)}
+              onRetry={postsQuery.refetch}
+            />
+          )}
+          {view === CALENDAR_VIEWS.byChannel && !postsQuery.isLoading && !postsQuery.isError && (
+            <ChannelTimelineView
+              year={year}
+              month={month}
+              posts={postsQuery.data ?? []}
+              channels={channels}
+              groups={groups}
+              channelMode={channelMode}
+              selectedChannelIds={channelIds}
+              selectedGroupIds={groupIds}
+              onPrevMonth={() => shiftMonth(-1)}
+              onNextMonth={() => shiftMonth(1)}
             />
           )}
         </div>
