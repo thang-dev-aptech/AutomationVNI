@@ -122,6 +122,7 @@ builder.Services.AddScoped<IImageOverlayService, RichTemplateRenderService>();
 // Module repositories
 builder.Services.AddScoped<CategoryRepository>();
 builder.Services.AddScoped<Backend.Modules.ChannelGroup.ChannelGroupRepository>();
+builder.Services.AddScoped<Backend.Modules.ChannelGroup.ChannelGroupImportService>();
 builder.Services.AddScoped<SocialChannelRepository>();
 builder.Services.AddScoped<SocialConnectionRepository>();
 builder.Services.AddScoped<PageContextRepository>();
