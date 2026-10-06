@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -32,6 +33,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -41,7 +43,8 @@ using Xunit;
 namespace Backend.Tests.Modules.Post;
 
 /// <summary>
-/// R-033 AC calendar-filters-backend-test (cda656fa): SQLite + HTTP cho calendar / list / facets.
+/// R-033 AC calendar-filters-backend-test (cda656fa), calendar-keyword-vietnamese-test (cbd5c3f6),
+/// calendar-db-paging-test (b220d048): SQLite + HTTP cho calendar / list / facets.
 /// </summary>
 public sealed class PostCalendarFiltersTests : IAsyncLifetime
 {
@@ -60,6 +63,7 @@ public sealed class PostCalendarFiltersTests : IAsyncLifetime
 
     private readonly SqliteConnection _connection;
     private readonly DbContextOptions<AppDbContext> _options;
+    private readonly SqlCaptureInterceptor _sql = new();
     private readonly IHost _host;
     private readonly HttpClient _client;
 
@@ -72,7 +76,10 @@ public sealed class PostCalendarFiltersTests : IAsyncLifetime
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
-        _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
+        _options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(_sql)
+            .Options;
         using (var seed = new AppDbContext(_options))
             seed.Database.EnsureCreated();
 
@@ -374,7 +381,198 @@ public sealed class PostCalendarFiltersTests : IAsyncLifetime
             viaApi.Select(x => x.Id).OrderBy(x => x).ToList());
     }
 
+    // --- F1: Vietnamese keyword (cbd5c3f6) ---
+
+    [Fact]
+    public async Task Keyword_Vietnamese_TitleLowercaseQuery_FindsUppercaseTitle()
+    {
+        await SeedVietnameseKeywordPostsAsync();
+        var list = await PostCalendarListAsync(new PostCalendarRequest
+        {
+            FromUtc = FromUtc,
+            ToUtc = ToUtc,
+            Keyword = "đào tạo",
+            Index = 1,
+            Size = 50
+        });
+        Assert.Contains(list.Items, i => i.Title == "ĐÀO TẠO GIÁO VIÊN");
+
+        var cal = await PostCalendarAsync(new PostCalendarRequest
+        {
+            FromUtc = FromUtc,
+            ToUtc = ToUtc,
+            Keyword = "đào tạo"
+        });
+        Assert.Contains(cal, i => i.Title == "ĐÀO TẠO GIÁO VIÊN");
+    }
+
+    [Fact]
+    public async Task Keyword_Vietnamese_UppercaseQuery_FindsLowercaseTitle()
+    {
+        await SeedVietnameseKeywordPostsAsync();
+        var list = await PostCalendarListAsync(new PostCalendarRequest
+        {
+            FromUtc = FromUtc,
+            ToUtc = ToUtc,
+            Keyword = "KHAI GIẢNG",
+            Index = 1,
+            Size = 50
+        });
+        Assert.Contains(list.Items, i => i.Title == "khai giảng");
+    }
+
+    [Fact]
+    public async Task Keyword_Vietnamese_ContentCaseInsensitive()
+    {
+        await SeedVietnameseKeywordPostsAsync();
+        var list = await PostCalendarListAsync(new PostCalendarRequest
+        {
+            FromUtc = FromUtc,
+            ToUtc = ToUtc,
+            Keyword = "ưu đãi",
+            Index = 1,
+            Size = 50
+        });
+        Assert.Contains(list.Items, i => i.Title == "content-vi-case");
+    }
+
+    [Fact]
+    public async Task Keyword_Vietnamese_WithoutDiacritics_DoesNotMatch()
+    {
+        await SeedVietnameseKeywordPostsAsync();
+        var list = await PostCalendarListAsync(new PostCalendarRequest
+        {
+            FromUtc = FromUtc,
+            ToUtc = ToUtc,
+            Keyword = "dao tao",
+            Index = 1,
+            Size = 50
+        });
+        Assert.DoesNotContain(list.Items, i => i.Title == "ĐÀO TẠO GIÁO VIÊN");
+    }
+
+    /// <summary>
+    /// Revert-to-prove F1(a): Title.ToLower().Contains (SQLite ASCII lower) miss Vietnamese;
+    /// vi_lower tìm thấy — chứng minh check Unicode là chỗ chặn thật.
+    /// </summary>
+    [Fact]
+    public async Task Keyword_RevertToProve_AsciiToLower_MissesVietnameseUppercase()
+    {
+        await SeedVietnameseKeywordPostsAsync();
+        await using var db = new AppDbContext(_options);
+        var keyword = "đào tạo";
+
+        var asciiLower = await db.Posts
+            .Where(x => !x.IsDeleted && x.Title.ToLower().Contains(keyword))
+            .Select(x => x.Title)
+            .ToListAsync();
+        Assert.DoesNotContain("ĐÀO TẠO GIÁO VIÊN", asciiLower);
+
+        var viLower = await db.Posts
+            .Where(x => !x.IsDeleted && AppDbContext.ViLower(x.Title).Contains(keyword))
+            .Select(x => x.Title)
+            .ToListAsync();
+        Assert.Contains("ĐÀO TẠO GIÁO VIÊN", viLower);
+    }
+
+    // --- N4: SQL paging (b220d048) ---
+
+    [Fact]
+    public async Task List_WithoutPostType_UsesSqlLimitOffsetAndCount()
+    {
+        _sql.Clear();
+        var page = await PostCalendarListAsync(new PostCalendarRequest
+        {
+            FromUtc = FromUtc,
+            ToUtc = ToUtc,
+            Index = 2,
+            Size = 2
+        });
+        Assert.Equal(2, page.Items.Count);
+        Assert.True(page.Total >= 4);
+
+        var sql = string.Join("\n", _sql.Commands);
+        Assert.Contains("LIMIT", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("OFFSET", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("COUNT", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Calendar_WithoutPostType_UsesSqlLimit1000()
+    {
+        _sql.Clear();
+        var items = await PostCalendarAsync(new PostCalendarRequest
+        {
+            FromUtc = FromUtc,
+            ToUtc = ToUtc
+        });
+        Assert.NotEmpty(items);
+
+        var postSelects = _sql.Commands
+            .Where(c => c.Contains("FROM \"Posts\"", StringComparison.OrdinalIgnoreCase)
+                        && !c.Contains("COUNT(", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        Assert.Contains(postSelects, c => c.Contains("LIMIT", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Facets_WithoutPostType_UsesSqlGroupBy()
+    {
+        _sql.Clear();
+        var facets = await PostCalendarFacetsAsync(new PostCalendarRequest
+        {
+            FromUtc = FromUtc,
+            ToUtc = ToUtc
+        });
+        Assert.NotEmpty(facets.Authors);
+
+        var sql = string.Join("\n", _sql.Commands);
+        Assert.Contains("GROUP BY", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task List_WithPostType_StillPagesCorrectly()
+    {
+        var page = await PostCalendarListAsync(new PostCalendarRequest
+        {
+            FromUtc = FromUtc,
+            ToUtc = ToUtc,
+            PostTypes = [PostTypeClassifier.ShortVideo],
+            Index = 1,
+            Size = 10
+        });
+        Assert.True(page.Total >= 1);
+        Assert.All(page.Items, i => Assert.Equal(PostTypeClassifier.ShortVideo, i.PostType));
+        Assert.Equal(page.Total, page.Items.Count); // chỉ có vài short video trong fixture
+    }
+
     // --- helpers ---
+
+    private async Task SeedVietnameseKeywordPostsAsync()
+    {
+        await using var db = new AppDbContext(_options);
+        if (await db.Posts.AnyAsync(p => p.Title == "ĐÀO TẠO GIÁO VIÊN"))
+            return;
+
+        AddPost(db, "ĐÀO TẠO GIÁO VIÊN", AuthorA, ChannelFb, PostStatus.Scheduled, CatSports,
+            FromUtc.AddHours(12), null, null);
+        AddPost(db, "khai giảng", AuthorA, ChannelFb, PostStatus.Scheduled, CatSports,
+            FromUtc.AddHours(13), null, null);
+        db.Set<PostModel>().Add(new PostModel
+        {
+            Id = Guid.NewGuid(),
+            Title = "content-vi-case",
+            Content = "Chương trình Ưu Đãi lớn",
+            SocialChannelId = ChannelFb,
+            CategoryId = CatSports,
+            Status = PostStatus.Scheduled,
+            UserId = AuthorA,
+            ScheduledPublishAt = FromUtc.AddHours(14),
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = "seed"
+        });
+        await db.SaveChangesAsync();
+    }
 
     private async Task SeedFixtureAsync()
     {
@@ -576,6 +774,42 @@ public sealed class PostCalendarFiltersTests : IAsyncLifetime
             CalAuthHandler.SchemeName, $"Admin:{AuthorA:D}");
         msg.Content = JsonContent.Create(request);
         return await _client.SendAsync(msg);
+    }
+
+    private sealed class SqlCaptureInterceptor : DbCommandInterceptor
+    {
+        private readonly List<string> _commands = [];
+        private readonly object _lock = new();
+
+        public IReadOnlyList<string> Commands
+        {
+            get { lock (_lock) return _commands.ToList(); }
+        }
+
+        public void Clear()
+        {
+            lock (_lock) _commands.Clear();
+        }
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
+        {
+            Capture(command);
+            return base.ReaderExecuting(command, eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            Capture(command);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void Capture(DbCommand command)
+        {
+            lock (_lock) _commands.Add(command.CommandText);
+        }
     }
 
     private sealed class CalAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>

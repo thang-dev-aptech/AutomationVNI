@@ -88,6 +88,8 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         };
     }
 
+    private const int MaxCalendarItems = 1000;
+
     /// <summary>
     /// Lấy bài để dựng lưới lịch trong một khoảng thời gian (không phân trang, tối đa 1000).
     /// Dùng cùng bộ lọc với <see cref="GetCalendarListAsync"/> / <see cref="GetCalendarFacetsAsync"/>.
@@ -96,11 +98,21 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         PostCalendarRequest request,
         CancellationToken cancellationToken = default)
     {
-        const int MaxCalendarItems = 1000;
-        var ordered = await LoadFilteredOrderedAsync(request, cancellationToken);
-        var page = ordered.Count <= MaxCalendarItems
-            ? ordered
-            : ordered.Take(MaxCalendarItems).ToList();
+        List<PostModel> page;
+        if (!HasPostTypeFilter(request))
+        {
+            var query = await BuildCalendarFilterQueryAsync(request, cancellationToken);
+            page = await OrderCalendarQuery(query)
+                .Take(MaxCalendarItems)
+                .ToListAsync(cancellationToken);
+        }
+        else
+        {
+            var ids = await LoadFilteredOrderedIdsWithPostTypeAsync(request, cancellationToken);
+            page = await LoadPostsByIdsPreservingOrderAsync(
+                ids.Take(MaxCalendarItems).ToList(), cancellationToken);
+        }
+
         return await MapCalendarResponsesAsync(page, cancellationToken);
     }
 
@@ -112,9 +124,27 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         var index = request.Index < 1 ? 1 : request.Index;
         var size = request.Size < 1 ? 20 : Math.Min(request.Size, 200);
 
-        var ordered = await LoadFilteredOrderedAsync(request, cancellationToken);
-        var total = ordered.Count;
-        var page = ordered.Skip((index - 1) * size).Take(size).ToList();
+        int total;
+        List<PostModel> page;
+        if (!HasPostTypeFilter(request))
+        {
+            var query = await BuildCalendarFilterQueryAsync(request, cancellationToken);
+            var ordered = OrderCalendarQuery(query);
+            total = await ordered.CountAsync(cancellationToken);
+            page = await ordered
+                .Skip((index - 1) * size)
+                .Take(size)
+                .ToListAsync(cancellationToken);
+        }
+        else
+        {
+            var ids = await LoadFilteredOrderedIdsWithPostTypeAsync(request, cancellationToken);
+            total = ids.Count;
+            page = await LoadPostsByIdsPreservingOrderAsync(
+                ids.Skip((index - 1) * size).Take(size).ToList(),
+                cancellationToken);
+        }
+
         var items = await MapCalendarResponsesAsync(page, cancellationToken);
         return new PagedResult<PostResponse>
         {
@@ -137,22 +167,49 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         facetRequest.Authors = null;
         facetRequest.CategoryIds = null;
 
-        var posts = await LoadFilteredOrderedAsync(facetRequest, cancellationToken);
+        List<(Guid UserId, int Count)> authorGroups;
+        List<(Guid CategoryId, int Count)> categoryGroups;
 
-        var authorGroups = posts
-            .GroupBy(p => p.UserId)
-            .Select(g => new { UserId = g.Key, Count = g.Count() })
-            .OrderByDescending(x => x.Count)
-            .ThenBy(x => x.UserId)
-            .ToList();
+        if (!HasPostTypeFilter(facetRequest))
+        {
+            var query = await BuildCalendarFilterQueryAsync(facetRequest, cancellationToken);
+            authorGroups = (await query
+                    .GroupBy(p => p.UserId)
+                    .Select(g => new { UserId = g.Key, Count = g.Count() })
+                    .OrderByDescending(x => x.Count)
+                    .ThenBy(x => x.UserId)
+                    .ToListAsync(cancellationToken))
+                .Select(x => (x.UserId, x.Count))
+                .ToList();
 
-        var categoryGroups = posts
-            .Where(p => p.CategoryId.HasValue)
-            .GroupBy(p => p.CategoryId!.Value)
-            .Select(g => new { CategoryId = g.Key, Count = g.Count() })
-            .OrderByDescending(x => x.Count)
-            .ThenBy(x => x.CategoryId)
-            .ToList();
+            categoryGroups = (await query
+                    .Where(p => p.CategoryId != null)
+                    .GroupBy(p => p.CategoryId!.Value)
+                    .Select(g => new { CategoryId = g.Key, Count = g.Count() })
+                    .OrderByDescending(x => x.Count)
+                    .ThenBy(x => x.CategoryId)
+                    .ToListAsync(cancellationToken))
+                .Select(x => (x.CategoryId, x.Count))
+                .ToList();
+        }
+        else
+        {
+            var rows = await LoadFilteredOrderedProjectionsWithPostTypeAsync(
+                facetRequest, cancellationToken);
+            authorGroups = rows
+                .GroupBy(p => p.UserId)
+                .Select(g => (UserId: g.Key, Count: g.Count()))
+                .OrderByDescending(x => x.Count)
+                .ThenBy(x => x.UserId)
+                .ToList();
+            categoryGroups = rows
+                .Where(p => p.CategoryId.HasValue)
+                .GroupBy(p => p.CategoryId!.Value)
+                .Select(g => (CategoryId: g.Key, Count: g.Count()))
+                .OrderByDescending(x => x.Count)
+                .ThenBy(x => x.CategoryId)
+                .ToList();
+        }
 
         var userIds = authorGroups.Select(a => a.UserId).ToList();
         var userNames = userIds.Count == 0
@@ -242,51 +299,91 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
-            var keyword = request.Keyword.Trim().ToLower();
+            // vi_lower (SQLite Unicode) — không dùng string.ToLower() vì SQLite lower() chỉ ASCII.
+            var keyword = SqliteVietnameseCollation.Lower(request.Keyword.Trim());
             query = query.Where(x =>
-                x.Title.ToLower().Contains(keyword)
-                || (x.Content != null && x.Content.ToLower().Contains(keyword)));
+                AppDbContext.ViLower(x.Title).Contains(keyword)
+                || (x.Content != null && AppDbContext.ViLower(x.Content).Contains(keyword)));
         }
 
         return query;
     }
 
-    private async Task<List<PostModel>> LoadFilteredOrderedAsync(
-        PostCalendarRequest request,
-        CancellationToken cancellationToken)
-    {
-        var query = await BuildCalendarFilterQueryAsync(request, cancellationToken);
-        var items = await query
+    private static bool HasPostTypeFilter(PostCalendarRequest request)
+        => request.PostTypes is { Count: > 0 }
+           && request.PostTypes.Any(t => !string.IsNullOrWhiteSpace(t));
+
+    private static IOrderedQueryable<PostModel> OrderCalendarQuery(IQueryable<PostModel> query)
+        => query
             .OrderBy(x => x.ScheduledPublishAt ?? x.PublishedAt)
-            .ThenBy(x => x.Id)
-            .ToListAsync(cancellationToken);
+            .ThenBy(x => x.Id);
 
-        if (request.PostTypes is not { Count: > 0 })
-            return items;
-
-        var wanted = request.PostTypes
+    private static HashSet<string> WantedPostTypes(PostCalendarRequest request)
+        => (request.PostTypes ?? [])
             .Where(t => !string.IsNullOrWhiteSpace(t))
             .Select(t => t.Trim())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (wanted.Count == 0)
-            return items;
 
-        var classified = await ClassifyPostsAsync(items, cancellationToken);
-        return items.Where(p =>
-        {
-            if (!classified.TryGetValue(p.Id, out var type)) return false;
-            return wanted.Contains(type);
-        }).ToList();
-    }
-
-    private async Task<Dictionary<Guid, string>> ClassifyPostsAsync(
-        List<PostModel> posts,
+    /// <summary>
+    /// Khi có lọc loại bài: chỉ nạp projection nhẹ + media signal, lọc trong bộ nhớ, trả Id theo thứ tự.
+    /// </summary>
+    private async Task<List<Guid>> LoadFilteredOrderedIdsWithPostTypeAsync(
+        PostCalendarRequest request,
         CancellationToken cancellationToken)
     {
-        if (posts.Count == 0) return [];
+        var rows = await LoadFilteredOrderedProjectionsWithPostTypeAsync(request, cancellationToken);
+        return rows.Select(r => r.Id).ToList();
+    }
 
-        var postIds = posts.Select(p => p.Id).ToList();
-        var channelIds = posts.Select(p => p.SocialChannelId).Distinct().ToList();
+    private async Task<List<CalendarFilterRow>> LoadFilteredOrderedProjectionsWithPostTypeAsync(
+        PostCalendarRequest request,
+        CancellationToken cancellationToken)
+    {
+        var wanted = WantedPostTypes(request);
+        if (wanted.Count == 0)
+        {
+            var query = await BuildCalendarFilterQueryAsync(request, cancellationToken);
+            return await OrderCalendarQuery(query)
+                .Select(x => new CalendarFilterRow(
+                    x.Id, x.NewsArticleId, x.SocialChannelId, x.ExtraJson,
+                    x.ScheduledPublishAt, x.PublishedAt, x.UserId, x.CategoryId))
+                .ToListAsync(cancellationToken);
+        }
+
+        var baseQuery = await BuildCalendarFilterQueryAsync(request, cancellationToken);
+        var projections = await OrderCalendarQuery(baseQuery)
+            .Select(x => new CalendarFilterRow(
+                x.Id, x.NewsArticleId, x.SocialChannelId, x.ExtraJson,
+                x.ScheduledPublishAt, x.PublishedAt, x.UserId, x.CategoryId))
+            .ToListAsync(cancellationToken);
+
+        var classified = await ClassifyFilterRowsAsync(projections, cancellationToken);
+        return projections
+            .Where(p => classified.TryGetValue(p.Id, out var type) && wanted.Contains(type))
+            .ToList();
+    }
+
+    private async Task<List<PostModel>> LoadPostsByIdsPreservingOrderAsync(
+        List<Guid> ids,
+        CancellationToken cancellationToken)
+    {
+        if (ids.Count == 0) return [];
+
+        var entities = await Context.Set<PostModel>()
+            .Where(p => ids.Contains(p.Id))
+            .ToListAsync(cancellationToken);
+        var byId = entities.ToDictionary(e => e.Id);
+        return ids.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
+    }
+
+    private async Task<Dictionary<Guid, string>> ClassifyFilterRowsAsync(
+        List<CalendarFilterRow> rows,
+        CancellationToken cancellationToken)
+    {
+        if (rows.Count == 0) return [];
+
+        var postIds = rows.Select(r => r.Id).ToList();
+        var channelIds = rows.Select(r => r.SocialChannelId).Distinct().ToList();
 
         var platforms = await Context.Set<SocialChannelModel>()
             .Where(c => channelIds.Contains(c.Id))
@@ -294,17 +391,27 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
 
         var mediaByPost = await LoadMediaSignalsByPostAsync(postIds, cancellationToken);
 
-        var result = new Dictionary<Guid, string>(posts.Count);
-        foreach (var post in posts)
+        var result = new Dictionary<Guid, string>(rows.Count);
+        foreach (var row in rows)
         {
-            platforms.TryGetValue(post.SocialChannelId, out var platform);
-            var signals = mediaByPost.GetValueOrDefault(post.Id) ?? [];
-            result[post.Id] = PostTypeClassifier.Classify(
-                post.NewsArticleId, platform, post.ExtraJson, signals);
+            platforms.TryGetValue(row.SocialChannelId, out var platform);
+            var signals = mediaByPost.GetValueOrDefault(row.Id) ?? [];
+            result[row.Id] = PostTypeClassifier.Classify(
+                row.NewsArticleId, platform, row.ExtraJson, signals);
         }
 
         return result;
     }
+
+    private sealed record CalendarFilterRow(
+        Guid Id,
+        Guid? NewsArticleId,
+        Guid SocialChannelId,
+        string? ExtraJson,
+        DateTime? ScheduledPublishAt,
+        DateTime? PublishedAt,
+        Guid UserId,
+        Guid? CategoryId);
 
     private async Task<Dictionary<Guid, List<PostTypeClassifier.MediaSignal>>> LoadMediaSignalsByPostAsync(
         List<Guid> postIds,

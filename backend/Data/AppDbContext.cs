@@ -31,10 +31,16 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
     {
         // Connection đã mở sẵn (test) không kích hoạt interceptor ConnectionOpened ⇒ đăng ký tại đây,
-        // mỗi connection đúng một lần (Microsoft.Data.Sqlite tự áp lại collation khi connection mở).
+        // mỗi connection đúng một lần (Microsoft.Data.Sqlite tự áp lại collation/function khi connection mở).
         if (Database.IsRelational() && Database.GetDbConnection() is SqliteConnection sqlite)
             SqliteVietnameseCollation.Register(sqlite);
     }
+
+    /// <summary>
+    /// Hàm SQLite <c>vi_lower</c> — lowercase Unicode (vi-VN). Dùng trong LINQ; không gọi trực tiếp.
+    /// </summary>
+    public static string ViLower(string? value)
+        => throw new NotSupportedException("ViLower chỉ dùng trong LINQ dịch sang SQL (vi_lower).");
 
     public DbSet<CategoryModel> Categories => Set<CategoryModel>();
     public DbSet<SocialChannelModel> SocialChannels => Set<SocialChannelModel>();
@@ -86,6 +92,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.HasDbFunction(typeof(AppDbContext).GetMethod(nameof(ViLower), [typeof(string)])!)
+            .HasName("vi_lower");
 
         modelBuilder.Entity<CategoryModel>(e =>
         {
@@ -682,13 +691,15 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
 }
 
 /// <summary>
-/// Collation SQLite "VI": CompareInfo của CultureInfo("vi-VN"). Đã đối chiếu với Intl.Collator('vi')
-/// trên bộ tên dùng chung với channelSort.test.js (Alpha, Ân Thi, Ba Vì, Đà Nẵng, Zeta) — cùng thứ tự.
+/// Collation SQLite "VI" + hàm <c>vi_lower</c> (Unicode lowercase theo vi-VN).
+/// Collation: đối chiếu với Intl.Collator('vi') trên bộ tên dùng chung với channelSort.test.js.
+/// vi_lower: tìm kiếm keyword lịch không phân biệt hoa/thường tiếng Việt (giữ dấu).
 /// </summary>
 public static class SqliteVietnameseCollation
 {
-    private static readonly CompareInfo Vietnamese =
-        CultureInfo.GetCultureInfo("vi-VN").CompareInfo;
+    private static readonly CultureInfo VietnameseCulture = CultureInfo.GetCultureInfo("vi-VN");
+
+    private static readonly CompareInfo Vietnamese = VietnameseCulture.CompareInfo;
 
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<SqliteConnection, object> Registered = new();
 
@@ -699,12 +710,21 @@ public static class SqliteVietnameseCollation
         {
             if (Registered.TryGetValue(connection, out _)) return;
             connection.CreateCollation(PageOrdering.VietnameseCollation, Compare);
+            connection.CreateFunction(
+                "vi_lower",
+                (string? value) => string.IsNullOrEmpty(value)
+                    ? string.Empty
+                    : value.ToLower(VietnameseCulture));
             Registered.Add(connection, new object());
         }
     }
 
     public static int Compare(string? left, string? right)
         => Vietnamese.Compare(left ?? string.Empty, right ?? string.Empty, CompareOptions.None);
+
+    /// <summary>Lowercase Unicode phía CLR (cùng quy tắc với hàm SQLite vi_lower).</summary>
+    public static string Lower(string? value)
+        => string.IsNullOrEmpty(value) ? string.Empty : value.ToLower(VietnameseCulture);
 }
 
 public class ApplicationUser : IdentityUser<Guid> { }
