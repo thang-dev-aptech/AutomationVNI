@@ -1,15 +1,28 @@
+import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import PageHeader from '@/shared/components/PageHeader'
 import LoadingState from '@/shared/components/LoadingState'
 import ErrorState from '@/shared/components/ErrorState'
+import EmptyState from '@/shared/components/EmptyState'
 import { formatDateTime, getErrorMessage, unwrapApiData } from '@/shared/utils/apiHelpers'
+import PostStatusBadge from '@/modules/posts/components/PostStatusBadge'
 import { campaignApi, campaignQueryKeys } from '../services/campaignApi'
+import { useCampaignDetail } from '../hooks/useCampaigns'
 
-/** Stub list bài theo page — t5 bổ sung UX. */
 export default function CampaignPagePostsPage() {
   const { id, channelId } = useParams()
-  const params = { index: 1, size: 50 }
+  const [page, setPage] = useState(1)
+  const size = 20
+  const params = useMemo(() => ({ index: page, size }), [page])
+
+  const { data: detail } = useCampaignDetail(id)
+  const channelName = useMemo(() => {
+    const pages = detail?.pages ?? []
+    return pages.find((p) => p.socialChannelId === channelId)?.channelName
+      || channelId
+  }, [detail, channelId])
+
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: campaignQueryKeys.pagePosts(id, channelId, params),
     queryFn: async () =>
@@ -18,12 +31,14 @@ export default function CampaignPagePostsPage() {
   })
 
   const items = data?.items ?? []
+  const total = data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / (data?.size || size)))
 
   return (
     <section data-testid="campaign-page-posts">
       <PageHeader
         title="Bài trong chiến dịch"
-        description={`Page ${channelId}`}
+        description={channelName}
         actions={
           <Link to={`/campaigns/${id}`} className="btn btn-ghost">
             ← Chi tiết chiến dịch
@@ -34,11 +49,15 @@ export default function CampaignPagePostsPage() {
       <div className="card">
         {isLoading && <LoadingState />}
         {isError && <ErrorState message={getErrorMessage(error)} onRetry={refetch} />}
-        {!isLoading && !isError && (
+        {!isLoading && !isError && items.length === 0 && (
+          <EmptyState message="Chưa có bài cho page này trong chiến dịch" />
+        )}
+        {!isLoading && !isError && items.length > 0 && (
           <div className="table-container">
-            <table>
+            <table data-testid="campaign-posts-table">
               <thead>
                 <tr>
+                  <th>Media</th>
                   <th>Giờ đăng</th>
                   <th>Trạng thái</th>
                   <th>Nội dung</th>
@@ -46,31 +65,72 @@ export default function CampaignPagePostsPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="text-muted">
-                      Chưa có bài
+                {items.map((p) => (
+                  <tr key={p.id} data-testid={`post-row-${p.id}`}>
+                    <td>
+                      {p.thumbnailUrl ? (
+                        <img
+                          src={p.thumbnailUrl}
+                          alt=""
+                          width={48}
+                          height={48}
+                          style={{ objectFit: 'cover', borderRadius: 4 }}
+                          data-testid={`post-thumb-${p.id}`}
+                        />
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                      {p.mediaCount > 0 ? (
+                        <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                          {p.mediaCount} file
+                        </div>
+                      ) : null}
+                    </td>
+                    <td>{formatDateTime(p.scheduledPublishAt || p.publishedAt)}</td>
+                    <td><PostStatusBadge status={p.status} /></td>
+                    <td style={{ maxWidth: 360 }}>
+                      {p.contentSnippet || p.title || '—'}
+                    </td>
+                    <td>
+                      <Link
+                        to={`/posts/${p.id}`}
+                        className="btn btn-ghost"
+                        data-testid={`post-link-${p.id}`}
+                      >
+                        Chi tiết bài
+                      </Link>
                     </td>
                   </tr>
-                ) : (
-                  items.map((p) => (
-                    <tr key={p.id}>
-                      <td>{formatDateTime(p.scheduledPublishAt || p.publishedAt)}</td>
-                      <td>{p.status}</td>
-                      <td>{p.contentSnippet || p.title || '—'}</td>
-                      <td>
-                        <Link to={`/posts/${p.id}`} className="btn btn-ghost">
-                          Bài
-                        </Link>
-                      </td>
-                    </tr>
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {!isLoading && totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginTop: 16 }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            Trước
+          </button>
+          <span style={{ alignSelf: 'center' }}>
+            Trang {page} / {totalPages}
+          </span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Sau
+          </button>
+        </div>
+      )}
     </section>
   )
 }

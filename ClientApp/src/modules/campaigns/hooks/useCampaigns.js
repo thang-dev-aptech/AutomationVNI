@@ -42,3 +42,32 @@ export function useUpdateCampaign() {
     },
   })
 }
+
+function useCampaignLifecycleMutation(fn) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id) => unwrapApiData(await fn(id)),
+    onSuccess: (_data, id) => {
+      invalidateCampaigns(queryClient)
+      if (id) {
+        queryClient.invalidateQueries({ queryKey: campaignQueryKeys.detail(id) })
+      }
+    },
+  })
+}
+
+export function usePauseCampaign() {
+  return useCampaignLifecycleMutation(campaignApi.pause)
+}
+
+export function useResumeCampaign() {
+  return useCampaignLifecycleMutation(campaignApi.resume)
+}
+
+export function useEndCampaign() {
+  return useCampaignLifecycleMutation(campaignApi.end)
+}
+
+export function useDeleteCampaign() {
+  return useCampaignLifecycleMutation(campaignApi.softDelete)
+}
