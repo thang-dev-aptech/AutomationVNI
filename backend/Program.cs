@@ -128,6 +128,7 @@ builder.Services.AddScoped<Backend.Modules.PromptTemplate.PromptTemplateReposito
 builder.Services.AddScoped<PostRepository>();
 builder.Services.AddScoped<PostFromMediaService>();
 builder.Services.AddScoped<PostWorkflowService>();
+builder.Services.AddScoped<PostBulkActionService>();
 builder.Services.AddScoped<MediaAssetRepository>();
 builder.Services.AddScoped<Backend.Modules.MediaFolder.MediaFolderRepository>();
 builder.Services.AddScoped<MediaCaptionJobService>();
