@@ -11,7 +11,6 @@ import { toast } from '@/shared/stores/toastStore'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import PostFilterBar from '../components/PostFilterBar'
 import PostStatusBadge from '../components/PostStatusBadge'
-import RecyclePostModal from '../components/RecyclePostModal'
 import { getAvailableWorkflowActions } from '../constants/postStatus'
 import { useDeleteAllPosts, useDeletePost, usePosts } from '../hooks/usePosts'
 
@@ -21,7 +20,6 @@ export default function PostListPage() {
   const [status, setStatus] = useState('')
   const [isRecycled, setIsRecycled] = useState('')
   const [page, setPage] = useState(1)
-  const [showRecycleModal, setShowRecycleModal] = useState(false)
 
   const params = useMemo(
     () => ({
@@ -88,18 +86,9 @@ export default function PostListPage() {
               </button>
             )}
             {canCreatePost ? (
-              <>
-                <button
-                  type="button"
-                  className="btn btn-success"
-                  onClick={() => setShowRecycleModal(true)}
-                >
-                  Tái sử dụng bài
-                </button>
-                <Link to="/posts/create" className="btn btn-primary">
-                  Tạo bài viết
-                </Link>
-              </>
+              <Link to="/posts/create" className="btn btn-primary">
+                Tạo bài viết
+              </Link>
             ) : null}
           </div>
         }
@@ -205,10 +194,6 @@ export default function PostListPage() {
         </div>
       )}
 
-      <RecyclePostModal
-        open={showRecycleModal}
-        onClose={() => setShowRecycleModal(false)}
-      />
     </section>
   )
 }
