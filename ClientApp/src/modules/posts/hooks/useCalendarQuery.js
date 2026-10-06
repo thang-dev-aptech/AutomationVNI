@@ -1,9 +1,15 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { unwrapApiData } from '@/shared/utils/apiHelpers'
 import { postApi, postQueryKeys } from '../services/postApi'
-import { monthRangeUtc } from '../utils/calendarGrid'
+import {
+  defaultWeekStart,
+  mergeMonthAndWeekRangeUtc,
+  monthRangeUtc,
+  normalizeWeekStartYmd,
+  startOfVnWeek,
+} from '../utils/calendarGrid'
 import {
   CALENDAR_VIEWS,
   CHANNEL_FILTER_MODES,
@@ -47,8 +53,12 @@ function parseStatuses(raw) {
   return keys
 }
 
+function parseDensity(raw) {
+  return raw === 'week' ? 'week' : 'month'
+}
+
 /**
- * Đọc/ghi trạng thái khung lịch trên URL (view, khoảng tháng, bộ lọc).
+ * Đọc/ghi trạng thái khung lịch trên URL (view, density/week, khoảng tháng, bộ lọc).
  * Cùng một filterRequest cho calendar / list / facets.
  */
 export function useCalendarQuery() {
@@ -59,6 +69,11 @@ export function useCalendarQuery() {
   const channelMode = parseChannelMode(searchParams.get('channelMode'))
   const year = Number(searchParams.get('year')) || fallbackMonth.year
   const month = Number(searchParams.get('month')) || fallbackMonth.month
+  const density = parseDensity(searchParams.get('density'))
+  const weekRaw = searchParams.get('week')
+  const weekNormalized = normalizeWeekStartYmd(weekRaw)
+  const weekStartYmd = weekNormalized
+    || (density === 'week' ? defaultWeekStart(year, month) : '')
   const statusKeys = parseStatuses(searchParams.get('status'))
   const channelIds = parseCsv(searchParams.get('channels'))
   const groupIds = parseCsv(searchParams.get('groups'))
@@ -82,9 +97,55 @@ export function useCalendarQuery() {
     }, { replace })
   }, [setSearchParams])
 
+  // density=week: chuẩn hoá week trên URL (sai định dạng → mặc định; không phải T2 → T2).
+  useEffect(() => {
+    if (density !== 'week') return
+    const resolved = weekNormalized || defaultWeekStart(year, month)
+    if (weekRaw !== resolved) {
+      patchParams({ week: resolved, density: 'week' }, { replace: true })
+    }
+  }, [density, weekRaw, weekNormalized, year, month, patchParams])
+
   const setView = useCallback((nextView) => {
     patchParams({ view: nextView === CALENDAR_VIEWS.calendar ? undefined : nextView })
   }, [patchParams])
+
+  const setDensity = useCallback((next) => {
+    if (next === 'week') {
+      const w = normalizeWeekStartYmd(weekRaw) || defaultWeekStart(year, month)
+      patchParams({ density: 'week', week: w })
+      return
+    }
+    // month là mặc định — bỏ tham số density
+    patchParams({ density: undefined })
+  }, [patchParams, weekRaw, year, month])
+
+  const setWeekStartYmd = useCallback((ymd) => {
+    const w = normalizeWeekStartYmd(ymd) || defaultWeekStart(year, month)
+    const [y, m] = w.split('-').map(Number)
+    const fb = currentVnMonth()
+    const isDefault = y === fb.year && m === fb.month
+    // Một lần patch: week + đồng bộ cursor tháng (tránh race với setMonthCursor).
+    patchParams({
+      week: w,
+      density: 'week',
+      year: isDefault ? undefined : y,
+      month: isDefault ? undefined : m,
+    })
+  }, [patchParams, year, month])
+
+  /** Hôm nay: về tháng hiện tại (bỏ year/month); nếu đang Tuần thì week = Thứ 2 tuần chứa hôm nay. */
+  const goToday = useCallback(() => {
+    const patch = {
+      year: undefined,
+      month: undefined,
+    }
+    if (density === 'week') {
+      patch.density = 'week'
+      patch.week = startOfVnWeek(new Date())
+    }
+    patchParams(patch, { replace: true })
+  }, [patchParams, density])
 
   const setChannelMode = useCallback((mode) => {
     patchParams({
@@ -165,7 +226,12 @@ export function useCalendarQuery() {
     patchParams({ q: q?.trim() ? q : undefined }, { replace: true })
   }, [patchParams])
 
-  const range = useMemo(() => monthRangeUtc(year, month), [year, month])
+  const range = useMemo(() => {
+    if (density === 'week' && weekStartYmd) {
+      return mergeMonthAndWeekRangeUtc(year, month, weekStartYmd)
+    }
+    return monthRangeUtc(year, month)
+  }, [year, month, density, weekStartYmd])
 
   const filterRequest = useMemo(() => {
     const statuses = expandStatusKeys(statusKeys)
@@ -192,6 +258,11 @@ export function useCalendarQuery() {
   return {
     view,
     setView,
+    density,
+    setDensity,
+    weekStartYmd,
+    setWeekStartYmd,
+    goToday,
     channelMode,
     setChannelMode,
     year,

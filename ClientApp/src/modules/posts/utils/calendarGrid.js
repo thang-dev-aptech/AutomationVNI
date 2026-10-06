@@ -161,6 +161,45 @@ export function startOfVnWeek(value) {
 }
 
 /**
+ * Chuẩn hoá tham số `week` trên URL → YYYY-MM-DD Thứ Hai (giờ VN).
+ * Sai định dạng / ngày không tồn tại → '' (bỏ). Không phải Thứ 2 → căn về Thứ 2 của tuần chứa ngày đó.
+ */
+export function normalizeWeekStartYmd(raw) {
+  if (!raw || typeof raw !== 'string') return ''
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return ''
+  const [y, m, d] = raw.split('-').map(Number)
+  if (!y || m < 1 || m > 12 || d < 1 || d > 31) return ''
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() + 1 !== m || dt.getUTCDate() !== d) {
+    return ''
+  }
+  return startOfVnWeek(raw)
+}
+
+/**
+ * Tuần mặc định khi mở dạng Tuần: tuần chứa hôm nay nếu cùng tháng cursor, không thì tuần ngày 1.
+ */
+export function defaultWeekStart(year, month) {
+  const todayYmd = toVnYmd(new Date())
+  const [ty, tm] = todayYmd.split('-').map(Number)
+  if (ty === year && tm === month) return startOfVnWeek(todayYmd)
+  return startOfVnWeek(`${year}-${pad2(month)}-01`)
+}
+
+/**
+ * Gộp khoảng tháng (lưới 42 ô) với khoảng tuần khi dạng Tuần — đủ bài khi tuần vắt tháng khác cursor.
+ */
+export function mergeMonthAndWeekRangeUtc(year, month, weekStartYmd) {
+  const monthR = monthRangeUtc(year, month)
+  if (!weekStartYmd) return monthR
+  const weekR = weekRangeUtc(weekStartYmd)
+  return {
+    fromUtc: monthR.fromUtc < weekR.fromUtc ? monthR.fromUtc : weekR.fromUtc,
+    toUtc: monthR.toUtc > weekR.toUtc ? monthR.toUtc : weekR.toUtc,
+  }
+}
+
+/**
  * 7 ô Thứ 2→CN của tuần bắt đầu `weekStartYmd` (phải là Thứ Hai).
  * headerLabel dạng "Thứ 2 05".
  */

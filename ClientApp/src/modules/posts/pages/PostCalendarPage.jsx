@@ -35,6 +35,11 @@ export default function PostCalendarPage() {
   const {
     view,
     setView,
+    density,
+    setDensity,
+    weekStartYmd,
+    setWeekStartYmd,
+    goToday: goCalendarToday,
     channelMode,
     setChannelMode,
     year,
@@ -79,16 +84,6 @@ export default function PostCalendarPage() {
   function shiftMonth(delta) {
     const next = new Date(Date.UTC(year, month - 1 + delta, 1))
     setMonthCursor(next.getUTCFullYear(), next.getUTCMonth() + 1)
-  }
-
-  function goToday() {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Ho_Chi_Minh',
-      year: 'numeric',
-      month: '2-digit',
-    }).formatToParts(new Date())
-    const get = (type) => Number(parts.find((p) => p.type === type)?.value)
-    setMonthCursor(get('year'), get('month'))
   }
 
   /** Kéo-thả sang ngày mới: giữ giờ-phút VN cũ, chỉ đổi ngày. */
@@ -207,9 +202,13 @@ export default function PostCalendarPage() {
               month={month}
               posts={postsQuery.data ?? []}
               channelMap={channelMap}
+              density={density}
+              weekStartYmd={weekStartYmd}
+              onDensityChange={setDensity}
+              onWeekStartChange={setWeekStartYmd}
               onPrevMonth={() => shiftMonth(-1)}
               onNextMonth={() => shiftMonth(1)}
-              onToday={goToday}
+              onToday={goCalendarToday}
               onReschedule={handleReschedule}
               isRescheduling={scheduleMutation.isPending}
               onMonthCursorChange={setMonthCursor}

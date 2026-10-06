@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatTimeShort } from '@/shared/utils/apiHelpers'
 import { CALENDAR_STATUS_GROUPS } from '../constants/calendarStatus'
@@ -10,9 +10,9 @@ import WeekView, {
 import {
   WEEKDAY_LABELS,
   buildMonthGrid,
+  defaultWeekStart,
   monthLabel,
   shiftYmd,
-  startOfVnWeek,
   toVnYmd,
   weekRangeLabel,
 } from '../utils/calendarGrid'
@@ -30,16 +30,9 @@ function toneOf(post, isOverdue) {
   return 'scheduled'
 }
 
-/** Tuần mặc định khi mở dạng Tuần: tuần chứa hôm nay nếu cùng tháng cursor, không thì tuần ngày 1. */
-function defaultWeekStart(year, month) {
-  const todayYmd = toVnYmd(new Date())
-  const [ty, tm] = todayYmd.split('-').map(Number)
-  if (ty === year && tm === month) return startOfVnWeek(todayYmd)
-  return startOfVnWeek(`${year}-${String(month).padStart(2, '0')}-01`)
-}
-
 /**
  * Lịch Tuần / Tháng (giờ VN). Toolbar: Tuần|Tháng, ‹ ›, Hôm nay.
+ * density + weekStartYmd do URL (useCalendarQuery) điều khiển — refresh giữ dạng Tuần.
  * Kéo-thả bài Chờ đăng sang ngày tương lai giữ giờ; chặn quá khứ.
  */
 export default function PostCalendar({
@@ -53,20 +46,15 @@ export default function PostCalendar({
   onReschedule,
   isRescheduling = false,
   onMonthCursorChange,
+  density = 'month',
+  weekStartYmd: weekStartYmdProp,
+  onDensityChange,
+  onWeekStartChange,
 }) {
   const navigate = useNavigate()
-  const [density, setDensity] = useState('month')
-  const [weekStartYmd, setWeekStartYmd] = useState(() => defaultWeekStart(year, month))
+  const weekStartYmd = weekStartYmdProp || defaultWeekStart(year, month)
   const [expandedDay, setExpandedDay] = useState(null)
   const [dragOverYmd, setDragOverYmd] = useState(null)
-  const monthCursorRef = useRef({ year, month })
-
-  // Khi cursor tháng đổi từ URL/toolbar — căn tuần về tuần hợp lý của tháng mới.
-  useEffect(() => {
-    if (monthCursorRef.current.year === year && monthCursorRef.current.month === month) return
-    monthCursorRef.current = { year, month }
-    setWeekStartYmd(defaultWeekStart(year, month))
-  }, [year, month])
 
   const cells = useMemo(() => buildMonthGrid(year, month), [year, month])
 
@@ -88,25 +76,14 @@ export default function PostCalendar({
 
   const todayYmd = toVnYmd(new Date())
 
-  function syncMonthFromYmd(ymd) {
-    const [y, m] = ymd.split('-').map(Number)
-    if (y !== year || m !== month) {
-      onMonthCursorChange?.(y, m)
-    }
-  }
-
   function goToday() {
-    const start = startOfVnWeek(new Date())
-    setWeekStartYmd(start)
-    const [y, m] = todayYmd.split('-').map(Number)
+    // Parent (useCalendarQuery.goToday) ghi month + week trong một lần patchParams.
     onToday?.()
-    onMonthCursorChange?.(y, m)
   }
 
   function shiftWeek(deltaWeeks) {
-    const next = shiftYmd(weekStartYmd, deltaWeeks * 7)
-    setWeekStartYmd(next)
-    syncMonthFromYmd(next)
+    // setWeekStartYmd trên URL cũng đồng bộ year/month — không gọi thêm setMonthCursor.
+    onWeekStartChange?.(shiftYmd(weekStartYmd, deltaWeeks * 7))
   }
 
   function handleDragStart(event, post) {
@@ -180,10 +157,7 @@ export default function PostCalendar({
             role="tab"
             aria-selected={density === 'week'}
             className={`post-calendar-density-btn${density === 'week' ? ' is-active' : ''}`}
-            onClick={() => {
-              setWeekStartYmd(defaultWeekStart(year, month))
-              setDensity('week')
-            }}
+            onClick={() => onDensityChange?.('week')}
           >
             Tuần
           </button>
@@ -192,7 +166,7 @@ export default function PostCalendar({
             role="tab"
             aria-selected={density === 'month'}
             className={`post-calendar-density-btn${density === 'month' ? ' is-active' : ''}`}
-            onClick={() => setDensity('month')}
+            onClick={() => onDensityChange?.('month')}
           >
             Tháng
           </button>

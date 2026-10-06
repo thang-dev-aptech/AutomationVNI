@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -6,6 +7,7 @@ import PostCalendar from '../components/PostCalendar'
 import {
   buildMonthGrid,
   buildWeekGrid,
+  defaultWeekStart,
   startOfVnWeek,
   shiftYmd,
   toVnYmd,
@@ -15,15 +17,50 @@ import {
 
 const STATUS_SCHEDULED = 5
 
+/** density/week controlled locally — production lấy từ URL qua useCalendarQuery. */
+function StatefulPostCalendar({
+  year,
+  month,
+  posts = [],
+  channelMap = {},
+  onReschedule,
+  onMonthCursorChange = () => {},
+  onPrevMonth = () => {},
+  onNextMonth = () => {},
+  onToday = () => {},
+  ...rest
+}) {
+  const [density, setDensity] = useState('month')
+  const [weekStartYmd, setWeekStartYmd] = useState(() => defaultWeekStart(year, month))
+  return (
+    <PostCalendar
+      year={year}
+      month={month}
+      posts={posts}
+      channelMap={channelMap}
+      density={density}
+      weekStartYmd={weekStartYmd}
+      onDensityChange={setDensity}
+      onWeekStartChange={setWeekStartYmd}
+      onPrevMonth={onPrevMonth}
+      onNextMonth={onNextMonth}
+      onToday={onToday}
+      onReschedule={onReschedule}
+      onMonthCursorChange={onMonthCursorChange}
+      {...rest}
+    />
+  )
+}
+
 function renderCalendar(props = {}) {
   const onReschedule = vi.fn()
   const today = new Date()
-  const year = today.getFullYear()
-  const month = today.getMonth() + 1
+  const year = props.year ?? today.getFullYear()
+  const month = props.month ?? today.getMonth() + 1
 
   render(
     <MemoryRouter>
-      <PostCalendar
+      <StatefulPostCalendar
         year={year}
         month={month}
         posts={props.posts ?? []}
