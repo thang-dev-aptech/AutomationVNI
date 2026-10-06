@@ -1,4 +1,5 @@
 using Backend.Modules.Campaign.Enums;
+using Backend.Modules.Post.Enums;
 using Backend.Shared;
 
 namespace Backend.Modules.Campaign;
@@ -59,4 +60,57 @@ public class CampaignResponse
     public CampaignStatus Status { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+}
+
+/// <summary>Dòng danh sách chiến dịch + số liệu gom nhóm (không N+1).</summary>
+public class CampaignSummaryResponse
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public CampaignMediaType MediaType { get; set; }
+    public CampaignScheduleMode ScheduleMode { get; set; }
+    public CampaignStatus Status { get; set; }
+    public DateTime StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    public DateTime CreatedAt { get; set; }
+    /// <summary>Số page thực chạy (kênh lẻ ∪ thành viên nhóm hiện tại).</summary>
+    public int PageCount { get; set; }
+    /// <summary>Bài sắp tới: Queued / Approved / Scheduled.</summary>
+    public int UpcomingCount { get; set; }
+    public int PublishedCount { get; set; }
+    public int FailedCount { get; set; }
+}
+
+public class CampaignDetailResponse
+{
+    public CampaignResponse Campaign { get; set; } = new();
+    public List<CampaignPageStatsResponse> Pages { get; set; } = [];
+}
+
+public class CampaignPageStatsResponse
+{
+    public Guid SocialChannelId { get; set; }
+    public string ChannelName { get; set; } = string.Empty;
+    public int ScheduledCount { get; set; }
+    public int PublishedCount { get; set; }
+    public int FailedCount { get; set; }
+    public DateTime? NextScheduledAt { get; set; }
+    public string? Warning { get; set; }
+}
+
+public class CampaignPagePostsRequest : PagedFilterRequest
+{
+}
+
+public class CampaignPagePostItemResponse
+{
+    public Guid Id { get; set; }
+    public DateTime? ScheduledPublishAt { get; set; }
+    public DateTime? PublishedAt { get; set; }
+    public PostStatus Status { get; set; }
+    public string? ContentSnippet { get; set; }
+    public string? Title { get; set; }
+    public int MediaCount { get; set; }
+    public string? ThumbnailUrl { get; set; }
+    public Guid? PrimaryMediaId { get; set; }
 }

@@ -125,6 +125,7 @@ builder.Services.AddScoped<Backend.Modules.ChannelGroup.ChannelGroupRepository>(
 builder.Services.AddScoped<Backend.Modules.ChannelGroup.ChannelGroupImportService>();
 builder.Services.AddScoped<Backend.Modules.Campaign.CampaignRepository>();
 builder.Services.AddScoped<Backend.Modules.Campaign.CampaignGenerationService>();
+builder.Services.AddScoped<Backend.Modules.Campaign.CampaignQueryService>();
 builder.Services.AddScoped<Backend.Modules.Post.RecycleSourcePicker>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<Backend.Modules.Campaign.CampaignWorkerOptions>(
