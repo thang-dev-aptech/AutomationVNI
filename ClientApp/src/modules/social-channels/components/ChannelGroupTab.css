@@ -1,0 +1,70 @@
+.channel-group-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.channel-group-tab-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.channel-group-tab-toolbar .platforms-section-title {
+  margin: 0;
+}
+
+.channel-group-table-wrap {
+  overflow-x: auto;
+  padding: 0;
+}
+
+.channel-group-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.channel-group-table th,
+.channel-group-table td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  vertical-align: top;
+}
+
+.channel-group-table th {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted, #64748b);
+  font-weight: 600;
+}
+
+.channel-group-desc {
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #64748b);
+}
+
+.channel-group-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.channel-group-delete {
+  color: var(--color-danger, #b91c1c);
+}
+
+.channel-group-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.channel-group-form .form-error {
+  margin: 0;
+  color: var(--color-danger, #b91c1c);
+  font-size: 0.9rem;
+}
