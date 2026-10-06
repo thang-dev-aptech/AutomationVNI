@@ -57,6 +57,20 @@ vi.mock('../hooks/usePosts', () => ({
   useSchedulePost: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
+vi.mock('../services/postApi', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    postApi: {
+      ...actual.postApi,
+      calendarList: vi.fn().mockResolvedValue({
+        data: { success: true, data: { items: [], total: 0, index: 1, size: 20 } },
+      }),
+      bulkAction: vi.fn(),
+    },
+  }
+})
+
 function renderPage(initialEntry = '/calendar') {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -117,7 +131,7 @@ describe('Calendar shell — AC calendar-views-ui-test (a)(e)', () => {
     expect(screen.getByTestId('post-calendar')).toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: 'Danh sách' }))
-    expect(screen.getByText('Chế độ Danh sách')).toBeInTheDocument()
+    expect(screen.getByTestId('schedule-list-view')).toBeInTheDocument()
     await waitFor(() => {
       expect(router.state.location.search).toContain('view=list')
     })

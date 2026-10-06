@@ -7,6 +7,8 @@ export const postApi = {
   calendar: (params) => axiosInstance.post('/api/Post/calendar', params),
   calendarList: (params) => axiosInstance.post('/api/Post/calendar/list', params),
   calendarFacets: (params) => axiosInstance.post('/api/Post/calendar/facets', params),
+  /** Hành động hàng loạt: cancelSchedule | publishNow | delete */
+  bulkAction: (payload) => axiosInstance.post('/api/Post/bulk-action', payload),
   create: (payload) => axiosInstance.post('/api/Post', payload),
   recycle: (payload) => axiosInstance.post('/api/Post/recycle', payload),
   update: (id, payload) => axiosInstance.put(`/api/Post/${id}`, payload),

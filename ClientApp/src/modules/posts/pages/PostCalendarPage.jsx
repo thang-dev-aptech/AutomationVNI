@@ -7,6 +7,7 @@ import { toast } from '@/shared/stores/toastStore'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import { useChannelGroupAll } from '@/modules/social-channels/hooks/useChannelGroups'
 import CalendarFilterSidebar from '../components/calendar/CalendarFilterSidebar'
+import ScheduleListView from '../components/calendar/ScheduleListView'
 import PostCalendar from '../components/PostCalendar'
 import { withVnDate } from '../utils/calendarGrid'
 import { useSchedulePost } from '../hooks/usePosts'
@@ -224,10 +225,7 @@ export default function PostCalendarPage() {
           )}
 
           {view === CALENDAR_VIEWS.list && (
-            <ViewPlaceholder
-              title="Chế độ Danh sách"
-              hint="Placeholder t7 — bảng phân trang, 7D/14D/30D, hành động hàng loạt."
-            />
+            <ScheduleListView filterRequest={filterRequest} />
           )}
 
           {view === CALENDAR_VIEWS.byChannel && (
