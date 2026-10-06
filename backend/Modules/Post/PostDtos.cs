@@ -217,10 +217,9 @@ public class PostFilterRequest : PagedFilterRequest
 }
 
 /// <summary>
-/// Truy vấn cho lưới lịch đăng bài. KHÔNG dùng lại PostFilterRequest vì lịch cần những thứ
-/// bộ lọc kia không có: lọc theo thời điểm ĐĂNG (ScheduledPublishAt/PublishedAt) chứ không phải
-/// CreatedAt, nhận NHIỀU trạng thái/kênh cùng lúc, và không phân trang (khoảng ngày đã tự giới hạn
-/// số lượng — phân trang 20 dòng sẽ cắt mất bài của một tháng).
+/// Truy vấn chung cho lưới lịch / danh sách phân trang / facets. Lọc theo thời điểm ĐĂNG
+/// (ScheduledPublishAt/PublishedAt), nhiều trạng thái/kênh, nhóm kênh, chủ đề, tác giả, loại bài.
+/// Index/Size chỉ dùng cho endpoint danh sách; calendar bỏ qua.
 /// </summary>
 public class PostCalendarRequest
 {
@@ -233,8 +232,49 @@ public class PostCalendarRequest
     /// <summary>Rỗng/null = không lọc theo trạng thái.</summary>
     public List<PostStatus>? Statuses { get; set; }
 
-    /// <summary>Rỗng/null = không lọc theo kênh.</summary>
+    /// <summary>Rỗng/null = không lọc theo kênh. OR với kênh quy từ ChannelGroupIds.</summary>
     public List<Guid>? SocialChannelIds { get; set; }
+
+    /// <summary>Rỗng/null = không lọc. Quy ra tập kênh thành viên chưa xoá (và nhóm còn sống).</summary>
+    public List<Guid>? ChannelGroupIds { get; set; }
+
+    /// <summary>Rỗng/null = không lọc theo chủ đề (CategoryId).</summary>
+    public List<Guid>? CategoryIds { get; set; }
+
+    /// <summary>Rỗng/null = không lọc theo người đăng (UserId).</summary>
+    public List<Guid>? Authors { get; set; }
+
+    /// <summary>Rỗng/null = không lọc. Giá trị: Tin, Video ngắn, Video, Ảnh, Văn bản.</summary>
+    public List<string>? PostTypes { get; set; }
+
+    /// <summary>Tìm theo tiêu đề/nội dung, không phân biệt hoa/thường. Rỗng = bỏ qua.</summary>
+    public string? Keyword { get; set; }
+
+    /// <summary>Trang (1-based) — chỉ endpoint calendar/list.</summary>
+    public int Index { get; set; } = 1;
+
+    /// <summary>Kích thước trang — chỉ endpoint calendar/list.</summary>
+    public int Size { get; set; } = 20;
+}
+
+public class PostCalendarFacetsResponse
+{
+    public List<PostCalendarAuthorFacet> Authors { get; set; } = [];
+    public List<PostCalendarCategoryFacet> Categories { get; set; } = [];
+}
+
+public class PostCalendarAuthorFacet
+{
+    public Guid UserId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public int Count { get; set; }
+}
+
+public class PostCalendarCategoryFacet
+{
+    public Guid CategoryId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public int Count { get; set; }
 }
 
 public class PostResponse
@@ -266,6 +306,16 @@ public class PostResponse
     public DateTime? ApprovedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+
+    // --- Enrichment lịch (nạp theo lô; null khi không dùng calendar map) ---
+    public string? ChannelName { get; set; }
+    public SocialChannel.Enums.SocialPlatform? Platform { get; set; }
+    public string? CategoryName { get; set; }
+    public string? AuthorName { get; set; }
+    public int MediaCount { get; set; }
+    public string? ThumbnailUrl { get; set; }
+    /// <summary>Loại bài duy nhất từ <see cref="PostTypeClassifier"/>.</summary>
+    public string? PostType { get; set; }
 }
 
 // --- Workflow DTOs ---

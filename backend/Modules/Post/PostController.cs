@@ -711,4 +711,30 @@ public class PostController
         var items = await _repo.GetCalendarAsync(request, ct);
         return Ok(ApiResponse.Ok(items));
     }
+
+    /// <summary>Danh sách phân trang theo cùng bộ lọc lịch (Index/Size, tổng số, sắp theo giờ đăng).</summary>
+    [HttpPost("calendar/list")]
+    public async Task<IActionResult> CalendarList(
+        [FromBody] PostCalendarRequest request, CancellationToken ct)
+    {
+        if (request.ToUtc <= request.FromUtc)
+            return BadRequest(ApiResponse.Fail(
+                "INVALID_RANGE", "Khoảng thời gian không hợp lệ"));
+
+        var page = await _repo.GetCalendarListAsync(request, ct);
+        return Ok(ApiResponse.Ok(page));
+    }
+
+    /// <summary>Facets tác giả + chủ đề có bài trong khoảng (cùng bộ lọc lịch).</summary>
+    [HttpPost("calendar/facets")]
+    public async Task<IActionResult> CalendarFacets(
+        [FromBody] PostCalendarRequest request, CancellationToken ct)
+    {
+        if (request.ToUtc <= request.FromUtc)
+            return BadRequest(ApiResponse.Fail(
+                "INVALID_RANGE", "Khoảng thời gian không hợp lệ"));
+
+        var facets = await _repo.GetCalendarFacetsAsync(request, ct);
+        return Ok(ApiResponse.Ok(facets));
+    }
 }

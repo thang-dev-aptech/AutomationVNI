@@ -1,8 +1,13 @@
 using Backend.Data;
-using Backend.Modules.PageContext;
+using Backend.Modules.Category;
+using Backend.Modules.ChannelGroup;
+using Backend.Modules.MediaAsset;
+using Backend.Modules.MediaAsset.Enums;
 using Backend.Modules.MediaFolder;
+using Backend.Modules.PageContext;
 using Backend.Modules.Post.Enums;
 using Backend.Modules.PromptTemplate;
+using Backend.Modules.SocialChannel;
 using Backend.Shared;
 using Backend.Shared.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -12,16 +17,31 @@ namespace Backend.Modules.Post;
 public class PostRepository : GenericRepository<PostModel>, IGenericRepository<PostModel>
 {
     private readonly MediaFolderRepository _mediaFolders;
+    private readonly ChannelGroupRepository _channelGroups;
 
     public PostRepository(AppDbContext context, IUserContext userContext)
-        : this(context, userContext, new MediaFolderRepository(context, userContext)) { }
+        : this(
+            context,
+            userContext,
+            new MediaFolderRepository(context, userContext),
+            new ChannelGroupRepository(context, userContext)) { }
 
     public PostRepository(
         AppDbContext context,
         IUserContext userContext,
         MediaFolderRepository mediaFolders)
+        : this(context, userContext, mediaFolders, new ChannelGroupRepository(context, userContext)) { }
+
+    public PostRepository(
+        AppDbContext context,
+        IUserContext userContext,
+        MediaFolderRepository mediaFolders,
+        ChannelGroupRepository channelGroups)
         : base(context, userContext)
-        => _mediaFolders = mediaFolders;
+    {
+        _mediaFolders = mediaFolders;
+        _channelGroups = channelGroups;
+    }
 
     public async Task<PagedResult<PostResponse>> FilterAsync(
         PostFilterRequest request,
@@ -69,19 +89,113 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
     }
 
     /// <summary>
-    /// Lấy bài để dựng lưới lịch trong một khoảng thời gian.
-    ///
-    /// Một bài lọt vào lưới nếu MỘT TRONG HAI mốc rơi vào khoảng: <c>ScheduledPublishAt</c> (bài
-    /// sắp đăng) hoặc <c>PublishedAt</c> (bài đã đăng) — nên lịch hiển thị được cả kế hoạch lẫn
-    /// lịch sử. Không phân trang vì khoảng ngày đã tự giới hạn số lượng; vẫn chặn trần
-    /// <c>MaxCalendarItems</c> phòng dữ liệu bất thường làm phình response.
+    /// Lấy bài để dựng lưới lịch trong một khoảng thời gian (không phân trang, tối đa 1000).
+    /// Dùng cùng bộ lọc với <see cref="GetCalendarListAsync"/> / <see cref="GetCalendarFacetsAsync"/>.
     /// </summary>
     public async Task<List<PostResponse>> GetCalendarAsync(
         PostCalendarRequest request,
         CancellationToken cancellationToken = default)
     {
         const int MaxCalendarItems = 1000;
+        var ordered = await LoadFilteredOrderedAsync(request, cancellationToken);
+        var page = ordered.Count <= MaxCalendarItems
+            ? ordered
+            : ordered.Take(MaxCalendarItems).ToList();
+        return await MapCalendarResponsesAsync(page, cancellationToken);
+    }
 
+    /// <summary>Danh sách phân trang theo cùng bộ lọc lịch; sắp theo giờ đăng.</summary>
+    public async Task<PagedResult<PostResponse>> GetCalendarListAsync(
+        PostCalendarRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var index = request.Index < 1 ? 1 : request.Index;
+        var size = request.Size < 1 ? 20 : Math.Min(request.Size, 200);
+
+        var ordered = await LoadFilteredOrderedAsync(request, cancellationToken);
+        var total = ordered.Count;
+        var page = ordered.Skip((index - 1) * size).Take(size).ToList();
+        var items = await MapCalendarResponsesAsync(page, cancellationToken);
+        return new PagedResult<PostResponse>
+        {
+            Items = items,
+            Total = total,
+            Index = index,
+            Size = size
+        };
+    }
+
+    /// <summary>
+    /// Facets tác giả + chủ đề có bài trong khoảng (cùng bộ lọc, bỏ Authors/CategoryIds để sidebar
+    /// vẫn liệt kê được các giá trị còn lại).
+    /// </summary>
+    public async Task<PostCalendarFacetsResponse> GetCalendarFacetsAsync(
+        PostCalendarRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var facetRequest = CloneCalendarRequest(request);
+        facetRequest.Authors = null;
+        facetRequest.CategoryIds = null;
+
+        var posts = await LoadFilteredOrderedAsync(facetRequest, cancellationToken);
+
+        var authorGroups = posts
+            .GroupBy(p => p.UserId)
+            .Select(g => new { UserId = g.Key, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.UserId)
+            .ToList();
+
+        var categoryGroups = posts
+            .Where(p => p.CategoryId.HasValue)
+            .GroupBy(p => p.CategoryId!.Value)
+            .Select(g => new { CategoryId = g.Key, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.CategoryId)
+            .ToList();
+
+        var userIds = authorGroups.Select(a => a.UserId).ToList();
+        var userNames = userIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await Context.Set<ApplicationUser>()
+                .Where(u => userIds.Contains(u.Id))
+                .ToDictionaryAsync(
+                    u => u.Id,
+                    u => u.UserName ?? u.Email ?? u.Id.ToString(),
+                    cancellationToken);
+
+        var catIds = categoryGroups.Select(c => c.CategoryId).ToList();
+        var catNames = catIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await Context.Set<CategoryModel>()
+                .Where(c => catIds.Contains(c.Id))
+                .ToDictionaryAsync(c => c.Id, c => c.Name, cancellationToken);
+
+        return new PostCalendarFacetsResponse
+        {
+            Authors = authorGroups.Select(a => new PostCalendarAuthorFacet
+            {
+                UserId = a.UserId,
+                Name = userNames.TryGetValue(a.UserId, out var n) ? n : a.UserId.ToString(),
+                Count = a.Count
+            }).ToList(),
+            Categories = categoryGroups.Select(c => new PostCalendarCategoryFacet
+            {
+                CategoryId = c.CategoryId,
+                Name = catNames.TryGetValue(c.CategoryId, out var n) ? n : c.CategoryId.ToString(),
+                Count = c.Count
+            }).ToList()
+        };
+    }
+
+    /// <summary>
+    /// Dựng query lọc dùng chung: thời gian nửa khoảng mở + Statuses + kênh/nhóm + Category +
+    /// Authors + Keyword. PostTypes lọc sau khi nạp media (Classify).
+    /// </summary>
+    private async Task<IQueryable<PostModel>> BuildCalendarFilterQueryAsync(
+        PostCalendarRequest request,
+        CancellationToken cancellationToken)
+    {
         var from = request.FromUtc;
         var to = request.ToUtc;
 
@@ -94,17 +208,255 @@ public class PostRepository : GenericRepository<PostModel>, IGenericRepository<P
         if (request.Statuses is { Count: > 0 })
             query = query.Where(x => request.Statuses.Contains(x.Status));
 
-        if (request.SocialChannelIds is { Count: > 0 })
-            query = query.Where(x => request.SocialChannelIds.Contains(x.SocialChannelId));
+        var channelIds = new HashSet<Guid>();
+        var hasChannelIds = request.SocialChannelIds is { Count: > 0 };
+        var hasGroupIds = request.ChannelGroupIds is { Count: > 0 };
 
+        if (hasChannelIds)
+        {
+            foreach (var id in request.SocialChannelIds!)
+                channelIds.Add(id);
+        }
+
+        if (hasGroupIds)
+        {
+            var fromGroups = await _channelGroups.ResolveChannelIdsAsync(
+                request.ChannelGroupIds, cancellationToken);
+            foreach (var id in fromGroups)
+                channelIds.Add(id);
+
+            // Chỉ nhóm (không kênh lẻ) mà nhóm đã xoá / không kênh → không có bài.
+            if (!hasChannelIds && fromGroups.Count == 0)
+                return query.Where(_ => false);
+        }
+
+        if (channelIds.Count > 0)
+            query = query.Where(x => channelIds.Contains(x.SocialChannelId));
+
+        if (request.CategoryIds is { Count: > 0 })
+            query = query.Where(x =>
+                x.CategoryId != null && request.CategoryIds.Contains(x.CategoryId.Value));
+
+        if (request.Authors is { Count: > 0 })
+            query = query.Where(x => request.Authors.Contains(x.UserId));
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.Trim().ToLower();
+            query = query.Where(x =>
+                x.Title.ToLower().Contains(keyword)
+                || (x.Content != null && x.Content.ToLower().Contains(keyword)));
+        }
+
+        return query;
+    }
+
+    private async Task<List<PostModel>> LoadFilteredOrderedAsync(
+        PostCalendarRequest request,
+        CancellationToken cancellationToken)
+    {
+        var query = await BuildCalendarFilterQueryAsync(request, cancellationToken);
         var items = await query
             .OrderBy(x => x.ScheduledPublishAt ?? x.PublishedAt)
-            .Take(MaxCalendarItems)
+            .ThenBy(x => x.Id)
             .ToListAsync(cancellationToken);
 
-        var names = await LoadTemplateNamesAsync(items, cancellationToken);
-        return items.Select(e => ToResponse(e, ResolveTemplateName(e, names))).ToList();
+        if (request.PostTypes is not { Count: > 0 })
+            return items;
+
+        var wanted = request.PostTypes
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (wanted.Count == 0)
+            return items;
+
+        var classified = await ClassifyPostsAsync(items, cancellationToken);
+        return items.Where(p =>
+        {
+            if (!classified.TryGetValue(p.Id, out var type)) return false;
+            return wanted.Contains(type);
+        }).ToList();
     }
+
+    private async Task<Dictionary<Guid, string>> ClassifyPostsAsync(
+        List<PostModel> posts,
+        CancellationToken cancellationToken)
+    {
+        if (posts.Count == 0) return [];
+
+        var postIds = posts.Select(p => p.Id).ToList();
+        var channelIds = posts.Select(p => p.SocialChannelId).Distinct().ToList();
+
+        var platforms = await Context.Set<SocialChannelModel>()
+            .Where(c => channelIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, c => c.Platform, cancellationToken);
+
+        var mediaByPost = await LoadMediaSignalsByPostAsync(postIds, cancellationToken);
+
+        var result = new Dictionary<Guid, string>(posts.Count);
+        foreach (var post in posts)
+        {
+            platforms.TryGetValue(post.SocialChannelId, out var platform);
+            var signals = mediaByPost.GetValueOrDefault(post.Id) ?? [];
+            result[post.Id] = PostTypeClassifier.Classify(
+                post.NewsArticleId, platform, post.ExtraJson, signals);
+        }
+
+        return result;
+    }
+
+    private async Task<Dictionary<Guid, List<PostTypeClassifier.MediaSignal>>> LoadMediaSignalsByPostAsync(
+        List<Guid> postIds,
+        CancellationToken cancellationToken)
+    {
+        if (postIds.Count == 0) return [];
+
+        var links = await Context.Set<PostMediaModel>()
+            .Where(pm => !pm.IsDeleted && postIds.Contains(pm.PostId))
+            .OrderBy(pm => pm.SortOrder)
+            .ThenBy(pm => pm.Id)
+            .Select(pm => new { pm.PostId, pm.MediaId, pm.MediaRole, pm.SortOrder })
+            .ToListAsync(cancellationToken);
+
+        var mediaIds = links.Select(l => l.MediaId).Distinct().ToList();
+        var assets = mediaIds.Count == 0
+            ? new Dictionary<Guid, MediaAssetModel>()
+            : await Context.Set<MediaAssetModel>()
+                .Where(a => !a.IsDeleted && mediaIds.Contains(a.Id))
+                .ToDictionaryAsync(a => a.Id, cancellationToken);
+
+        var map = new Dictionary<Guid, List<PostTypeClassifier.MediaSignal>>();
+        foreach (var link in links)
+        {
+            if (!assets.TryGetValue(link.MediaId, out var asset)) continue;
+            if (!map.TryGetValue(link.PostId, out var list))
+            {
+                list = [];
+                map[link.PostId] = list;
+            }
+
+            list.Add(new PostTypeClassifier.MediaSignal(
+                asset.MimeType, asset.Source, asset.OriginalFileName, asset.AltText));
+        }
+
+        return map;
+    }
+
+    private async Task<List<PostResponse>> MapCalendarResponsesAsync(
+        List<PostModel> items,
+        CancellationToken cancellationToken)
+    {
+        if (items.Count == 0) return [];
+
+        var names = await LoadTemplateNamesAsync(items, cancellationToken);
+        var postIds = items.Select(i => i.Id).ToList();
+        var channelIds = items.Select(i => i.SocialChannelId).Distinct().ToList();
+        var categoryIds = items
+            .Where(i => i.CategoryId.HasValue)
+            .Select(i => i.CategoryId!.Value)
+            .Distinct()
+            .ToList();
+        var userIds = items.Select(i => i.UserId).Distinct().ToList();
+
+        var channels = await Context.Set<SocialChannelModel>()
+            .Where(c => channelIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, cancellationToken);
+
+        var categories = categoryIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await Context.Set<CategoryModel>()
+                .Where(c => categoryIds.Contains(c.Id))
+                .ToDictionaryAsync(c => c.Id, c => c.Name, cancellationToken);
+
+        var users = userIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await Context.Set<ApplicationUser>()
+                .Where(u => userIds.Contains(u.Id))
+                .ToDictionaryAsync(
+                    u => u.Id,
+                    u => u.UserName ?? u.Email ?? u.Id.ToString(),
+                    cancellationToken);
+
+        var links = await Context.Set<PostMediaModel>()
+            .Where(pm => !pm.IsDeleted && postIds.Contains(pm.PostId))
+            .OrderBy(pm => pm.SortOrder)
+            .ThenBy(pm => pm.Id)
+            .ToListAsync(cancellationToken);
+
+        var mediaIds = links.Select(l => l.MediaId).Distinct().ToList();
+        var assets = mediaIds.Count == 0
+            ? new Dictionary<Guid, MediaAssetModel>()
+            : await Context.Set<MediaAssetModel>()
+                .Where(a => !a.IsDeleted && mediaIds.Contains(a.Id))
+                .ToDictionaryAsync(a => a.Id, cancellationToken);
+
+        var linksByPost = links.GroupBy(l => l.PostId).ToDictionary(g => g.Key, g => g.ToList());
+
+        var result = new List<PostResponse>(items.Count);
+        foreach (var entity in items)
+        {
+            var response = ToResponse(entity, ResolveTemplateName(entity, names));
+
+            if (channels.TryGetValue(entity.SocialChannelId, out var channel))
+            {
+                response.ChannelName = channel.PageName;
+                response.Platform = channel.Platform;
+            }
+
+            if (entity.CategoryId is Guid catId
+                && categories.TryGetValue(catId, out var catName))
+                response.CategoryName = catName;
+
+            if (users.TryGetValue(entity.UserId, out var author))
+                response.AuthorName = author;
+
+            var postLinks = linksByPost.GetValueOrDefault(entity.Id) ?? [];
+            var signals = new List<PostTypeClassifier.MediaSignal>();
+            string? thumb = null;
+            string? coverImage = null;
+            string? firstImage = null;
+
+            foreach (var link in postLinks)
+            {
+                if (!assets.TryGetValue(link.MediaId, out var asset)) continue;
+                signals.Add(new PostTypeClassifier.MediaSignal(
+                    asset.MimeType, asset.Source, asset.OriginalFileName, asset.AltText));
+
+                if (!PostTypeClassifier.IsImage(asset.MimeType)
+                    || string.IsNullOrWhiteSpace(asset.PublicUrl))
+                    continue;
+
+                firstImage ??= asset.PublicUrl;
+                if (link.MediaRole is MediaRole.Cover or MediaRole.Primary)
+                    coverImage ??= asset.PublicUrl;
+            }
+
+            thumb = coverImage ?? firstImage;
+            response.MediaCount = signals.Count;
+            response.ThumbnailUrl = thumb;
+            response.PostType = PostTypeClassifier.Classify(
+                entity.NewsArticleId, response.Platform, entity.ExtraJson, signals);
+            result.Add(response);
+        }
+
+        return result;
+    }
+
+    private static PostCalendarRequest CloneCalendarRequest(PostCalendarRequest source) => new()
+    {
+        FromUtc = source.FromUtc,
+        ToUtc = source.ToUtc,
+        Statuses = source.Statuses,
+        SocialChannelIds = source.SocialChannelIds,
+        ChannelGroupIds = source.ChannelGroupIds,
+        CategoryIds = source.CategoryIds,
+        Authors = source.Authors,
+        PostTypes = source.PostTypes,
+        Keyword = source.Keyword,
+        Index = source.Index,
+        Size = source.Size
+    };
 
     public async Task<PostResponse?> GetResponseByIdAsync(Guid id, CancellationToken ct = default)
     {
