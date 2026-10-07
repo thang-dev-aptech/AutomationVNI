@@ -13,6 +13,11 @@ import { usePageContextList } from '@/modules/page-contexts/hooks/usePageContext
 import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import PostCreateForm from '../components/PostCreateForm'
 import PostFromMediaForm from '../components/PostFromMediaForm'
+import {
+  AI_IMAGE_DISABLED_HINT,
+  isAiImageFlow,
+  isAiImageGenerationEnabled,
+} from '@/shared/config/features'
 import GenerationFlowPicker, { getVisibleGenerationFlows } from '../components/GenerationFlowPicker'
 import { useCreateAndGeneratePost } from '../hooks/usePosts'
 
@@ -22,11 +27,22 @@ function flowLabel(flow) {
   return 'Sinh toàn bộ bằng AI'
 }
 
+function defaultPickerValue() {
+  const visible = getVisibleGenerationFlows()
+  if (!isAiImageGenerationEnabled()) {
+    return visible.find((o) => !isAiImageFlow(o.value))?.value
+      ?? visible[0]?.value
+      ?? 'media'
+  }
+  return visible[0]?.value ?? 'fullai'
+}
+
 export default function PostCreatePage() {
   const navigate = useNavigate()
   const [flow, setFlow] = useState(null)
-  const [pickerValue, setPickerValue] = useState(() => getVisibleGenerationFlows()[0]?.value ?? 'fullai')
+  const [pickerValue, setPickerValue] = useState(defaultPickerValue)
   const createMutation = useCreateAndGeneratePost()
+  const aiImageLocked = isAiImageFlow(pickerValue) && !isAiImageGenerationEnabled()
   const {
     data: channels = [],
     isLoading: channelsLoading,
@@ -90,11 +106,28 @@ export default function PostCreatePage() {
         title="Chọn phương pháp tạo ảnh"
         onClose={() => navigate('/posts')}
         footer={(
-          <button type="button" className="btn btn-primary" onClick={() => setFlow(pickerValue)}>
-            Tiếp tục
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={aiImageLocked}
+            title={aiImageLocked ? AI_IMAGE_DISABLED_HINT : undefined}
+            onClick={() => {
+              if (aiImageLocked) return
+              setFlow(pickerValue)
+            }}
+          >
+            {aiImageLocked ? AI_IMAGE_DISABLED_HINT : 'Tiếp tục'}
           </button>
         )}
       >
+        {!isAiImageGenerationEnabled() && (
+          <p
+            data-testid="ai-image-disabled-banner"
+            style={{ margin: '0 0 12px', color: 'var(--color-warning, #b45309)', fontWeight: 600 }}
+          >
+            {AI_IMAGE_DISABLED_HINT}
+          </p>
+        )}
         <GenerationFlowPicker value={pickerValue} onChange={setPickerValue} />
       </Modal>
 

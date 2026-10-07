@@ -12,8 +12,13 @@ describe('UI feature flags (user request 2026-10-03)', () => {
     Object.assign(FEATURES, DEFAULTS)
   })
 
-  it('ships with full-AI shown, template and "Tạo từ chứng chỉ" hidden', () => {
-    expect(DEFAULTS).toEqual({ aiFullImage: true, aiTemplate: false, chungChiBulk: false })
+  it('ships with full-AI shown, template and "Tạo từ chứng chỉ" hidden; AI image gen temporarily off', () => {
+    expect(DEFAULTS).toEqual({
+      aiFullImage: true,
+      aiTemplate: false,
+      chungChiBulk: false,
+      aiImageGeneration: false,
+    })
   })
 
   it('create page methods follow the flags', () => {

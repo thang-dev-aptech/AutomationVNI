@@ -39,23 +39,29 @@ describe('BulkCreatePage generation methods (user request 2026-10-03)', () => {
     Object.assign(FEATURES, DEFAULTS)
   })
 
-  it('offers only "Sinh toàn bộ bằng AI" by default: no template, no Media option', () => {
+  it('offers only "Sinh toàn bộ bằng AI" by default (disabled), no template, no Media option', () => {
     render(<MemoryRouter><BulkCreatePage /></MemoryRouter>)
 
-    expect(screen.getByRole('button', { name: /Sinh toàn bộ bằng AI/ })).toBeInTheDocument()
+    const fullAi = screen.getByRole('button', { name: /Sinh toàn bộ bằng AI/ })
+    expect(fullAi).toBeDisabled()
+    expect(fullAi).toHaveTextContent('Tính năng tạm thời tắt')
+    expect(screen.getAllByText('Tính năng tạm thời tắt').length).toBeGreaterThanOrEqual(1)
     expect(screen.queryByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Dùng ảnh có sẵn trong Media/ })).not.toBeInTheDocument()
-    // Full AI là mặc định: checkbox RAG của Full AI hiện, ô số ảnh của Template không hiện.
+    // Full AI vẫn là flow mặc định trên state: checkbox RAG hiện, ô số ảnh Template không hiện.
     expect(screen.getByText(/tự tìm thêm 2–3 ảnh từ kho media/)).toBeInTheDocument()
     expect(screen.queryByLabelText(/Số ảnh mỗi bài/)).not.toBeInTheDocument()
+    const lockedActions = screen.getAllByRole('button', { name: 'Tính năng tạm thời tắt' })
+    expect(lockedActions.length).toBeGreaterThanOrEqual(2)
+    lockedActions.forEach((btn) => expect(btn).toBeDisabled())
   })
 
   it('shows the template method again when its flag is on, still without the Media option', () => {
     FEATURES.aiTemplate = true
     render(<MemoryRouter><BulkCreatePage /></MemoryRouter>)
 
-    expect(screen.getByRole('button', { name: /Sinh toàn bộ bằng AI/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Sinh toàn bộ bằng AI/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).toBeDisabled()
     expect(screen.queryByRole('button', { name: /Dùng ảnh có sẵn trong Media/ })).not.toBeInTheDocument()
   })
 })

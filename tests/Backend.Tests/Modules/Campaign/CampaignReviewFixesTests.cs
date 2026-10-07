@@ -43,6 +43,52 @@ public sealed class CampaignReviewFixesTests : IAsyncLifetime
     public Task InitializeAsync() => Task.CompletedTask;
     public async Task DisposeAsync() => await _connection.DisposeAsync();
 
+    // --- News source exclusion (user request 2026-10-07) ---
+
+    [Fact]
+    public async Task PickRandom_ExcludesPostsCreatedFromNews_RevertToProve()
+    {
+        var ch = await SeedChannelAsync("NewsSrc");
+        await SeedPublishedWithMediaAsync(ch, hasImage: true, hasVideo: false, title: "organic");
+        await SeedPublishedFromNewsAsync(ch, title: "from-news");
+
+        await using (var db = new AppDbContext(_options))
+        {
+            var picker = new RecycleSourcePicker(db);
+            var picked = await picker.PickRandomPublishedAsync(ch, 50, CampaignMediaType.Image);
+            Assert.NotEmpty(picked);
+            Assert.All(picked, p => Assert.Equal("organic", p.Title));
+            Assert.DoesNotContain(picked, p => p.Title == "from-news");
+        }
+
+        // Revert-to-prove: bỏ lọc NewsArticleId == null → bài from-news lọt vào.
+        await using (var db = new AppDbContext(_options))
+        {
+            var withoutNewsFilter = await db.Posts
+                .Where(p => !p.IsDeleted
+                    && p.Status == PostStatus.Published
+                    && p.SocialChannelId == ch
+                    && p.GenerationFlow != GenerationFlow.TextOnly
+                    && db.PostMedias.Any(m =>
+                        !m.IsDeleted
+                        && m.PostId == p.Id
+                        && db.MediaAssets.Any(a =>
+                            !a.IsDeleted
+                            && a.Id == m.MediaId
+                            && a.MimeType.StartsWith("image/")))
+                    && !db.PostMedias.Any(m =>
+                        !m.IsDeleted
+                        && m.PostId == p.Id
+                        && db.MediaAssets.Any(a =>
+                            !a.IsDeleted
+                            && a.Id == m.MediaId
+                            && a.MimeType.StartsWith("video/"))))
+                .ToListAsync();
+            Assert.Contains(withoutNewsFilter, p => p.Title == "from-news" && p.NewsArticleId != null);
+            Assert.Contains(withoutNewsFilter, p => p.Title == "organic" && p.NewsArticleId == null);
+        }
+    }
+
     // --- B1 / af4cf5cc ---
 
     [Fact]
@@ -446,6 +492,27 @@ public sealed class CampaignReviewFixesTests : IAsyncLifetime
             CreatedAt = DateTime.UtcNow.AddDays(-3),
         });
         await AddMediaAsync(db, postId, hasImage, hasVideo);
+        await db.SaveChangesAsync();
+    }
+
+    private async Task SeedPublishedFromNewsAsync(Guid channelId, string title)
+    {
+        await using var db = new AppDbContext(_options);
+        var postId = Guid.NewGuid();
+        db.Posts.Add(new PostModel
+        {
+            Id = postId,
+            Title = title,
+            Content = "news-body",
+            SocialChannelId = channelId,
+            Status = PostStatus.Published,
+            GenerationFlow = GenerationFlow.FullAI,
+            NewsArticleId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            PublishedAt = DateTime.UtcNow.AddDays(-1),
+            CreatedAt = DateTime.UtcNow.AddDays(-2),
+        });
+        await AddMediaAsync(db, postId, hasImage: true, hasVideo: false);
         await db.SaveChangesAsync();
     }
 

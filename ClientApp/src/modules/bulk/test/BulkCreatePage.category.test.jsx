@@ -78,6 +78,8 @@ async function uploadCsv(user, pageId) {
 describe('BulkCreatePage category select (R-030)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // AC tạo bài cần pipeline sinh ảnh — bật kill switch chỉ trong các test payload.
+    FEATURES.aiImageGeneration = true
     h.state.templates = [OTHER_TPL, DEFAULT_TPL]
     h.state.contexts = [READY_CONTEXT]
     h.createFn.mockResolvedValue({ created: 1, batchId: 'batch-1' })
@@ -186,6 +188,8 @@ describe('BulkCreatePage category select (R-030)', () => {
     await user.click(createButton())
 
     expect(h.createFn).toHaveBeenCalledWith(expect.objectContaining({ generationFlow: 1, categoryId: null }))
-    expect(FEATURES).toEqual(DEFAULTS)
+    expect(FEATURES.aiFullImage).toBe(DEFAULTS.aiFullImage)
+    expect(FEATURES.aiTemplate).toBe(DEFAULTS.aiTemplate)
+    expect(FEATURES.chungChiBulk).toBe(DEFAULTS.chungChiBulk)
   })
 })

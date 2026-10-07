@@ -10,6 +10,10 @@ import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromp
 import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import { usePageContextList } from '@/modules/page-contexts/hooks/usePageContexts'
 import { isPageContextTemplateReady } from '@/modules/posts/components/PostCreateForm'
+import {
+  AI_IMAGE_DISABLED_HINT,
+  isAiImageGenerationEnabled,
+} from '@/shared/config/features'
 import GenerationFlowPicker, { getVisibleGenerationFlows } from '@/modules/posts/components/GenerationFlowPicker'
 import PostFormatPicker from '@/modules/posts/components/PostFormatPicker'
 import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
@@ -92,6 +96,7 @@ export default function BulkCreatePage() {
   const createMutation = useBulkCreate()
   const importMutation = useBulkImport()
   const busy = createMutation.isPending || importMutation.isPending
+  const aiImageLocked = !isAiImageGenerationEnabled()
 
   const validRows = useMemo(() => rows.filter((r) => r.idea.trim()), [rows])
   const totalPosts = validRows.length * channelIds.length
@@ -181,6 +186,10 @@ export default function BulkCreatePage() {
   }
 
   const runBulkImport = async (parsedRows) => {
+    if (aiImageLocked) {
+      toast.warning(AI_IMAGE_DISABLED_HINT)
+      return
+    }
     const missing = parsedRows.filter((r) => !r.pageId)
     if (missing.length > 0) {
       toast.error(
@@ -300,6 +309,10 @@ export default function BulkCreatePage() {
   }
 
   const handleSubmit = async () => {
+    if (aiImageLocked) {
+      toast.warning(AI_IMAGE_DISABLED_HINT)
+      return
+    }
     if (validRows.length === 0) {
       toast.error('Nhập ít nhất 1 ý tưởng')
       return
@@ -355,6 +368,14 @@ export default function BulkCreatePage() {
 
             <div className="form-group" style={{ marginTop: 16 }}>
               <label>Phương pháp tạo ảnh</label>
+              {aiImageLocked && (
+                <p
+                  data-testid="ai-image-disabled-banner"
+                  style={{ margin: '0 0 10px', color: 'var(--color-warning, #b45309)', fontWeight: 600 }}
+                >
+                  {AI_IMAGE_DISABLED_HINT}
+                </p>
+              )}
               <GenerationFlowPicker value={flow} onChange={setFlow} allowed={BULK_FLOWS} />
             </div>
 
@@ -553,9 +574,14 @@ export default function BulkCreatePage() {
                   type="button"
                   className="btn btn-primary"
                   onClick={() => csvInputRef.current?.click()}
-                  disabled={busy}
+                  disabled={busy || aiImageLocked}
+                  title={aiImageLocked ? AI_IMAGE_DISABLED_HINT : undefined}
                 >
-                  {importMutation.isPending ? 'Đang import...' : 'Import CSV → tạo + lịch'}
+                  {aiImageLocked
+                    ? AI_IMAGE_DISABLED_HINT
+                    : importMutation.isPending
+                      ? 'Đang import...'
+                      : 'Import CSV → tạo + lịch'}
                 </button>
                 <input ref={csvInputRef} type="file" accept=".csv,.txt" onChange={handleCsv} style={{ display: 'none' }} />
                 <button type="button" className="btn btn-ghost" onClick={handleDownloadSample}>
@@ -623,9 +649,14 @@ export default function BulkCreatePage() {
                 type="button"
                 className="btn btn-primary"
                 onClick={handleSubmit}
-                disabled={busy || totalPosts === 0 || (categoryRequired && !promptTemplateId)}
+                disabled={busy || aiImageLocked || totalPosts === 0 || (categoryRequired && !promptTemplateId)}
+                title={aiImageLocked ? AI_IMAGE_DISABLED_HINT : undefined}
               >
-                {createMutation.isPending ? 'Đang tạo...' : `Tạo ${totalPosts} bài → AI sinh nền`}
+                {aiImageLocked
+                  ? AI_IMAGE_DISABLED_HINT
+                  : createMutation.isPending
+                    ? 'Đang tạo...'
+                    : `Tạo ${totalPosts} bài → AI sinh nền`}
               </button>
             </div>
           </div>

@@ -109,29 +109,32 @@ describe('PostCreatePage media flow', () => {
     generateCaption.mockResolvedValue({ caption: 'caption gợi ý' })
   })
 
-  it('shows full-AI and media, hides the template method by default, and preselects full-AI', async () => {
+  it('shows full-AI disabled (temp kill switch), hides template, preselects media', async () => {
     const user = userEvent.setup()
     render(<MemoryRouter><PostCreatePage /></MemoryRouter>)
 
     expect(FEATURES.aiFullImage).toBe(true)
     expect(FEATURES.aiTemplate).toBe(false)
-    expect(screen.getByRole('button', { name: /Sinh toàn bộ bằng AI/ })).toBeInTheDocument()
+    expect(FEATURES.aiImageGeneration).toBe(false)
+    const fullAi = screen.getByRole('button', { name: /Sinh toàn bộ bằng AI/ })
+    expect(fullAi).toBeDisabled()
+    expect(fullAi).toHaveTextContent('Tính năng tạm thời tắt')
     expect(screen.queryByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Dùng ảnh có sẵn trong Media/ })).toBeInTheDocument()
+    expect(screen.getByTestId('ai-image-disabled-banner')).toHaveTextContent('Tính năng tạm thời tắt')
 
     await user.click(screen.getByRole('button', { name: 'Tiếp tục' }))
-    await user.click(screen.getByRole('button', { name: 'Gửi AI' }))
-    expect(createAndGenerate).toHaveBeenCalledWith({ flow: 'fullai', idea: 'ý tưởng cũ' })
-    expect(screen.queryByRole('button', { name: 'Chọn ảnh từ Media' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Chọn ảnh từ Media' })).toBeInTheDocument()
+    expect(createAndGenerate).not.toHaveBeenCalled()
   })
 
-  it('shows the template method again when its flag is on', () => {
+  it('shows the template method again when its flag is on (still disabled while kill switch off)', () => {
     FEATURES.aiTemplate = true
     try {
       render(<MemoryRouter><PostCreatePage /></MemoryRouter>)
-      expect(screen.getByRole('button', { name: /Sinh toàn bộ bằng AI/ })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /Dùng ảnh có sẵn trong Media/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Sinh toàn bộ bằng AI/ })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /Dùng ảnh có sẵn trong Media/ })).not.toBeDisabled()
     } finally {
       FEATURES.aiTemplate = false
     }

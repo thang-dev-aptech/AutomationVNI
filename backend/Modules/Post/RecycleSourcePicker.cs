@@ -7,8 +7,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Backend.Modules.Post;
 
 /// <summary>
-/// Chọn bài Published ngẫu nhiên trên một page (trừ TextOnly) + tuỳ chọn lọc Ảnh/Video.
-/// Dùng chung cho api/Post/recycle và CampaignGenerationService.
+/// Chọn bài Published ngẫu nhiên trên một page (trừ TextOnly và bài từ tin/NewsArticle)
+/// + tuỳ chọn lọc Ảnh/Video. Dùng chung cho api/Post/recycle và CampaignGenerationService.
 /// </summary>
 public class RecycleSourcePicker(AppDbContext context)
 {
@@ -20,11 +20,14 @@ public class RecycleSourcePicker(AppDbContext context)
     {
         if (take < 1) return [];
 
+        // NewsArticleId != null = bài fanpage từ tin (CỬA 2 / ContentCrawl) — không tái sử dụng
+        // làm bài nguồn chiến dịch. TextOnly cũng loại (thường là tin chỉ chữ + link).
         var query = context.Set<PostModel>()
             .Where(p => !p.IsDeleted
                 && p.Status == PostStatus.Published
                 && p.SocialChannelId == channelId
-                && p.GenerationFlow != GenerationFlow.TextOnly);
+                && p.GenerationFlow != GenerationFlow.TextOnly
+                && p.NewsArticleId == null);
 
         if (mediaFilter == CampaignMediaType.Image)
         {

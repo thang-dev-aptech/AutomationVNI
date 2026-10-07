@@ -10,4 +10,25 @@ export const FEATURES = {
   aiTemplate: false,
   // Menu và trang "Tạo từ chứng chỉ" (/bulk-chung-chi). Ẩn theo yêu cầu người dùng 2026-10-03.
   chungChiBulk: false,
+  /**
+   * Kill switch tạm: giữ nút sinh ảnh AI trên UI nhưng disabled + cảnh báo.
+   * Ảnh hưởng Full AI, Template, Tạo lại ảnh, tick banner AI khi duyệt tin.
+   * Bật lại = true khi hạ tầng AI ảnh ổn định.
+   * Nguồn: yêu cầu người dùng 2026-10-07.
+   */
+  aiImageGeneration: false,
+}
+
+/** Cảnh báo hiển thị trên mọi nút sinh ảnh AI đang tạm tắt. */
+export const AI_IMAGE_DISABLED_HINT = 'Tính năng tạm thời tắt'
+
+/** Các phương pháp tạo bài gọi pipeline sinh ảnh AI. */
+export const AI_IMAGE_FLOWS = Object.freeze(['fullai', 'template'])
+
+export function isAiImageGenerationEnabled() {
+  return FEATURES.aiImageGeneration !== false
+}
+
+export function isAiImageFlow(flow) {
+  return AI_IMAGE_FLOWS.includes(flow)
 }
