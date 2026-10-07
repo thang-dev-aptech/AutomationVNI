@@ -26,6 +26,9 @@ vi.mock('@/modules/social-channels/hooks/useSocialChannels', () => ({
     refetch: vi.fn(),
   }),
 }))
+vi.mock('@/modules/social-channels/hooks/useChannelGroups', () => ({
+  useChannelGroupAll: () => ({ data: [], isLoading: false }),
+}))
 vi.mock('@/modules/prompt-templates/hooks/usePromptTemplates', () => ({
   usePromptTemplateList: () => ({ data: { items: h.state.templates }, isLoading: false }),
 }))

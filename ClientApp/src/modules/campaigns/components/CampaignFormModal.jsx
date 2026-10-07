@@ -204,6 +204,7 @@ export default function CampaignFormModal({
             onChange={(ids) => setField('channelIds', ids)}
             disabled={isSubmitting}
             placeholder="-- Chọn kênh --"
+            enableGroups={false}
           />
         </div>
 

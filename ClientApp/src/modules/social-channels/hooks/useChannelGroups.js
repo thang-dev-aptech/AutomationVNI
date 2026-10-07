@@ -6,10 +6,11 @@ function invalidateChannelGroups(queryClient) {
   queryClient.invalidateQueries({ queryKey: channelGroupQueryKeys.all })
 }
 
-export function useChannelGroupAll() {
+export function useChannelGroupAll({ enabled = true } = {}) {
   return useQuery({
     queryKey: channelGroupQueryKeys.all,
     queryFn: async () => unwrapApiData(await channelGroupApi.getAll()),
+    enabled,
   })
 }
 
