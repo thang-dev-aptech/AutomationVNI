@@ -40,6 +40,8 @@ public class PageConversationResponse
     public DateTime? LastPageMessageAt { get; set; }
     public DateTime? ReplyWindowClosesAt { get; set; }
     public bool IsReplyWindowOpen { get; set; }
+    /// <summary>CRM: có thể gửi tin trong cửa sổ 24h RESPONSE (alias IsReplyWindowOpen).</summary>
+    public bool CanReply { get; set; }
     public int UnreadCount { get; set; }
     public int MessageCount { get; set; }
     public MessageInboxStatus InboxStatus { get; set; }

@@ -193,8 +193,10 @@ public class PageMessageService(
 
         if (!IsReplyWindowOpen(conversation))
         {
-            throw new InvalidOperationException(
-                "Cửa sổ phản hồi 24 giờ đã đóng. MVP không tự dùng message tag để tránh vi phạm chính sách Meta.");
+            // CRM t1: không HUMAN_AGENT — khoá gửi ngoài 24h, không gọi Graph.
+            throw new ReplyWindowClosedException(
+                "Cửa sổ gửi tin 24 giờ đã đóng (kể từ tin cuối của khách). " +
+                "Không dùng thẻ HUMAN_AGENT — hãy chờ khách nhắn lại hoặc dùng Private Reply từ bình luận.");
         }
 
         var sendResult = await provider.SendTextAsync(
@@ -614,6 +616,7 @@ public class PageMessageService(
             LastPageMessageAt = entity.LastPageMessageAt,
             ReplyWindowClosesAt = closesAt,
             IsReplyWindowOpen = closesAt > DateTime.UtcNow,
+            CanReply = closesAt > DateTime.UtcNow,
             UnreadCount = entity.UnreadCount,
             MessageCount = entity.MessageCount,
             InboxStatus = entity.InboxStatus,
