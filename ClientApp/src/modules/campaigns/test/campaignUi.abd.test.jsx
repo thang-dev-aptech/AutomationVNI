@@ -14,6 +14,8 @@ import {
 import {
   buildCampaignPayload,
   emptyCampaignForm,
+  RUN_MODE_UNTIL_STOPPED,
+  RUN_MODE_WITH_END,
   tryAddPublishTime,
   validateCampaignForm,
 } from '../utils/campaignForm'
@@ -189,13 +191,23 @@ describe('campaign-ui-test (d) form validate + payload', () => {
         ...base,
         name: 'X',
         channelIds: ['ch-1'],
+        runMode: RUN_MODE_WITH_END,
         startDate: '2026-10-10',
         endDate: '2026-10-01',
       }).errors.endDate,
     ).toBeTruthy()
+    expect(
+      validateCampaignForm({
+        ...base,
+        name: 'X',
+        channelIds: ['ch-1'],
+        runMode: RUN_MODE_WITH_END,
+        endDate: '',
+      }).errors.endDate,
+    ).toBeTruthy()
   })
 
-  it('buildCampaignPayload gửi đúng khi Ảnh + Theo thứ + giờ + nhóm', () => {
+  it('buildCampaignPayload gửi đúng khi Ảnh + Theo thứ + giờ + nhóm; luôn KeepOld', () => {
     const form = {
       ...emptyCampaignForm(),
       name: '  Camp  ',
@@ -208,13 +220,14 @@ describe('campaign-ui-test (d) form validate + payload', () => {
       publishTimes: ['09:00', '15:00'],
       jitterMinutes: 30,
       startDate: '2026-10-06',
+      runMode: RUN_MODE_WITH_END,
       endDate: '2026-11-01',
     }
     expect(validateCampaignForm(form).ok).toBe(true)
     expect(buildCampaignPayload(form)).toEqual({
       name: 'Camp',
       mediaType: 1,
-      imageStrategy: 2,
+      imageStrategy: 1,
       channelIds: ['ch-1'],
       channelGroupIds: ['grp-1'],
       scheduleMode: 1,
@@ -224,9 +237,16 @@ describe('campaign-ui-test (d) form validate + payload', () => {
       startDate: '2026-10-06T00:00:00.000Z',
       endDate: '2026-11-01T00:00:00.000Z',
     })
+
+    const untilStopped = buildCampaignPayload({
+      ...form,
+      runMode: RUN_MODE_UNTIL_STOPPED,
+      endDate: '2026-11-01',
+    })
+    expect(untilStopped.endDate).toBeNull()
   })
 
-  it('Video ẩn chiến lược hình ảnh; Theo thứ hiện picker; thêm/xoá giờ; payload imageStrategy null', async () => {
+  it('không còn chiến lược hình ảnh; Theo thứ + giờ + chạy đến khi dừng; payload KeepOld', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(
@@ -241,10 +261,12 @@ describe('campaign-ui-test (d) form validate + payload', () => {
       </QueryClientProvider>,
     )
 
-    expect(screen.getByTestId('image-strategy-block')).toBeInTheDocument()
-    await user.click(screen.getByLabelText('Video'))
     expect(screen.queryByTestId('image-strategy-block')).not.toBeInTheDocument()
+    expect(screen.queryByText('Chiến lược hình ảnh')).not.toBeInTheDocument()
+    expect(screen.getByTestId('run-until-stopped')).toBeChecked()
+    expect(screen.queryByTestId('campaign-end')).not.toBeInTheDocument()
 
+    await user.click(screen.getByLabelText('Video'))
     await user.click(screen.getByLabelText('Theo thứ'))
     expect(screen.getByTestId('weekday-picker')).toBeInTheDocument()
     await user.click(screen.getByLabelText('Thứ 2'))
@@ -262,10 +284,12 @@ describe('campaign-ui-test (d) form validate + payload', () => {
     expect(screen.getByTestId('error-publishTimes')).toBeInTheDocument()
 
     await user.click(screen.getByLabelText('Ảnh'))
-    expect(screen.getByTestId('image-strategy-block')).toBeInTheDocument()
+    await user.click(screen.getByTestId('run-with-end'))
+    expect(screen.getByTestId('campaign-end')).toBeInTheDocument()
+    await user.click(screen.getByTestId('run-until-stopped'))
+    expect(screen.queryByTestId('campaign-end')).not.toBeInTheDocument()
 
     await user.type(screen.getByLabelText(/Tên/), 'UI Camp')
-    // chọn nhóm
     await user.click(screen.getByLabelText('Nhóm A'))
     await user.click(screen.getByTestId('campaign-form-submit'))
 
@@ -277,5 +301,6 @@ describe('campaign-ui-test (d) form validate + payload', () => {
     expect(payload.weekdays).toContain(1)
     expect(payload.mediaType).toBe(CAMPAIGN_MEDIA_TYPE.Image)
     expect(payload.imageStrategy).toBe(1)
+    expect(payload.endDate).toBeNull()
   })
 })

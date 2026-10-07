@@ -1,0 +1,129 @@
+.campaign-form-modal {
+  max-width: min(720px, 100%);
+}
+
+.campaign-form-modal .modal-header {
+  padding: 22px 24px;
+}
+
+.campaign-form-modal .modal-header h2 {
+  font-size: 1.35rem;
+}
+
+.campaign-form-modal .modal-body {
+  padding: 24px;
+  font-size: 1.05rem;
+}
+
+.campaign-form-modal .modal-footer {
+  padding: 18px 24px;
+  gap: 12px;
+}
+
+.campaign-form-modal .modal-footer .btn {
+  min-height: 42px;
+  padding: 0.55rem 1.15rem;
+  font-size: 1rem;
+}
+
+.campaign-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.campaign-form .form-group label {
+  font-size: 1rem;
+  margin-bottom: 0.4rem;
+}
+
+.campaign-form input[type='text'],
+.campaign-form input[type='number'],
+.campaign-form input[type='date'],
+.campaign-form input:not([type]) {
+  min-height: 42px;
+  font-size: 1rem;
+  padding: 0.55rem 0.75rem;
+}
+
+.campaign-form .option-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 10px;
+}
+
+.campaign-form .option-row label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: normal;
+  font-size: 1rem;
+  margin-bottom: 0;
+}
+
+.campaign-form .option-row input[type='radio'],
+.campaign-form .option-row input[type='checkbox'],
+.campaign-form .group-list input[type='checkbox'] {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.campaign-form .group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.campaign-form .group-list label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: normal;
+  font-size: 1rem;
+  margin-bottom: 0;
+}
+
+.campaign-form .time-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  align-items: center;
+}
+
+.campaign-form .time-row input {
+  flex: 1;
+}
+
+.campaign-form .time-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+}
+
+.campaign-form .time-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 1.05rem;
+}
+
+.campaign-form .date-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.campaign-form .hint {
+  margin: 6px 0 0;
+  font-size: 0.95rem;
+  color: var(--color-muted, #6b7280);
+}
+
+@media (max-width: 600px) {
+  .campaign-form .date-grid {
+    grid-template-columns: 1fr;
+  }
+}

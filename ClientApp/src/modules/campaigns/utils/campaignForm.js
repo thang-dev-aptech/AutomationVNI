@@ -6,6 +6,11 @@ import {
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/
 
+/** Chạy lặp đến khi người dùng tạm dừng/kết thúc — không có ngày kết thúc. */
+export const RUN_MODE_UNTIL_STOPPED = 'untilStopped'
+/** Có ngày kết thúc (cấu hình hiện tại). */
+export const RUN_MODE_WITH_END = 'withEndDate'
+
 export function emptyCampaignForm() {
   const today = new Date()
   const ymd = [
@@ -27,15 +32,18 @@ export function emptyCampaignForm() {
     jitterMinutes: 0,
     startDate: ymd,
     endDate: '',
+    runMode: RUN_MODE_UNTIL_STOPPED,
   }
 }
 
 export function formFromCampaign(campaign) {
   if (!campaign) return emptyCampaignForm()
+  const endDate = campaign.endDate ? toDateInput(campaign.endDate) : ''
   return {
     name: campaign.name ?? '',
     mediaType: campaign.mediaType ?? CAMPAIGN_MEDIA_TYPE.Image,
-    imageStrategy: campaign.imageStrategy ?? CAMPAIGN_IMAGE_STRATEGY.KeepOld,
+    // UI không còn chọn — luôn dùng lại bài/ảnh gốc.
+    imageStrategy: CAMPAIGN_IMAGE_STRATEGY.KeepOld,
     channelIds: [...(campaign.channelIds ?? [])],
     channelGroupIds: [...(campaign.channelGroupIds ?? [])],
     scheduleMode: campaign.scheduleMode ?? CAMPAIGN_SCHEDULE_MODE.AllWeek,
@@ -44,7 +52,8 @@ export function formFromCampaign(campaign) {
     timeDraft: '',
     jitterMinutes: campaign.jitterMinutes ?? 0,
     startDate: toDateInput(campaign.startDate),
-    endDate: campaign.endDate ? toDateInput(campaign.endDate) : '',
+    endDate,
+    runMode: endDate ? RUN_MODE_WITH_END : RUN_MODE_UNTIL_STOPPED,
   }
 }
 
@@ -77,11 +86,6 @@ export function validateCampaignForm(form) {
     errors.targets = 'Chọn ít nhất một kênh hoặc nhóm kênh'
   }
 
-  if (Number(form.mediaType) === CAMPAIGN_MEDIA_TYPE.Image
-      && !form.imageStrategy) {
-    errors.imageStrategy = 'Chọn chiến lược hình ảnh'
-  }
-
   if (Number(form.scheduleMode) === CAMPAIGN_SCHEDULE_MODE.ByWeekday) {
     if (!form.weekdays?.length) {
       errors.weekdays = 'Chọn ít nhất một thứ trong tuần'
@@ -109,8 +113,13 @@ export function validateCampaignForm(form) {
     errors.startDate = 'Ngày bắt đầu là bắt buộc'
   }
 
-  if (form.endDate && form.startDate && form.endDate < form.startDate) {
-    errors.endDate = 'Ngày kết thúc phải ≥ ngày bắt đầu'
+  const withEnd = form.runMode === RUN_MODE_WITH_END
+  if (withEnd) {
+    if (!form.endDate) {
+      errors.endDate = 'Chọn ngày kết thúc hoặc chuyển sang chạy đến khi dừng'
+    } else if (form.startDate && form.endDate < form.startDate) {
+      errors.endDate = 'Ngày kết thúc phải ≥ ngày bắt đầu'
+    }
   }
 
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true }
@@ -119,11 +128,13 @@ export function validateCampaignForm(form) {
 export function buildCampaignPayload(form) {
   const mediaType = Number(form.mediaType)
   const scheduleMode = Number(form.scheduleMode)
-  const payload = {
+  const withEnd = form.runMode === RUN_MODE_WITH_END
+  return {
     name: String(form.name || '').trim(),
     mediaType,
+    // Mặc định dùng lại bài/ảnh gốc — không còn chọn trên UI.
     imageStrategy: mediaType === CAMPAIGN_MEDIA_TYPE.Image
-      ? Number(form.imageStrategy)
+      ? CAMPAIGN_IMAGE_STRATEGY.KeepOld
       : null,
     channelIds: [...(form.channelIds ?? [])],
     channelGroupIds: [...(form.channelGroupIds ?? [])],
@@ -136,9 +147,8 @@ export function buildCampaignPayload(form) {
       .filter(Boolean),
     jitterMinutes: Number(form.jitterMinutes) || 0,
     startDate: `${form.startDate}T00:00:00.000Z`,
-    endDate: form.endDate ? `${form.endDate}T00:00:00.000Z` : null,
+    endDate: withEnd && form.endDate ? `${form.endDate}T00:00:00.000Z` : null,
   }
-  return payload
 }
 
 export function tryAddPublishTime(times, draft) {

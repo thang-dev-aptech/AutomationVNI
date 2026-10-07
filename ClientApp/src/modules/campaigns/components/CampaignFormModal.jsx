@@ -4,7 +4,6 @@ import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import { useChannelGroupAll } from '@/modules/social-channels/hooks/useChannelGroups'
 import {
-  CAMPAIGN_IMAGE_STRATEGY,
   CAMPAIGN_MEDIA_TYPE,
   CAMPAIGN_SCHEDULE_MODE,
   WEEKDAY_OPTIONS,
@@ -13,9 +12,12 @@ import {
   buildCampaignPayload,
   emptyCampaignForm,
   formFromCampaign,
+  RUN_MODE_UNTIL_STOPPED,
+  RUN_MODE_WITH_END,
   tryAddPublishTime,
   validateCampaignForm,
 } from '../utils/campaignForm'
+import './CampaignFormModal.css'
 
 export default function CampaignFormModal({
   open,
@@ -42,6 +44,20 @@ export default function CampaignFormModal({
       if (!prev[key]) return prev
       const next = { ...prev }
       delete next[key]
+      return next
+    })
+  }
+
+  const setRunMode = (mode) => {
+    setForm((prev) => ({
+      ...prev,
+      runMode: mode,
+      endDate: mode === RUN_MODE_UNTIL_STOPPED ? '' : prev.endDate,
+    }))
+    setFieldErrors((prev) => {
+      if (!prev.endDate) return prev
+      const next = { ...prev }
+      delete next.endDate
       return next
     })
   }
@@ -109,7 +125,7 @@ export default function CampaignFormModal({
   }
 
   const footer = (
-    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+    <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
       <button type="button" className="btn btn-ghost" onClick={onClose} disabled={isSubmitting}>
         Hủy
       </button>
@@ -131,8 +147,9 @@ export default function CampaignFormModal({
       title={initialData ? 'Sửa chiến dịch' : 'Tạo chiến dịch'}
       onClose={onClose}
       footer={footer}
+      className="campaign-form-modal"
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }} data-testid="campaign-form">
+      <div className="campaign-form" data-testid="campaign-form">
         {errorMessage ? (
           <div className="text-danger" role="alert">{errorMessage}</div>
         ) : null}
@@ -154,8 +171,8 @@ export default function CampaignFormModal({
 
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Loại bài nguồn</label>
-          <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 'normal' }}>
+          <div className="option-row">
+            <label>
               <input
                 type="radio"
                 name="media-type"
@@ -165,7 +182,7 @@ export default function CampaignFormModal({
               />
               Ảnh
             </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 'normal' }}>
+            <label>
               <input
                 type="radio"
                 name="media-type"
@@ -176,38 +193,8 @@ export default function CampaignFormModal({
               Video
             </label>
           </div>
+          <p className="hint">Bài mới dùng lại nội dung và media của bài nguồn đã chọn.</p>
         </div>
-
-        {form.mediaType === CAMPAIGN_MEDIA_TYPE.Image ? (
-          <div className="form-group" style={{ marginBottom: 0 }} data-testid="image-strategy-block">
-            <label>Chiến lược hình ảnh</label>
-            <div style={{ display: 'flex', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 'normal' }}>
-                <input
-                  type="radio"
-                  name="image-strategy"
-                  checked={form.imageStrategy === CAMPAIGN_IMAGE_STRATEGY.KeepOld}
-                  onChange={() => setField('imageStrategy', CAMPAIGN_IMAGE_STRATEGY.KeepOld)}
-                  disabled={isSubmitting}
-                />
-                Dùng lại ảnh gốc
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 'normal' }}>
-                <input
-                  type="radio"
-                  name="image-strategy"
-                  checked={form.imageStrategy === CAMPAIGN_IMAGE_STRATEGY.VectorSearch}
-                  onChange={() => setField('imageStrategy', CAMPAIGN_IMAGE_STRATEGY.VectorSearch)}
-                  disabled={isSubmitting}
-                />
-                Hệ thống tự chọn (Vector Search)
-              </label>
-            </div>
-            {fieldErrors.imageStrategy ? (
-              <p className="text-danger">{fieldErrors.imageStrategy}</p>
-            ) : null}
-          </div>
-        ) : null}
 
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Kênh</label>
@@ -222,15 +209,12 @@ export default function CampaignFormModal({
 
         <div className="form-group" style={{ marginBottom: 0 }} data-testid="channel-groups">
           <label>Nhóm kênh</label>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+          <div className="group-list">
             {groups.length === 0 ? (
               <span className="text-muted">Chưa có nhóm kênh</span>
             ) : (
               groups.map((g) => (
-                <label
-                  key={g.id}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 'normal' }}
-                >
+                <label key={g.id}>
                   <input
                     type="checkbox"
                     checked={form.channelGroupIds.includes(g.id)}
@@ -249,8 +233,8 @@ export default function CampaignFormModal({
 
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Lịch</label>
-          <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 'normal' }}>
+          <div className="option-row">
+            <label>
               <input
                 type="radio"
                 name="schedule-mode"
@@ -260,7 +244,7 @@ export default function CampaignFormModal({
               />
               Cả tuần
             </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 'normal' }}>
+            <label>
               <input
                 type="radio"
                 name="schedule-mode"
@@ -276,12 +260,9 @@ export default function CampaignFormModal({
         {form.scheduleMode === CAMPAIGN_SCHEDULE_MODE.ByWeekday ? (
           <div className="form-group" style={{ marginBottom: 0 }} data-testid="weekday-picker">
             <label>Chọn thứ</label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 8 }}>
+            <div className="option-row">
               {WEEKDAY_OPTIONS.map((d) => (
-                <label
-                  key={d.value}
-                  style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 'normal' }}
-                >
+                <label key={d.value}>
                   <input
                     type="checkbox"
                     checked={form.weekdays.includes(d.value)}
@@ -300,7 +281,7 @@ export default function CampaignFormModal({
 
         <div className="form-group" style={{ marginBottom: 0 }} data-testid="publish-times">
           <label>Giờ đăng (HH:mm)</label>
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <div className="time-row">
             <input
               value={form.timeDraft}
               onChange={(e) => setField('timeDraft', e.target.value)}
@@ -318,12 +299,9 @@ export default function CampaignFormModal({
               Thêm
             </button>
           </div>
-          <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}>
+          <ul className="time-list">
             {form.publishTimes.map((t) => (
-              <li
-                key={t}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}
-              >
+              <li key={t}>
                 <span>{t}</span>
                 <button
                   type="button"
@@ -358,7 +336,38 @@ export default function CampaignFormModal({
           ) : null}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div className="form-group" style={{ marginBottom: 0 }} data-testid="run-mode">
+          <label>Thời gian chạy</label>
+          <div className="option-row">
+            <label>
+              <input
+                type="radio"
+                name="run-mode"
+                checked={form.runMode === RUN_MODE_UNTIL_STOPPED}
+                onChange={() => setRunMode(RUN_MODE_UNTIL_STOPPED)}
+                disabled={isSubmitting}
+                data-testid="run-until-stopped"
+              />
+              Chạy đến khi dừng
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="run-mode"
+                checked={form.runMode === RUN_MODE_WITH_END}
+                onChange={() => setRunMode(RUN_MODE_WITH_END)}
+                disabled={isSubmitting}
+                data-testid="run-with-end"
+              />
+              Có ngày kết thúc
+            </label>
+          </div>
+          {form.runMode === RUN_MODE_UNTIL_STOPPED ? (
+            <p className="hint">Lặp hàng tuần tới khi bạn tạm dừng hoặc kết thúc chiến dịch.</p>
+          ) : null}
+        </div>
+
+        <div className="date-grid">
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label htmlFor="campaign-start">Ngày bắt đầu</label>
             <input
@@ -372,19 +381,22 @@ export default function CampaignFormModal({
               <p className="text-danger">{fieldErrors.startDate}</p>
             ) : null}
           </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label htmlFor="campaign-end">Ngày kết thúc (tuỳ chọn)</label>
-            <input
-              id="campaign-end"
-              type="date"
-              value={form.endDate}
-              onChange={(e) => setField('endDate', e.target.value)}
-              disabled={isSubmitting}
-            />
-            {fieldErrors.endDate ? (
-              <p className="text-danger" data-testid="error-endDate">{fieldErrors.endDate}</p>
-            ) : null}
-          </div>
+          {form.runMode === RUN_MODE_WITH_END ? (
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="campaign-end">Ngày kết thúc</label>
+              <input
+                id="campaign-end"
+                type="date"
+                value={form.endDate}
+                onChange={(e) => setField('endDate', e.target.value)}
+                disabled={isSubmitting}
+                data-testid="campaign-end"
+              />
+              {fieldErrors.endDate ? (
+                <p className="text-danger" data-testid="error-endDate">{fieldErrors.endDate}</p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </Modal>
