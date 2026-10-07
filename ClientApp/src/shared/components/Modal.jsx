@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import './Modal.css'
 
-export default function Modal({ open, title, onClose, children, footer }) {
+export default function Modal({ open, title, onClose, children, footer, className = '' }) {
   useEffect(() => {
     if (!open) return undefined
     const onKeyDown = (event) => {
@@ -13,9 +13,11 @@ export default function Modal({ open, title, onClose, children, footer }) {
 
   if (!open) return null
 
+  const modalClass = ['modal', 'card', className].filter(Boolean).join(' ')
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal card" onClick={(event) => event.stopPropagation()}>
+      <div className={modalClass} onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <h2>{title}</h2>
           <button type="button" className="btn btn-ghost" onClick={onClose}>×</button>

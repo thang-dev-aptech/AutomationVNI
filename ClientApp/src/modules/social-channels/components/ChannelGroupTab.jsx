@@ -203,6 +203,7 @@ export default function ChannelGroupTab() {
       <Modal
         open={modalOpen}
         title={editing ? 'Sửa nhóm kênh' : 'Tạo nhóm kênh'}
+        className="channel-group-modal"
         onClose={closeModal}
         footer={
           <>

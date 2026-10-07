@@ -61,10 +61,37 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: min(52vh, 420px);
 }
 
 .channel-group-form .form-error {
   margin: 0;
   color: var(--color-danger, #b91c1c);
   font-size: 0.9rem;
+}
+
+/* Modal tạo/sửa nhóm: cao hơn + rộng hơn để chọn nhiều kênh thoải mái */
+.modal.channel-group-modal {
+  max-width: min(720px, 100%);
+  min-height: min(72vh, 640px);
+}
+
+.channel-group-modal .channel-group-form .form-group:has(.channel-multi-select) {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.channel-group-modal .channel-multi-select {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.channel-group-modal .channel-multi-select__dropdown {
+  max-height: min(480px, 55vh);
+}
+
+.channel-group-modal .channel-multi-select__list {
+  max-height: min(360px, 42vh);
 }
