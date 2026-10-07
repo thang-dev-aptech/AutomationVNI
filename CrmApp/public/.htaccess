@@ -1,0 +1,15 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # 1. Reverse-proxy API calls to DirectAdmin proxy.php
+  RewriteRule ^api/(.*)$ proxy.php [QSA,L]
+
+  # 2. Phục vụ trực tiếp file hoặc thư mục tồn tại trên đĩa
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # 3. SPA fallback: mọi URL khác rơi về index.html
+  RewriteRule ^ index.html [L]
+</IfModule>

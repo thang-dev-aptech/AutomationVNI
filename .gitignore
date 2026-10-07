@@ -113,6 +113,8 @@ publish_frontend/
 /publish_backend.zip
 /publish_backend*.zip
 /publish_frontend.zip
+/publish_crm.zip
+/publish_crm/
 backend/publish/
 
 # ffmpeg.rar/.zip tải nhầm vào Resources — không phải binary ffmpeg chuẩn (xem rule

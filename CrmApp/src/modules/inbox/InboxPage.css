@@ -1,0 +1,216 @@
+.crm-inbox-grid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 20px;
+  min-height: calc(100vh - var(--crm-header-height) - 48px);
+}
+
+.crm-inbox-sidebar {
+  background: var(--crm-surface);
+  border-radius: var(--crm-radius-lg);
+  border: 1px solid var(--crm-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.crm-inbox-search {
+  padding: 16px;
+  border-bottom: 1px solid var(--crm-border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.crm-channel-filters {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.crm-filter-chip {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: var(--crm-radius-full);
+  border: 1px solid var(--crm-border);
+  background: var(--crm-surface-subtle);
+  color: var(--crm-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.crm-filter-chip.active {
+  background: var(--crm-primary-light);
+  color: var(--crm-primary);
+  border-color: rgba(79, 70, 229, 0.3);
+}
+
+.crm-conv-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.crm-conv-item {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--crm-border);
+  display: flex;
+  gap: 12px;
+  cursor: pointer;
+  transition: background-color var(--crm-transition-fast);
+}
+
+.crm-conv-item:hover {
+  background-color: var(--crm-surface-subtle);
+}
+
+.crm-conv-item.active {
+  background-color: var(--crm-primary-light);
+  border-left: 3px solid var(--crm-primary);
+}
+
+.crm-conv-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--crm-surface-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: var(--crm-primary);
+  flex-shrink: 0;
+}
+
+.crm-conv-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.crm-conv-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.crm-conv-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--crm-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.crm-conv-time {
+  font-size: 11px;
+  color: var(--crm-text-subtle);
+}
+
+.crm-conv-preview {
+  font-size: 13px;
+  color: var(--crm-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Chat Thread */
+.crm-chat-pane {
+  background: var(--crm-surface);
+  border-radius: var(--crm-radius-lg);
+  border: 1px solid var(--crm-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.crm-chat-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--crm-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--crm-surface);
+}
+
+.crm-chat-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.crm-chat-messages {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background-color: #fafbfd;
+}
+
+.crm-msg-bubble {
+  max-width: 70%;
+  padding: 12px 16px;
+  border-radius: var(--crm-radius-md);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.crm-msg-incoming {
+  align-self: flex-start;
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  color: var(--crm-text);
+}
+
+.crm-msg-outgoing {
+  align-self: flex-end;
+  background: var(--crm-primary);
+  color: #ffffff;
+}
+
+.crm-chat-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--crm-border);
+  background: var(--crm-surface);
+}
+
+.crm-chat-input-box {
+  display: flex;
+  gap: 10px;
+}
+
+.crm-chat-input {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: var(--crm-radius-md);
+  border: 1px solid var(--crm-border);
+  outline: none;
+  font-size: 14px;
+}
+
+.crm-chat-input:focus {
+  border-color: var(--crm-primary);
+}
+
+.crm-readonly-notice {
+  padding: 12px;
+  background: var(--crm-surface-subtle);
+  border: 1px dashed var(--crm-border);
+  border-radius: var(--crm-radius-md);
+  color: var(--crm-text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .crm-inbox-grid {
+    grid-template-columns: 1fr;
+  }
+}

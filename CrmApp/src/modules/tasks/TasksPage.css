@@ -1,0 +1,55 @@
+.crm-tasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.crm-task-card {
+  background: var(--crm-surface);
+  border-radius: var(--crm-radius-md);
+  border: 1px solid var(--crm-border);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  transition: all var(--crm-transition-fast);
+}
+
+.crm-task-card:hover {
+  box-shadow: var(--crm-shadow-sm);
+  border-color: var(--crm-border-strong);
+}
+
+.crm-task-card.completed {
+  opacity: 0.65;
+  background-color: var(--crm-surface-subtle);
+}
+
+.crm-task-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.crm-task-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--crm-text);
+  margin: 0 0 4px;
+}
+
+.crm-task-meta {
+  font-size: 13px;
+  color: var(--crm-text-muted);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+@media (max-width: 480px) {
+  .crm-task-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
