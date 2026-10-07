@@ -69,6 +69,15 @@ public class CampaignGenerationService(
         var skipped = 0;
         const string actor = "campaign-worker";
 
+        // Một lần mỗi chiến dịch / lượt — không lặp theo từng page (AC 628274a5).
+        if (campaign.CreatedByUserId is null)
+        {
+            logger.LogWarning(
+                "Campaign {CampaignId} thiếu CreatedByUserId — bài sinh sẽ dùng Guid.Empty",
+                campaign.Id);
+        }
+        var authorUserId = campaign.CreatedByUserId ?? Guid.Empty;
+
         foreach (var channelId in channelIds)
         {
             var existingSlots = await context.Set<PostModel>()
@@ -93,14 +102,6 @@ public class CampaignGenerationService(
                 continue;
             }
 
-            if (campaign.CreatedByUserId is null)
-            {
-                logger.LogWarning(
-                    "Campaign {CampaignId} thiếu CreatedByUserId — bài sinh sẽ dùng Guid.Empty",
-                    campaign.Id);
-            }
-
-            var authorUserId = campaign.CreatedByUserId ?? Guid.Empty;
             var sourceIndex = 0;
             foreach (var slotUtc in slots)
             {
