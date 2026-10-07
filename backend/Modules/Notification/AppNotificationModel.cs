@@ -11,6 +11,8 @@ public enum NotificationKind
     ArticleRejected = 4,
     PostPublished = 5,
     PostFailed = 6,
+    /// <summary>Nhắc chăm sóc CRM tới hạn.</summary>
+    CrmReminderDue = 7,
 }
 
 /// <summary>Ai gây ra việc đó — thứ quan trọng nhất để tránh làm trùng nhau.</summary>

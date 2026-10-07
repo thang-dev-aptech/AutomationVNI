@@ -647,6 +647,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasIndex(x => x.AssigneeUserId);
             e.HasIndex(x => x.DueAtUtc);
             e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => x.NotifiedAtUtc);
             e.Property(x => x.Title).HasMaxLength(300);
         });
 

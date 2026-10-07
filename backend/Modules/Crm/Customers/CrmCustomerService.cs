@@ -697,7 +697,7 @@ public class CrmCustomerService(AppDbContext db, IUserContext userContext)
         await db.SaveChangesAsync(ct);
     }
 
-    private async Task AddLogAsync(Guid? customerId, string action, string? payload, CancellationToken ct)
+    public async Task AddLogAsync(Guid? customerId, string action, string? payload, CancellationToken ct = default)
     {
         db.CrmCustomerActionLogs.Add(new CrmCustomerActionLogModel
         {

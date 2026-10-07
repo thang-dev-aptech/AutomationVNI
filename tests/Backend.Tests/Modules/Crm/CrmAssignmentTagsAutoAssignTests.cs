@@ -77,6 +77,7 @@ public sealed class CrmAssignmentTagsAutoAssignTests : IAsyncLifetime
                     services.AddScoped<CrmAutoAssignService>();
                     services.AddScoped<CrmTagService>();
                     services.AddScoped<Backend.Modules.Crm.Customers.CrmCustomerService>();
+                    services.AddScoped<Backend.Modules.Crm.Customers.CrmCustomerCareService>();
                     services.AddSingleton(Options.Create(new SocialPublishOptions()));
                     services.AddHttpClient<FacebookPageMessagingProvider>();
                     services.AddScoped<PageMessageService>();

@@ -86,6 +86,7 @@ public sealed class CrmAssignmentUsersPipelineTests : IAsyncLifetime
                     services.AddScoped<UsersService>();
                     services.AddScoped<CrmAutoAssignService>();
                     services.AddScoped<Backend.Modules.Crm.Customers.CrmCustomerService>();
+                    services.AddScoped<Backend.Modules.Crm.Customers.CrmCustomerCareService>();
                     services.AddSingleton(Options.Create(new SocialPublishOptions()));
                     services.AddHttpClient<FacebookPageMessagingProvider>();
                     services.AddScoped<PageMessageService>();

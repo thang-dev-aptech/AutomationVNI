@@ -75,6 +75,7 @@ public sealed class CrmIdentityMergePipelineTests : IAsyncLifetime
                         .AddDefaultTokenProviders();
                     services.AddScoped<UsersService>();
                     services.AddScoped<CrmCustomerService>();
+                    services.AddScoped<CrmCustomerCareService>();
                     services.AddScoped<CrmTagService>();
                     services.AddAuthentication(TestAuthHandler.SchemeName)
                         .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(

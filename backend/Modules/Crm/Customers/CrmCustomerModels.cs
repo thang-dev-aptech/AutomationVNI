@@ -34,7 +34,7 @@ public class CrmCustomerNoteModel : BaseEntity
     public string Body { get; set; } = string.Empty;
 }
 
-/// <summary>Nhắc việc — CRUD đầy đủ ở t6; t5 cần model để gộp/tách chuyển được.</summary>
+/// <summary>Nhắc việc chăm sóc khách.</summary>
 public class CrmCustomerReminderModel : BaseEntity
 {
     public Guid CrmCustomerId { get; set; }
@@ -42,6 +42,9 @@ public class CrmCustomerReminderModel : BaseEntity
     public DateTime DueAtUtc { get; set; }
     public Guid? AssigneeUserId { get; set; }
     public bool IsCompleted { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    /// <summary>Đã sinh thông báo in-app một lần (worker).</summary>
+    public DateTime? NotifiedAtUtc { get; set; }
 }
 
 /// <summary>Tag gắn trực tiếp lên khách (khác tag hội thoại/bình luận).</summary>
