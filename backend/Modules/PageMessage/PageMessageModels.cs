@@ -34,6 +34,8 @@ public class PageConversationModel : BaseEntity
     public int UnreadCount { get; set; }
     public int MessageCount { get; set; }
     public MessageInboxStatus InboxStatus { get; set; } = MessageInboxStatus.New;
+    /// <summary>Id người phụ trách (AspNetUsers). Giữ AssignedTo (tên) để tương thích automation.</summary>
+    public Guid? AssignedUserId { get; set; }
     public string? AssignedTo { get; set; }
     public string? InternalNote { get; set; }
     public DateTime? LastSyncedAt { get; set; }

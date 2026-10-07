@@ -6,6 +6,7 @@ using Backend.Modules.Post;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
 using Backend.Modules.SocialComment.Enums;
+using Backend.Modules.Users;
 using Backend.Shared;
 using Backend.Shared.Meta;
 using Backend.Shared.Repositories;
@@ -21,6 +22,7 @@ public class SocialCommentService(
     AppDbContext db,
     IEnumerable<ISocialCommentProvider> providers,
     IUserContext userContext,
+    UsersService usersService,
     IOptions<MetaOAuthOptions> metaOptions,
     IOptions<ThreadsOAuthOptions> threadsOptions,
     IOptions<SocialPublishOptions> publishOptions,
@@ -507,10 +509,14 @@ public class SocialCommentService(
         return (await GetThreadAsync(comment.Id, ct))!;
     }
 
-    public async Task<SocialCommentResponse> AssignAsync(Guid id, string? assignedTo, CancellationToken ct)
+    public async Task<SocialCommentResponse> AssignAsync(
+        Guid id,
+        Guid? assignedUserId,
+        string? assignedTo,
+        CancellationToken ct)
     {
         var comment = await GetCommentOrThrow(id, ct);
-        comment.AssignedTo = string.IsNullOrWhiteSpace(assignedTo) ? null : assignedTo.Trim();
+        await ApplyAssigneeAsync(comment, assignedUserId, assignedTo, ct);
         if (comment.InboxStatus == CommentInboxStatus.New)
             comment.InboxStatus = CommentInboxStatus.InProgress;
         comment.UpdatedAt = DateTime.UtcNow;
@@ -518,6 +524,25 @@ public class SocialCommentService(
         await LogActionAsync(comment.Id, CommentActionType.Assign,
             ProviderActionResult.Ok(), comment.AssignedTo, ct);
         return (await GetThreadAsync(comment.Id, ct))!;
+    }
+
+    private async Task ApplyAssigneeAsync(
+        SocialCommentModel comment,
+        Guid? assignedUserId,
+        string? assignedTo,
+        CancellationToken ct)
+    {
+        if (assignedUserId.HasValue)
+        {
+            var user = await usersService.FindActiveByIdAsync(assignedUserId.Value, ct)
+                ?? throw new InvalidOperationException("Người dùng không tồn tại hoặc đã bị khoá");
+            comment.AssignedUserId = user.Id;
+            comment.AssignedTo = UsersService.ResolveDisplayName(user);
+            return;
+        }
+
+        comment.AssignedUserId = null;
+        comment.AssignedTo = string.IsNullOrWhiteSpace(assignedTo) ? null : assignedTo.Trim();
     }
 
     public async Task<SocialCommentResponse> AddNoteAsync(Guid id, string note, CancellationToken ct)
@@ -857,6 +882,7 @@ public class SocialCommentService(
             LikeCount = c.LikeCount,
             ReplyCount = c.ReplyCount,
             InboxStatus = c.InboxStatus,
+            AssignedUserId = c.AssignedUserId,
             AssignedTo = c.AssignedTo,
             InternalNote = c.InternalNote,
             RepliedAt = c.RepliedAt,

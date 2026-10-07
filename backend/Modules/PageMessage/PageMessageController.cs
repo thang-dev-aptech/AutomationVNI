@@ -74,7 +74,17 @@ public class PageMessageController(PageMessageService service) : ControllerBase
         Guid id,
         [FromBody] AssignMessageRequest request,
         CancellationToken ct)
-        => Ok(ApiResponse.Ok(await service.AssignAsync(id, request.AssignedTo, ct)));
+    {
+        try
+        {
+            return Ok(ApiResponse.Ok(
+                await service.AssignAsync(id, request.AssignedUserId, request.AssignedTo, ct)));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse.Fail("ASSIGN_FAILED", ex.Message));
+        }
+    }
 
     [HttpPost("{id:guid}/note")]
     [Authorize(Roles = "Admin,ContentManager,Reviewer")]

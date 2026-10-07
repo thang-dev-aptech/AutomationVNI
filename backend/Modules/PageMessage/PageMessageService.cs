@@ -2,6 +2,7 @@ using System.Text.Json;
 using Backend.Data;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
+using Backend.Modules.Users;
 using Backend.Shared;
 using Backend.Shared.PageMessage;
 using Backend.Shared.Repositories;
@@ -15,6 +16,7 @@ public class PageMessageService(
     AppDbContext db,
     FacebookPageMessagingProvider provider,
     IUserContext userContext,
+    UsersService usersService,
     IOptions<SocialPublishOptions> publishOptions,
     ILogger<PageMessageService> logger)
 {
@@ -250,17 +252,37 @@ public class PageMessageService(
 
     public async Task<PageConversationResponse> AssignAsync(
         Guid id,
+        Guid? assignedUserId,
         string? assignedTo,
         CancellationToken ct)
     {
         var conversation = await GetConversationOrThrow(id, ct);
-        conversation.AssignedTo = string.IsNullOrWhiteSpace(assignedTo) ? null : assignedTo.Trim();
+        await ApplyAssigneeAsync(conversation, assignedUserId, assignedTo, ct);
         if (conversation.InboxStatus == MessageInboxStatus.New)
             conversation.InboxStatus = MessageInboxStatus.InProgress;
         conversation.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         await AddActionLogAsync(id, MessageActionType.Assign, conversation.AssignedTo, true, null, null, ct);
         return (await GetAsync(id, ct))!;
+    }
+
+    private async Task ApplyAssigneeAsync(
+        PageConversationModel conversation,
+        Guid? assignedUserId,
+        string? assignedTo,
+        CancellationToken ct)
+    {
+        if (assignedUserId.HasValue)
+        {
+            var user = await usersService.FindActiveByIdAsync(assignedUserId.Value, ct)
+                ?? throw new InvalidOperationException("Người dùng không tồn tại hoặc đã bị khoá");
+            conversation.AssignedUserId = user.Id;
+            conversation.AssignedTo = UsersService.ResolveDisplayName(user);
+            return;
+        }
+
+        conversation.AssignedUserId = null;
+        conversation.AssignedTo = string.IsNullOrWhiteSpace(assignedTo) ? null : assignedTo.Trim();
     }
 
     public async Task<PageConversationResponse> NoteAsync(Guid id, string? note, CancellationToken ct)
@@ -587,6 +609,7 @@ public class PageMessageService(
             UnreadCount = entity.UnreadCount,
             MessageCount = entity.MessageCount,
             InboxStatus = entity.InboxStatus,
+            AssignedUserId = entity.AssignedUserId,
             AssignedTo = entity.AssignedTo,
             InternalNote = entity.InternalNote,
             CreatedAt = entity.CreatedAt,

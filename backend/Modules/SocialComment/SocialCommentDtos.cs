@@ -53,6 +53,7 @@ public class SocialCommentResponse
     public int LikeCount { get; set; }
     public int ReplyCount { get; set; }
     public CommentInboxStatus InboxStatus { get; set; }
+    public Guid? AssignedUserId { get; set; }
     public string? AssignedTo { get; set; }
     public string? InternalNote { get; set; }
     public DateTime? RepliedAt { get; set; }
@@ -74,6 +75,9 @@ public class SetCommentStatusRequest
 
 public class AssignCommentRequest
 {
+    /// <summary>Ưu tiên: gán theo id người dùng (CRM). Null + AssignedTo trống = bỏ gán.</summary>
+    public Guid? AssignedUserId { get; set; }
+    /// <summary>Legacy automation: chỉ tên. Khi có AssignedUserId thì server tự điền tên.</summary>
     public string? AssignedTo { get; set; }
 }
 

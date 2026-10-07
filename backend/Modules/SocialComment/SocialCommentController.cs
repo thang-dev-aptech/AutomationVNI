@@ -148,8 +148,15 @@ public class SocialCommentController(SocialCommentService service) : ControllerB
     [Authorize(Roles = "Admin,ContentManager,Reviewer")]
     public async Task<IActionResult> Assign(Guid id, [FromBody] AssignCommentRequest request, CancellationToken ct)
     {
-        var data = await service.AssignAsync(id, request.AssignedTo, ct);
-        return Ok(ApiResponse.Ok(data));
+        try
+        {
+            var data = await service.AssignAsync(id, request.AssignedUserId, request.AssignedTo, ct);
+            return Ok(ApiResponse.Ok(data));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse.Fail("ASSIGN_FAILED", ex.Message));
+        }
     }
 
     [HttpPost("{id:guid}/note")]

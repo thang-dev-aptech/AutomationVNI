@@ -25,6 +25,8 @@ public class SocialCommentModel : BaseEntity
     public int LikeCount { get; set; }
     public int ReplyCount { get; set; }
     public CommentInboxStatus InboxStatus { get; set; } = CommentInboxStatus.New;
+    /// <summary>Id người phụ trách (AspNetUsers). Giữ AssignedTo (tên) để tương thích automation.</summary>
+    public Guid? AssignedUserId { get; set; }
     public string? AssignedTo { get; set; }
     public string? InternalNote { get; set; }
     public DateTime? RepliedAt { get; set; }

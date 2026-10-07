@@ -157,6 +157,7 @@ builder.Services.AddScoped<IPublishPipelineService, PublishPipelineService>();
 builder.Services.AddScoped<PublishLogRepository>();
 builder.Services.AddScoped<SocialCommentService>();
 builder.Services.AddScoped<PageMessageService>();
+builder.Services.AddScoped<Backend.Modules.Users.UsersService>();
 builder.Services.AddHttpClient<FacebookPageMessagingProvider>();
 builder.Services.AddScoped<ISocialCommentProvider, FacebookCommentProvider>();
 builder.Services.AddScoped<ISocialCommentProvider, ThreadsCommentProvider>();
