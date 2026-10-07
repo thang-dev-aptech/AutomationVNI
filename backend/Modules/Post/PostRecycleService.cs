@@ -1,11 +1,8 @@
 using Backend.Data;
+using Backend.Modules.MediaEmbedding;
 using Backend.Modules.Post.Enums;
-using Backend.Modules.MediaAsset;
-using Backend.Modules.MediaAsset.Enums;
 using Backend.Shared.Repositories;
 using Microsoft.EntityFrameworkCore;
-
-using Backend.Modules.MediaEmbedding;
 
 namespace Backend.Modules.Post;
 
@@ -13,8 +10,12 @@ public class PostRecycleService(
     AppDbContext context,
     IUserContext userContext,
     MediaEmbeddingRepository embeddingRepo,
+    RecycleSourcePicker sourcePicker,
     ILogger<PostRecycleService> logger)
 {
+    // embeddingRepo giữ constructor tương thích DI / VectorSearch tương lai.
+    private readonly MediaEmbeddingRepository _ = embeddingRepo;
+
     public async Task<RecycleBatchResult> CreateRecycleBatchAsync(
         RecyclePostRequest request,
         CancellationToken ct = default)
@@ -35,17 +36,9 @@ public class PostRecycleService(
 
         foreach (var channelId in request.ChannelIds)
         {
-            var sourcePosts = await context.Set<PostModel>()
-                .Where(p => !p.IsDeleted
-                    && p.Status == PostStatus.Published
-                    && p.SocialChannelId == channelId
-                    // Bài gốc từ tin tức (CỬA 2 — NewsFanpageService) không được nhân bản lại:
-                    // tin đã cũ mà đăng lại y nguyên nội dung, đội lốt bài mới, là sai bản chất
-                    // tin tức — khác nội dung quảng cáo/giới thiệu vốn hợp lý khi đăng lại.
-                    && p.GenerationFlow != GenerationFlow.TextOnly)
-                .OrderBy(_ => EF.Functions.Random()) // EF Core native random
-                .Take(request.Count)
-                .ToListAsync(ct);
+            // Không lọc media — hành vi recycle cũ (mọi Published trừ TextOnly).
+            var sourcePosts = await sourcePicker.PickRandomPublishedAsync(
+                channelId, request.Count, mediaFilter: null, ct);
 
             if (sourcePosts.Count == 0)
                 continue;
@@ -53,11 +46,10 @@ public class PostRecycleService(
             for (int i = 0; i < sourcePosts.Count; i++)
             {
                 var source = sourcePosts[i];
-                
+
                 DateTime? scheduledAt = null;
                 if (request.ScheduleEnabled && request.StartTimes != null && i < request.StartTimes.Count)
                 {
-                    // Lệch giờ ngẫu nhiên trong khoảng [-JitterMinutes, +JitterMinutes]
                     int jitter = request.JitterMinutes;
                     int offsetMinutes = jitter > 0 ? Random.Shared.Next(-jitter, jitter + 1) : 0;
                     scheduledAt = request.StartTimes[i].AddMinutes(offsetMinutes);
@@ -105,25 +97,9 @@ public class PostRecycleService(
                 context.Add(newPost);
                 newPostIds.Add(newPost.Id);
 
-                var sourceMediaList = await context.Set<PostMediaModel>()
-                    .Where(m => !m.IsDeleted && m.PostId == source.Id)
-                    .ToListAsync(ct);
-
                 if (request.ImageStrategy == RecycleImageStrategy.KeepOld)
                 {
-                    foreach (var media in sourceMediaList)
-                    {
-                        context.Add(new PostMediaModel
-                        {
-                            Id = Guid.NewGuid(),
-                            PostId = newPost.Id,
-                            MediaId = media.MediaId,
-                            MediaRole = media.MediaRole,
-                            SortOrder = media.SortOrder,
-                            CreatedAt = now,
-                            CreatedBy = actor,
-                        });
-                    }
+                    await sourcePicker.CopyMediaKeepOldAsync(newPost.Id, source.Id, now, actor, ct);
                 }
             }
         }

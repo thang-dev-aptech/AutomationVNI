@@ -246,4 +246,10 @@ public class CrawlInboxSummaryResponse
     /// người duyệt: họ chọn 3 page, bấm xong tưởng đã hẹn đăng, thực ra chưa page nào biết.
     /// </summary>
     public bool TwoGateFlow { get; set; }
+
+    /// <summary>
+    /// false = đăng lên trang tin tức đang tắt (ContentCrawl:WebsitePublishEnabled). Giao diện ẩn
+    /// nút "Duyệt & đưa lên web" và "Quét tồn đọng" — bấm vào chỉ nhận lỗi 400.
+    /// </summary>
+    public bool WebsitePublishEnabled { get; set; } = true;
 }

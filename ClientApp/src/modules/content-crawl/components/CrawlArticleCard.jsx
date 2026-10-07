@@ -18,6 +18,7 @@ function scoreClass(score) {
 export default function CrawlArticleCard({
   article,
   canApprove,
+  canPublishToWebsite = true,
   onApprove,
   onReject,
   onNotDuplicate,
@@ -96,7 +97,7 @@ export default function CrawlArticleCard({
       )}
 
       <div className="crawl-actions">
-        {canApprove && (isPending || isDuplicate) && (
+        {canApprove && canPublishToWebsite && (isPending || isDuplicate) && (
           <button type="button" className="btn btn-primary" disabled={busy} onClick={() => onApprove(article)}>
             Duyệt & đưa lên web
           </button>

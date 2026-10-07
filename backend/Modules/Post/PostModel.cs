@@ -27,6 +27,15 @@ public class PostModel : BaseEntity
     /// <summary>Id bài viết gốc nếu bài này được tạo từ chức năng Recycle. Null nếu là bài tạo mới hoàn toàn. No FK.</summary>
     public Guid? SourcePostId { get; set; }
 
+    /// <summary>Chiến dịch sinh bài (CAMPAIGN-01). Null = bài thường / recycle cũ. No FK.</summary>
+    public Guid? CampaignId { get; set; }
+
+    /// <summary>
+    /// Mốc khe lịch (trước lệch ± phút) — khoá idempotent cùng CampaignId + SocialChannelId.
+    /// Null khi không thuộc chiến dịch.
+    /// </summary>
+    public DateTime? CampaignSlotAt { get; set; }
+
     /// <summary>
     /// Id NewsArticle nguồn nếu bài này được tạo từ CỬA 2 (NewsFanpageService — đăng tin đã lên
     /// web sang fanpage). Null với mọi bài tạo theo cách khác. No FK — dùng để chặn đăng trùng

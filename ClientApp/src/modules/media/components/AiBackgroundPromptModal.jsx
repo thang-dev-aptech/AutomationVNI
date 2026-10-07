@@ -4,6 +4,7 @@ import { toast } from '@/shared/stores/toastStore'
 import { usePageContextList } from '@/modules/page-contexts/hooks/usePageContexts'
 import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
+import { sortChannelsVniFirst } from '@/shared/utils/channelSort'
 import { renderBackgroundPrompt } from '../constants/aiBackgroundPrompt'
 
 /**
@@ -40,9 +41,10 @@ export default function AiBackgroundPromptModal({ open, onClose }) {
   }, [open])
 
   const filteredPages = useMemo(() => {
+    const ordered = sortChannelsVniFirst(pages, labelForPage)
     const keyword = search.trim().toLowerCase()
-    if (!keyword) return pages
-    return pages.filter((p) => labelForPage(p).toLowerCase().includes(keyword))
+    if (!keyword) return ordered
+    return ordered.filter((p) => labelForPage(p).toLowerCase().includes(keyword))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pages, search, channelNameById])
 

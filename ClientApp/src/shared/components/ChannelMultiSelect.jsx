@@ -1,23 +1,81 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useChannelGroupAll } from '@/modules/social-channels/hooks/useChannelGroups'
+import { sortChannelsVniFirst } from '@/shared/utils/channelSort'
 import './ChannelMultiSelect.css'
 
 /**
+ * Thành viên nhóm giao với danh sách kênh màn hình cho phép chọn.
+ * Export để test + revert-to-prove (bỏ lọc → lẫn id ngoài `channels`).
+ */
+export function availableGroupMemberIds(group, allowedIdSet) {
+  const members = group?.channels ?? group?.Channels ?? []
+  return members
+    .map((m) => m.id ?? m.Id)
+    .filter((id) => id != null && allowedIdSet.has(id))
+}
+
+export function groupUnavailableCount(group, allowedIdSet) {
+  const members = group?.channels ?? group?.Channels ?? []
+  return members.filter((m) => {
+    const id = m.id ?? m.Id
+    return id != null && !allowedIdSet.has(id)
+  }).length
+}
+
+export function groupSelectionState(availableIds, selectedSet) {
+  if (availableIds.length === 0) return 'empty'
+  const selectedCount = availableIds.filter((id) => selectedSet.has(id)).length
+  if (selectedCount === 0) return 'none'
+  if (selectedCount === availableIds.length) return 'all'
+  return 'partial'
+}
+
+/**
  * Dropdown multi-select kênh (page) — giống combobox: ô trigger → panel search + checkbox.
+ * Tuỳ chọn phần "Nhóm kênh" (snapshot thành viên khả dụng vào value).
  */
 export default function ChannelMultiSelect({
-  channels = [],
+  channels: channelsProp = [],
   value = [],
   onChange,
   getBadge,
   label = 'Chọn page',
   placeholder = 'Chọn page',
   maxHeight = 280,
+  enableGroups = true,
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const rootRef = useRef(null)
   const searchRef = useRef(null)
   const selected = useMemo(() => new Set(value), [value])
+  const channels = useMemo(() => sortChannelsVniFirst(channelsProp), [channelsProp])
+  const allowedIds = useMemo(() => new Set(channels.map((c) => c.id)), [channels])
+
+  const { data: groupsRaw = [] } = useChannelGroupAll({ enabled: enableGroups })
+
+  const groupRows = useMemo(() => {
+    if (!enableGroups) return []
+    return (groupsRaw ?? []).map((g) => {
+      const availableIds = availableGroupMemberIds(g, allowedIds)
+      const unavailable = groupUnavailableCount(g, allowedIds)
+      const state = groupSelectionState(availableIds, selected)
+      return {
+        id: g.id,
+        name: g.name || g.Name || 'Nhóm',
+        availableIds,
+        unavailable,
+        state,
+        disabled: availableIds.length === 0,
+      }
+    })
+  }, [enableGroups, groupsRaw, allowedIds, selected])
+
+  const filteredGroups = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return groupRows
+    return groupRows.filter((g) => g.name.toLowerCase().includes(q))
+  }, [groupRows, query])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -69,6 +127,18 @@ export default function ChannelMultiSelect({
     else onChange([...value, id])
   }
 
+  const toggleGroup = (row) => {
+    if (row.disabled) return
+    if (row.state === 'all') {
+      const drop = new Set(row.availableIds)
+      onChange(value.filter((id) => !drop.has(id)))
+      return
+    }
+    const next = new Set(value)
+    row.availableIds.forEach((id) => next.add(id))
+    onChange([...next])
+  }
+
   const filteredIds = filtered.map((c) => c.id)
   const allFilteredSelected =
     filteredIds.length > 0 && filteredIds.every((id) => selected.has(id))
@@ -84,8 +154,16 @@ export default function ChannelMultiSelect({
     onChange(value.filter((id) => !drop.has(id)))
   }
 
+  const showEmpty =
+    channels.length === 0
+    && (!enableGroups || groupRows.length === 0)
+  const showNoMatch =
+    !showEmpty
+    && filtered.length === 0
+    && filteredGroups.length === 0
+
   return (
-    <div className="channel-multi-select" ref={rootRef}>
+    <div className="channel-multi-select" ref={rootRef} data-testid="channel-multi-select">
       {label && (
         <label className="channel-multi-select__field-label">{label}</label>
       )}
@@ -110,8 +188,8 @@ export default function ChannelMultiSelect({
               className="channel-multi-select__search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Tìm page..."
-              aria-label="Tìm page"
+              placeholder={enableGroups ? 'Tìm nhóm hoặc page...' : 'Tìm page...'}
+              aria-label={enableGroups ? 'Tìm nhóm hoặc page' : 'Tìm page'}
               onClick={(e) => e.stopPropagation()}
             />
             <span className="channel-multi-select__search-icon" aria-hidden>⌕</span>
@@ -142,12 +220,46 @@ export default function ChannelMultiSelect({
             style={{ maxHeight: typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight }}
             onWheel={(e) => e.stopPropagation()}
           >
-            {channels.length === 0 && (
+            {showEmpty && (
               <p className="channel-multi-select__empty">Chưa có kênh nào.</p>
             )}
-            {channels.length > 0 && filtered.length === 0 && (
+            {showNoMatch && (
               <p className="channel-multi-select__empty">Không tìm thấy “{query}”.</p>
             )}
+
+            {enableGroups && filteredGroups.length > 0 && (
+              <div className="channel-multi-select__groups" data-testid="channel-groups-section">
+                <div className="channel-multi-select__section-label">Nhóm kênh</div>
+                {filteredGroups.map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    className={`channel-multi-select__group-row is-${g.state}${g.disabled ? ' is-disabled' : ''}`}
+                    data-testid={`channel-group-${g.id}`}
+                    data-state={g.state}
+                    disabled={g.disabled}
+                    onClick={() => toggleGroup(g)}
+                  >
+                    <span
+                      className={`channel-multi-select__group-mark is-${g.state}`}
+                      aria-hidden
+                    />
+                    <span className="channel-multi-select__name">{g.name}</span>
+                    <span className="channel-multi-select__group-meta">
+                      {g.availableIds.length} kênh
+                      {g.unavailable > 0
+                        ? ` · ${g.unavailable} kênh không áp dụng ở đây`
+                        : ''}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {filtered.length > 0 && enableGroups && filteredGroups.length > 0 && (
+              <div className="channel-multi-select__section-label">Kênh</div>
+            )}
+
             {filtered.map((ch) => {
               const checked = selected.has(ch.id)
               const badge = typeof getBadge === 'function' ? getBadge(ch) : null

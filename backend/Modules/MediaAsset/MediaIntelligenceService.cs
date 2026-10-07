@@ -1,4 +1,5 @@
 using Backend.Modules.MediaCaption;
+using Backend.Modules.PageContext;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
@@ -350,8 +351,6 @@ public class MediaIntelligenceService(
         await db.SaveChangesAsync(ct);
     }
 
-    public const int CaptionLineCount = 5;
-
     /// <summary>Timeout của chính HttpClient (Program.cs): vô hạn, vì mỗi đường AI tự áp timeout
     /// per-call riêng (<see cref="MediaAiTimeouts"/>) — đổi timeout caption không kéo theo đường khác.</summary>
     public static readonly TimeSpan HttpClientTimeout = Timeout.InfiniteTimeSpan;
@@ -374,26 +373,44 @@ public class MediaIntelligenceService(
     /// <summary>Timeout cấu hình dùng chung với MediaCaptionWorker; direct test construction có thể override qua init.</summary>
     public MediaAiTimeouts Timeouts { get; init; } = configuredTimeouts ?? MediaAiTimeouts.Default;
 
-    private const string CaptionSystemPrompt = """
-        Bạn viết caption Facebook tiếng Việt cho fanpage, dựa trên ảnh được gửi kèm.
-        Yêu cầu bắt buộc:
-        - Viết ĐÚNG 5 dòng, mỗi dòng là 1 câu ngắn, tự nhiên.
-        - Dòng 1 thu hút sự chú ý; dòng 5 là lời kêu gọi nhẹ nhàng (ví dụ mời bình luận, chia sẻ, nhắn tin).
-        - KHÔNG mở đầu bằng "Bức ảnh", "Hình ảnh cho thấy" hay mô tả kiểu chú thích ảnh.
-        - KHÔNG bịa tên người, số liệu, ngày tháng, địa điểm nếu không có trong ảnh hoặc tên thư mục.
-        - KHÔNG dùng hashtag, không đánh số, không gạch đầu dòng.
-        CHỈ trả về JSON hợp lệ, không markdown: {"lines":["dòng 1","dòng 2","dòng 3","dòng 4","dòng 5"]}
-        """;
+    /// <summary>
+    /// MEDIA-CAPTION-01/03: sinh caption Facebook cho MỘT ảnh (đường người dùng bấm nút, kể cả "Sinh lại" —
+    /// ghi đè caption cũ của chính ảnh đó). Bài có cùng cấu trúc Full AI và được ghép bằng cùng
+    /// <see cref="FacebookPostComposer"/>: tiêu đề in hoa, thân (hook + bullet + emoji), CTA riêng, 1 dòng hashtag.
+    /// Ngữ cảnh gửi AI: ảnh + tên MediaFolder chứa ảnh (bỏ qua dedicated root "Google Drive") + PageContext của
+    /// Page CỦA THƯ MỤC chứa ảnh (ảnh không thuộc Page, vd. Drive, dùng mặc định chung). Chỉ ghi cột Caption.
+    /// JSON sai hoặc caption rỗng → gọi lại 1 lần; vẫn sai → ném lỗi, giữ nguyên caption cũ.
+    /// Job nền dùng cùng logic sinh qua <see cref="GenerateCaptionIfEmptyAsync"/> nhưng chỉ ghi khi caption còn rỗng.
+    /// KHÔNG kiểm quyền Page — caller phải dùng <see cref="GenerateCaptionForPageAsync"/> khi nhận Page từ người dùng.
+    /// </summary>
+    public Task<MediaAssetModel> GenerateCaptionAsync(Guid mediaId, CancellationToken ct = default)
+        => GenerateCaptionCoreAsync(mediaId, useFolderPage: true, pageId: null, ct);
 
     /// <summary>
-    /// MEDIA-CAPTION-01: sinh caption Facebook đúng 5 dòng cho MỘT ảnh (đường người dùng bấm nút,
-    /// kể cả "Sinh lại" — ghi đè caption cũ của chính ảnh đó). Job nền (MEDIA-CAPTION-02) dùng cùng
-    /// logic sinh qua <see cref="GenerateCaptionIfEmptyAsync"/> nhưng chỉ ghi khi caption còn rỗng.
-    /// Ngữ cảnh duy nhất gửi kèm ảnh là tên MediaFolder chứa ảnh (bỏ qua dedicated root "Google Drive").
-    /// Chỉ ghi cột Caption — không đụng Tags/AltText/Description.
-    /// AI trả sai số dòng → gọi lại 1 lần; vẫn sai → ném lỗi, giữ nguyên caption cũ.
+    /// Như <see cref="GenerateCaptionAsync(Guid, CancellationToken)"/> nhưng dùng đúng PageContext của
+    /// <paramref name="pageId"/> (null = không dùng PageContext của Page nào). Caller đã kiểm quyền ghi Page
+    /// (MediaAssetController) — service không có ngữ cảnh người dùng.
     /// </summary>
-    public async Task<MediaAssetModel> GenerateCaptionAsync(Guid mediaId, CancellationToken ct = default)
+    public Task<MediaAssetModel> GenerateCaptionForPageAsync(
+        Guid mediaId, Guid? pageId, CancellationToken ct = default)
+        => GenerateCaptionCoreAsync(mediaId, useFolderPage: false, pageId, ct);
+
+    /// <summary>SocialChannelId của thư mục (chưa xoá) chứa ảnh; null nếu ảnh không có thư mục hoặc thư mục không thuộc Page.</summary>
+    public async Task<Guid?> GetFolderPageIdAsync(Guid mediaId, CancellationToken ct = default)
+    {
+        var folderId = await db.MediaAssets.AsNoTracking()
+            .Where(x => x.Id == mediaId && !x.IsDeleted)
+            .Select(x => x.FolderId)
+            .FirstOrDefaultAsync(ct);
+        if (folderId is not Guid id) return null;
+        return await db.MediaFolders.AsNoTracking()
+            .Where(f => f.Id == id && !f.IsDeleted)
+            .Select(f => f.SocialChannelId)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    private async Task<MediaAssetModel> GenerateCaptionCoreAsync(
+        Guid mediaId, bool useFolderPage, Guid? pageId, CancellationToken ct)
     {
         // Đánh dấu TRƯỚC khi kiểm khoá để job tạo xen giữa luôn thấy dấu (worker chờ thay vì gọi AI lần hai).
         using var inFlight = CaptionInFlight.Begin(mediaId);
@@ -406,7 +423,7 @@ public class MediaIntelligenceService(
                 throw new CaptionQueuedException();
 
             var media = await LoadCaptionTargetAsync(mediaId, track: true, token);
-            var caption = await GenerateCaptionTextAsync(media, token);
+            var caption = await GenerateCaptionTextAsync(media, useFolderPage, pageId, token);
             media.Caption = caption;
             media.UpdatedAt = DateTime.UtcNow;
 
@@ -445,7 +462,7 @@ public class MediaIntelligenceService(
         if (!string.IsNullOrWhiteSpace(media.Caption)) return false;
 
         var observed = media.Caption;
-        var caption = await GenerateCaptionTextAsync(media, ct);
+        var caption = await GenerateCaptionTextAsync(media, useFolderPage: true, pageId: null, ct);
         var now = DateTime.UtcNow;
         var written = await db.MediaAssets
             .Where(x => x.Id == mediaId && !x.IsDeleted && x.Caption == observed)
@@ -468,19 +485,28 @@ public class MediaIntelligenceService(
         return media;
     }
 
-    private async Task<string> GenerateCaptionTextAsync(MediaAssetModel media, CancellationToken ct)
+    private async Task<string> GenerateCaptionTextAsync(
+        MediaAssetModel media, bool useFolderPage, Guid? pageId, CancellationToken ct)
     {
         string? folderName = null;
+        Guid? folderPageId = null;
         if (media.FolderId is Guid folderId)
         {
-            folderName = await db.MediaFolders.AsNoTracking()
+            var folder = await db.MediaFolders.AsNoTracking()
                 .Where(f => f.Id == folderId && !f.IsDeleted)
-                .Select(f => f.Name)
+                .Select(f => new { f.Name, f.SocialChannelId })
                 .FirstOrDefaultAsync(ct);
+            folderPageId = folder?.SocialChannelId;
+            folderName = folder?.Name;
             if (string.IsNullOrWhiteSpace(folderName)
                 || string.Equals(folderName.Trim(), GoogleDriveRepository.DedicatedFolderName, StringComparison.Ordinal))
                 folderName = null;
         }
+
+        // Đúng MỘT Page: Page do caller chọn (đã kiểm quyền) hoặc Page của thư mục. Không Page ⇒ mặc định chung,
+        // tuyệt đối không mượn PageContext của Page khác.
+        var context = await PromptContextDefaults.ResolveAsync(
+            db, useFolderPage ? folderPageId : pageId, PromptContextDefaults.FallbackCategory, ct);
 
         await using var stream = await AwaitStorageAsync(storage.OpenReadAsync(media.StoragePath, ct), ct);
         using var memory = new MemoryStream();
@@ -493,65 +519,97 @@ public class MediaIntelligenceService(
             model,
             messages = new object[]
             {
-                new { role = "system", content = CaptionSystemPrompt },
+                new { role = "system", content = FacebookCaptionRules.ImageCaptionSystemPrompt },
                 new
                 {
                     role = "user",
                     content = new object[]
                     {
-                        new { type = "text", text = $"Tên thư mục: {folderName?.Trim() ?? "không có"}\nViết caption 5 dòng cho ảnh này." },
+                        new { type = "text", text = BuildCaptionUserText(folderName, context) },
                         new { type = "image_url", image_url = new { url = dataUrl } }
                     }
                 }
             },
-            max_tokens = 600,
+            max_tokens = 1000,
             temperature = 0.7
         };
 
-        List<string>? lines = null;
-        for (var attempt = 0; attempt < CaptionMaxAttempts && lines is null; attempt++)
+        CaptionDraft? draft = null;
+        for (var attempt = 0; attempt < CaptionMaxAttempts && draft is null; attempt++)
         {
             var content = await CallChatCompletionsAsync(config, payload, Timeouts.CaptionRequest, ct);
-            var parsed = ParseCaptionLines(content);
-            if (parsed.Count == CaptionLineCount)
-                lines = parsed;
+            if (TryParseCaptionDraft(content, out var parsed))
+                draft = parsed;
             else
-                logger.LogWarning("Caption AI trả {Count} dòng (lần {Attempt}) cho media {MediaId}",
-                    parsed.Count, attempt + 1, media.Id);
+                logger.LogWarning("Caption AI trả JSON không hợp lệ hoặc caption rỗng (lần {Attempt}) cho media {MediaId}",
+                    attempt + 1, media.Id);
         }
-        if (lines is null)
-            throw new InvalidOperationException("AI không trả đúng 5 dòng caption");
+        if (draft is null)
+            throw new InvalidOperationException("AI không trả caption hợp lệ");
 
-        return string.Join("\n", lines);
+        // Cùng helper với Full AI (MapAiResult): CTA của AI → mặc định của Page; hashtag chuẩn hoá, thiếu thì lấy của Page.
+        var cta = FacebookPostComposer.ResolveCta(draft.Cta, context.Cta);
+        var hashtags = FacebookPostComposer.NormalizeHashtags(draft.Hashtags);
+        if (hashtags.Count == 0)
+            hashtags = FacebookPostComposer.NormalizeHashtagText(context.Hashtags);
+        return FacebookPostComposer.Compose(draft.BannerHeadline, draft.Caption, cta, hashtags);
     }
 
-    /// <summary>Đọc {"lines":[...]} (hoặc fallback text nhiều dòng), trim, bỏ dòng rỗng và tiền tố
-    /// đánh số / gạch đầu dòng thật ("1. " "1) " "- " "• " "* ") — chỉ khi có khoảng trắng phía sau,
-    /// để không cắt số thật ("5.000", "10.10", "2026.").</summary>
-    private static List<string> ParseCaptionLines(string content)
+    private static string BuildCaptionUserText(string? folderName, PromptContextDefaults context)
     {
-        var text = StripJsonFence(content);
-        IEnumerable<string?> raw;
+        var lines = new List<string> { $"Tên thư mục: {folderName?.Trim() ?? "không có"}" };
+        // Chuỗi giữ chỗ "Page của bạn" không đưa vào prompt: model sẽ viết nó vào bài.
+        if (context.HasRealBrand) lines.Add($"Thương hiệu / Page: {context.Brand}");
+        lines.Add($"Giọng điệu: {context.Tone}");
+        lines.Add($"CTA gợi ý: {context.Cta}");
+        lines.Add($"Hashtag gợi ý: {context.Hashtags}");
+        lines.Add("Viết bài đăng Facebook cho ảnh này.");
+        return string.Join('\n', lines);
+    }
+
+    private sealed record CaptionDraft(string Caption, string BannerHeadline, string Cta, List<string> Hashtags);
+
+    /// <summary>Đọc {caption, hashtags, cta, bannerHeadline}. JSON hỏng, không phải object hoặc caption rỗng → false.
+    /// Tên field không phân biệt hoa/thường; hashtags nhận mảng hoặc một chuỗi "#a #b".</summary>
+    private static bool TryParseCaptionDraft(string content, out CaptionDraft draft)
+    {
+        draft = null!;
         try
         {
-            using var doc = JsonDocument.Parse(text);
-            raw = doc.RootElement.ValueKind == JsonValueKind.Object
-                  && doc.RootElement.TryGetProperty("lines", out var arr)
-                  && arr.ValueKind == JsonValueKind.Array
-                ? arr.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString() : null).ToList()
-                : [];
+            using var doc = JsonDocument.Parse(StripJsonFence(content));
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return false;
+
+            JsonElement? Find(string name)
+            {
+                foreach (var prop in root.EnumerateObject())
+                    if (string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase)) return prop.Value;
+                return null;
+            }
+
+            string Text(string name) => Find(name) is { ValueKind: JsonValueKind.String } v ? v.GetString() ?? "" : "";
+
+            var caption = Text("caption").Trim();
+            if (caption.Length == 0) return false;
+
+            var hashtags = new List<string>();
+            if (Find("hashtags") is { } tags)
+            {
+                if (tags.ValueKind == JsonValueKind.Array)
+                    hashtags.AddRange(tags.EnumerateArray()
+                        .Where(x => x.ValueKind == JsonValueKind.String)
+                        .Select(x => x.GetString()!));
+                else if (tags.ValueKind == JsonValueKind.String)
+                    hashtags.AddRange(FacebookPostComposer.NormalizeHashtagText(tags.GetString()));
+            }
+
+            draft = new CaptionDraft(caption, Text("bannerHeadline"), Text("cta"), hashtags);
+            return true;
         }
         catch (JsonException)
         {
-            raw = text.Split('\n');
+            return false;
         }
-
-        return raw
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .SelectMany(x => x!.Split('\n'))
-            .Select(x => Regex.Replace(x.Trim(), @"^(?:\d{1,2}[.)]\s+|[-•*–]\s+)", "").Trim())
-            .Where(x => x.Length > 0)
-            .ToList();
     }
 
     public async Task<MediaAnalysisResult> AnalyzeImageAsync(

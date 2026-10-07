@@ -36,7 +36,7 @@ const wrapJob = (overrides = {}) => ({
       total: 4, succeeded: 1, failed: 1, skipped: 0, createdAt: '2026-10-01T00:00:00Z',
       items: [
         item('i1', 'Succeeded'),
-        item('i2', 'Failed', { error: 'AI không trả đúng 5 dòng caption' }),
+        item('i2', 'Failed', { error: 'AI không trả caption hợp lệ' }),
         item('i3', 'Running'),
         item('i4', 'Pending'),
       ],
@@ -75,7 +75,7 @@ describe('MEDIA-CAPTION-02 job page (AC 07f817bc c)', () => {
     expect(await screen.findByText('Sinh caption: Drive Folder')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '← Về thư mục' })).toHaveAttribute('href', `/media?folder=${FOLDER_ID}`)
     expect(document.querySelector('.media-caption-job-counts').textContent).toMatch(/Xong 1 · Lỗi 1 · Bỏ qua 0 · Tổng 4/)
-    expect(screen.getByText('AI không trả đúng 5 dòng caption')).toBeInTheDocument()
+    expect(screen.getByText('AI không trả caption hợp lệ')).toBeInTheDocument()
     expect(screen.getByAltText('i1.png')).toHaveAttribute('src', '/preview/i1')
 
     const rows = screen.getAllByRole('row')

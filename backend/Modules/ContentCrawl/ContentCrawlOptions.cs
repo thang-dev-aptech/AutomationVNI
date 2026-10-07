@@ -119,6 +119,21 @@ public class ContentCrawlOptions
     /// </summary>
     public bool TwoGateFlow { get; set; } = true;
 
+    /// <summary>
+    /// Cho phép đưa tin đã cào LÊN TRANG TIN TỨC (CỬA 1). Tắt thì mọi đường lên web đều bị chặn —
+    /// tự duyệt theo điểm, quét tồn đọng, nút Duyệt, /dang trên Telegram, NewsSite/compose và
+    /// worker viết bài đang xếp hàng — còn cào tin, chấm trùng, chấm điểm, Bỏ tin và đăng fanpage
+    /// từ bài web ĐÃ CÓ vẫn chạy (NEWS-PUBLISH-OFF-01).
+    ///
+    /// Mặc định true để thiếu key thì giữ hành vi cũ; appsettings.json đặt false. Hàng đợi bài
+    /// đang viết không bị xoá — bật lại thì worker viết tiếp.
+    /// </summary>
+    public bool WebsitePublishEnabled { get; set; } = true;
+
+    /// <summary>Câu báo chung khi đăng web đang tắt — web, Telegram và log dùng cùng một câu.</summary>
+    public const string WebsitePublishDisabledMessage =
+        "Đăng lên trang tin tức đang tắt — tin vẫn được cào và chấm điểm, nhưng không đưa lên web.";
+
     public bool ScreenEnabled { get; set; } = true;
     /// <summary>
     /// Dưới mức này thì đánh Filtered, không đưa cho người duyệt.

@@ -1,6 +1,10 @@
 import { usePermissions } from '@/shared/hooks/usePermissions'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
+import {
+  AI_IMAGE_DISABLED_HINT,
+  isAiImageGenerationEnabled,
+} from '@/shared/config/features'
 import { getAvailableGenerationActions } from '../constants/postStatus'
 import { useRegenerateImage, useRegenerateText } from '../hooks/usePosts'
 
@@ -12,6 +16,7 @@ export default function PostGenerationActions({ post }) {
   const { canEditPost } = usePermissions()
   const regenText = useRegenerateText()
   const regenImage = useRegenerateImage()
+  const imageGenOn = isAiImageGenerationEnabled()
 
   if (!canEditPost(post.userId)) return null
 
@@ -53,10 +58,18 @@ export default function PostGenerationActions({ post }) {
           <button
             type="button"
             className="btn btn-secondary"
-            disabled={isBusy}
-            onClick={() => run(regenImage, 'Đã tạo lại ảnh')}
+            disabled={isBusy || !imageGenOn}
+            title={!imageGenOn ? AI_IMAGE_DISABLED_HINT : undefined}
+            onClick={() => {
+              if (!imageGenOn) return
+              run(regenImage, 'Đã tạo lại ảnh')
+            }}
           >
-            {regenImage.isPending ? 'Đang tạo lại ảnh...' : '🔄 Tạo lại ảnh'}
+            {!imageGenOn
+              ? `🔄 Tạo lại ảnh — ${AI_IMAGE_DISABLED_HINT}`
+              : regenImage.isPending
+                ? 'Đang tạo lại ảnh...'
+                : '🔄 Tạo lại ảnh'}
           </button>
         )}
       </div>

@@ -11,7 +11,7 @@ public class OpenAiCompatibleTextGenerationService(
     IOptions<AiProvidersOptions> options,
     ILogger<OpenAiCompatibleTextGenerationService> logger) : IAiTextGenerationService
 {
-    private const string SystemPrompt = """
+    private const string SystemPromptHead = """
         Bạn là copywriter Facebook chuyên nghiệp cho Page bán hàng / thương hiệu Việt Nam.
 
         Nhiệm vụ: viết caption sẵn sàng đăng feed Facebook — tiếng Việt tự nhiên, thuyết phục, dễ đọc trên mobile.
@@ -27,20 +27,20 @@ public class OpenAiCompatibleTextGenerationService(
           "bannerBullets": ["3-4 dòng CỰC NGẮN (dưới 45 ký tự), mỗi dòng bắt đầu bằng 1 emoji phù hợp nội dung + khoảng trắng + cụm từ, dùng để ghép trực tiếp lên ảnh banner"],
           "imagePrompt": "English prompt tả banner: chủ thể chính, bối cảnh, bố cục, ánh sáng, phong cách. Banner có chữ — mô tả cả vị trí khối chữ, KHÔNG tự bịa hotline/website"
         }
+        """;
 
-        Cấu trúc caption (bắt buộc):
-        1) Hook 1 câu mở đầu + 1–2 emoji phù hợp ngành.
-        2) Thân bài 2–4 ý, mỗi ý xuống dòng; dùng bullet (• / ✅ / ✨ / 👗…) để dễ scan.
-        3) 4–8 emoji tổng bài — đủ sống động, không spam mỗi từ một icon.
-        4) Không nhồi hashtag vào giữa caption; hashtag chỉ trả trong mảng "hashtags".
-        5) Không kết caption bằng CTA — CTA trả riêng ở field "cta" (hệ thống sẽ ghép).
-
+    private const string SystemPromptQuality = """
         Chất lượng:
         - Gắn đúng ý tưởng (title) + danh mục; cụ thể, không sáo rỗng.
         - Tránh cụm generic: "nâng tầm phong cách", "tự tin theo cách riêng", "mặc đẹp mỗi ngày" nếu không có chi tiết mới.
         - Luôn tự viết CTA + 4–6 hashtag chuyên ngành dù context CTA/hashtag chung chung hoặc thiếu.
         - Độ dài thân bài khoảng 80–160 từ (chưa tính hashtag).
         """;
+
+    // Khối "Cấu trúc caption" dùng chung với caption sinh từ ảnh (FacebookCaptionRules) — sửa một chỗ, hai luồng cùng đổi.
+    // Văn bản ghép lại KHÔNG đổi so với bản cũ (FullAiSystemPromptTests khoá bằng SHA-256).
+    private const string SystemPrompt =
+        SystemPromptHead + "\n\n" + FacebookCaptionRules.Structure + "\n\n" + SystemPromptQuality;
 
     private const string ImagePromptSystem = """
         You are a senior creative director at a premium social-media ad agency. From the Vietnamese

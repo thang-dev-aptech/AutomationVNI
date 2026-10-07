@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PostCreatePage from '../pages/PostCreatePage'
+import { FEATURES } from '@/shared/config/features'
 
 const navigate = vi.fn()
 const createFromMedia = vi.fn()
@@ -25,6 +26,10 @@ vi.mock('@/modules/social-channels/hooks/useSocialChannels', () => ({
     isError: false,
     refetch: vi.fn(),
   }),
+}))
+
+vi.mock('@/modules/social-channels/hooks/useChannelGroups', () => ({
+  useChannelGroupAll: () => ({ data: [], isLoading: false }),
 }))
 
 vi.mock('@/modules/prompt-templates/hooks/usePromptTemplates', () => ({
@@ -104,18 +109,35 @@ describe('PostCreatePage media flow', () => {
     generateCaption.mockResolvedValue({ caption: 'caption gợi ý' })
   })
 
-  it('adds the media method and keeps the two existing AI flows', async () => {
+  it('shows full-AI disabled (temp kill switch), hides template, preselects media', async () => {
     const user = userEvent.setup()
     render(<MemoryRouter><PostCreatePage /></MemoryRouter>)
 
-    expect(screen.getByRole('button', { name: /Sinh toàn bộ bằng AI/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).toBeInTheDocument()
+    expect(FEATURES.aiFullImage).toBe(true)
+    expect(FEATURES.aiTemplate).toBe(false)
+    expect(FEATURES.aiImageGeneration).toBe(false)
+    const fullAi = screen.getByRole('button', { name: /Sinh toàn bộ bằng AI/ })
+    expect(fullAi).toBeDisabled()
+    expect(fullAi).toHaveTextContent('Tính năng tạm thời tắt')
+    expect(screen.queryByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Dùng ảnh có sẵn trong Media/ })).toBeInTheDocument()
+    expect(screen.getByTestId('ai-image-disabled-banner')).toHaveTextContent('Tính năng tạm thời tắt')
 
     await user.click(screen.getByRole('button', { name: 'Tiếp tục' }))
-    await user.click(screen.getByRole('button', { name: 'Gửi AI' }))
-    expect(createAndGenerate).toHaveBeenCalledWith({ flow: 'fullai', idea: 'ý tưởng cũ' })
-    expect(screen.queryByRole('button', { name: 'Chọn ảnh từ Media' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Chọn ảnh từ Media' })).toBeInTheDocument()
+    expect(createAndGenerate).not.toHaveBeenCalled()
+  })
+
+  it('shows the template method again when its flag is on (still disabled while kill switch off)', () => {
+    FEATURES.aiTemplate = true
+    try {
+      render(<MemoryRouter><PostCreatePage /></MemoryRouter>)
+      expect(screen.getByRole('button', { name: /Sinh toàn bộ bằng AI/ })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /AI sinh text, ghép vào ảnh mẫu/ })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /Dùng ảnh có sẵn trong Media/ })).not.toBeDisabled()
+    } finally {
+      FEATURES.aiTemplate = false
+    }
   })
 
   it('opens the picker, shows the cover thumbnail and prefills caption', async () => {
@@ -164,7 +186,7 @@ describe('PostCreatePage media flow', () => {
     await user.click(screen.getByRole('button', { name: 'Chọn ảnh từ Media' }))
     await user.click(screen.getByRole('button', { name: 'Xác nhận ảnh trong popup' }))
     await user.click(screen.getByRole('button', { name: '✨ Gợi ý caption' }))
-    expect(generateCaption).toHaveBeenCalledWith('img-1')
+    expect(generateCaption).toHaveBeenCalledWith({ id: 'img-1' })
     expect(screen.getByLabelText('Caption')).toHaveValue('caption gợi ý')
 
     generateCaption.mockRejectedValueOnce(Object.assign(new Error('conflict'), {
@@ -175,6 +197,32 @@ describe('PostCreatePage media flow', () => {
     await user.click(screen.getByRole('button', { name: '✨ Gợi ý caption' }))
     expect(screen.getByLabelText('Caption')).toHaveValue('giữ lại')
     expect(toast.error).toHaveBeenCalledWith('Ảnh đang chờ caption')
+  })
+
+  it('suggestion is generated with the FIRST selected Page (in selection order), or none if no Page is chosen', async () => {
+    const user = userEvent.setup()
+    render(<MemoryRouter><PostCreatePage /></MemoryRouter>)
+    await openMediaFlow(user)
+    await user.click(screen.getByRole('button', { name: 'Chọn ảnh từ Media' }))
+    await user.click(screen.getByRole('button', { name: 'Xác nhận ảnh trong popup' }))
+
+    // Chưa chọn Page ⇒ không gửi socialChannelId (key không tồn tại, không phải undefined).
+    await user.click(screen.getByRole('button', { name: '✨ Gợi ý caption' }))
+    expect(generateCaption.mock.calls[0][0]).toEqual({ id: 'img-1' })
+    expect(generateCaption.mock.calls[0][0]).not.toHaveProperty('socialChannelId')
+
+    // Chọn "Page Hai" TRƯỚC "Page Một" (khác thứ tự hiển thị) ⇒ Page đầu tiên đã chọn là Page Hai.
+    await user.click(screen.getByRole('button', { name: 'Chọn page' }))
+    await user.click(screen.getByLabelText('Page Hai'))
+    await user.click(screen.getByLabelText('Page Một'))
+    await user.click(screen.getByRole('button', { name: '✨ Gợi ý caption' }))
+    expect(generateCaption).toHaveBeenLastCalledWith({ id: 'img-1', socialChannelId: PAGE_2 })
+
+    // Bỏ Page Hai ⇒ Page đầu tiên còn lại là Page Một. (Bấm nút gợi ý đã đóng dropdown nên mở lại.)
+    await user.click(screen.getByRole('button', { name: 'Đã chọn 2 page' }))
+    await user.click(screen.getByLabelText('Page Hai'))
+    await user.click(screen.getByRole('button', { name: '✨ Gợi ý caption' }))
+    expect(generateCaption).toHaveBeenLastCalledWith({ id: 'img-1', socialChannelId: PAGE_1 })
   })
 
   it('disables create until an image, caption and page are set, then navigates', async () => {

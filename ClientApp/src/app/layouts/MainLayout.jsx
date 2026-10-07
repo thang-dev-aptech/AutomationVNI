@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { usePermissions } from '@/shared/hooks/usePermissions'
+import { FEATURES } from '@/shared/config/features'
 import Topbar from './Topbar'
 import './MainLayout.css'
 
@@ -13,7 +14,7 @@ import './MainLayout.css'
  * Nhóm chứa trang đang mở sẽ TỰ BUNG (xem activeGroup) — vào thẳng một URL rồi mà menu đóng
  * kín thì người dùng không biết mình đang đứng ở đâu trong cây.
  */
-const NAV_GROUPS = [
+export const NAV_GROUPS = [
   {
     kind: 'item',
     to: '/dashboard',
@@ -72,7 +73,7 @@ const NAV_GROUPS = [
           <circle cx="16.5" cy="9" r="1.5" />
         </svg>
       ),
-      visible: (p) => p.canCreatePost,
+      visible: (p) => FEATURES.chungChiBulk && p.canCreatePost,
     },
       {
       to: '/calendar',
@@ -83,6 +84,18 @@ const NAV_GROUPS = [
           <line x1="3" y1="10" x2="21" y2="10" />
           <line x1="8" y1="2" x2="8" y2="6" />
           <line x1="16" y1="2" x2="16" y2="6" />
+        </svg>
+      ),
+      visible: (p) => p.canViewPosts,
+    },
+      {
+      to: '/campaigns',
+      label: 'Chiến dịch',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sidebar-link-icon">
+          <path d="M4 19V5" />
+          <path d="M4 5h10l-1.5 3L14 11H4" />
+          <path d="M14 19H4" />
         </svg>
       ),
       visible: (p) => p.canViewPosts,

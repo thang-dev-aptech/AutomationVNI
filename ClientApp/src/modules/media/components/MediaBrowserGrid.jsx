@@ -40,6 +40,23 @@ export default function MediaBrowserGrid({
   onFileSelect,
 }) {
   const [isDragOverGrid, setIsDragOverGrid] = useState(false)
+  // Ở cấp gốc, thư mục Google Drive (dedicated root, không gắn Page) nằm hàng riêng, tách khỏi
+  // lưới thư mục Page. Bên trong thư mục thì giữ một lưới như cũ.
+  const driveFolders = isRootLevel ? folders.filter((folder) => !folder.socialChannelId) : []
+  const otherFolders = isRootLevel ? folders.filter((folder) => folder.socialChannelId) : folders
+  const renderFolderCard = (folder) => (
+    <MediaFolderCard
+      key={folder.id}
+      folder={folder}
+      isRootLevel={isRootLevel}
+      onClick={() => onFolderClick?.(folder)}
+      onContextMenu={onFolderContextMenu}
+      onDrop={onFolderDrop}
+      onFileDrop={onFileDrop}
+      canManage={canManage}
+      interactive={selectable}
+    />
+  )
   const hasFolders = folders.length > 0
   const hasFiles = files.length > 0
 
@@ -169,22 +186,21 @@ export default function MediaBrowserGrid({
     <>
       <div className="media-browser-section">
         {folderHeader}
-        {hasFolders && (
-          <div className="media-folder-cards-grid">
-            {folders.map((folder) => (
-              <MediaFolderCard
-                key={folder.id}
-                folder={folder}
-                isRootLevel={isRootLevel}
-                onClick={() => onFolderClick?.(folder)}
-                onContextMenu={onFolderContextMenu}
-                onDrop={onFolderDrop}
-                onFileDrop={onFileDrop}
-                canManage={canManage}
-                interactive={selectable}
-              />
-            ))}
+        {hasFolders && driveFolders.length > 0 && (
+          <div className="media-folder-group" data-testid="media-folder-group-drive">
+            <h4 className="media-folder-group-title">Google Drive</h4>
+            <div className="media-folder-cards-grid">{driveFolders.map(renderFolderCard)}</div>
           </div>
+        )}
+        {hasFolders && otherFolders.length > 0 && (
+          driveFolders.length > 0 ? (
+            <div className="media-folder-group" data-testid="media-folder-group-pages">
+              <h4 className="media-folder-group-title">Page</h4>
+              <div className="media-folder-cards-grid">{otherFolders.map(renderFolderCard)}</div>
+            </div>
+          ) : (
+            <div className="media-folder-cards-grid">{otherFolders.map(renderFolderCard)}</div>
+          )
         )}
       </div>
 

@@ -2,78 +2,96 @@ import { useMemo, useState } from 'react'
 import PageHeader from '@/shared/components/PageHeader'
 import LoadingState from '@/shared/components/LoadingState'
 import ErrorState from '@/shared/components/ErrorState'
-import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
 import { toast } from '@/shared/stores/toastStore'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
-import { getSocialPlatformLabel } from '@/modules/social-channels/constants/socialPlatform'
+import { useChannelGroupAll } from '@/modules/social-channels/hooks/useChannelGroups'
+import CalendarFilterSidebar from '../components/calendar/CalendarFilterSidebar'
+import ChannelTimelineView from '../components/calendar/ChannelTimelineView'
+import ScheduleListView from '../components/calendar/ScheduleListView'
 import PostCalendar from '../components/PostCalendar'
-import { monthRangeUtc, withVnDate } from '../utils/calendarGrid'
-import { usePostCalendar, useSchedulePost } from '../hooks/usePosts'
+import { withVnDate } from '../utils/calendarGrid'
+import { useSchedulePost } from '../hooks/usePosts'
+import {
+  useCalendarFacets,
+  useCalendarPosts,
+  useCalendarQuery,
+} from '../hooks/useCalendarQuery'
+import {
+  CALENDAR_VIEW_OPTIONS,
+  CALENDAR_VIEWS,
+} from '../constants/calendarStatus'
+import '../components/calendar/CalendarShell.css'
 
-/** Nhóm trạng thái bật/tắt được trên lịch. Khớp PostStatus của backend. */
-const STATUS_FILTERS = [
-  { key: 'scheduled', label: 'Đã lên lịch', statuses: [5] },
-  { key: 'published', label: 'Đã đăng', statuses: [7] },
-  { key: 'failed', label: 'Thất bại', statuses: [8] },
-]
-
-function currentVnMonth() {
-  const now = new Date()
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    year: 'numeric',
-    month: '2-digit',
-  }).formatToParts(now)
-  const get = (type) => Number(parts.find((p) => p.type === type)?.value)
-  return { year: get('year'), month: get('month') }
-}
-
+/**
+ * Khung trang Lịch SO9: sidebar bộ lọc + chuyển chế độ + state trên URL.
+ * Chế độ Lịch / Danh sách / Theo kênh đều lắp component tương ứng.
+ */
 export default function PostCalendarPage() {
-  const [{ year, month }, setCursor] = useState(currentVnMonth)
-  const [activeFilters, setActiveFilters] = useState(() => STATUS_FILTERS.map((f) => f.key))
-  const [channelIds, setChannelIds] = useState([])
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [channelSearch, setChannelSearch] = useState('')
+
+  const query = useCalendarQuery()
+  const {
+    view,
+    setView,
+    density,
+    setDensity,
+    weekStartYmd,
+    setWeekStartYmd,
+    goToday: goCalendarToday,
+    channelMode,
+    setChannelMode,
+    year,
+    month,
+    setMonthCursor,
+    statusKeys,
+    toggleStatusKey,
+    channelIds,
+    toggleChannelId,
+    groupIds,
+    toggleGroupId,
+    authorIds,
+    toggleAuthorId,
+    categoryIds,
+    toggleCategoryId,
+    postTypes,
+    togglePostType,
+    filterRequest,
+  } = query
 
   const { data: channels = [] } = useSocialChannelAll()
+  const { data: groups = [] } = useChannelGroupAll()
   const channelMap = useMemo(
     () => Object.fromEntries(channels.map((c) => [c.id, c.pageName])),
     [channels],
   )
 
-  const params = useMemo(() => {
-    const { fromUtc, toUtc } = monthRangeUtc(year, month)
-    const statuses = STATUS_FILTERS
-      .filter((f) => activeFilters.includes(f.key))
-      .flatMap((f) => f.statuses)
-    return {
-      fromUtc,
-      toUtc,
-      statuses,
-      socialChannelIds: channelIds.length > 0 ? channelIds : undefined,
-    }
-  }, [year, month, activeFilters, channelIds])
-
-  const { data: posts = [], isLoading, isError, error, refetch } = usePostCalendar(params)
+  const facetsQuery = useCalendarFacets(filterRequest)
+  const postsQuery = useCalendarPosts(filterRequest, {
+    enabled: view === CALENDAR_VIEWS.calendar || view === CALENDAR_VIEWS.byChannel,
+  })
   const scheduleMutation = useSchedulePost()
 
+  const authors = facetsQuery.data?.authors ?? []
+  const categories = facetsQuery.data?.categories ?? []
+
+  const shellClass = [
+    'calendar-shell',
+    filterOpen ? 'is-filter-open' : '',
+  ].filter(Boolean).join(' ')
+
   function shiftMonth(delta) {
-    setCursor((prev) => {
-      const next = new Date(Date.UTC(prev.year, prev.month - 1 + delta, 1))
-      return { year: next.getUTCFullYear(), month: next.getUTCMonth() + 1 }
-    })
+    const next = new Date(Date.UTC(year, month - 1 + delta, 1))
+    setMonthCursor(next.getUTCFullYear(), next.getUTCMonth() + 1)
   }
 
-  function toggleFilter(key) {
-    setActiveFilters((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key])
-  }
-
-  /** Kéo-thả sang ngày mới: giữ nguyên giờ-phút cũ, chỉ đổi phần ngày. */
+  /** Kéo-thả sang ngày mới: giữ giờ-phút VN cũ, chỉ đổi ngày. */
   function handleReschedule(post, targetYmd) {
-    const newDate = withVnDate(post.scheduledPublishAt, targetYmd)
+    const source = post.scheduledPublishAt
+    if (!source) return
+    const newDate = withVnDate(source, targetYmd)
 
-    // Chốt chặn cuối: ô quá khứ đã bị chặn ở component, nhưng nếu kéo đúng lúc giao ngày
-    // thì vẫn có thể lọt — backend sẽ từ chối, nên báo trước cho gọn.
     if (newDate.getTime() <= Date.now()) {
       toast.error('Không thể đặt lịch vào thời điểm đã qua')
       return
@@ -83,12 +101,10 @@ export default function PostCalendarPage() {
       {
         id: post.id,
         scheduledAt: newDate.toISOString(),
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timezone: 'Asia/Ho_Chi_Minh',
       },
       {
         onSuccess: () => toast.success('Đã đổi lịch đăng'),
-        // Không tự sửa state cục bộ — invalidate của mutation sẽ kéo lại dữ liệu thật,
-        // nên bài tự nhảy về chỗ cũ khi lỗi.
         onError: (err) => toast.error(getErrorMessage(err)),
       },
     )
@@ -98,64 +114,134 @@ export default function PostCalendarPage() {
     <div>
       <PageHeader
         title="Lịch đăng bài"
-        description="Xem toàn cảnh bài đã lên lịch và đã đăng theo tháng. Kéo-thả bài đã lên lịch sang ngày khác để đổi lịch."
+        description="Bộ lọc bên trái, chuyển chế độ Lịch / Danh sách / Theo kênh. Trạng thái lưu trên URL."
       />
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div
-          className="card-body"
-          style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center' }}
-        >
-          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-            {STATUS_FILTERS.map((filter) => (
-              <label
-                key={filter.key}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
-              >
-                <input
-                  type="checkbox"
-                  checked={activeFilters.includes(filter.key)}
-                  onChange={() => toggleFilter(filter.key)}
-                />
-                <span>{filter.label}</span>
-              </label>
-            ))}
+      <div className={shellClass}>
+        {filterOpen ? (
+          <button
+            type="button"
+            className="calendar-shell-backdrop"
+            aria-label="Đóng bộ lọc"
+            onClick={() => setFilterOpen(false)}
+          />
+        ) : null}
+
+        <div className="calendar-shell-sidebar">
+          <CalendarFilterSidebar
+            channelMode={channelMode}
+            onChannelModeChange={setChannelMode}
+            channelSearch={channelSearch}
+            onChannelSearchChange={setChannelSearch}
+            channels={channels}
+            selectedChannelIds={channelIds}
+            onToggleChannel={toggleChannelId}
+            groups={groups}
+            selectedGroupIds={groupIds}
+            onToggleGroup={toggleGroupId}
+            statusKeys={statusKeys}
+            onToggleStatus={toggleStatusKey}
+            authors={authors}
+            selectedAuthorIds={authorIds}
+            onToggleAuthor={toggleAuthorId}
+            categories={categories}
+            selectedCategoryIds={categoryIds}
+            onToggleCategory={toggleCategoryId}
+            selectedPostTypes={postTypes}
+            onTogglePostType={togglePostType}
+          />
+        </div>
+
+        <div className="calendar-shell-main">
+          <div className="calendar-shell-toolbar">
+            <button
+              type="button"
+              className="btn btn-secondary calendar-shell-filter-toggle"
+              onClick={() => setFilterOpen((v) => !v)}
+            >
+              Bộ lọc
+            </button>
+
+            <div className="calendar-view-tabs" role="tablist" aria-label="Chế độ xem lịch">
+              {CALENDAR_VIEW_OPTIONS.map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === opt.key}
+                  className={`calendar-view-tab${view === opt.key ? ' is-active' : ''}`}
+                  onClick={() => {
+                    setView(opt.key)
+                    setFilterOpen(false)
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div style={{ marginLeft: 'auto', minWidth: 240 }}>
-            <ChannelMultiSelect
-              label=""
-              placeholder="Tất cả kênh"
-              channels={channels}
-              value={channelIds}
-              onChange={setChannelIds}
-              getBadge={(channel) => ({
-                label: getSocialPlatformLabel(channel.platform),
-                title: getSocialPlatformLabel(channel.platform),
-                tone: 'ok',
-              })}
-              maxHeight={280}
+          {facetsQuery.isError && (
+            <ErrorState
+              message={getErrorMessage(facetsQuery.error)}
+              onRetry={facetsQuery.refetch}
             />
-          </div>
+          )}
+
+          {view === CALENDAR_VIEWS.calendar && postsQuery.isLoading && <LoadingState />}
+          {view === CALENDAR_VIEWS.calendar && postsQuery.isError && (
+            <ErrorState
+              message={getErrorMessage(postsQuery.error)}
+              onRetry={postsQuery.refetch}
+            />
+          )}
+
+          {view === CALENDAR_VIEWS.calendar && !postsQuery.isLoading && !postsQuery.isError && (
+            <PostCalendar
+              year={year}
+              month={month}
+              posts={postsQuery.data ?? []}
+              channelMap={channelMap}
+              density={density}
+              weekStartYmd={weekStartYmd}
+              onDensityChange={setDensity}
+              onWeekStartChange={setWeekStartYmd}
+              onPrevMonth={() => shiftMonth(-1)}
+              onNextMonth={() => shiftMonth(1)}
+              onToday={goCalendarToday}
+              onReschedule={handleReschedule}
+              isRescheduling={scheduleMutation.isPending}
+              onMonthCursorChange={setMonthCursor}
+            />
+          )}
+
+          {view === CALENDAR_VIEWS.list && (
+            <ScheduleListView filterRequest={filterRequest} />
+          )}
+
+          {view === CALENDAR_VIEWS.byChannel && postsQuery.isLoading && <LoadingState />}
+          {view === CALENDAR_VIEWS.byChannel && postsQuery.isError && (
+            <ErrorState
+              message={getErrorMessage(postsQuery.error)}
+              onRetry={postsQuery.refetch}
+            />
+          )}
+          {view === CALENDAR_VIEWS.byChannel && !postsQuery.isLoading && !postsQuery.isError && (
+            <ChannelTimelineView
+              year={year}
+              month={month}
+              posts={postsQuery.data ?? []}
+              channels={channels}
+              groups={groups}
+              channelMode={channelMode}
+              selectedChannelIds={channelIds}
+              selectedGroupIds={groupIds}
+              onPrevMonth={() => shiftMonth(-1)}
+              onNextMonth={() => shiftMonth(1)}
+            />
+          )}
         </div>
       </div>
-
-      {isLoading && <LoadingState />}
-      {isError && <ErrorState message={getErrorMessage(error)} onRetry={refetch} />}
-
-      {!isLoading && !isError && (
-        <PostCalendar
-          year={year}
-          month={month}
-          posts={posts}
-          channelMap={channelMap}
-          onPrevMonth={() => shiftMonth(-1)}
-          onNextMonth={() => shiftMonth(1)}
-          onToday={() => setCursor(currentVnMonth())}
-          onReschedule={handleReschedule}
-          isRescheduling={scheduleMutation.isPending}
-        />
-      )}
     </div>
   )
 }

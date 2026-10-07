@@ -925,21 +925,17 @@ public class GenerationJobPipelineService(
             .Select(x => x.PageName)
             .FirstOrDefaultAsync(ct);
 
-        var category = FirstNonEmpty(categoryName, "Chung")!;
-        var brand = FirstNonEmpty(pageContext?.BrandName, channelName, "Page của bạn")!;
-        var tone = FirstNonEmpty(pageContext?.ToneOfVoice, "thân thiện, rõ ràng, chuyên nghiệp, gần gũi như nói chuyện trên Facebook")!;
-        var cta = FirstNonEmpty(
-            pageContext?.CtaText,
-            "Inbox ngay để được tư vấn chi tiết nhé 💬")!;
-        var hashtags = FirstNonEmpty(pageContext?.DefaultHashtags, BuildFallbackHashtags(category))!;
+        var category = FirstNonEmpty(categoryName, PromptContextDefaults.FallbackCategory)!;
+        var defaults = PromptContextDefaults.From(pageContext, channelName, category);
+        var brand = defaults.Brand;
+        var tone = defaults.Tone;
+        var cta = defaults.Cta;
+        var hashtags = defaults.Hashtags;
         var audience = "khách hàng mục tiêu trên Facebook";
         var objective = FirstNonEmpty(ExtractObjective(post.ExtraJson), post.Title.Trim())!;
-
-        // Hotline/website/màu thương hiệu chỉ lấy từ PageContext — không bịa, vì model phải in
-        // đúng nguyên văn lên banner. Thiếu thì để rỗng và template tự bỏ dòng liên hệ.
-        var hotline = pageContext?.Hotline?.Trim() ?? string.Empty;
-        var website = FirstNonEmpty(pageContext?.Website, pageContext?.CtaUrl) ?? string.Empty;
-        var brandColors = pageContext?.BrandColors?.Trim() ?? string.Empty;
+        var hotline = defaults.Hotline;
+        var website = defaults.Website;
+        var brandColors = defaults.BrandColors;
 
         if (pageContext is null)
         {
@@ -990,22 +986,6 @@ public class GenerationJobPipelineService(
         {
             return null;
         }
-    }
-
-    private static string BuildFallbackHashtags(string category)
-    {
-        var slug = new string(category
-            .Where(ch => char.IsLetterOrDigit(ch) || ch is ' ' or '/')
-            .ToArray())
-            .Trim()
-            .Replace('/', ' ')
-            .Replace(' ', '_');
-        while (slug.Contains("__", StringComparison.Ordinal))
-            slug = slug.Replace("__", "_", StringComparison.Ordinal);
-        slug = slug.Trim('_');
-        if (string.IsNullOrWhiteSpace(slug))
-            return "#Facebook #Marketing #BanHang";
-        return $"#{slug} #Facebook #Marketing #BanHang";
     }
 
     private static string? FirstNonEmpty(params string?[] values)
@@ -1190,12 +1170,10 @@ public class GenerationJobPipelineService(
         // Bản tin: bỏ hẳn CTA bán hàng và hashtag, chỉ giữ phần tóm tắt.
         // Chặn ở đây chứ không chỉ dặn trong prompt — model vẫn trả CTA/hashtag khá thường
         // xuyên dù đã bảo đừng, mà bài đã đăng lên Page rồi thì không rút lại được.
-        var hashtags = newsStyle ? [] : NormalizeHashtags(ai.Hashtags);
+        var hashtags = newsStyle ? [] : FacebookPostComposer.NormalizeHashtags(ai.Hashtags);
         var cta = newsStyle
             ? string.Empty
-            : (string.IsNullOrWhiteSpace(ai.Cta)
-                ? (request.CtaText?.Trim() ?? "Inbox ngay để được tư vấn chi tiết nhé 💬")
-                : ai.Cta.Trim());
+            : FacebookPostComposer.ResolveCta(ai.Cta, request.CtaText);
 
         return new TextGenerationJobOutput
         {
@@ -1204,7 +1182,7 @@ public class GenerationJobPipelineService(
             Model = request.Model,
             Content = newsStyle
                 ? StripTrailingNoise(ai.Caption)
-                : ComposeFacebookPost(ai.BannerHeadline, ai.Caption, cta, hashtags),
+                : FacebookPostComposer.Compose(ai.BannerHeadline, ai.Caption, cta, hashtags),
             Hashtags = hashtags,
             Cta = cta,
             ImagePrompt = ai.ImagePrompt,
@@ -1214,16 +1192,6 @@ public class GenerationJobPipelineService(
             BannerBullets = ai.BannerBullets
         };
     }
-
-    /// <summary>
-    /// Ghép tiêu đề + caption + CTA + hashtag thành 1 bài Facebook sẵn đăng
-    /// (tránh mất CTA/hashtag khi chỉ lưu field caption).
-    ///
-    /// Dòng tiêu đề: Facebook TỰ phóng to dòng đầu tiên khi nó ngắn (~≤ 80 ký tự) và có dòng trống
-    /// ngăn cách với thân bài. Nội dung bài (text thuần) không có in đậm/cỡ chữ — chữ to nổi bật chỉ
-    /// đến từ mẹo "dòng đầu ngắn + dòng trống" này. bannerHeadline (≤ 8 từ) là dòng lý tưởng cho việc đó.
-    /// </summary>
-    private const int MaxTitleLineChars = 80;
 
     /// <summary>
     /// Dọn caption bản tin: cắt dòng hashtag và dòng mời chào bán hàng nếu model vẫn nhét vào
@@ -1252,82 +1220,6 @@ public class GenerationJobPipelineService(
         return string.Join('\n', lines).Trim();
     }
 
-    private static string ComposeFacebookPost(
-        string? titleLine, string? caption, string cta, IReadOnlyList<string> hashtags)
-    {
-        var body = (caption ?? string.Empty).Trim();
-        var sb = new StringBuilder();
-
-        // Chỉ ghép tiêu đề khi nó đủ ngắn để Facebook phóng to, và caption chưa tự mở đầu bằng nó
-        // (tránh lặp khi model đã đưa headline vào ngay đầu caption).
-        var title = NormalizeTitleLine(titleLine);
-        if (title.Length > 0
-            && title.Length <= MaxTitleLineChars
-            && !StartsWithIgnoreCase(body, title))
-        {
-            sb.Append(title);
-            if (body.Length > 0) sb.Append("\n\n");
-        }
-
-        sb.Append(body);
-
-        if (!string.IsNullOrWhiteSpace(cta) && !ContainsIgnoreCase(body, cta))
-        {
-            if (sb.Length > 0) sb.Append("\n\n");
-            sb.Append(cta.Trim());
-        }
-
-        if (hashtags.Count > 0)
-        {
-            var tagLine = string.Join(' ', hashtags);
-            if (!ContainsIgnoreCase(sb.ToString(), tagLine) && !hashtags.All(t => ContainsIgnoreCase(sb.ToString(), t)))
-            {
-                sb.Append("\n\n");
-                sb.Append(tagLine);
-            }
-        }
-
-        return sb.ToString().Trim();
-    }
-
-    private static List<string> NormalizeHashtags(IEnumerable<string>? tags)
-    {
-        var list = new List<string>();
-        if (tags is null) return list;
-        foreach (var raw in tags)
-        {
-            if (string.IsNullOrWhiteSpace(raw)) continue;
-            var t = raw.Trim();
-            if (!t.StartsWith('#')) t = "#" + t;
-            t = t.Replace(' ', '_');
-            if (!list.Contains(t, StringComparer.OrdinalIgnoreCase))
-                list.Add(t);
-        }
-        return list.Take(8).ToList();
-    }
-
-    private static bool ContainsIgnoreCase(string haystack, string needle)
-        => haystack.Contains(needle, StringComparison.OrdinalIgnoreCase);
-
-    private static bool StartsWithIgnoreCase(string text, string prefix)
-        => text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Chuẩn hoá dòng tiêu đề: gộp về 1 dòng, VIẾT HOA (chữ to nổi bật), bỏ dấu chấm câu thừa ở cuối.
-    /// ToUpperInvariant xử lý đúng nguyên âm tiếng Việt có dấu (ư→Ư, ơ→Ơ, ế→Ế...) vì chúng là ký tự
-    /// tổ hợp sẵn, không bị vỡ như mẹo "in đậm" bằng ký tự Unicode toán học.
-    /// </summary>
-    private static string NormalizeTitleLine(string? title)
-    {
-        if (string.IsNullOrWhiteSpace(title)) return string.Empty;
-
-        // Gộp mọi khoảng trắng (kể cả xuống dòng) thành 1 space — tiêu đề phải nằm gọn 1 dòng.
-        var line = string.Join(' ', title.Split(
-            (char[]?)null, StringSplitOptions.RemoveEmptyEntries)).Trim();
-
-        line = line.TrimEnd('.', ',', ';', ':', '!', '。', ' ');
-        return line.ToUpperInvariant();
-    }
 
     private static string? MergeTextGenerationExtraJson(
         string? existingExtraJson, TextGenerationJobOutput output)

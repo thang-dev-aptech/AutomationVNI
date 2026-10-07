@@ -17,6 +17,7 @@ import {
   useSubscribePageMessages,
   useSyncPageMessages,
 } from '../hooks/usePageMessages'
+import { sortChannelsVniFirst } from '@/shared/utils/channelSort'
 import './PageMessagesInboxPage.css'
 
 const STATUS = {
@@ -107,7 +108,9 @@ export default function PageMessagesInboxPage() {
   }), [channelId, status, unreadOnly, openWindowOnly, keyword])
 
   const { data: channels = [] } = useSocialChannelAll()
-  const facebookPages = channels.filter((channel) => channel.platform === 1 && channel.channelType === 1)
+  const facebookPages = sortChannelsVniFirst(
+    channels.filter((channel) => channel.platform === 1 && channel.channelType === 1),
+  )
   const { data: summary } = usePageMessageSummary()
   const { data, isLoading, isError, error, refetch } = usePageMessageList(params)
   const { data: conversation, isLoading: detailLoading } = usePageConversation(selectedId)

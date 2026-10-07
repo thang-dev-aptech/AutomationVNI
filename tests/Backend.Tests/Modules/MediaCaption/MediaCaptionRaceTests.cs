@@ -18,8 +18,8 @@ namespace Backend.Tests.Modules.MediaCaption;
 /// Caption người dùng ghi trước phải được giữ, item của worker thành Skipped.</summary>
 public sealed class MediaCaptionRaceTests : IAsyncLifetime
 {
-    private const string UserCaption = "u1\nu2\nu3\nu4\nu5";
-    private const string WorkerCaption = "w1\nw2\nw3\nw4\nw5";
+    private const string UserCaption = "Nội dung của người dùng";
+    private const string WorkerCaption = "Nội dung của worker";
 
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
     private DbContextOptions<AppDbContext> _dbOptions = null!;
@@ -39,8 +39,8 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
     {
         var (folderId, assetId) = await SeedAsync();
         var handler = new GatedChatHandler(
-            ScriptedChatHandler.Lines(UserCaption.Split('\n')),
-            ScriptedChatHandler.Lines(WorkerCaption.Split('\n')));
+            CaptionAi.Json(UserCaption),
+            CaptionAi.Json(WorkerCaption));
 
         await using var userDb = new AppDbContext(_dbOptions);
         var userService = CreateIntelligence(userDb, handler);
@@ -72,7 +72,7 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
         await workerTask.WaitAsync(TimeSpan.FromSeconds(10));
 
         await using var db = new AppDbContext(_dbOptions);
-        Assert.Equal(UserCaption, (await db.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
+        Assert.Equal(CaptionAi.Expected(UserCaption), (await db.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
         var item = await db.MediaCaptionJobItems.SingleAsync();
         Assert.Equal(MediaCaptionJobItemStatus.Skipped, item.Status);
         var job = await db.MediaCaptionJobs.SingleAsync();
@@ -86,7 +86,7 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
     public async Task WorkerStillWritesCaptionWhenNobodyElseDid()
     {
         var (folderId, assetId) = await SeedAsync();
-        var handler = new GatedChatHandler(ScriptedChatHandler.Lines(WorkerCaption.Split('\n')));
+        var handler = new GatedChatHandler(CaptionAi.Json(WorkerCaption));
         handler.Release(0);
         await using (var jobDb = new AppDbContext(_dbOptions))
             await new MediaCaptionJobService(jobDb, new MediaFolderRepository(jobDb, new StubUserContext())).CreateAsync(folderId);
@@ -105,7 +105,7 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
         await workerTask;
 
         await using var db = new AppDbContext(_dbOptions);
-        Assert.Equal(WorkerCaption, (await db.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
+        Assert.Equal(CaptionAi.Expected(WorkerCaption), (await db.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
         Assert.Equal(MediaCaptionJobItemStatus.Succeeded, (await db.MediaCaptionJobItems.SingleAsync()).Status);
     }
 
@@ -114,8 +114,8 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
     {
         var (folderId, assetId) = await SeedAsync();
         var handler = new GatedChatHandler(
-            ScriptedChatHandler.Lines(UserCaption.Split('\n')),
-            ScriptedChatHandler.Lines(WorkerCaption.Split('\n')));
+            CaptionAi.Json(UserCaption),
+            CaptionAi.Json(WorkerCaption));
 
         await using var userDb = new AppDbContext(_dbOptions);
         var userTask = CreateIntelligence(userDb, handler).GenerateCaptionAsync(assetId);
@@ -132,7 +132,7 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
         await workerTask.WaitAsync(TimeSpan.FromSeconds(10));
 
         await using var db = new AppDbContext(_dbOptions);
-        Assert.Equal(UserCaption, (await db.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
+        Assert.Equal(CaptionAi.Expected(UserCaption), (await db.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
         Assert.Equal(MediaCaptionJobItemStatus.Skipped, (await db.MediaCaptionJobItems.SingleAsync()).Status);
         Assert.Equal(1, (await db.MediaCaptionJobs.SingleAsync()).Skipped);
         Assert.Equal(1, handler.RequestCount);
@@ -142,7 +142,7 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
     public async Task WorkerGeneratesWhenSingleGenerateFailedAndLeftNoCaption()
     {
         var (folderId, assetId) = await SeedAsync();
-        var handler = new GatedChatHandler("{\"lines\":[]}", "{\"lines\":[]}", ScriptedChatHandler.Lines(WorkerCaption.Split('\n')));
+        var handler = new GatedChatHandler("{\"lines\":[]}", "{\"lines\":[]}", CaptionAi.Json(WorkerCaption));
 
         await using var userDb = new AppDbContext(_dbOptions);
         var userTask = CreateIntelligence(userDb, handler).GenerateCaptionAsync(assetId);
@@ -161,7 +161,7 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
         await workerTask.WaitAsync(TimeSpan.FromSeconds(10));
 
         await using var db = new AppDbContext(_dbOptions);
-        Assert.Equal(WorkerCaption, (await db.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
+        Assert.Equal(CaptionAi.Expected(WorkerCaption), (await db.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
         Assert.Equal(MediaCaptionJobItemStatus.Succeeded, (await db.MediaCaptionJobItems.SingleAsync()).Status);
     }
 
@@ -170,7 +170,7 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
     {
         var (folderId, assetId) = await SeedAsync();
         await CreateJobAsync(folderId);
-        var handler = new GatedChatHandler(ScriptedChatHandler.Lines(UserCaption.Split('\n')));
+        var handler = new GatedChatHandler(CaptionAi.Json(UserCaption));
         await using var userDb = new AppDbContext(_dbOptions);
 
         await Assert.ThrowsAsync<CaptionQueuedException>(() => CreateIntelligence(userDb, handler).GenerateCaptionAsync(assetId));
@@ -186,7 +186,7 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
     public async Task WhitespaceOnlyCaptionIsTreatedAsEmptyEverywhere(string existing)
     {
         var (folderId, assetId) = await SeedAsync(existing);
-        var handler = new GatedChatHandler(ScriptedChatHandler.Lines(WorkerCaption.Split('\n')));
+        var handler = new GatedChatHandler(CaptionAi.Json(WorkerCaption));
         handler.Release(0);
 
         var job = await CreateJobAsync(folderId);
@@ -199,7 +199,7 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
         await workerTask;
 
         await using var db = new AppDbContext(_dbOptions);
-        Assert.Equal(WorkerCaption, (await db.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
+        Assert.Equal(CaptionAi.Expected(WorkerCaption), (await db.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
         Assert.Equal(MediaCaptionJobItemStatus.Succeeded, (await db.MediaCaptionJobItems.SingleAsync()).Status);
         Assert.Equal(1, (await db.MediaCaptionJobs.SingleAsync()).Succeeded);
     }
@@ -208,7 +208,7 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
     public async Task WorkerNeverOverwritesRealCaptionChangedFromWhitespaceWhileAiRuns()
     {
         var (folderId, assetId) = await SeedAsync("\t");
-        var handler = new GatedChatHandler(ScriptedChatHandler.Lines(WorkerCaption.Split('\n')));
+        var handler = new GatedChatHandler(CaptionAi.Json(WorkerCaption));
         await CreateJobAsync(folderId);
         var worker = new RaceWorker(CreateScopeFactory(handler), TimeSpan.Zero);
         var workerTask = worker.RunOnceAsync();
@@ -251,7 +251,7 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
             AnalysisRequest: MediaAiTimeouts.Default.AnalysisRequest,
             CaptionPreparationAllowance: TimeSpan.FromMilliseconds(1500));
         var (folderId, assetId) = await SeedAsync();
-        var handler = new GatedChatHandler(ScriptedChatHandler.Lines(WorkerCaption.Split('\n')));
+        var handler = new GatedChatHandler(CaptionAi.Json(WorkerCaption));
         handler.Release(0);
         var slowStorage = new FirstExistsHangsStorage();
 
@@ -275,7 +275,7 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
         await workerTask.WaitAsync(TimeSpan.FromSeconds(5));
 
         await using var db = new AppDbContext(_dbOptions);
-        Assert.Equal(WorkerCaption, (await db.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
+        Assert.Equal(CaptionAi.Expected(WorkerCaption), (await db.MediaAssets.SingleAsync(x => x.Id == assetId)).Caption);
         Assert.Equal(MediaCaptionJobItemStatus.Succeeded, (await db.MediaCaptionJobItems.SingleAsync()).Status);
         Assert.Equal(1, handler.RequestCount);
     }

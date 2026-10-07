@@ -285,6 +285,14 @@ public class MediaAssetRepository : GenericRepository<MediaAssetModel>
             throw new KeyNotFoundException("Page/Kênh không tồn tại.");
     }
 
+    /// <summary>
+    /// Page nằm trong QueryWritableChannels của người gọi (Admin: mọi Page chưa xoá; còn lại: Page do mình tạo
+    /// hoặc SocialConnection của mình). Id không tồn tại và id ngoài quyền cho cùng kết quả false — caller trả
+    /// một thông báo chung, không lộ tên/ID Page.
+    /// </summary>
+    public async Task<bool> CanWritePageAsync(Guid channelId, CancellationToken ct = default)
+        => (await _folders.GetWritablePagesAsync(ct: ct)).Any(p => p.Id == channelId);
+
     public async Task SetPreviewUrlAsync(MediaAssetModel entity, CancellationToken ct = default)
     {
         entity.PublicUrl = MediaAssetUrls.Preview(entity.Id);

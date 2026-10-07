@@ -11,6 +11,9 @@ import PostListPage from '@/modules/posts/pages/PostListPage'
 import PostCalendarPage from '@/modules/posts/pages/PostCalendarPage'
 import PostCreatePage from '@/modules/posts/pages/PostCreatePage'
 import PostDetailPage from '@/modules/posts/pages/PostDetailPage'
+import CampaignListPage from '@/modules/campaigns/pages/CampaignListPage'
+import CampaignDetailPage from '@/modules/campaigns/pages/CampaignDetailPage'
+import CampaignPagePostsPage from '@/modules/campaigns/pages/CampaignPagePostsPage'
 import MediaPage from '@/modules/media/pages/MediaPage'
 import MediaCaptionJobPage from '@/modules/media/pages/MediaCaptionJobPage'
 import MediaCaptionJobListPage from '@/modules/media/pages/MediaCaptionJobListPage'
@@ -32,6 +35,7 @@ import NotFoundPage from '@/shared/pages/NotFoundPage'
 import DataDeletionPage from '@/shared/pages/DataDeletionPage'
 import PrivacyPolicyPage from '@/shared/pages/PrivacyPolicyPage'
 import TermsPage from '@/shared/pages/TermsPage'
+import { FEATURES } from '@/shared/config/features'
 
 export default function AppRouter() {
   return (
@@ -56,10 +60,19 @@ export default function AppRouter() {
           </Route>
           <Route path="/posts" element={<PostListPage />} />
           <Route path="/calendar" element={<PostCalendarPage />} />
+          <Route path="/campaigns" element={<CampaignListPage />} />
+          <Route path="/campaigns/:id" element={<CampaignDetailPage />} />
+          <Route
+            path="/campaigns/:id/pages/:channelId"
+            element={<CampaignPagePostsPage />}
+          />
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.postsCreate} />}>
             <Route path="/posts/create" element={<PostCreatePage />} />
             <Route path="/bulk" element={<BulkCreatePage />} />
-            <Route path="/bulk-chung-chi" element={<BulkChungChiPage />} />
+            <Route
+              path="/bulk-chung-chi"
+              element={FEATURES.chungChiBulk ? <BulkChungChiPage /> : <Navigate to="/bulk" replace />}
+            />
             <Route path="/bulk/:batchId" element={<BatchProgressPage />} />
           </Route>
           <Route path="/posts/:id" element={<PostDetailPage />} />
