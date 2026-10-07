@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Backend.Data;
+using Backend.Modules.Crm.Assignment;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
 using Backend.Modules.Users;
@@ -17,6 +18,7 @@ public class PageMessageService(
     FacebookPageMessagingProvider provider,
     IUserContext userContext,
     UsersService usersService,
+    CrmAutoAssignService autoAssignService,
     IOptions<SocialPublishOptions> publishOptions,
     ILogger<PageMessageService> logger)
 {
@@ -342,6 +344,7 @@ public class PageMessageService(
                     };
                     db.PageConversations.Add(conversation);
                     await db.SaveChangesAsync(ct);
+                    await autoAssignService.TryAssignNewConversationAsync(conversation.Id, ct);
                 }
 
                 if (evt.TryGetProperty("message", out var message))
@@ -455,7 +458,8 @@ public class PageMessageService(
             && (x.ExternalConversationId == dto.ExternalConversationId
                 || (!string.IsNullOrWhiteSpace(dto.ParticipantExternalId)
                     && x.ParticipantExternalId == dto.ParticipantExternalId)), ct);
-        if (conversation is null)
+        var isNew = conversation is null;
+        if (isNew)
         {
             conversation = new PageConversationModel
             {
@@ -469,7 +473,7 @@ public class PageMessageService(
             db.PageConversations.Add(conversation);
         }
 
-        conversation.ExternalConversationId = dto.ExternalConversationId;
+        conversation!.ExternalConversationId = dto.ExternalConversationId;
         if (!string.IsNullOrWhiteSpace(dto.ParticipantExternalId))
             conversation.ParticipantExternalId = dto.ParticipantExternalId;
         if (!string.IsNullOrWhiteSpace(dto.ParticipantName))
@@ -485,6 +489,10 @@ public class PageMessageService(
         if (dto.UnreadCount > 0 && conversation.InboxStatus == MessageInboxStatus.Replied)
             conversation.InboxStatus = MessageInboxStatus.New;
         await db.SaveChangesAsync(ct);
+
+        if (isNew)
+            await autoAssignService.TryAssignNewConversationAsync(conversation.Id, ct);
+
         return conversation;
     }
 

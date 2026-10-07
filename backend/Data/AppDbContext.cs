@@ -4,6 +4,8 @@ using Backend.Modules.Campaign;
 using Backend.Modules.Category;
 using Backend.Modules.ChannelGroup;
 using Backend.Modules.ContentCrawl;
+using Backend.Modules.Crm.Assignment;
+using Backend.Modules.Crm.Tags;
 using Backend.Modules.GenerationJob;
 using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaAsset;
@@ -73,6 +75,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<PageConversationModel> PageConversations => Set<PageConversationModel>();
     public DbSet<PageMessageModel> PageMessages => Set<PageMessageModel>();
     public DbSet<MessageActionLogModel> MessageActionLogs => Set<MessageActionLogModel>();
+    public DbSet<CrmTagModel> CrmTags => Set<CrmTagModel>();
+    public DbSet<CrmTagLinkModel> CrmTagLinks => Set<CrmTagLinkModel>();
+    public DbSet<CrmAutoAssignSettingsModel> CrmAutoAssignSettings => Set<CrmAutoAssignSettingsModel>();
     public DbSet<CrawlSourceModel> CrawlSources => Set<CrawlSourceModel>();
     public DbSet<CrawlRunModel> CrawlRuns => Set<CrawlRunModel>();
     public DbSet<CrawledArticleModel> CrawledArticles => Set<CrawledArticleModel>();
@@ -549,6 +554,44 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.IncludeKeywords).HasColumnType("TEXT");
             e.Property(x => x.ExcludeKeywords).HasColumnType("TEXT");
             e.Property(x => x.DefaultChannelIds).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<CrmTagModel>(e =>
+        {
+            e.ToTable("CrmTags");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Name);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.Property(x => x.Color).HasMaxLength(16);
+        });
+
+        modelBuilder.Entity<CrmTagLinkModel>(e =>
+        {
+            e.ToTable("CrmTagLinks");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrmTagId);
+            e.HasIndex(x => new { x.TargetType, x.TargetId });
+            e.HasIndex(x => new { x.CrmTagId, x.TargetType, x.TargetId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0");
+            e.HasIndex(x => x.IsDeleted);
+        });
+
+        modelBuilder.Entity<CrmAutoAssignSettingsModel>(e =>
+        {
+            e.ToTable("CrmAutoAssignSettings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.IsEnabled).HasDefaultValue(false);
+            e.Property(x => x.AssigneeUserIdsJson).HasColumnType("TEXT");
+            e.HasData(new CrmAutoAssignSettingsModel
+            {
+                Id = CrmAutoAssignSettingsModel.SingletonId,
+                IsEnabled = false,
+                AssigneeUserIdsJson = "[]",
+                NextIndex = 0,
+                CreatedAt = new DateTime(2026, 10, 7, 0, 0, 0, DateTimeKind.Utc)
+            });
         });
 
         modelBuilder.Entity<ContentCrawlPipelineStateModel>(e =>

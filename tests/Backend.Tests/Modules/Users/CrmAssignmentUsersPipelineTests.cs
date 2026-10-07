@@ -10,6 +10,7 @@ using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
 using Backend.Modules.SocialComment;
 using Backend.Modules.SocialComment.Enums;
+using Backend.Modules.Crm.Assignment;
 using Backend.Modules.Users;
 using Backend.Shared;
 using Backend.Shared.PageMessage;
@@ -83,6 +84,7 @@ public sealed class CrmAssignmentUsersPipelineTests : IAsyncLifetime
                         .AddEntityFrameworkStores<AppDbContext>()
                         .AddDefaultTokenProviders();
                     services.AddScoped<UsersService>();
+                    services.AddScoped<CrmAutoAssignService>();
                     services.AddSingleton(Options.Create(new SocialPublishOptions()));
                     services.AddHttpClient<FacebookPageMessagingProvider>();
                     services.AddScoped<PageMessageService>();
