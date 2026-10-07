@@ -1,0 +1,15 @@
+/* Unified Inbox Responsive & Mobile Adjustments */
+@media (max-width: 900px) {
+  .crm-inbox-grid.crm-inbox-mobile-list .crm-chat-pane {
+    display: none !important;
+  }
+
+  .crm-inbox-grid.crm-inbox-mobile-detail .crm-inbox-sidebar {
+    display: none !important;
+  }
+
+  .crm-inbox-grid {
+    grid-template-columns: 1fr;
+    min-height: calc(100vh - var(--crm-header-height) - 24px);
+  }
+}
