@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import Modal from '@/shared/components/Modal'
 import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
+import {
+  AI_IMAGE_DISABLED_HINT,
+  isAiImageGenerationEnabled,
+} from '@/shared/config/features'
 import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialChannels'
 import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
 
@@ -48,7 +52,8 @@ export default function ApproveArticleModal({ open, article, onClose, onSubmit, 
       channelIds,
       promptTemplateId: templateId || null,
       autoSchedule,
-      generationFlow: withImage ? 1 : 5, // 1 = Full AI (có ảnh), 5 = TextOnly
+      // 1 = Full AI (có ảnh), 5 = TextOnly — kill switch aiImageGeneration luôn ép TextOnly.
+      generationFlow: withImage && isAiImageGenerationEnabled() ? 1 : 5,
     })
   }
 
@@ -125,17 +130,29 @@ export default function ApproveArticleModal({ open, article, onClose, onSubmit, 
               Bắt buộc chọn nếu có page chưa cấu hình PageContext hoặc template mặc định.
             </p>
 
-            <label className="form-check">
+            <label
+              className="form-check"
+              title={!isAiImageGenerationEnabled() ? AI_IMAGE_DISABLED_HINT : undefined}
+              style={!isAiImageGenerationEnabled() ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
+            >
               <input
                 type="checkbox"
-                checked={withImage}
-                onChange={(e) => setWithImage(e.target.checked)}
+                checked={withImage && isAiImageGenerationEnabled()}
+                disabled={!isAiImageGenerationEnabled()}
+                onChange={(e) => {
+                  if (!isAiImageGenerationEnabled()) return
+                  setWithImage(e.target.checked)
+                }}
               />
-              <span>Sinh thêm ảnh banner bằng AI</span>
+              <span>
+                Sinh thêm ảnh banner bằng AI
+                {!isAiImageGenerationEnabled() ? ` — ${AI_IMAGE_DISABLED_HINT}` : ''}
+              </span>
             </label>
             <p className="form-hint">
-              Mặc định KHÔNG sinh ảnh — bài tin đăng dạng tóm tắt kèm link bài gốc bên dưới,
-              tiết kiệm một lượt gọi AI ảnh cho mỗi page. Tick nếu muốn có banner.
+              {!isAiImageGenerationEnabled()
+                ? AI_IMAGE_DISABLED_HINT
+                : 'Mặc định KHÔNG sinh ảnh — bài tin đăng dạng tóm tắt kèm link bài gốc bên dưới, tiết kiệm một lượt gọi AI ảnh cho mỗi page. Tick nếu muốn có banner.'}
             </p>
 
             <label className="form-check">

@@ -1,5 +1,8 @@
+using System.Globalization;
 using Backend.Modules.ApiLog;
+using Backend.Modules.Campaign;
 using Backend.Modules.Category;
+using Backend.Modules.ChannelGroup;
 using Backend.Modules.ContentCrawl;
 using Backend.Modules.GenerationJob;
 using Backend.Modules.GoogleDrive;
@@ -19,16 +22,34 @@ using Backend.Modules.ShortLink;
 using Backend.Modules.SocialConnection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Data;
 
 public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, Guid>
 {
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
+    {
+        // Connection đã mở sẵn (test) không kích hoạt interceptor ConnectionOpened ⇒ đăng ký tại đây,
+        // mỗi connection đúng một lần (Microsoft.Data.Sqlite tự áp lại collation/function khi connection mở).
+        if (Database.IsRelational() && Database.GetDbConnection() is SqliteConnection sqlite)
+            SqliteVietnameseCollation.Register(sqlite);
+    }
+
+    /// <summary>
+    /// Hàm SQLite <c>vi_lower</c> — lowercase Unicode (vi-VN). Dùng trong LINQ; không gọi trực tiếp.
+    /// </summary>
+    public static string ViLower(string? value)
+        => throw new NotSupportedException("ViLower chỉ dùng trong LINQ dịch sang SQL (vi_lower).");
 
     public DbSet<CategoryModel> Categories => Set<CategoryModel>();
     public DbSet<SocialChannelModel> SocialChannels => Set<SocialChannelModel>();
+    public DbSet<ChannelGroupModel> ChannelGroups => Set<ChannelGroupModel>();
+    public DbSet<ChannelGroupMemberModel> ChannelGroupMembers => Set<ChannelGroupMemberModel>();
+    public DbSet<CampaignModel> Campaigns => Set<CampaignModel>();
+    public DbSet<CampaignChannelModel> CampaignChannels => Set<CampaignChannelModel>();
+    public DbSet<CampaignChannelGroupModel> CampaignChannelGroups => Set<CampaignChannelGroupModel>();
     public DbSet<SocialConnectionModel> SocialConnections => Set<SocialConnectionModel>();
     public DbSet<PageContextModel> PageContexts => Set<PageContextModel>();
     public DbSet<PostModel> Posts => Set<PostModel>();
@@ -75,6 +96,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.HasDbFunction(typeof(AppDbContext).GetMethod(nameof(ViLower), [typeof(string)])!)
+            .HasName("vi_lower");
 
         modelBuilder.Entity<CategoryModel>(e =>
         {
@@ -154,6 +178,29 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.RefreshToken).HasColumnType("TEXT");
         });
 
+        // Nhóm kênh — không FK constraint; unique tên/cặp member enforce ở repo + index.
+        modelBuilder.Entity<ChannelGroupModel>(e =>
+        {
+            e.ToTable("ChannelGroups");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Description).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<ChannelGroupMemberModel>(e =>
+        {
+            e.ToTable("ChannelGroupMembers");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.ChannelGroupId);
+            e.HasIndex(x => x.SocialChannelId);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => new { x.ChannelGroupId, x.SocialChannelId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0")
+                .HasDatabaseName("IX_ChannelGroupMembers_Group_Channel_Active");
+        });
+
         modelBuilder.Entity<SocialConnectionModel>(e =>
         {
             e.ToTable("SocialConnections");
@@ -186,6 +233,45 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.PromptTemplateImage).HasColumnType("TEXT");
         });
 
+        // Chiến dịch — không FK constraint; JSON lịch + junction kênh/nhóm.
+        modelBuilder.Entity<CampaignModel>(e =>
+        {
+            e.ToTable("Campaigns");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Status);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => x.CreatedByUserId);
+            e.Property(x => x.Name).HasMaxLength(300);
+            e.Property(x => x.WeekdaysJson).HasColumnType("TEXT");
+            e.Property(x => x.PublishTimesJson).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<CampaignChannelModel>(e =>
+        {
+            e.ToTable("CampaignChannels");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CampaignId);
+            e.HasIndex(x => x.SocialChannelId);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => new { x.CampaignId, x.SocialChannelId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0")
+                .HasDatabaseName("IX_CampaignChannels_Campaign_Channel_Active");
+        });
+
+        modelBuilder.Entity<CampaignChannelGroupModel>(e =>
+        {
+            e.ToTable("CampaignChannelGroups");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CampaignId);
+            e.HasIndex(x => x.ChannelGroupId);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => new { x.CampaignId, x.ChannelGroupId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0")
+                .HasDatabaseName("IX_CampaignChannelGroups_Campaign_Group_Active");
+        });
+
         modelBuilder.Entity<PostModel>(e =>
         {
             e.ToTable("Posts");
@@ -196,7 +282,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasIndex(x => x.Status);
             e.HasIndex(x => x.ScheduledPublishAt);
             e.HasIndex(x => x.BatchId);
+            e.HasIndex(x => x.CampaignId);
             e.HasIndex(x => x.IsDeleted);
+            // Idempotent khe chiến dịch — chỉ khi CampaignId có giá trị.
+            e.HasIndex(x => new { x.CampaignId, x.SocialChannelId, x.CampaignSlotAt })
+                .IsUnique()
+                .HasFilter("CampaignId IS NOT NULL")
+                .HasDatabaseName("IX_Posts_Campaign_Channel_Slot");
             e.Property(x => x.Title).HasMaxLength(500);
             e.Property(x => x.Content).HasColumnType("TEXT");
             e.Property(x => x.ExternalPostId).HasMaxLength(500);
@@ -645,6 +737,43 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.TitleSnippet).HasMaxLength(500);
         });
     }
+}
+
+/// <summary>
+/// Collation SQLite "VI" + hàm <c>vi_lower</c> (Unicode lowercase theo vi-VN).
+/// Collation: đối chiếu với Intl.Collator('vi') trên bộ tên dùng chung với channelSort.test.js.
+/// vi_lower: tìm kiếm keyword lịch không phân biệt hoa/thường tiếng Việt (giữ dấu).
+/// </summary>
+public static class SqliteVietnameseCollation
+{
+    private static readonly CultureInfo VietnameseCulture = CultureInfo.GetCultureInfo("vi-VN");
+
+    private static readonly CompareInfo Vietnamese = VietnameseCulture.CompareInfo;
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<SqliteConnection, object> Registered = new();
+
+    /// <summary>Đăng ký một lần cho mỗi connection (đăng ký lại khi có statement đang chạy sẽ lỗi).</summary>
+    public static void Register(SqliteConnection connection)
+    {
+        lock (Registered)
+        {
+            if (Registered.TryGetValue(connection, out _)) return;
+            connection.CreateCollation(PageOrdering.VietnameseCollation, Compare);
+            connection.CreateFunction(
+                "vi_lower",
+                (string? value) => string.IsNullOrEmpty(value)
+                    ? string.Empty
+                    : value.ToLower(VietnameseCulture));
+            Registered.Add(connection, new object());
+        }
+    }
+
+    public static int Compare(string? left, string? right)
+        => Vietnamese.Compare(left ?? string.Empty, right ?? string.Empty, CompareOptions.None);
+
+    /// <summary>Lowercase Unicode phía CLR (cùng quy tắc với hàm SQLite vi_lower).</summary>
+    public static string Lower(string? value)
+        => string.IsNullOrEmpty(value) ? string.Empty : value.ToLower(VietnameseCulture);
 }
 
 public class ApplicationUser : IdentityUser<Guid> { }

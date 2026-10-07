@@ -104,8 +104,7 @@ public class SocialConnectionRepository(
                 && x.IsActive
                 && x.SocialConnectionId != null
                 && connectionIds.Contains(x.SocialConnectionId.Value))
-            .OrderBy(x => x.ChannelType)
-            .ThenBy(x => x.PageName)
+            .OrderByVniFirst()
             .ToListAsync(ct);
 
         return connections.Select(c =>

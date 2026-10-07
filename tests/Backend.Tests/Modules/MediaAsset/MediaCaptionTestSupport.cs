@@ -27,7 +27,21 @@ internal sealed class ScriptedChatHandler(params string[] contents) : HttpMessag
         };
     }
 
-    public static string Lines(params string[] lines) => JsonSerializer.Serialize(new { lines });
+}
+
+/// <summary>Trả lời AI giả cho caption sinh từ ảnh (R-029): JSON {caption, hashtags, cta, bannerHeadline} và
+/// bài đã ghép tương ứng. Mặc định có CTA + hashtag để kết quả không phụ thuộc fallback của Page.</summary>
+internal static class CaptionAi
+{
+    public const string Cta = "Nhắn tin ngay 💬";
+    private static readonly string[] DefaultTags = ["#thu"];
+
+    public static string Json(string caption, string headline = "", string cta = Cta, string[]? hashtags = null)
+        => JsonSerializer.Serialize(new { caption, hashtags = hashtags ?? DefaultTags, cta, bannerHeadline = headline });
+
+    public static string Expected(string caption, string headline = "", string cta = Cta, string[]? hashtags = null)
+        => Backend.Shared.Ai.FacebookPostComposer.Compose(
+            headline, caption, cta, Backend.Shared.Ai.FacebookPostComposer.NormalizeHashtags(hashtags ?? DefaultTags));
 }
 
 /// <summary>Handler có cổng: request thứ i chỉ trả lời sau khi test gọi Release(i); Arrived(i) hoàn tất

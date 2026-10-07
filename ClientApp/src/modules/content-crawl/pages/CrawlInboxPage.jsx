@@ -51,6 +51,10 @@ export default function CrawlInboxPage() {
   const sweep = useSweepAutoApprove()
 
   const busy = approve.isPending || reject.isPending || notDuplicate.isPending || rededup.isPending
+  // NEWS-PUBLISH-OFF-01: backend tắt đăng web (ContentCrawl:WebsitePublishEnabled=false) thì bấm
+  // Duyệt / Quét tồn đọng chỉ nhận lỗi 400 — ẩn hẳn. Chỉ chặn khi Duyệt đúng là "đưa lên web"
+  // (TwoGateFlow); luồng cũ đăng thẳng fanpage không đụng tới trang tin tức.
+  const websitePublishOff = summary?.websitePublishEnabled === false && summary?.twoGateFlow !== false
 
   const handleApprove = async (payload) => {
     try {
@@ -141,7 +145,7 @@ export default function CrawlInboxPage() {
                     : 'Đang dừng · Bật lại toàn bộ chức năng tin tức')}
               </button>
             )}
-            {canManageCrawlSources && (
+            {canManageCrawlSources && !websitePublishOff && (
               <button
                 type="button"
                 className="btn btn-ghost"
@@ -158,6 +162,12 @@ export default function CrawlInboxPage() {
           </>
         )}
       />
+
+      {websitePublishOff && (
+        <div className="crawl-note crawl-note-muted" role="status">
+          Đăng lên trang tin tức đang tắt — tin vẫn được cào và chấm điểm, nhưng không đưa lên web.
+        </div>
+      )}
 
       <div className="crawl-tabs">
         {STATUS_TABS.map((t) => {
@@ -195,6 +205,7 @@ export default function CrawlInboxPage() {
             key={article.id}
             article={article}
             canApprove={canApproveCrawl}
+            canPublishToWebsite={!websitePublishOff}
             busy={busy}
             onApprove={setApproving}
             onReject={handleReject}

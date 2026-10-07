@@ -10,7 +10,11 @@ import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromp
 import { useCategoryList } from '@/modules/categories/hooks/useCategories'
 import { usePageContextList } from '@/modules/page-contexts/hooks/usePageContexts'
 import { isPageContextTemplateReady } from '@/modules/posts/components/PostCreateForm'
-import GenerationFlowPicker from '@/modules/posts/components/GenerationFlowPicker'
+import {
+  AI_IMAGE_DISABLED_HINT,
+  isAiImageGenerationEnabled,
+} from '@/shared/config/features'
+import GenerationFlowPicker, { getVisibleGenerationFlows } from '@/modules/posts/components/GenerationFlowPicker'
 import PostFormatPicker from '@/modules/posts/components/PostFormatPicker'
 import ChannelMultiSelect from '@/shared/components/ChannelMultiSelect'
 import { useBulkCreate, useBulkImport } from '../hooks/useBulk'
@@ -25,6 +29,10 @@ import {
   downloadGptPageBrief,
 } from '../utils/bulkScheduleSkeleton'
 import './BulkCreatePage.css'
+
+// Trang hàng loạt chỉ hỗ trợ sinh bằng AI (Full AI / ghép ảnh mẫu), không có luồng ảnh có sẵn trong Media.
+// Nếu cả hai cờ AI đều tắt thì vẫn rơi về Full AI để form luôn có phương pháp hợp lệ.
+const BULK_FLOWS = ['fullai', 'template']
 
 const emptyRow = () => ({ idea: '' })
 const SKEL_CHANNEL_IDS_KEY = 'vni.bulkSkelChannelIds.v1'
@@ -50,8 +58,9 @@ export default function BulkCreatePage() {
 
   const [rows, setRows] = useState([emptyRow(), emptyRow(), emptyRow()])
   const [channelIds, setChannelIds] = useState([])
-  const [promptTemplateId, setPromptTemplateId] = useState('')
-  const [flow, setFlow] = useState('fullai')
+  // Chỉ 2 lựa chọn danh mục (R-030): 'pagecontext' (mỗi page dùng PageContext của nó) hoặc 'default'.
+  const [categoryChoice, setCategoryChoice] = useState('pagecontext')
+  const [flow, setFlow] = useState(() => getVisibleGenerationFlows(BULK_FLOWS)[0]?.value ?? 'fullai')
   const isTemplateFlow = flow === 'template'
   const [useMedia, setUseMedia] = useState(false)
   const [postTypeId, setPostTypeId] = useState('')
@@ -75,6 +84,10 @@ export default function BulkCreatePage() {
   const { data: channels = [], isLoading: channelsLoading } = useSocialChannelAll()
   const { data: tplData } = usePromptTemplateList({ isActive: true, index: 1, size: 100 })
   const categoryTemplates = tplData?.items ?? []
+  // Danh mục mặc định (⭐) trong số danh mục đang active; không có thì lựa chọn 2 bị khoá.
+  const defaultTemplate = categoryTemplates.find((t) => t.isDefault) ?? null
+  const effectiveCategoryChoice = categoryChoice === 'default' && defaultTemplate ? 'default' : 'pagecontext'
+  const promptTemplateId = effectiveCategoryChoice === 'default' ? defaultTemplate.id : ''
   const { data: categoryData } = useCategoryList({ index: 1, size: 200 })
   const categories = categoryData?.items ?? []
   const { data: pageContextData } = usePageContextList({ index: 1, size: 200 })
@@ -83,6 +96,7 @@ export default function BulkCreatePage() {
   const createMutation = useBulkCreate()
   const importMutation = useBulkImport()
   const busy = createMutation.isPending || importMutation.isPending
+  const aiImageLocked = !isAiImageGenerationEnabled()
 
   const validRows = useMemo(() => rows.filter((r) => r.idea.trim()), [rows])
   const totalPosts = validRows.length * channelIds.length
@@ -113,6 +127,11 @@ export default function BulkCreatePage() {
     [channelIds, contextByChannel],
   )
   const categoryRequired = needCategoryCount > 0
+
+  // Gợi ý khi có page thiếu PageContext mà chưa chọn danh mục mặc định (dùng cho hint, nút Tạo và import CSV).
+  const missingContextHint = (count) => (defaultTemplate
+    ? `${count} page chưa có PageContext — chọn "Dùng danh mục mặc định: ${defaultTemplate.name}" ở trên hoặc setup Page Context cho các page đó.`
+    : `${count} page chưa có PageContext và chưa có danh mục mặc định (⭐) — setup Page Context hoặc đặt một danh mục làm mặc định.`)
 
   const skeletonChannels = useMemo(() => {
     const set = new Set(skelChannelIds)
@@ -167,6 +186,10 @@ export default function BulkCreatePage() {
   }
 
   const runBulkImport = async (parsedRows) => {
+    if (aiImageLocked) {
+      toast.warning(AI_IMAGE_DISABLED_HINT)
+      return
+    }
     const missing = parsedRows.filter((r) => !r.pageId)
     if (missing.length > 0) {
       toast.error(
@@ -190,7 +213,7 @@ export default function BulkCreatePage() {
       (id) => !isPageContextTemplateReady(contextByChannel.get(id)),
     ).length
     if (needCat > 0 && !promptTemplateId) {
-      toast.error(`${needCat} page chưa có PageContext — chọn danh mục ghi đè trước khi import`)
+      toast.error(missingContextHint(needCat))
       return
     }
 
@@ -231,7 +254,7 @@ export default function BulkCreatePage() {
       return false
     }
     if (categoryRequired && !promptTemplateId) {
-      toast.error('Có page chưa có PageContext — hãy chọn danh mục')
+      toast.error(missingContextHint(needCategoryCount))
       return false
     }
     return true
@@ -286,6 +309,10 @@ export default function BulkCreatePage() {
   }
 
   const handleSubmit = async () => {
+    if (aiImageLocked) {
+      toast.warning(AI_IMAGE_DISABLED_HINT)
+      return
+    }
     if (validRows.length === 0) {
       toast.error('Nhập ít nhất 1 ý tưởng')
       return
@@ -341,7 +368,15 @@ export default function BulkCreatePage() {
 
             <div className="form-group" style={{ marginTop: 16 }}>
               <label>Phương pháp tạo ảnh</label>
-              <GenerationFlowPicker value={flow} onChange={setFlow} />
+              {aiImageLocked && (
+                <p
+                  data-testid="ai-image-disabled-banner"
+                  style={{ margin: '0 0 10px', color: 'var(--color-warning, #b45309)', fontWeight: 600 }}
+                >
+                  {AI_IMAGE_DISABLED_HINT}
+                </p>
+              )}
+              <GenerationFlowPicker value={flow} onChange={setFlow} allowed={BULK_FLOWS} />
             </div>
 
             {isTemplateFlow && (
@@ -395,17 +430,22 @@ export default function BulkCreatePage() {
               <label htmlFor="bulk-category">Danh mục (tuỳ chọn — ghi đè PageContext)</label>
               <select
                 id="bulk-category"
-                value={promptTemplateId}
-                onChange={(e) => setPromptTemplateId(e.target.value)}
+                value={effectiveCategoryChoice}
+                onChange={(e) => setCategoryChoice(e.target.value)}
                 style={{ maxWidth: 360 }}
               >
-                <option value="">Dùng mặc định PageContext từng page</option>
-                {categoryTemplates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}{t.isDefault ? ' ⭐' : ''}
-                  </option>
-                ))}
+                <option value="pagecontext">Dùng mặc định PageContext từng page</option>
+                <option value="default" disabled={!defaultTemplate}>
+                  {defaultTemplate
+                    ? `Dùng danh mục mặc định: ${defaultTemplate.name} ⭐`
+                    : 'Dùng danh mục mặc định (chưa có)'}
+                </option>
               </select>
+              {!defaultTemplate && (
+                <p className="bulk-field-hint">
+                  Chưa có danh mục mặc định (⭐) — đặt một danh mục làm mặc định ở Danh mục template để chọn được lựa chọn này.
+                </p>
+              )}
             </div>
           </div>
 
@@ -534,9 +574,14 @@ export default function BulkCreatePage() {
                   type="button"
                   className="btn btn-primary"
                   onClick={() => csvInputRef.current?.click()}
-                  disabled={busy}
+                  disabled={busy || aiImageLocked}
+                  title={aiImageLocked ? AI_IMAGE_DISABLED_HINT : undefined}
                 >
-                  {importMutation.isPending ? 'Đang import...' : 'Import CSV → tạo + lịch'}
+                  {aiImageLocked
+                    ? AI_IMAGE_DISABLED_HINT
+                    : importMutation.isPending
+                      ? 'Đang import...'
+                      : 'Import CSV → tạo + lịch'}
                 </button>
                 <input ref={csvInputRef} type="file" accept=".csv,.txt" onChange={handleCsv} style={{ display: 'none' }} />
                 <button type="button" className="btn btn-ghost" onClick={handleDownloadSample}>
@@ -565,7 +610,9 @@ export default function BulkCreatePage() {
             {channelIds.length > 0 && (
               <p className="bulk-block__hint">
                 {categoryRequired
-                  ? `${needCategoryCount} page chưa có PageContext — bắt buộc chọn danh mục ở trên.`
+                  ? (promptTemplateId
+                    ? `${needCategoryCount} page chưa có PageContext — sẽ dùng danh mục mặc định "${defaultTemplate.name}".`
+                    : missingContextHint(needCategoryCount))
                   : 'Tất cả page đã chọn có PageContext — mỗi page dùng prompt riêng.'}
               </p>
             )}
@@ -602,9 +649,14 @@ export default function BulkCreatePage() {
                 type="button"
                 className="btn btn-primary"
                 onClick={handleSubmit}
-                disabled={busy || totalPosts === 0 || (categoryRequired && !promptTemplateId)}
+                disabled={busy || aiImageLocked || totalPosts === 0 || (categoryRequired && !promptTemplateId)}
+                title={aiImageLocked ? AI_IMAGE_DISABLED_HINT : undefined}
               >
-                {createMutation.isPending ? 'Đang tạo...' : `Tạo ${totalPosts} bài → AI sinh nền`}
+                {aiImageLocked
+                  ? AI_IMAGE_DISABLED_HINT
+                  : createMutation.isPending
+                    ? 'Đang tạo...'
+                    : `Tạo ${totalPosts} bài → AI sinh nền`}
               </button>
             </div>
           </div>

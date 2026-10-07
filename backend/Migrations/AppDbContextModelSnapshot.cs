@@ -195,6 +195,188 @@ namespace backend.Migrations
                     b.ToTable("ApiLogs", (string)null);
                 });
 
+            modelBuilder.Entity("Backend.Modules.Campaign.CampaignChannelGroupModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CampaignId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ChannelGroupId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CampaignId");
+
+                    b.HasIndex("ChannelGroupId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("CampaignId", "ChannelGroupId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_CampaignChannelGroups_Campaign_Group_Active")
+                        .HasFilter("IsDeleted = 0");
+
+                    b.ToTable("CampaignChannelGroups", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Campaign.CampaignChannelModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CampaignId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("SocialChannelId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CampaignId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("SocialChannelId");
+
+                    b.HasIndex("CampaignId", "SocialChannelId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_CampaignChannels_Campaign_Channel_Active")
+                        .HasFilter("IsDeleted = 0");
+
+                    b.ToTable("CampaignChannels", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Campaign.CampaignModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("EndDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ImageStrategy")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("JitterMinutes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MediaType")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PublishTimesJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ScheduleMode")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("StartDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WeekdaysJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("Campaigns", (string)null);
+                });
+
             modelBuilder.Entity("Backend.Modules.Category.CategoryModel", b =>
                 {
                     b.Property<Guid>("Id")
@@ -251,6 +433,104 @@ namespace backend.Migrations
                         .IsUnique();
 
                     b.ToTable("Categories", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.ChannelGroup.ChannelGroupMemberModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ChannelGroupId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("SocialChannelId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChannelGroupId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("SocialChannelId");
+
+                    b.HasIndex("ChannelGroupId", "SocialChannelId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ChannelGroupMembers_Group_Channel_Active")
+                        .HasFilter("IsDeleted = 0");
+
+                    b.ToTable("ChannelGroupMembers", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.ChannelGroup.ChannelGroupModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.ToTable("ChannelGroups", (string)null);
                 });
 
             modelBuilder.Entity("Backend.Modules.ContentCrawl.ContentCrawlPipelineStateModel", b =>
@@ -2222,6 +2502,12 @@ namespace backend.Migrations
                     b.Property<Guid?>("BatchId")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("CampaignId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CampaignSlotAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("CategoryId")
                         .HasColumnType("TEXT");
 
@@ -2315,6 +2601,8 @@ namespace backend.Migrations
 
                     b.HasIndex("BatchId");
 
+                    b.HasIndex("CampaignId");
+
                     b.HasIndex("CategoryId");
 
                     b.HasIndex("IsDeleted");
@@ -2326,6 +2614,11 @@ namespace backend.Migrations
                     b.HasIndex("Status");
 
                     b.HasIndex("UserId");
+
+                    b.HasIndex("CampaignId", "SocialChannelId", "CampaignSlotAt")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Posts_Campaign_Channel_Slot")
+                        .HasFilter("CampaignId IS NOT NULL");
 
                     b.ToTable("Posts", (string)null);
                 });

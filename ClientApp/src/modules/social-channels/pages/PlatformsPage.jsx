@@ -11,6 +11,7 @@ import { toast } from '@/shared/stores/toastStore'
 import ConnectionCard from '../components/ConnectionCard'
 import SocialChannelTable from '../components/SocialChannelTable'
 import SocialChannelFormModal from '../components/SocialChannelFormModal'
+import ChannelGroupTab from '../components/ChannelGroupTab'
 import { PROVIDER_CATALOG } from '../constants/socialPlatform'
 import {
   useCreateSocialChannel,
@@ -23,12 +24,14 @@ import {
   useTikTokConnectUrl,
   useUpdateSocialChannel,
 } from '../hooks/useSocialChannels'
+import { sortChannelsVniFirst } from '@/shared/utils/channelSort'
 import './PlatformsPage.css'
 
 export default function PlatformsPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { canManageChannels } = usePermissions()
+  const [activeTab, setActiveTab] = useState('channels')
   const [keyword, setKeyword] = useState('')
   const [expandedIds, setExpandedIds] = useState(() => new Set())
   const [connectMenuOpen, setConnectMenuOpen] = useState(false)
@@ -62,14 +65,14 @@ export default function PlatformsPage() {
 
   const orphanChannels = useMemo(() => {
     const kw = keyword.trim().toLowerCase()
-    return allChannels.filter((ch) => {
+    return sortChannelsVniFirst(allChannels.filter((ch) => {
       if (ch.socialConnectionId) return false
       if (!kw) return true
       return (
         ch.pageName?.toLowerCase().includes(kw) ||
         ch.externalPageId?.toLowerCase().includes(kw)
       )
-    })
+    }))
   }, [allChannels, keyword])
 
   const filteredConnections = useMemo(() => {
@@ -318,7 +321,7 @@ export default function PlatformsPage() {
         title="Platforms / Kênh"
         description="Kết nối theo tài khoản (Meta…) — sync Pages, Instagram, Groups; thêm provider sau không đổi layout"
         actions={
-          canManageChannels ? (
+          canManageChannels && activeTab === 'channels' ? (
             <div className="platforms-header-actions">
               <div className="connect-menu">
                 <button
@@ -355,77 +358,104 @@ export default function PlatformsPage() {
         }
       />
 
-      <div className="card card-body platforms-filter">
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label htmlFor="channel-keyword">Tìm tài khoản / kênh</label>
-          <input
-            id="channel-keyword"
-            value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
-            placeholder="Tên tài khoản, page, group…"
-          />
-        </div>
+      <div className="platforms-tabs" role="tablist" aria-label="Phần trang kênh">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'channels'}
+          className={`platforms-tab${activeTab === 'channels' ? ' is-active' : ''}`}
+          onClick={() => setActiveTab('channels')}
+        >
+          Kênh
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'groups'}
+          className={`platforms-tab${activeTab === 'groups' ? ' is-active' : ''}`}
+          onClick={() => setActiveTab('groups')}
+        >
+          Nhóm kênh
+        </button>
       </div>
 
-      {isLoading && <LoadingState />}
-      {isError && <ErrorState message={getErrorMessage(error)} onRetry={refetchAll} />}
-
-      {!isLoading && !isError && (
+      {activeTab === 'groups' ? (
+        <ChannelGroupTab />
+      ) : (
         <>
-          <div className="connections-list">
-            <h2 className="platforms-section-title">Tài khoản đã kết nối</h2>
-            {filteredConnections.length === 0 ? (
-              <EmptyState message="Chưa có tài khoản nào. Bấm + Connect → Meta, Threads hoặc TikTok." />
-            ) : (
-              filteredConnections.map((connection) => (
-                <ConnectionCard
-                  key={connection.id}
-                  connection={connection}
-                  expanded={expandedIds.has(connection.id)}
-                  onToggle={() => toggleExpanded(connection.id)}
-                  canManage={canManageChannels}
-                  onResync={() => handleResync(connection)}
-                  onDisconnect={() => handleDisconnect(connection)}
-                  onEditChannel={openEdit}
-                  onDeleteChannel={handleDelete}
-                  resyncPending={
-                    metaConnectMutation.isPending
-                    || threadsConnectMutation.isPending
-                    || tiktokConnectMutation.isPending
-                  }
-                />
-              ))
-            )}
+          <div className="card card-body platforms-filter">
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="channel-keyword">Tìm tài khoản / kênh</label>
+              <input
+                id="channel-keyword"
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder="Tên tài khoản, page, group…"
+              />
+            </div>
           </div>
 
-          {orphanChannels.length > 0 && (
-            <div className="orphan-channels">
-              <h2 className="platforms-section-title">Kênh thủ công / chưa gắn tài khoản</h2>
-              <div className="card platforms-table">
-                <SocialChannelTable
-                  items={orphanChannels}
-                  isLoading={false}
-                  isError={false}
-                  onEdit={openEdit}
-                  onDelete={handleDelete}
-                  canManage={canManageChannels}
-                  emptyMessage="Không có kênh thủ công"
-                />
+          {isLoading && <LoadingState />}
+          {isError && <ErrorState message={getErrorMessage(error)} onRetry={refetchAll} />}
+
+          {!isLoading && !isError && (
+            <>
+              <div className="connections-list">
+                <h2 className="platforms-section-title">Tài khoản đã kết nối</h2>
+                {filteredConnections.length === 0 ? (
+                  <EmptyState message="Chưa có tài khoản nào. Bấm + Connect → Meta, Threads hoặc TikTok." />
+                ) : (
+                  filteredConnections.map((connection) => (
+                    <ConnectionCard
+                      key={connection.id}
+                      connection={connection}
+                      expanded={expandedIds.has(connection.id)}
+                      onToggle={() => toggleExpanded(connection.id)}
+                      canManage={canManageChannels}
+                      onResync={() => handleResync(connection)}
+                      onDisconnect={() => handleDisconnect(connection)}
+                      onEditChannel={openEdit}
+                      onDeleteChannel={handleDelete}
+                      resyncPending={
+                        metaConnectMutation.isPending
+                        || threadsConnectMutation.isPending
+                        || tiktokConnectMutation.isPending
+                      }
+                    />
+                  ))
+                )}
               </div>
-            </div>
+
+              {orphanChannels.length > 0 && (
+                <div className="orphan-channels">
+                  <h2 className="platforms-section-title">Kênh thủ công / chưa gắn tài khoản</h2>
+                  <div className="card platforms-table">
+                    <SocialChannelTable
+                      items={orphanChannels}
+                      isLoading={false}
+                      isError={false}
+                      onEdit={openEdit}
+                      onDelete={handleDelete}
+                      canManage={canManageChannels}
+                      emptyMessage="Không có kênh thủ công"
+                    />
+                  </div>
+                </div>
+              )}
+            </>
           )}
+
+          <SocialChannelFormModal
+            open={modalOpen}
+            onClose={() => setModalOpen(false)}
+            initialData={editingItem}
+            defaultPlatform={1}
+            onSubmit={handleSubmit}
+            isSubmitting={createMutation.isPending || updateMutation.isPending}
+            errorMessage={formError}
+          />
         </>
       )}
-
-      <SocialChannelFormModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        initialData={editingItem}
-        defaultPlatform={1}
-        onSubmit={handleSubmit}
-        isSubmitting={createMutation.isPending || updateMutation.isPending}
-        errorMessage={formError}
-      />
     </section>
   )
 }

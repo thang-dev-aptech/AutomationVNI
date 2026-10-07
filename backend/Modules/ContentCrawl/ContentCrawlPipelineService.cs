@@ -433,6 +433,7 @@ public class ContentCrawlPipelineService(
                 // bước chống trùng sự việc ở trên: tin vừa bị đánh Duplicate thì Status không
                 // còn Pending nữa, tự động bỏ qua đúng ý, không cần điều kiện lặp lại ở đây.
                 if (article.Status == CrawledArticleStatus.Pending
+                    && opt.WebsitePublishEnabled
                     && opt.AutoApproveMinScore > 0
                     && article.QualityScore >= opt.AutoApproveMinScore)
                 {
@@ -479,6 +480,8 @@ public class ContentCrawlPipelineService(
     public async Task<SweepAutoApproveResult> SweepAutoApproveBacklogAsync(CancellationToken ct = default)
     {
         var opt = options.Value;
+        if (!opt.WebsitePublishEnabled)
+            throw new ArgumentException(ContentCrawlOptions.WebsitePublishDisabledMessage);
         if (opt.AutoApproveMinScore <= 0)
             throw new ArgumentException("Tính năng tự duyệt đang tắt (AutoApproveMinScore = 0) — không có ngưỡng để quét");
         if (!opt.TwoGateFlow)
@@ -705,7 +708,13 @@ public class ContentCrawlPipelineService(
         // trước thì lúc đăng Facebook chưa tồn tại URL nào trên tintuc.vni.edu.vn để trỏ về,
         // nên bình luận buộc phải dùng link báo gốc.
         if (options.Value.TwoGateFlow)
+        {
+            // Chặn TRƯỚC khi đụng trạng thái: PublishToWebsiteAsync ghi Approved ngay đầu hàm,
+            // chặn muộn hơn là để lại tin "đã duyệt" mà không có bài nào (NEWS-PUBLISH-OFF-01).
+            if (!options.Value.WebsitePublishEnabled)
+                throw new ArgumentException(ContentCrawlOptions.WebsitePublishDisabledMessage);
             return await PublishToWebsiteAsync(article, source, actorOverride, ct);
+        }
 
         var channelIds = request.ChannelIds is { Count: > 0 }
             ? request.ChannelIds
@@ -929,6 +938,9 @@ public class ContentCrawlPipelineService(
     /// </summary>
     public async Task ComposeQueuedAsync(Guid newsArticleId, CancellationToken ct = default)
     {
+        // Đăng web tắt ⇒ để nguyên bài trong hàng đợi (không đánh Failed), bật lại là viết tiếp.
+        if (!options.Value.WebsitePublishEnabled) return;
+
         var news = await newsRepository.GetAsync(newsArticleId, ct);
         // Nhận cả Failed vì worker cố tình đưa bài hỏng quay lại thử. Chốt số lần nằm ở
         // ComposeAttemptCount trong PublishAsync, không cần chặn thêm ở đây.

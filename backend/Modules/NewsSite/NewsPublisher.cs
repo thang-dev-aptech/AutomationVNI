@@ -20,8 +20,20 @@ public class NewsPublisher(
     NewsDedupService dedup,
     NewsSiteBuilder builder,
     IOptions<NewsSiteOptions> options,
+    IOptions<Backend.Modules.ContentCrawl.ContentCrawlOptions> crawlOptions,
     ILogger<NewsPublisher> logger)
 {
+    /// <summary>
+    /// Chốt cuối cho NEWS-PUBLISH-OFF-01: mọi đường đưa tin cào lên web đều đi qua QueueAsync hoặc
+    /// PublishAsync, nên chặn ở đây thì một nơi gọi mới quên kiểm cờ cũng không lọt.
+    /// </summary>
+    private void EnsureWebsitePublishEnabled()
+    {
+        if (!crawlOptions.Value.WebsitePublishEnabled)
+            throw new InvalidOperationException(
+                Backend.Modules.ContentCrawl.ContentCrawlOptions.WebsitePublishDisabledMessage);
+    }
+
     /// <summary>
     /// XẾP HÀNG viết bài — trả về NGAY, không gọi AI.
     ///
@@ -35,6 +47,8 @@ public class NewsPublisher(
     public async Task<NewsArticleModel> QueueAsync(
         CrawledArticleModel crawled, CancellationToken ct = default)
     {
+        EnsureWebsitePublishEnabled();
+
         var existing = await repository.GetByCrawledAsync(crawled.Id, ct);
         if (existing is not null) return existing;
 
@@ -89,6 +103,8 @@ public class NewsPublisher(
     public async Task<NewsArticleModel?> PublishAsync(
         CrawledArticleModel crawled, CancellationToken ct = default)
     {
+        EnsureWebsitePublishEnabled();
+
         if (string.IsNullOrWhiteSpace(crawled.SourceUrl))
         {
             logger.LogWarning("Tin {Id} không có link nguồn — không xuất bản", crawled.Id);

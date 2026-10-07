@@ -5,12 +5,6 @@
   gap: 6px;
 }
 
-/* .card cắt mọi thứ tràn ra ngoài (overflow: hidden) nên dropdown absolute bị
-   cụt ở mép card — card nào chứa select này thì phải cho phép tràn. */
-.card:has(.channel-multi-select) {
-  overflow: visible;
-}
-
 .channel-multi-select__field-label {
   font-weight: 600;
   font-size: 0.9rem;
@@ -61,11 +55,6 @@
 }
 
 .channel-multi-select__dropdown {
-  position: absolute;
-  z-index: 40;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
   display: flex;
   flex-direction: column;
   max-height: min(420px, 70vh);
@@ -207,6 +196,82 @@
   font-size: 0.9rem;
   color: var(--text-muted, #6b7280);
   text-align: center;
+}
+
+.channel-multi-select__section-label {
+  padding: 8px 12px 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6b7280);
+}
+
+.channel-multi-select__groups {
+  border-bottom: 1px solid var(--border-color, #f3f4f6);
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+}
+
+.channel-multi-select__group-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  margin: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.channel-multi-select__group-row:hover:not(:disabled) {
+  background: var(--color-primary-soft);
+}
+
+.channel-multi-select__group-row.is-disabled,
+.channel-multi-select__group-row:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.channel-multi-select__group-row.is-all {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+.channel-multi-select__group-mark {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: 1.5px solid var(--border-color, #9ca3af);
+  border-radius: 3px;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.channel-multi-select__group-mark.is-partial {
+  background: linear-gradient(
+    90deg,
+    var(--color-primary) 0 50%,
+    #fff 50% 100%
+  );
+  border-color: var(--color-primary);
+}
+
+.channel-multi-select__group-mark.is-all {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: inset 0 0 0 2px #fff;
+}
+
+.channel-multi-select__group-meta {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted, #6b7280);
+  max-width: 46%;
+  text-align: right;
 }
 
 .channel-multi-select__chips {

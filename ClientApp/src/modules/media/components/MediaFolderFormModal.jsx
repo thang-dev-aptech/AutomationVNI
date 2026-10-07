@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import Modal from '@/shared/components/Modal'
+import { sortChannelsVniFirst } from '@/shared/utils/channelSort'
 import { useWritableMediaFolderPages } from '../hooks/useMediaFolders'
 import MediaFolderPickerTree from './MediaFolderPickerTree'
 
@@ -28,7 +29,7 @@ export default function MediaFolderFormModal({
     withoutRoot: mode === 'page-roots',
   })
 
-  const displayChannels = mode === 'page-roots' ? pagesWithoutRoot : []
+  const displayChannels = mode === 'page-roots' ? sortChannelsVniFirst(pagesWithoutRoot) : []
 
   useEffect(() => {
     if (!open) return

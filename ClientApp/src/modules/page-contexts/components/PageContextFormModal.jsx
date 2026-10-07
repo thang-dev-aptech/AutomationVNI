@@ -4,6 +4,7 @@ import { useSocialChannelAll } from '@/modules/social-channels/hooks/useSocialCh
 import { usePromptTemplateList } from '@/modules/prompt-templates/hooks/usePromptTemplates'
 import { useMediaAssetAll } from '@/modules/media/hooks/useMediaAssets'
 import { useMediaFolderTree } from '@/modules/media/hooks/useMediaFolders'
+import { sortChannelsVniFirst } from '@/shared/utils/channelSort'
 import { IMAGE_MIME_PREFIX } from '@/modules/media/constants/mediaConstants'
 
 const EMPTY_GUID = '00000000-0000-0000-0000-000000000000'
@@ -48,12 +49,12 @@ export default function PageContextFormModal({
     asset.mimeType?.startsWith(IMAGE_MIME_PREFIX)
     && (!logoFolderId || asset.folderId === logoFolderId))
   const selectedLogo = mediaAssets.find((asset) => asset.id === form.logoMediaId)
-  const selectableChannels = channels.filter(
+  const selectableChannels = sortChannelsVniFirst(channels.filter(
     (channel) =>
       isEdit
       || channel.id === initialData?.socialChannelId
       || !unavailableChannelIds.includes(channel.id),
-  )
+  ))
   const modalTitle =
     mode === 'edit'
       ? 'Cập nhật Page Context'

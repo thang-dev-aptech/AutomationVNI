@@ -130,3 +130,122 @@ export function monthLabel(year, month) {
 }
 
 export const WEEKDAY_LABELS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
+
+/** Nhãn cột tuần đầy đủ theo ảnh SO9. */
+export const WEEKDAY_FULL_LABELS = [
+  'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật',
+]
+
+/** Cộng/trừ ngày trên chuỗi YYYY-MM-DD (lịch dân sự, khớp buildMonthGrid). */
+export function shiftYmd(ymd, days) {
+  const [y, m, d] = ymd.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  dt.setUTCDate(dt.getUTCDate() + days)
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`
+}
+
+/**
+ * Thứ Hai (YYYY-MM-DD) của tuần giờ VN chứa `value` (Date/ISO hoặc ymd).
+ * Tuần: Thứ 2 → Chủ nhật.
+ */
+export function startOfVnWeek(value) {
+  const ymd = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? value
+    : toVnYmd(value)
+  if (!ymd) return ''
+  const [y, m, d] = ymd.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  const mondayFirst = (dt.getUTCDay() + 6) % 7
+  dt.setUTCDate(dt.getUTCDate() - mondayFirst)
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`
+}
+
+/**
+ * Chuẩn hoá tham số `week` trên URL → YYYY-MM-DD Thứ Hai (giờ VN).
+ * Sai định dạng / ngày không tồn tại → '' (bỏ). Không phải Thứ 2 → căn về Thứ 2 của tuần chứa ngày đó.
+ */
+export function normalizeWeekStartYmd(raw) {
+  if (!raw || typeof raw !== 'string') return ''
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return ''
+  const [y, m, d] = raw.split('-').map(Number)
+  if (!y || m < 1 || m > 12 || d < 1 || d > 31) return ''
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() + 1 !== m || dt.getUTCDate() !== d) {
+    return ''
+  }
+  return startOfVnWeek(raw)
+}
+
+/**
+ * Tuần mặc định khi mở dạng Tuần: tuần chứa hôm nay nếu cùng tháng cursor, không thì tuần ngày 1.
+ */
+export function defaultWeekStart(year, month) {
+  const todayYmd = toVnYmd(new Date())
+  const [ty, tm] = todayYmd.split('-').map(Number)
+  if (ty === year && tm === month) return startOfVnWeek(todayYmd)
+  return startOfVnWeek(`${year}-${pad2(month)}-01`)
+}
+
+/**
+ * Gộp khoảng tháng (lưới 42 ô) với khoảng tuần khi dạng Tuần — đủ bài khi tuần vắt tháng khác cursor.
+ */
+export function mergeMonthAndWeekRangeUtc(year, month, weekStartYmd) {
+  const monthR = monthRangeUtc(year, month)
+  if (!weekStartYmd) return monthR
+  const weekR = weekRangeUtc(weekStartYmd)
+  return {
+    fromUtc: monthR.fromUtc < weekR.fromUtc ? monthR.fromUtc : weekR.fromUtc,
+    toUtc: monthR.toUtc > weekR.toUtc ? monthR.toUtc : weekR.toUtc,
+  }
+}
+
+/**
+ * 7 ô Thứ 2→CN của tuần bắt đầu `weekStartYmd` (phải là Thứ Hai).
+ * headerLabel dạng "Thứ 2 05".
+ */
+export function buildWeekGrid(weekStartYmd) {
+  const todayYmd = toVnYmd(new Date())
+  const [y, m, d] = weekStartYmd.split('-').map(Number)
+  const cursor = new Date(Date.UTC(y, m - 1, d))
+  const cells = []
+
+  for (let i = 0; i < 7; i += 1) {
+    const cy = cursor.getUTCFullYear()
+    const cm = cursor.getUTCMonth() + 1
+    const cd = cursor.getUTCDate()
+    const ymd = `${cy}-${pad2(cm)}-${pad2(cd)}`
+    cells.push({
+      ymd,
+      day: cd,
+      month: cm,
+      year: cy,
+      weekdayLabel: WEEKDAY_FULL_LABELS[i],
+      headerLabel: `${WEEKDAY_FULL_LABELS[i]} ${pad2(cd)}`,
+      isToday: ymd === todayYmd,
+      isPast: ymd < todayYmd,
+      isWeekend: i >= 5,
+    })
+    cursor.setUTCDate(cd + 1)
+  }
+
+  return cells
+}
+
+/** Nhãn thanh điều hướng tuần: "05/10 - 11/10". */
+export function weekRangeLabel(weekStartYmd) {
+  const cells = buildWeekGrid(weekStartYmd)
+  const first = cells[0]
+  const last = cells[6]
+  return `${pad2(first.day)}/${pad2(first.month)} - ${pad2(last.day)}/${pad2(last.month)}`
+}
+
+/** Khoảng UTC nửa mở [from, to) bao trọn tuần. */
+export function weekRangeUtc(weekStartYmd) {
+  const cells = buildWeekGrid(weekStartYmd)
+  const toExclusive = vnMidnightToUtc(cells[6].ymd)
+  toExclusive.setUTCDate(toExclusive.getUTCDate() + 1)
+  return {
+    fromUtc: vnMidnightToUtc(cells[0].ymd).toISOString(),
+    toUtc: toExclusive.toISOString(),
+  }
+}

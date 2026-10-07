@@ -136,7 +136,7 @@ public sealed class MediaAnalysisStorageTimeoutTests : IDisposable
         // Đường caption chỉ bị giới hạn bởi deadline của caption, không phải StorageReadTimeout của đường phân tích.
         var id = (await SeedAssetsAsync(("slow.png", null, null, null)))[0];
         var service = new MediaIntelligenceService(
-            new HttpClient(new ImmediateChatHandler(ScriptedChatHandler.Lines("1", "2", "3", "4", "5"))),
+            new HttpClient(new ImmediateChatHandler(CaptionAi.Json("Bài thử"))),
             new AppDbContext(_options),
             new SlowStorage(TimeSpan.FromMilliseconds(300), "slow.png"),
             AnalysisOptions.Create(),
@@ -147,7 +147,7 @@ public sealed class MediaAnalysisStorageTimeoutTests : IDisposable
 
         var saved = await service.GenerateCaptionAsync(id);
 
-        Assert.Equal("1\n2\n3\n4\n5", saved.Caption);
+        Assert.Equal(CaptionAi.Expected("Bài thử"), saved.Caption);
     }
 
     private MediaIntelligenceService Create(IFileStorageService storage, TimeSpan timeout)

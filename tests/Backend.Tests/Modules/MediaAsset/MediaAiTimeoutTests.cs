@@ -15,7 +15,7 @@ public sealed class MediaAiTimeoutTests : IDisposable
     private static readonly TimeSpan Long = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan AiDelay = TimeSpan.FromMilliseconds(600);
     private const string AnalysisJson = "{\"keywords\":[\"khai giảng\",\"học sinh\",\"sân trường\"],\"altText\":\"a\",\"description\":\"d\"}";
-    private static readonly string CaptionJson = ScriptedChatHandler.Lines("1", "2", "3", "4", "5");
+    private static readonly string CaptionJson = CaptionAi.Json("Bài thử");
 
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
     private readonly DbContextOptions<AppDbContext> _options;
@@ -73,7 +73,7 @@ public sealed class MediaAiTimeoutTests : IDisposable
         await using var _ = db;
         var id = await SeedAssetAsync();
         var saved = await service.GenerateCaptionAsync(id);
-        Assert.Equal("1\n2\n3\n4\n5", saved.Caption);
+        Assert.Equal(CaptionAi.Expected("Bài thử"), saved.Caption);
     }
 
     [Fact]

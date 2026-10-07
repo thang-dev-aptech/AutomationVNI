@@ -338,8 +338,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
 
         var pagesWithRoot = QueryWritableChannels()
             .Where(ch => QueryActive().Any(f => f.SocialChannelId == ch.Id && f.ParentFolderId == null))
-            .OrderBy(ch => ch.PageName)
-            .ThenBy(ch => ch.Id);
+            .OrderByVniFirst();
 
         var pageTotal = await pagesWithRoot.CountAsync(ct);
         var total = pageTotal + (dedicated is not null ? 1 : 0);
@@ -1319,7 +1318,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
                 !QueryActive().Any(f => f.SocialChannelId == ch.Id && f.ParentFolderId == null));
         }
 
-        return await query.OrderByDescending(x => x.CreatedAt).ToListAsync(ct);
+        return await query.OrderByVniFirst().ToListAsync(ct);
     }
 
     /// <summary>
@@ -1330,8 +1329,7 @@ public class MediaFolderRepository : GenericRepository<MediaFolderModel>
     public async Task<List<SocialChannelModel>> GetChungChiEligiblePagesAsync(
         CancellationToken ct = default)
         => await QueryChungChiEligiblePages()
-            .OrderBy(x => x.PageName)
-            .ThenBy(x => x.Id)
+            .OrderByVniFirst()
             .ToListAsync(ct);
 
     /// <summary>

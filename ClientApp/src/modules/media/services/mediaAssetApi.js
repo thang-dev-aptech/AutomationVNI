@@ -20,7 +20,12 @@ export const mediaAssetApi = {
     axiosInstance.post(`/api/MediaAsset/analyze-all?force=${force}`),
   analyzeLayoutFolder: (folderId) => axiosInstance.post(`/api/MediaAsset/analyze-layout-folder/${folderId}`),
   analyzeLayout: (id) => axiosInstance.post(`/api/MediaAsset/${id}/analyze-layout`),
-  generateCaption: (id) => axiosInstance.post(`/api/MediaAsset/${id}/generate-caption`),
+  // socialChannelId (tuỳ chọn, query string): Page có PageContext dùng cho bài viết. Không truyền ⇒ backend dùng Page của thư mục.
+  generateCaption: (id, socialChannelId) => axiosInstance.post(
+    `/api/MediaAsset/${id}/generate-caption`,
+    null,
+    socialChannelId ? { params: { socialChannelId } } : undefined,
+  ),
   recommend: (payload) => axiosInstance.post('/api/MediaAsset/recommend', payload),
 }
 

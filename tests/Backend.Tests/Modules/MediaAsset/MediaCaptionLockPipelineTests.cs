@@ -29,7 +29,6 @@ namespace Backend.Tests.Modules.MediaAsset;
 /// </summary>
 public class MediaCaptionLockPipelineTests : IAsyncLifetime
 {
-    private static readonly string[] FiveLines = ["Một", "Hai", "Ba", "Bốn", "Năm"];
 
     private readonly SqliteConnection _connection;
     private readonly DbContextOptions<AppDbContext> _options;
@@ -45,7 +44,7 @@ public class MediaCaptionLockPipelineTests : IAsyncLifetime
         using (var seedDb = new AppDbContext(_options))
             seedDb.Database.EnsureCreated();
 
-        _ai = new ScriptedChatHandler(Enumerable.Repeat(ScriptedChatHandler.Lines(FiveLines), 10).ToArray());
+        _ai = new ScriptedChatHandler(Enumerable.Repeat(CaptionAi.Json("Bài thử"), 10).ToArray());
         var options = _options;
         var ai = _ai;
         _host = new HostBuilder()
@@ -183,7 +182,7 @@ public class MediaCaptionLockPipelineTests : IAsyncLifetime
         var response = await PostAsync($"/api/MediaAsset/{id}/generate-caption");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("Một\nHai\nBa\nBốn\nNăm", (await GetFieldsAsync(id)).Caption);
+        Assert.Equal(CaptionAi.Expected("Bài thử"), (await GetFieldsAsync(id)).Caption);
     }
 
     [Fact]
@@ -224,7 +223,7 @@ public class MediaCaptionLockPipelineTests : IAsyncLifetime
         var intelligence = scope.ServiceProvider.GetRequiredService<MediaIntelligenceService>();
         Assert.True(await intelligence.GenerateCaptionIfEmptyAsync(id));
 
-        Assert.Equal("Một\nHai\nBa\nBốn\nNăm", (await GetFieldsAsync(id)).Caption);
+        Assert.Equal(CaptionAi.Expected("Bài thử"), (await GetFieldsAsync(id)).Caption);
     }
 
     private async Task<bool> GetByIdFlagAsync(Guid id)
