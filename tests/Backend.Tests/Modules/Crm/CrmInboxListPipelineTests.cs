@@ -83,6 +83,7 @@ public sealed class CrmInboxListPipelineTests : IAsyncLifetime
                     services.AddScoped<UsersService>();
                     services.AddScoped<CrmAutoAssignService>();
                     services.AddScoped<CrmTagService>();
+                    services.AddScoped<Backend.Modules.Crm.Customers.CrmCustomerService>();
                     services.AddScoped<CrmInboxService>();
                     services.AddSingleton(Options.Create(new SocialPublishOptions
                     {

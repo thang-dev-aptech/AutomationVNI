@@ -5,6 +5,7 @@ using Backend.Modules.Category;
 using Backend.Modules.ChannelGroup;
 using Backend.Modules.ContentCrawl;
 using Backend.Modules.Crm.Assignment;
+using Backend.Modules.Crm.Customers;
 using Backend.Modules.Crm.Tags;
 using Backend.Modules.GenerationJob;
 using Backend.Modules.GoogleDrive;
@@ -78,6 +79,15 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<CrmTagModel> CrmTags => Set<CrmTagModel>();
     public DbSet<CrmTagLinkModel> CrmTagLinks => Set<CrmTagLinkModel>();
     public DbSet<CrmAutoAssignSettingsModel> CrmAutoAssignSettings => Set<CrmAutoAssignSettingsModel>();
+    public DbSet<CrmCustomerModel> CrmCustomers => Set<CrmCustomerModel>();
+    public DbSet<CrmCustomerIdentityModel> CrmCustomerIdentities => Set<CrmCustomerIdentityModel>();
+    public DbSet<CrmCustomerNoteModel> CrmCustomerNotes => Set<CrmCustomerNoteModel>();
+    public DbSet<CrmCustomerReminderModel> CrmCustomerReminders => Set<CrmCustomerReminderModel>();
+    public DbSet<CrmCustomerTagLinkModel> CrmCustomerTagLinks => Set<CrmCustomerTagLinkModel>();
+    public DbSet<CrmCustomerPhoneSuggestionModel> CrmCustomerPhoneSuggestions
+        => Set<CrmCustomerPhoneSuggestionModel>();
+    public DbSet<CrmCustomerActionLogModel> CrmCustomerActionLogs => Set<CrmCustomerActionLogModel>();
+    public DbSet<CrmCustomerMergeRecordModel> CrmCustomerMergeRecords => Set<CrmCustomerMergeRecordModel>();
     public DbSet<CrawlSourceModel> CrawlSources => Set<CrawlSourceModel>();
     public DbSet<CrawlRunModel> CrawlRuns => Set<CrawlRunModel>();
     public DbSet<CrawledArticleModel> CrawledArticles => Set<CrawledArticleModel>();
@@ -592,6 +602,97 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
                 NextIndex = 0,
                 CreatedAt = new DateTime(2026, 10, 7, 0, 0, 0, DateTimeKind.Utc)
             });
+        });
+
+        modelBuilder.Entity<CrmCustomerModel>(e =>
+        {
+            e.ToTable("CrmCustomers");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => x.PhoneE164);
+            e.HasIndex(x => x.DisplayName);
+            e.Property(x => x.DisplayName).HasMaxLength(200);
+            e.Property(x => x.PhoneE164).HasMaxLength(20);
+        });
+
+        modelBuilder.Entity<CrmCustomerIdentityModel>(e =>
+        {
+            e.ToTable("CrmCustomerIdentities");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrmCustomerId);
+            e.HasIndex(x => x.SocialChannelId);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => new { x.Platform, x.SocialChannelId, x.ExternalId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0");
+            e.Property(x => x.ExternalId).HasMaxLength(128);
+            e.Property(x => x.DisplayName).HasMaxLength(200);
+            e.Property(x => x.AvatarUrl).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<CrmCustomerNoteModel>(e =>
+        {
+            e.ToTable("CrmCustomerNotes");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrmCustomerId);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.Body).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<CrmCustomerReminderModel>(e =>
+        {
+            e.ToTable("CrmCustomerReminders");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrmCustomerId);
+            e.HasIndex(x => x.AssigneeUserId);
+            e.HasIndex(x => x.DueAtUtc);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.Title).HasMaxLength(300);
+        });
+
+        modelBuilder.Entity<CrmCustomerTagLinkModel>(e =>
+        {
+            e.ToTable("CrmCustomerTagLinks");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrmCustomerId);
+            e.HasIndex(x => x.CrmTagId);
+            e.HasIndex(x => new { x.CrmCustomerId, x.CrmTagId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0");
+            e.HasIndex(x => x.IsDeleted);
+        });
+
+        modelBuilder.Entity<CrmCustomerPhoneSuggestionModel>(e =>
+        {
+            e.ToTable("CrmCustomerPhoneSuggestions");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrmCustomerId);
+            e.HasIndex(x => x.PhoneE164);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.PhoneE164).HasMaxLength(20);
+            e.Property(x => x.RawMatched).HasMaxLength(40);
+        });
+
+        modelBuilder.Entity<CrmCustomerActionLogModel>(e =>
+        {
+            e.ToTable("CrmCustomerActionLogs");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrmCustomerId);
+            e.HasIndex(x => x.ActionType);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.ActionType).HasMaxLength(64);
+            e.Property(x => x.ActorUserName).HasMaxLength(200);
+            e.Property(x => x.PayloadJson).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<CrmCustomerMergeRecordModel>(e =>
+        {
+            e.ToTable("CrmCustomerMergeRecords");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.KeptCustomerId);
+            e.HasIndex(x => x.MergedCustomerId);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.SnapshotJson).HasColumnType("TEXT");
         });
 
         modelBuilder.Entity<ContentCrawlPipelineStateModel>(e =>

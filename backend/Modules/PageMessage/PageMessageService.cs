@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Backend.Data;
 using Backend.Modules.Crm.Assignment;
+using Backend.Modules.Crm.Customers;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
 using Backend.Modules.Users;
@@ -19,6 +20,7 @@ public class PageMessageService(
     IUserContext userContext,
     UsersService usersService,
     CrmAutoAssignService autoAssignService,
+    CrmCustomerService customerService,
     IOptions<SocialPublishOptions> publishOptions,
     ILogger<PageMessageService> logger)
 {
@@ -347,6 +349,7 @@ public class PageMessageService(
                     db.PageConversations.Add(conversation);
                     await db.SaveChangesAsync(ct);
                     await autoAssignService.TryAssignNewConversationAsync(conversation.Id, ct);
+                    await LinkConversationCustomerAsync(channel, conversation, ct);
                 }
 
                 if (evt.TryGetProperty("message", out var message))
@@ -493,9 +496,30 @@ public class PageMessageService(
         await db.SaveChangesAsync(ct);
 
         if (isNew)
+        {
             await autoAssignService.TryAssignNewConversationAsync(conversation.Id, ct);
+            await LinkConversationCustomerAsync(channel, conversation, ct);
+        }
 
         return conversation;
+    }
+
+    private async Task<Guid> LinkConversationCustomerAsync(
+        SocialChannelModel channel,
+        PageConversationModel conversation,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(conversation.ParticipantExternalId))
+            return Guid.Empty;
+
+        return await customerService.EnsureLinkedAsync(
+            channel.Platform,
+            channel.Id,
+            conversation.ParticipantExternalId,
+            conversation.ParticipantName,
+            CrmIdentitySource.Message,
+            conversation.ParticipantAvatarUrl,
+            ct);
     }
 
     private async Task<bool> UpsertMessageAsync(
@@ -531,6 +555,17 @@ public class PageMessageService(
         message.SentAt = dto.SentAt;
         message.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+
+        if (isNew && !message.IsFromPage && !message.IsEcho)
+        {
+            var customerId = await LinkConversationCustomerAsync(channel, conversation, ct);
+            if (customerId != Guid.Empty)
+            {
+                await customerService.SuggestPhonesFromTextAsync(
+                    customerId, dto.Text, sourceMessageId: message.Id, ct: ct);
+            }
+        }
+
         return isNew;
     }
 

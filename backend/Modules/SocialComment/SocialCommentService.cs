@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Backend.Data;
+using Backend.Modules.Crm.Customers;
 using Backend.Modules.Post;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
@@ -23,6 +24,7 @@ public class SocialCommentService(
     IEnumerable<ISocialCommentProvider> providers,
     IUserContext userContext,
     UsersService usersService,
+    CrmCustomerService customerService,
     IOptions<MetaOAuthOptions> metaOptions,
     IOptions<ThreadsOAuthOptions> threadsOptions,
     IOptions<SocialPublishOptions> publishOptions,
@@ -400,6 +402,24 @@ public class SocialCommentService(
             entity.InboxStatus = CommentInboxStatus.Replied;
 
         await db.SaveChangesAsync(ct);
+
+        if (!dto.IsFromPage && !string.IsNullOrWhiteSpace(dto.AuthorExternalId))
+        {
+            var customerId = await customerService.EnsureLinkedAsync(
+                channel.Platform,
+                channel.Id,
+                dto.AuthorExternalId,
+                dto.AuthorName,
+                CrmIdentitySource.Comment,
+                avatarUrl: null,
+                ct);
+            if (isNew)
+            {
+                await customerService.SuggestPhonesFromTextAsync(
+                    customerId, dto.Message, sourceCommentId: entity.Id, ct: ct);
+            }
+        }
+
         return entity;
     }
 
