@@ -19,7 +19,7 @@ const DEFAULT_INITIAL_ITEM = {
   assignedUserId: null,
   assignedTo: null,
   unreadCount: 1,
-  canReply: true,
+  canReply: false,
   tags: [],
 }
 
@@ -29,8 +29,8 @@ const DEFAULT_INITIAL_DETAIL = {
     id: 'c1',
     participantName: 'Nguyễn Văn An',
     channelName: 'VNI Fanpage Tuyển sinh',
-    canReply: true,
-    isReplyWindowOpen: true,
+    canReply: false,
+    isReplyWindowOpen: false,
     inboxStatus: 1,
     messages: [
       {
@@ -203,7 +203,9 @@ export const InboxFeature = () => {
         setDetail(detailData)
       }
     } catch {
-      // In tests/offline keep previous detail or fallback
+      if (isMountedRef.current) {
+        setDetail(null)
+      }
     } finally {
       if (isMountedRef.current) {
         setLoadingDetail(false)

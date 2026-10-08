@@ -80,4 +80,13 @@ export const inboxApi = {
     const res = await crmApi.post('/SocialChannel/filter', { pageSize: 100 })
     return res.data?.data?.items || res.data?.items || res.data?.data || res.data || []
   },
+
+  suggestReply: async (kind, id) => {
+    const normalizedKind =
+      String(kind).toLowerCase() === 'comment' || String(kind) === '2'
+        ? 'comment'
+        : 'message'
+    const res = await crmApi.post(`/Inbox/${normalizedKind}/${id}/suggest-reply`)
+    return res.data?.data || res.data
+  },
 }

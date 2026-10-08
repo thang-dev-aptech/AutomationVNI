@@ -3,6 +3,9 @@ import Button from '../../../shared/components/Button'
 import Badge from '../../../shared/components/Badge'
 import Icon from '../../../shared/components/Icon'
 import { formatVietnamDateTime } from '../../../shared/utils/dateUtils'
+import { inboxApi } from '../api/inboxApi'
+import { toast } from '../../../shared/utils/toast'
+import { useAuth } from '../../../auth/useAuth'
 
 const STATUS_OPTIONS = [
   { value: 1, label: 'Mới', variant: 'danger' },
@@ -17,8 +20,8 @@ export const InboxDetail = ({
   loading = false,
   users = [],
   tags = [],
-  canCare = true,
-  isReadOnly = false,
+  canCare,
+  isReadOnly,
   onBack,
   onSendReply,
   onAddNote,
@@ -34,6 +37,13 @@ export const InboxDetail = ({
   const [noteOpen, setNoteOpen] = useState(false)
   const [noteText, setNoteText] = useState('')
   const [tagSelectOpen, setTagSelectOpen] = useState(false)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState(null)
+
+  const auth = useAuth()
+  const effectiveCanCare = canCare !== undefined ? canCare : auth.canCare
+  const effectiveIsReadOnly = isReadOnly !== undefined ? isReadOnly : auth.isReadOnly
+  const canSuggestAi = effectiveCanCare && !effectiveIsReadOnly
 
   if (!item) {
     return (
@@ -44,17 +54,52 @@ export const InboxDetail = ({
   }
 
   const isMessage = item.kind === 1
-  const conv = isMessage ? detail?.conversation || {} : null
-  const thread = !isMessage ? detail?.thread || {} : null
+  const conv = isMessage ? detail?.conversation : null
+  const thread = !isMessage ? detail?.thread : null
 
-  // 24h response window logic:
-  // For Messenger (isMessage): canReply flag is provided by backend based on 24h window
-  // For Comments: canReply is generally true unless restricted
-  const canSend = isMessage ? (conv?.canReply ?? item.canReply) : (thread?.capabilities?.canReply ?? true)
+  // 24h response window & reply capability logic (N2 safety fix):
+  // When detail is not yet loaded (null/undefined) or loading or error: locked (canSend = false).
+  // Only unlocked when:
+  // - Messenger (isMessage): conv confirms canReply === true or (isReplyWindowOpen === true && conv.canReply !== false)
+  // - Comments (!isMessage): thread.capabilities confirms canReply === true
+  const canSend = Boolean(
+    !loading &&
+      detail &&
+      !effectiveIsReadOnly &&
+      (isMessage
+        ? conv?.canReply === true || (conv?.isReplyWindowOpen === true && conv?.canReply !== false)
+        : thread?.capabilities?.canReply === true),
+  )
+
+  const isWindowClosed = Boolean(
+    !loading &&
+      detail &&
+      isMessage &&
+      (conv?.isReplyWindowOpen === false || conv?.canReply === false),
+  )
+
+  const handleSuggestAi = async () => {
+    if (aiLoading || !canSuggestAi) return
+    setAiLoading(true)
+    setAiError(null)
+    try {
+      const res = await inboxApi.suggestReply(item.kind, item.id)
+      const draft = res?.draft || res?.data?.draft || (typeof res === 'string' ? res : '')
+      if (draft) {
+        setReplyText(draft)
+      }
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || 'Không thể tạo bản nháp gợi ý từ AI'
+      setAiError(msg)
+      toast.error(msg)
+    } finally {
+      setAiLoading(false)
+    }
+  }
 
   const handleSend = async (e) => {
     e.preventDefault()
-    if (!replyText.trim() || sending || isReadOnly || !canSend) return
+    if (!replyText.trim() || sending || effectiveIsReadOnly || !canSend) return
     setSending(true)
     try {
       await onSendReply(replyText.trim())
@@ -443,53 +488,113 @@ export const InboxDetail = ({
 
       {/* Footer / Reply Area */}
       <div className="crm-chat-footer">
-        {isReadOnly ? (
+        {effectiveIsReadOnly ? (
           <div className="crm-readonly-notice" data-testid="viewer-readonly-notice">
             🔒 Chế độ Chỉ đọc (Viewer) — Thao tác trả lời và chỉnh sửa bị vô hiệu hoá
           </div>
-        ) : isMessage && !canSend ? (
-          /* 24h locked message box with explanation */
-          <div
-            style={{
-              padding: '16px',
-              backgroundColor: '#FEF2F2',
-              border: '1px solid #FCA5A5',
-              borderRadius: 'var(--crm-radius-md)',
-              color: '#991B1B',
-            }}
-            data-testid="reply-locked-24h"
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '14px', marginBottom: '4px' }}>
-              <span>⚠️</span>
-              <span>Khoá gửi tin nhắn (Quá 24 giờ)</span>
-            </div>
-            <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5 }}>
-              Đã quá cửa sổ 24 giờ kể từ tin nhắn cuối của khách hàng. Theo chính sách của Meta (Standard Messaging 24-hour RESPONSE window), trang không thể gửi thêm tin nhắn trả lời tự do cho khách.
-            </p>
-          </div>
         ) : (
-          /* Active Reply Form */
-          <form onSubmit={handleSend} className="crm-chat-input-box" data-testid="reply-form">
-            <input
-              type="text"
-              className="crm-chat-input"
-              placeholder={isMessage ? 'Nhập nội dung phản hồi tin nhắn Messenger...' : 'Nhập câu trả lời bình luận Facebook...'}
-              value={replyText}
-              onChange={(e) => setReplyText(e.target.value)}
-              disabled={sending}
-              data-testid="reply-input"
-            />
-            <Button
-              type="submit"
-              variant="primary"
-              size="md"
-              isLoading={sending}
-              icon={<Icon name="send" size={16} />}
-              data-testid="btn-send-reply"
-            >
-              Trả lời
-            </Button>
-          </form>
+          <>
+            {/* 24h locked banner when window is confirmed closed */}
+            {isWindowClosed && (
+              <div
+                style={{
+                  padding: '12px 16px',
+                  marginBottom: '10px',
+                  backgroundColor: '#FEF2F2',
+                  border: '1px solid #FCA5A5',
+                  borderRadius: 'var(--crm-radius-md)',
+                  color: '#991B1B',
+                }}
+                data-testid="reply-locked-24h"
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '14px', marginBottom: '4px' }}>
+                  <span>⚠️</span>
+                  <span>Khoá gửi tin nhắn (Quá 24 giờ)</span>
+                </div>
+                <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5 }}>
+                  Đã quá cửa sổ 24 giờ kể từ tin nhắn cuối của khách hàng. Theo chính sách của Meta (Standard Messaging 24-hour RESPONSE window), trang không thể gửi thêm tin nhắn trả lời tự do cho khách.
+                </p>
+              </div>
+            )}
+
+            {/* AI suggest error toast banner */}
+            {aiError && (
+              <div
+                className="crm-toast-error"
+                data-testid="ai-suggest-toast"
+                style={{
+                  padding: '8px 12px',
+                  marginBottom: '10px',
+                  backgroundColor: '#FEF2F2',
+                  border: '1px solid #FCA5A5',
+                  borderRadius: 'var(--crm-radius-sm)',
+                  color: '#991B1B',
+                  fontSize: '13px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <span>{aiError}</span>
+                <button
+                  type="button"
+                  onClick={() => setAiError(null)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#991B1B', fontWeight: 'bold' }}
+                  aria-label="Đóng thông báo"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+
+            {/* Reply Form */}
+            <form onSubmit={handleSend} className="crm-chat-input-box" data-testid="reply-form">
+              <input
+                type="text"
+                className="crm-chat-input"
+                placeholder={
+                  isMessage
+                    ? isWindowClosed
+                      ? 'Cửa sổ 24 giờ đã đóng — không thể gửi tin nhắn'
+                      : loading
+                        ? 'Đang tải thông tin hội thoại...'
+                        : 'Nhập nội dung phản hồi tin nhắn Messenger...'
+                    : loading
+                      ? 'Đang tải thông tin bình luận...'
+                      : 'Nhập câu trả lời bình luận Facebook...'
+                }
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                disabled={!canSend || sending}
+                data-testid="reply-input"
+              />
+              {canSuggestAi && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  onClick={handleSuggestAi}
+                  isLoading={aiLoading}
+                  disabled={aiLoading}
+                  data-testid="btn-ai-suggest"
+                  title="AI gợi ý trả lời (chỉ tạo bản nháp)"
+                >
+                  ✨ AI gợi ý
+                </Button>
+              )}
+              <Button
+                type="submit"
+                variant="primary"
+                size="md"
+                isLoading={sending}
+                disabled={!canSend || sending}
+                icon={<Icon name="send" size={16} />}
+                data-testid="btn-send-reply"
+              >
+                Trả lời
+              </Button>
+            </form>
+          </>
         )}
       </div>
     </div>

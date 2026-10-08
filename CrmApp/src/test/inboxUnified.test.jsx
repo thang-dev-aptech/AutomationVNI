@@ -258,8 +258,9 @@ describe('AC crm-inbox-list-test (56154ec6) — Unified Inbox Vitest', () => {
     expect(screen.getByTestId('reply-locked-24h')).toHaveTextContent('24 giờ')
     expect(screen.getByTestId('reply-locked-24h')).toHaveTextContent('chính sách của Meta')
 
-    // Form is not rendered when locked
-    expect(screen.queryByTestId('reply-form')).not.toBeInTheDocument()
+    // Reply input and send button are locked (disabled) when 24h window is closed
+    expect(screen.getByTestId('reply-input')).toBeDisabled()
+    expect(screen.getByTestId('btn-send-reply')).toBeDisabled()
   })
 
   // 4. View comment thread detail and send reply
