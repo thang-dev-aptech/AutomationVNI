@@ -88,6 +88,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
         => Set<CrmCustomerPhoneSuggestionModel>();
     public DbSet<CrmCustomerActionLogModel> CrmCustomerActionLogs => Set<CrmCustomerActionLogModel>();
     public DbSet<CrmCustomerMergeRecordModel> CrmCustomerMergeRecords => Set<CrmCustomerMergeRecordModel>();
+    public DbSet<Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel> CrmOpportunityStages
+        => Set<Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel>();
+    public DbSet<Backend.Modules.Crm.Opportunities.CrmOpportunityModel> CrmOpportunities
+        => Set<Backend.Modules.Crm.Opportunities.CrmOpportunityModel>();
+    public DbSet<Backend.Modules.Crm.Opportunities.CrmOpportunityWatcherModel> CrmOpportunityWatchers
+        => Set<Backend.Modules.Crm.Opportunities.CrmOpportunityWatcherModel>();
     public DbSet<CrawlSourceModel> CrawlSources => Set<CrawlSourceModel>();
     public DbSet<CrawlRunModel> CrawlRuns => Set<CrawlRunModel>();
     public DbSet<CrawledArticleModel> CrawledArticles => Set<CrawledArticleModel>();
@@ -694,6 +700,110 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasIndex(x => x.MergedCustomerId);
             e.HasIndex(x => x.IsDeleted);
             e.Property(x => x.SnapshotJson).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel>(e =>
+        {
+            e.ToTable("CrmOpportunityStages");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => x.SortOrder);
+            e.Property(x => x.Name).HasMaxLength(120);
+            e.Property(x => x.Color).HasMaxLength(32);
+            e.HasData(
+                new Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel
+                {
+                    Id = Backend.Modules.Crm.Opportunities.CrmOpportunityStageIds.Moi,
+                    Name = "Mới",
+                    Color = "#3B82F6",
+                    SortOrder = 1,
+                    Kind = Backend.Modules.Crm.Opportunities.CrmOpportunityStageKind.Open,
+                    CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, DateTimeKind.Utc),
+                    CreatedBy = "seed"
+                },
+                new Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel
+                {
+                    Id = Backend.Modules.Crm.Opportunities.CrmOpportunityStageIds.DuDieuKien,
+                    Name = "Đủ điều kiện",
+                    Color = "#8B5CF6",
+                    SortOrder = 2,
+                    Kind = Backend.Modules.Crm.Opportunities.CrmOpportunityStageKind.Open,
+                    CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, DateTimeKind.Utc),
+                    CreatedBy = "seed"
+                },
+                new Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel
+                {
+                    Id = Backend.Modules.Crm.Opportunities.CrmOpportunityStageIds.BamDuoi,
+                    Name = "Bám đuổi",
+                    Color = "#F59E0B",
+                    SortOrder = 3,
+                    Kind = Backend.Modules.Crm.Opportunities.CrmOpportunityStageKind.Open,
+                    CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, DateTimeKind.Utc),
+                    CreatedBy = "seed"
+                },
+                new Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel
+                {
+                    Id = Backend.Modules.Crm.Opportunities.CrmOpportunityStageIds.DamPhanChot,
+                    Name = "Đàm phán chốt",
+                    Color = "#10B981",
+                    SortOrder = 4,
+                    Kind = Backend.Modules.Crm.Opportunities.CrmOpportunityStageKind.Open,
+                    CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, DateTimeKind.Utc),
+                    CreatedBy = "seed"
+                },
+                new Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel
+                {
+                    Id = Backend.Modules.Crm.Opportunities.CrmOpportunityStageIds.DaMua,
+                    Name = "Đã mua",
+                    Color = "#059669",
+                    SortOrder = 5,
+                    Kind = Backend.Modules.Crm.Opportunities.CrmOpportunityStageKind.Won,
+                    CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, DateTimeKind.Utc),
+                    CreatedBy = "seed"
+                },
+                new Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel
+                {
+                    Id = Backend.Modules.Crm.Opportunities.CrmOpportunityStageIds.ThatBai,
+                    Name = "Thất bại",
+                    Color = "#EF4444",
+                    SortOrder = 6,
+                    Kind = Backend.Modules.Crm.Opportunities.CrmOpportunityStageKind.Lost,
+                    CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, DateTimeKind.Utc),
+                    CreatedBy = "seed"
+                });
+        });
+
+        modelBuilder.Entity<Backend.Modules.Crm.Opportunities.CrmOpportunityModel>(e =>
+        {
+            e.ToTable("CrmOpportunities");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.StageId, x.IsDeleted });
+            e.HasIndex(x => x.AssigneeUserId);
+            e.HasIndex(x => x.CrmCustomerId);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => x.LastActivityAtUtc);
+            e.HasIndex(x => x.PageConversationId)
+                .IsUnique()
+                .HasFilter("IsDeleted = 0 AND IsArchived = 0 AND Status = 1 AND PageConversationId IS NOT NULL");
+            e.HasIndex(x => x.SocialCommentId)
+                .IsUnique()
+                .HasFilter("IsDeleted = 0 AND IsArchived = 0 AND Status = 1 AND SocialCommentId IS NOT NULL");
+            e.Property(x => x.Title).HasMaxLength(300);
+            e.Property(x => x.AssignedTo).HasMaxLength(200);
+            e.Property(x => x.LostReason).HasMaxLength(500);
+            e.Property(x => x.ExpectedValue).HasPrecision(18, 2);
+        });
+
+        modelBuilder.Entity<Backend.Modules.Crm.Opportunities.CrmOpportunityWatcherModel>(e =>
+        {
+            e.ToTable("CrmOpportunityWatchers");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.OpportunityId);
+            e.HasIndex(x => x.UserId);
+            e.HasIndex(x => new { x.OpportunityId, x.UserId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0");
+            e.HasIndex(x => x.IsDeleted);
         });
 
         modelBuilder.Entity<ContentCrawlPipelineStateModel>(e =>

@@ -166,6 +166,8 @@ builder.Services.AddScoped<Backend.Modules.Crm.Customers.CrmCustomerService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Customers.CrmCustomerCareService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Reminders.CrmReminderService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Audit.CrmAuditService>();
+builder.Services.AddScoped<Backend.Modules.Crm.Opportunities.CrmOpportunityStageService>();
+builder.Services.AddScoped<Backend.Modules.Crm.Opportunities.CrmOpportunityService>();
 builder.Services.AddHostedService<Backend.Modules.Crm.Reminders.CrmReminderWorker>();
 builder.Services.AddHttpClient<FacebookPageMessagingProvider>();
 builder.Services.AddScoped<ISocialCommentProvider, FacebookCommentProvider>();
