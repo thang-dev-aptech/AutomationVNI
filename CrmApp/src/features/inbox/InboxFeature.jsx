@@ -5,6 +5,7 @@ import { useAuth } from '../../auth/useAuth'
 import InboxFilterBar from './components/InboxFilterBar'
 import InboxList from './components/InboxList'
 import InboxDetail from './components/InboxDetail'
+import CustomerPanel from './components/CustomerPanel'
 import './InboxFeature.css'
 
 /** Map ?kind=message|comment → CrmInbox kind 1|2; khác/không có → null. */
@@ -76,6 +77,7 @@ export const InboxFeature = () => {
   // State
   const [items, setItems] = useState([DEFAULT_INITIAL_ITEM])
   const [selectedItem, setSelectedItem] = useState(DEFAULT_INITIAL_ITEM)
+  const [customerProfile, setCustomerProfile] = useState(null)
   const [detail, setDetail] = useState(DEFAULT_INITIAL_DETAIL)
   const [loadingList, setLoadingList] = useState(false)
   const [loadingDetail, setLoadingDetail] = useState(false)
@@ -370,6 +372,7 @@ export const InboxFeature = () => {
   // Handlers
   const handleSelectItem = (item) => {
     setSelectedItem(item)
+    setCustomerProfile(null)
     setMobileView('detail')
     loadDetail(item)
   }
@@ -440,8 +443,13 @@ export const InboxFeature = () => {
     await loadList(true)
   }
 
-  const handleNavigateCustomer = () => {
-    navigate('/customers')
+  const handleNavigateCustomer = (target) => {
+    const custId = typeof target === 'string' ? target : target?.id
+    if (custId) {
+      navigate(`/customers/${custId}`)
+    } else {
+      navigate('/customers')
+    }
   }
 
   return (
@@ -493,6 +501,7 @@ export const InboxFeature = () => {
         onAttachTag={handleAttachTag}
         onDetachTag={handleDetachTag}
         onNavigateCustomer={handleNavigateCustomer}
+        linkedCustomerId={customerProfile?.linked ? customerProfile?.customer?.id : null}
       />
 
       {/* Toggle button to open customer panel when closed */}
@@ -509,49 +518,16 @@ export const InboxFeature = () => {
         </button>
       )}
 
-      {/* Right Column: Customer Panel Placeholder (t3 will implement details) */}
+      {/* Right Column: Customer Panel SO9 */}
       {showCustomerPanel && (
-        <aside
-          className="crm-customer-panel"
-          data-testid="customer-panel"
-          aria-label="Hồ sơ khách hàng"
-        >
-          <div className="crm-customer-panel-header">
-            <div className="crm-customer-panel-title-wrap">
-              <h3 className="crm-customer-panel-title">Hồ sơ khách hàng</h3>
-              <span className="crm-customer-panel-badge">SO9</span>
-            </div>
-            <button
-              type="button"
-              className="crm-customer-toggle-btn crm-customer-toggle-btn--close"
-              data-testid="toggle-customer-panel"
-              onClick={toggleCustomerPanel}
-              aria-label="Thu gọn hồ sơ"
-              title="Thu gọn hồ sơ"
-            >
-              ✕ Thu gọn
-            </button>
-          </div>
-          <div className="crm-customer-panel-body">
-            <div className="crm-customer-placeholder-notice">
-              {selectedItem ? (
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--crm-text)' }}>
-                    {selectedItem.displayName || 'Khách hàng'}
-                  </div>
-                  <div style={{ fontSize: '13px', color: 'var(--crm-text-muted)', marginTop: '4px' }}>
-                    {selectedItem.channelName || ''}
-                  </div>
-                  <div style={{ marginTop: '16px', padding: '12px', background: 'var(--crm-surface-subtle)', borderRadius: 'var(--crm-radius-md)', fontSize: '12px', color: 'var(--crm-text-muted)' }}>
-                    ℹ️ Vùng hiển thị hồ sơ khách hàng theo chuẩn SO9 (Task t3).
-                  </div>
-                </div>
-              ) : (
-                <p style={{ color: 'var(--crm-text-muted)' }}>Chọn một hội thoại để xem hồ sơ khách hàng</p>
-              )}
-            </div>
-          </div>
-        </aside>
+        <CustomerPanel
+          item={selectedItem}
+          tags={tags}
+          isReadOnly={isReadOnly}
+          canCare={canCare}
+          onClose={toggleCustomerPanel}
+          onCustomerLoaded={setCustomerProfile}
+        />
       )}
     </div>
   )

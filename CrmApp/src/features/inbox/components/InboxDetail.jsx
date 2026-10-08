@@ -31,6 +31,7 @@ export const InboxDetail = ({
   onDetachTag,
   onNavigateCustomer,
   onCreateReminder,
+  linkedCustomerId,
 }) => {
   const [replyText, setReplyText] = useState('')
   const [sending, setSending] = useState(false)
@@ -182,13 +183,13 @@ export const InboxDetail = ({
               <span>•</span>
               <span>Thời gian: {formatVietnamDateTime(item.lastCustomerActivityAt)}</span>
 
-              {/* View Customer Profile Link */}
-              {onNavigateCustomer && (
+              {/* View Customer Profile Link — chỉ hiện khi đã liên kết hồ sơ */}
+              {linkedCustomerId && onNavigateCustomer && (
                 <>
                   <span>•</span>
                   <button
                     type="button"
-                    onClick={() => onNavigateCustomer(item)}
+                    onClick={() => onNavigateCustomer(linkedCustomerId)}
                     style={{
                       background: 'none',
                       border: 'none',

@@ -89,4 +89,14 @@ export const inboxApi = {
     const res = await crmApi.post(`/Inbox/${normalizedKind}/${id}/suggest-reply`)
     return res.data?.data || res.data
   },
+
+  getCustomer: async (kind, id) => {
+    const normalizedKind =
+      String(kind).toLowerCase() === 'comment' || String(kind) === '2'
+        ? 'comment'
+        : 'message'
+    const res = await crmApi.get(`/CrmInbox/${normalizedKind}/${id}/customer`)
+    return res.data?.data || res.data
+  },
 }
+
