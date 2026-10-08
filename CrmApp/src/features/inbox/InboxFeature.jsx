@@ -1,11 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { inboxApi } from './api/inboxApi'
 import { useAuth } from '../../auth/useAuth'
 import InboxFilterBar from './components/InboxFilterBar'
 import InboxList from './components/InboxList'
 import InboxDetail from './components/InboxDetail'
 import './InboxFeature.css'
+
+/** Map ?kind=message|comment → CrmInbox kind 1|2; khác/không có → null. */
+export function kindFromSearchParams(searchParams) {
+  const raw = searchParams?.get?.('kind')
+  if (raw === 'message') return 1
+  if (raw === 'comment') return 2
+  return null
+}
 
 const DEFAULT_INITIAL_ITEM = {
   id: 'c1',
@@ -47,6 +55,7 @@ const DEFAULT_INITIAL_DETAIL = {
 
 export const InboxFeature = () => {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { canCare, isReadOnly } = useAuth()
 
   // State
@@ -62,10 +71,10 @@ export const InboxFeature = () => {
   const [users, setUsers] = useState([])
   const [tags, setTags] = useState([])
 
-  // Filters
+  // Filters — kind khởi tạo từ ?kind= (ClientApp redirect /messages|/comments)
   const [filters, setFilters] = useState({
     socialChannelId: null,
-    kind: null,
+    kind: kindFromSearchParams(searchParams),
     status: null,
     assignedFilter: 'all',
     tagId: null,

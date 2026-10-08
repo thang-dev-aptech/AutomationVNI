@@ -19,6 +19,13 @@ describe('AC 523b968c-e303-4f88-92c2-f7df13146095 — CrmApp Inbox Safety & AI S
     status: 1,
   }
 
+  /** List item từ backend thường có canReply=true — F1: N2 phải khoá khi detail chưa sẵn sàng. */
+  const mockMessageItemCanReplyTrue = {
+    ...mockMessageItem,
+    id: 'msg-item-can-reply',
+    canReply: true,
+  }
+
   const mockCommentItem = {
     id: 'cmt-item-2',
     kind: 2, // comment
@@ -97,6 +104,66 @@ describe('AC 523b968c-e303-4f88-92c2-f7df13146095 — CrmApp Inbox Safety & AI S
         expect(screen.getByTestId('reply-input')).toBeDisabled()
         expect(screen.getByTestId('btn-send-reply')).toBeDisabled()
       })
+    })
+
+    // F1 / N2: item.canReply=true (production list) — không được fallback mở ô soạn khi thiếu detail
+    it('F1: locks composer when item.canReply=true and loading=true / detail=null', () => {
+      render(
+        <InboxDetail
+          item={mockMessageItemCanReplyTrue}
+          detail={null}
+          loading={true}
+        />,
+      )
+      expect(screen.getByTestId('reply-input')).toBeDisabled()
+      expect(screen.getByTestId('btn-send-reply')).toBeDisabled()
+    })
+
+    it('F1: locks composer when item.canReply=true, loading=false, detail=null', () => {
+      render(
+        <InboxDetail
+          item={mockMessageItemCanReplyTrue}
+          detail={null}
+          loading={false}
+        />,
+      )
+      expect(screen.getByTestId('reply-input')).toBeDisabled()
+      expect(screen.getByTestId('btn-send-reply')).toBeDisabled()
+    })
+
+    it('F1: locks composer in InboxFeature when getMessage rejects and list item has canReply=true', async () => {
+      vi.spyOn(inboxApi, 'filter').mockResolvedValue({
+        items: [mockMessageItemCanReplyTrue],
+        totalCount: 1,
+      })
+      const getMessageSpy = vi
+        .spyOn(inboxApi, 'getMessage')
+        .mockRejectedValue(new Error('Network error'))
+
+      render(
+        <MemoryRouter>
+          <InboxFeature />
+        </MemoryRouter>,
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId(`conv-item-${mockMessageItemCanReplyTrue.id}`)).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByTestId(`conv-item-${mockMessageItemCanReplyTrue.id}`))
+
+      // Chờ getMessage settle (không assert lúc loading) — sau lỗi vẫn phải khoá dù item.canReply=true
+      await waitFor(() => {
+        expect(getMessageSpy).toHaveBeenCalled()
+      })
+      await waitFor(() => {
+        expect(screen.getByTestId('reply-input')).toBeDisabled()
+        expect(screen.getByTestId('btn-send-reply')).toBeDisabled()
+      })
+      // Giữ khoá sau khi load xong (không chỉ khoá tạm lúc loading)
+      await new Promise((r) => setTimeout(r, 30))
+      expect(screen.getByTestId('reply-input')).toBeDisabled()
+      expect(screen.getByTestId('btn-send-reply')).toBeDisabled()
     })
   })
 
@@ -286,6 +353,32 @@ describe('AC 523b968c-e303-4f88-92c2-f7df13146095 — CrmApp Inbox Safety & AI S
       render(<InboxDetail item={mockMessageItem} detail={detail} loading={false} />)
       expect(screen.queryByTestId('btn-ai-suggest')).not.toBeInTheDocument()
       expect(screen.getByTestId('viewer-readonly-notice')).toBeInTheDocument()
+    })
+
+    // N-b: không dựa vào footer Viewer — user không role / canCare=false vẫn ẩn nút
+    it('N-b: hides AI suggest when user has no roles (canCare=false, isReadOnly=false)', () => {
+      useAuthStore.getState().setAuth('token', {
+        email: 'nobody@vni.local',
+        userName: 'Nobody',
+        roles: [],
+      })
+
+      render(<InboxDetail item={mockMessageItem} detail={detail} loading={false} />)
+      expect(screen.queryByTestId('btn-ai-suggest')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('viewer-readonly-notice')).not.toBeInTheDocument()
+    })
+
+    it('N-b: hides AI suggest when canCare=false and isReadOnly=false are passed as props', () => {
+      render(
+        <InboxDetail
+          item={mockMessageItem}
+          detail={detail}
+          loading={false}
+          canCare={false}
+          isReadOnly={false}
+        />,
+      )
+      expect(screen.queryByTestId('btn-ai-suggest')).not.toBeInTheDocument()
     })
   })
 
