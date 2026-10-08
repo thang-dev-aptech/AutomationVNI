@@ -33,7 +33,11 @@ export function useInboxProfile(kind, id, options = {}) {
 export function useSuggestReply() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ kind, id }) => unwrapApiData(await inboxApi.suggestReply(kind, id)),
+    mutationFn: async ({ kind, id }) => {
+      const res = await inboxApi.suggestReply(kind, id)
+      const unwrapped = unwrapApiData(res)
+      return unwrapped || res?.data || res
+    },
     onSuccess: (_, { kind, id }) => {
       queryClient.invalidateQueries({ queryKey: inboxQueryKeys.profile(kind, id) })
     },

@@ -25,8 +25,6 @@ import PageContextListPage from '@/modules/page-contexts/pages/PageContextListPa
 import BulkCreatePage from '@/modules/bulk/pages/BulkCreatePage'
 import BulkChungChiPage from '@/modules/bulk/pages/BulkChungChiPage'
 import BatchProgressPage from '@/modules/bulk/pages/BatchProgressPage'
-import CommentsInboxPage from '@/modules/comments/pages/CommentsInboxPage'
-import PageMessagesInboxPage from '@/modules/messages/pages/PageMessagesInboxPage'
 import ConversationsPage from '@/modules/conversations/pages/ConversationsPage'
 import CrawlInboxPage from '@/modules/content-crawl/pages/CrawlInboxPage'
 import NewsSitePage from '@/modules/news-site/pages/NewsSitePage'
