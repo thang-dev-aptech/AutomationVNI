@@ -416,4 +416,99 @@ describe('AC e68ba436 & AC 34bde757 — CrmApp Inbox Layout & Paging', () => {
       expect(screen.getByTestId('conv-list-footer')).toHaveTextContent('60 / 75')
     })
   })
+  describe('Review INBOX-CRM-LAYOUT-01 — N1/N2/N3', () => {
+    const deferred = () => {
+      let resolve
+      const promise = new Promise((res) => { resolve = res })
+      return { promise, resolve }
+    }
+    const listIds = () => screen.getAllByTestId(/^conv-item-/).map((el) => el.getAttribute('data-testid').replace('conv-item-', ''))
+
+    it('N1: sau khi đổi bộ lọc, "Tải thêm" gọi index=2 (không phải trang kế của bộ lọc cũ)', async () => {
+      const filterSpy = vi.spyOn(inboxApi, 'filter').mockImplementation(async (req) => {
+        if (req.keyword === 'moi') return { items: createMockItems(101, 30), total: 75 }
+        return { items: createMockItems(req.index === 1 ? 1 : 31, 30), total: 75 }
+      })
+      render(<MemoryRouter><InboxFeature /></MemoryRouter>)
+      await waitFor(() => expect(screen.getByTestId('conv-list-footer')).toHaveTextContent('30 / 75'))
+
+      fireEvent.click(screen.getByTestId('btn-load-more'))
+      await waitFor(() => expect(screen.getByTestId('conv-item-item-31')).toBeInTheDocument())
+
+      fireEvent.change(screen.getByTestId('inbox-search-input'), { target: { value: 'moi' } })
+      fireEvent.click(screen.getByTestId('btn-search-inbox'))
+      await waitFor(() => expect(screen.getByTestId('conv-item-item-101')).toBeInTheDocument())
+
+      filterSpy.mockClear()
+      fireEvent.click(screen.getByTestId('btn-load-more'))
+      await waitFor(() => expect(filterSpy).toHaveBeenCalledTimes(1))
+      expect(filterSpy).toHaveBeenCalledWith(expect.objectContaining({ index: 2, keyword: 'moi' }))
+    })
+
+    it('N2: đổi bộ lọc khi trang kế đang tải -> response cũ bị bỏ, không ghép item/đổi total/pageIndex', async () => {
+      const oldPage2 = deferred()
+      const filterSpy = vi.spyOn(inboxApi, 'filter').mockImplementation(async (req) => {
+        if (req.keyword === 'moi') {
+          return req.index === 1
+            ? { items: createMockItems(101, 30), total: 40 }
+            : { items: createMockItems(131, 10), total: 40 }
+        }
+        if (req.index === 2) return oldPage2.promise
+        return { items: createMockItems(1, 30), total: 75 }
+      })
+      render(<MemoryRouter><InboxFeature /></MemoryRouter>)
+      await waitFor(() => expect(screen.getByTestId('conv-list-footer')).toHaveTextContent('30 / 75'))
+
+      fireEvent.click(screen.getByTestId('btn-load-more')) // trang 2 của bộ lọc cũ: treo
+      await waitFor(() => expect(filterSpy).toHaveBeenCalledWith(expect.objectContaining({ index: 2 })))
+
+      fireEvent.change(screen.getByTestId('inbox-search-input'), { target: { value: 'moi' } })
+      fireEvent.click(screen.getByTestId('btn-search-inbox'))
+      await waitFor(() => expect(screen.getByTestId('conv-item-item-101')).toBeInTheDocument())
+      expect(screen.getByTestId('conv-list-footer')).toHaveTextContent('30 / 40')
+
+      await act(async () => { oldPage2.resolve({ items: createMockItems(31, 30), total: 75 }) })
+
+      expect(screen.queryByTestId('conv-item-item-31')).not.toBeInTheDocument()
+      expect(screen.getByTestId('conv-list-footer')).toHaveTextContent('30 / 40')
+
+      // pageIndex không bị đổi: Tải thêm tiếp theo vẫn là index=2 của bộ lọc mới
+      filterSpy.mockClear()
+      fireEvent.click(screen.getByTestId('btn-load-more'))
+      await waitFor(() => expect(screen.getByTestId('conv-item-item-131')).toBeInTheDocument())
+      expect(filterSpy).toHaveBeenCalledWith(expect.objectContaining({ index: 2, keyword: 'moi' }))
+      expect(screen.getByTestId('conv-list-footer')).toHaveTextContent('40 / 40')
+    })
+
+    it('N3: polling xếp item có hoạt động mới (kể cả item cũ ở trang 2) lên đầu theo thứ tự trang 1, giữ trang đã tải và hội thoại chọn', async () => {
+      let poll = false
+      const filterSpy = vi.spyOn(inboxApi, 'filter').mockImplementation(async (req) => {
+        if (req.index === 2) return { items: createMockItems(31, 30), total: 75 }
+        if (poll) {
+          const [i1] = createMockItems(1, 1)
+          const [i45] = createMockItems(45, 1)
+          const [i99] = createMockItems(99, 1)
+          return { items: [{ ...i45, snippet: 'MỚI NHẤT' }, i99, i1], total: 76 }
+        }
+        return { items: createMockItems(1, 30), total: 75 }
+      })
+      render(<MemoryRouter><InboxFeature /></MemoryRouter>)
+      await waitFor(() => expect(screen.getByTestId('conv-list-footer')).toHaveTextContent('30 / 75'))
+      fireEvent.click(screen.getByTestId('btn-load-more'))
+      await waitFor(() => expect(screen.getByTestId('conv-item-item-60')).toBeInTheDocument())
+      fireEvent.click(screen.getByTestId('conv-item-item-10'))
+
+      poll = true
+      filterSpy.mockClear()
+      act(() => { window.dispatchEvent(new Event('focus')) })
+      await waitFor(() => expect(screen.getByTestId('conv-item-item-99')).toBeInTheDocument())
+
+      const ids = listIds()
+      expect(ids.slice(0, 5)).toEqual(['item-45', 'item-99', 'item-1', 'item-2', 'item-3'])
+      expect(ids).toHaveLength(61) // 60 đã tải + 1 mới, không trùng
+      expect(new Set(ids).size).toBe(ids.length)
+      expect(screen.getByTestId('conv-snippet-item-45')).toHaveTextContent('MỚI NHẤT')
+      expect(screen.getByTestId('conv-item-item-10')).toHaveClass('active')
+    })
+  })
 })

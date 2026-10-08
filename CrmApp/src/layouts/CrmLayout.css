@@ -2,6 +2,7 @@
 .crm-layout {
   display: flex;
   min-height: 100vh;
+  min-height: 100dvh;
   background-color: var(--crm-bg);
 }
 
@@ -111,6 +112,7 @@
   flex-direction: column;
   min-width: 0;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* Header */
@@ -202,13 +204,17 @@
 
 .crm-layout--full {
   height: 100vh;
+  height: 100dvh;
   max-height: 100vh;
+  max-height: 100dvh;
   overflow: hidden;
 }
 
 .crm-main-wrapper--full {
   height: 100vh;
+  height: 100dvh;
   max-height: 100vh;
+  max-height: 100dvh;
   overflow: hidden;
 }
 
@@ -219,7 +225,9 @@
   width: 100% !important;
   margin: 0 !important;
   height: calc(100vh - var(--crm-header-height));
+  height: calc(100dvh - var(--crm-header-height));
   max-height: calc(100vh - var(--crm-header-height));
+  max-height: calc(100dvh - var(--crm-header-height));
   overflow: hidden;
 }
 

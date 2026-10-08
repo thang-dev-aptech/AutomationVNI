@@ -3,7 +3,9 @@
   grid-template-columns: 340px 1fr 340px;
   gap: 0;
   height: calc(100vh - var(--crm-header-height));
+  height: calc(100dvh - var(--crm-header-height));
   max-height: calc(100vh - var(--crm-header-height));
+  max-height: calc(100dvh - var(--crm-header-height));
   overflow: hidden;
   background-color: var(--crm-bg);
   position: relative;

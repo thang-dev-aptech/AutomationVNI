@@ -61,7 +61,10 @@ export const CustomerProfile = ({ customerId, onBack, onCustomerUpdated }) => {
       setNotes(notesData || [])
       setReminders(remindersData || [])
     } catch (err) {
-      setError(err?.response?.data?.message || err?.message || 'Không thể tải thông tin khách hàng')
+      const status = err?.response?.status
+      setError(status === 404 || status === 400
+        ? 'Không tìm thấy khách'
+        : err?.response?.data?.message || err?.message || 'Không thể tải thông tin khách hàng')
     } finally {
       setLoading(false)
     }
@@ -201,11 +204,11 @@ export const CustomerProfile = ({ customerId, onBack, onCustomerUpdated }) => {
   if (error || !customer) {
     return (
       <div style={{ padding: '24px' }}>
-        <Button variant="ghost" onClick={onBack} icon={<Icon name="inbox" size={16} />}>
+        <Button variant="ghost" onClick={onBack} icon={<Icon name="inbox" size={16} />} data-testid="btn-profile-back-list">
           Quay lại danh sách
         </Button>
-        <div style={{ marginTop: '16px', color: 'var(--crm-danger)', fontWeight: '600' }}>
-          {error || 'Khách hàng không tồn tại'}
+        <div style={{ marginTop: '16px', color: 'var(--crm-danger)', fontWeight: '600' }} data-testid="customer-profile-error">
+          {error || 'Không tìm thấy khách'}
         </div>
       </div>
     )

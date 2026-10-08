@@ -1,20 +1,24 @@
-import React, { useState } from 'react'
+import React from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import CustomerList from './components/CustomerList'
 import CustomerProfile from './components/CustomerProfile'
 
+// Hồ sơ khách theo URL (/customers/:id) để refresh và nút Back của trình duyệt đều chạy.
 export const CustomersFeature = () => {
-  const [selectedCustomerId, setSelectedCustomerId] = useState(null)
+  const { id } = useParams()
+  const navigate = useNavigate()
 
   return (
     <div>
-      {selectedCustomerId ? (
+      {id ? (
         <CustomerProfile
-          customerId={selectedCustomerId}
-          onBack={() => setSelectedCustomerId(null)}
+          key={id}
+          customerId={id}
+          onBack={() => navigate('/customers')}
           onCustomerUpdated={() => {}}
         />
       ) : (
-        <CustomerList onSelectCustomer={(id) => setSelectedCustomerId(id)} />
+        <CustomerList onSelectCustomer={(customerId) => navigate(`/customers/${customerId}`)} />
       )}
     </div>
   )

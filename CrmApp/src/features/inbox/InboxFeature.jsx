@@ -108,6 +108,8 @@ export const InboxFeature = () => {
   const totalRef = useRef(0)
   const pageIndexRef = useRef(1)
   const itemsRef = useRef([])
+  // Tăng mỗi lần tải lại theo bộ lọc mới: response của bộ lọc cũ (loadMore/polling) bị bỏ.
+  const listGenRef = useRef(0)
 
   useEffect(() => {
     totalRef.current = total
@@ -172,6 +174,10 @@ export const InboxFeature = () => {
   const loadList = useCallback(
     async (isBackground = false) => {
       if (!isBackground) {
+        listGenRef.current++
+        // loadMore của bộ lọc cũ (nếu còn treo) không được chặn loadMore của bộ lọc mới.
+        isLoadingMoreRef.current = false
+        setLoadingMore(false)
         setLoadingList(true)
         setError(null)
         setPageError(null)
@@ -180,6 +186,7 @@ export const InboxFeature = () => {
           listRef.current.scrollTop = 0
         }
       }
+      const myGen = listGenRef.current
       try {
         const req = {
           keyword: filters.keyword?.trim() || null,
@@ -201,6 +208,7 @@ export const InboxFeature = () => {
         }
 
         const data = await inboxApi.filter(req)
+        if (myGen !== listGenRef.current) return
         const fetchedItems = data?.items || data?.Items || (Array.isArray(data) ? data : [])
         const rawTotal =
           data?.total ??
@@ -214,15 +222,14 @@ export const InboxFeature = () => {
           if (isBackground) {
             // Polling nền: chỉ index=1, merge (cập nhật item cũ, chèn item mới lên đầu),
             // giữ các trang đã tải và hội thoại đang chọn.
+            // Item có mặt ở trang 1 mới xếp đúng thứ tự trang 1 lên đầu (kể cả item cũ vừa có
+            // hoạt động mới); phần còn lại giữ thứ tự cũ phía sau.
             setItems((prev) => {
-              const page1Map = new Map(fetchedItems.map((it) => [`${it.kind}:${it.id}`, it]))
-              const existingKeys = new Set(prev.map((it) => `${it.kind}:${it.id}`))
-              const brandNew = fetchedItems.filter((it) => !existingKeys.has(`${it.kind}:${it.id}`))
-              const updatedExisting = prev.map((it) => {
-                const key = `${it.kind}:${it.id}`
-                return page1Map.has(key) ? { ...it, ...page1Map.get(key) } : it
-              })
-              return [...brandNew, ...updatedExisting]
+              const prevMap = new Map(prev.map((it) => [`${it.kind}:${it.id}`, it]))
+              const page1Keys = new Set(fetchedItems.map((it) => `${it.kind}:${it.id}`))
+              const head = fetchedItems.map((it) => ({ ...prevMap.get(`${it.kind}:${it.id}`), ...it }))
+              const rest = prev.filter((it) => !page1Keys.has(`${it.kind}:${it.id}`))
+              return [...head, ...rest]
             })
           } else {
             setItems(fetchedItems)
@@ -239,11 +246,11 @@ export const InboxFeature = () => {
           }
         }
       } catch (err) {
-        if (isMountedRef.current && !isBackground) {
+        if (isMountedRef.current && !isBackground && myGen === listGenRef.current) {
           setError(err?.response?.data?.message || err?.message || 'Không thể tải danh sách hộp thư')
         }
       } finally {
-        if (isMountedRef.current && !isBackground) {
+        if (isMountedRef.current && !isBackground && myGen === listGenRef.current) {
           setLoadingList(false)
         }
       }
@@ -259,6 +266,7 @@ export const InboxFeature = () => {
     setPageError(null)
 
     const nextIndex = pageIndexRef.current + 1
+    const myGen = listGenRef.current
     try {
       const req = {
         keyword: filters.keyword?.trim() || null,
@@ -280,6 +288,7 @@ export const InboxFeature = () => {
       }
 
       const data = await inboxApi.filter(req)
+      if (myGen !== listGenRef.current) return
       const rawItems = data?.items || data?.Items || (Array.isArray(data) ? data : [])
       const rawTotal = data?.total ?? data?.Total ?? data?.totalCount ?? data?.TotalCount ?? totalRef.current
 
@@ -293,14 +302,15 @@ export const InboxFeature = () => {
         setPageIndex(nextIndex)
       }
     } catch (err) {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && myGen === listGenRef.current) {
         setPageError(err?.response?.data?.message || err?.message || 'Không thể tải thêm hội thoại')
       }
     } finally {
-      if (isMountedRef.current) {
-        setLoadingMore(false)
+      // Bộ lọc đã đổi: cờ/loading thuộc về lượt tải mới, đừng đụng vào.
+      if (myGen === listGenRef.current) {
+        if (isMountedRef.current) setLoadingMore(false)
+        isLoadingMoreRef.current = false
       }
-      isLoadingMoreRef.current = false
     }
   }, [filters, loadingList])
 

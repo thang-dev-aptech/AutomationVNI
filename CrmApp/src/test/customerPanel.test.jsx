@@ -1,11 +1,13 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { CustomerPanel } from '../features/inbox/components/CustomerPanel'
 import InboxFeature from '../features/inbox/InboxFeature'
 import { inboxApi } from '../features/inbox/api/inboxApi'
 import { useAuthStore } from '../auth/authStore'
+
+const LocationProbe = () => <div data-testid="location-probe">{useLocation().pathname}</div>
 
 describe('AC e2810e98 (f)-(i) & AC e68ba436 (b) — CrmApp Customer Panel SO9', () => {
   const mockTags = [
@@ -333,7 +335,7 @@ describe('AC e2810e98 (f)-(i) & AC e68ba436 (b) — CrmApp Customer Panel SO9', 
                 />
               }
             />
-            <Route path="/customers/:id" element={<div data-testid="target-customer-page">Customer Details</div>} />
+            <Route path="*" element={<LocationProbe />} />
           </Routes>
         </MemoryRouter>,
       )
@@ -344,8 +346,9 @@ describe('AC e2810e98 (f)-(i) & AC e68ba436 (b) — CrmApp Customer Panel SO9', 
 
       fireEvent.click(screen.getByTestId('btn-open-customer-profile'))
 
+      // Điều hướng thật được kiểm ở customerProfileRoute.test.jsx (render <App/> thật).
       await waitFor(() => {
-        expect(screen.getByTestId('target-customer-page')).toBeInTheDocument()
+        expect(screen.getByTestId('location-probe')).toHaveTextContent('/customers/cust-uuid-001')
       })
     })
   })
@@ -517,6 +520,88 @@ describe('AC e2810e98 (f)-(i) & AC e68ba436 (b) — CrmApp Customer Panel SO9', 
       await waitFor(() => {
         expect(screen.getByTestId('btn-view-customer-profile')).toBeInTheDocument()
       })
+    })
+  })
+  describe('AC e2810e98 (i) — Race: response của hội thoại cũ không được ghi đè hội thoại mới', () => {
+    const profileOf = (id, name) => ({
+      ...mockCustomerDataLinked,
+      customer: { ...mockCustomerDataLinked.customer, id, displayName: name },
+    })
+    const deferred = () => {
+      let resolve, reject
+      const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+      return { promise, resolve, reject }
+    }
+    const renderPanel = (id, onCustomerLoaded) => (
+      <MemoryRouter>
+        <CustomerPanel item={{ id, kind: 1 }} tags={mockTags} onCustomerLoaded={onCustomerLoaded} />
+      </MemoryRouter>
+    )
+
+    it('A chậm, B nhanh: chỉ hiện KHÁCH B; onCustomerLoaded không nhận dữ liệu A', async () => {
+      const a = deferred()
+      const b = deferred()
+      vi.spyOn(inboxApi, 'getCustomer').mockImplementation((kind, id) => (id === 'conv-A' ? a.promise : b.promise))
+      const onLoaded = vi.fn()
+
+      const { rerender } = render(renderPanel('conv-A', onLoaded))
+      rerender(renderPanel('conv-B', onLoaded))
+
+      await act(async () => { b.resolve(profileOf('cust-B', 'KHÁCH B')) })
+      await waitFor(() => expect(screen.getByTestId('customer-display-name')).toHaveTextContent('KHÁCH B'))
+
+      await act(async () => { a.resolve(profileOf('cust-A', 'KHÁCH A')) })
+
+      expect(screen.getByTestId('customer-display-name')).toHaveTextContent('KHÁCH B')
+      expect(screen.queryByText('KHÁCH A')).not.toBeInTheDocument()
+      expect(onLoaded).toHaveBeenCalledTimes(1)
+      expect(onLoaded.mock.calls[0][0].customer.id).toBe('cust-B')
+    })
+
+    it('A reject sau khi đã chuyển sang B: không hiện lỗi của A, B vẫn hiển thị', async () => {
+      const a = deferred()
+      const b = deferred()
+      vi.spyOn(inboxApi, 'getCustomer').mockImplementation((kind, id) => (id === 'conv-A' ? a.promise : b.promise))
+
+      const { rerender } = render(renderPanel('conv-A'))
+      rerender(renderPanel('conv-B'))
+
+      await act(async () => { b.resolve(profileOf('cust-B', 'KHÁCH B')) })
+      await waitFor(() => expect(screen.getByTestId('customer-display-name')).toHaveTextContent('KHÁCH B'))
+
+      await act(async () => { a.reject(new Error('LỖI CỦA A')) })
+
+      expect(screen.queryByTestId('customer-panel-error')).not.toBeInTheDocument()
+      expect(screen.queryByText(/LỖI CỦA A/)).not.toBeInTheDocument()
+      expect(screen.getByTestId('customer-display-name')).toHaveTextContent('KHÁCH B')
+    })
+
+    it('InboxFeature: linkedCustomerId của InboxDetail không nhận id của hội thoại cũ', async () => {
+      const mkItem = (id) => ({
+        id, kind: 1, displayName: id, snippet: id, channelName: 'Page',
+        lastCustomerActivityAt: '2026-10-07T03:15:00Z', status: 1, canReply: true, tags: [],
+      })
+      vi.spyOn(inboxApi, 'filter').mockResolvedValue({ items: [mkItem('conv-A'), mkItem('conv-B')], total: 2 })
+      vi.spyOn(inboxApi, 'getMessage').mockImplementation(async (kind, id) => ({
+        kind: 1,
+        conversation: { id, channelName: 'Page', participantName: id, messages: [] },
+        tags: [],
+        replyEndpoint: `/api/PageMessage/${id}/send`,
+      }))
+      const a = deferred()
+      const b = deferred()
+      vi.spyOn(inboxApi, 'getCustomer').mockImplementation((kind, id) => (id === 'conv-A' ? a.promise : b.promise))
+
+      render(<MemoryRouter><InboxFeature /></MemoryRouter>)
+      await waitFor(() => expect(screen.getByTestId('conv-item-conv-B')).toBeInTheDocument())
+      fireEvent.click(screen.getByTestId('conv-item-conv-B'))
+
+      await act(async () => { b.resolve(profileOf('cust-B', 'KHÁCH B')) })
+      await waitFor(() => expect(screen.getByTestId('customer-display-name')).toHaveTextContent('KHÁCH B'))
+      await act(async () => { a.resolve(profileOf('cust-A', 'KHÁCH A')) })
+
+      expect(screen.getByTestId('customer-display-name')).toHaveTextContent('KHÁCH B')
+      expect(screen.queryByText('KHÁCH A')).not.toBeInTheDocument()
     })
   })
 })
