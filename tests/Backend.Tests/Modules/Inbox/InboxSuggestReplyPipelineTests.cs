@@ -290,6 +290,65 @@ public sealed class InboxSuggestReplyPipelineTests : IAsyncLifetime
         _ = other; // seeded for leak check
     }
 
+    [Fact]
+    public async Task Suggest_Comment_ExcludesHiddenPendingDeletedOnPlatform()
+    {
+        var page = await SeedChannelAsync("FilterCmt");
+        await SeedPageContextAsync(page, "Brand", "tone");
+        var root = await SeedCommentAsync(page, "ROOT_VISIBLE", authorId: "a1");
+        await SeedReplyAsync(root, page, "REPLY_NORMAL", isFromPage: true);
+        await SeedReplyAsync(root, page, "REPLY_HIDDEN", isFromPage: false, isHidden: true);
+        await SeedReplyAsync(root, page, "REPLY_PENDING", isFromPage: false, isPending: true);
+        await SeedReplyAsync(root, page, "REPLY_DELETED_ON_PLATFORM", isFromPage: false, deletedOnPlatform: true);
+
+        _ai.NextResult = new AiTextGenerationResult { Caption = "draft" };
+        var (status, _) = await SuggestAsync("comment", root, "Admin");
+        Assert.Equal(HttpStatusCode.OK, status);
+
+        var prompt = _ai.LastRequest!.PromptOverride ?? "";
+        Assert.Contains("ROOT_VISIBLE", prompt, StringComparison.Ordinal);
+        Assert.Contains("REPLY_NORMAL", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("REPLY_HIDDEN", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("REPLY_PENDING", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("REPLY_DELETED_ON_PLATFORM", prompt, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Revert-to-prove (AC 523b968c): query chỉ !IsDeleted sẽ kéo hidden/pending/deletedOnPlatform;
+    /// service có bộ lọc mới thì không.
+    /// </summary>
+    [Fact]
+    public async Task Suggest_Comment_RevertToProve_WithoutSafetyFilter_WouldLeakHiddenPending()
+    {
+        var page = await SeedChannelAsync("RevertCmt");
+        await SeedPageContextAsync(page, "Brand", "tone");
+        var root = await SeedCommentAsync(page, "ROOT_OK", authorId: "a1");
+        await SeedReplyAsync(root, page, "SAFE_REPLY", isFromPage: true);
+        await SeedReplyAsync(root, page, "LEAK_HIDDEN", isFromPage: false, isHidden: true);
+        await SeedReplyAsync(root, page, "LEAK_PENDING", isFromPage: false, isPending: true);
+        await SeedReplyAsync(root, page, "LEAK_DEL_PLATFORM", isFromPage: false, deletedOnPlatform: true);
+
+        await using var db = new AppDbContext(_options);
+        var unsafeBlob = string.Join('\n', await db.SocialComments.AsNoTracking()
+            .Where(x =>
+                !x.IsDeleted
+                && (x.Id == root || x.ParentCommentId == root))
+            .Select(x => x.Message!)
+            .ToListAsync());
+        Assert.Contains("LEAK_HIDDEN", unsafeBlob, StringComparison.Ordinal);
+        Assert.Contains("LEAK_PENDING", unsafeBlob, StringComparison.Ordinal);
+        Assert.Contains("LEAK_DEL_PLATFORM", unsafeBlob, StringComparison.Ordinal);
+
+        _ai.NextResult = new AiTextGenerationResult { Caption = "draft" };
+        await SuggestAsync("comment", root, "Admin");
+        var prompt = _ai.LastRequest!.PromptOverride ?? "";
+        Assert.Contains("ROOT_OK", prompt, StringComparison.Ordinal);
+        Assert.Contains("SAFE_REPLY", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("LEAK_HIDDEN", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("LEAK_PENDING", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("LEAK_DEL_PLATFORM", prompt, StringComparison.Ordinal);
+    }
+
     // --- helpers ---
 
     private async Task<(HttpStatusCode Status, JsonElement Body)> SuggestAsync(
@@ -435,7 +494,13 @@ public sealed class InboxSuggestReplyPipelineTests : IAsyncLifetime
     }
 
     private async Task<Guid> SeedReplyAsync(
-        Guid parentId, Guid channelId, string message, bool isFromPage)
+        Guid parentId,
+        Guid channelId,
+        string message,
+        bool isFromPage,
+        bool isHidden = false,
+        bool isPending = false,
+        bool deletedOnPlatform = false)
     {
         await using var db = new AppDbContext(_options);
         var parent = await db.SocialComments.AsNoTracking().FirstAsync(x => x.Id == parentId);
@@ -454,6 +519,9 @@ public sealed class InboxSuggestReplyPipelineTests : IAsyncLifetime
             Message = message,
             CommentedAt = at,
             IsFromPage = isFromPage,
+            IsHidden = isHidden,
+            IsPending = isPending,
+            IsDeletedOnPlatform = deletedOnPlatform,
             InboxStatus = CommentInboxStatus.New,
             CreatedAt = at,
             CreatedBy = "seed"

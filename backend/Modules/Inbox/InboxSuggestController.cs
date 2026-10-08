@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Backend.Modules.Inbox;
 
 /// <summary>
-/// AI gợi ý trả lời (chỉ bản nháp). Route api/Inbox — file riêng để không đụng InboxController (t1).
+/// AI gợi ý trả lời (chỉ bản nháp). Route api/Inbox — endpoint duy nhất còn lại trên module này.
 /// </summary>
 [ApiController]
 [Route("api/Inbox")]

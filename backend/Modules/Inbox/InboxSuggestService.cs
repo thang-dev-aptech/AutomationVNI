@@ -15,7 +15,8 @@ public class InboxSuggestReplyResponse
 
 /// <summary>
 /// AI gợi ý trả lời — CHỈ bản nháp. Không ghi DB, không gửi tin/trả lời.
-/// Phạm vi hội thoại khớp InboxQueryService / PageMessage + SocialComment filter.
+/// Phạm vi: PageMessage !IsDeleted; SocialComment top-level khách + trả lời
+/// !IsDeleted &amp;&amp; !IsHidden &amp;&amp; !IsPending &amp;&amp; !IsDeletedOnPlatform.
 /// </summary>
 public class InboxSuggestService(
     AppDbContext db,
@@ -160,9 +161,13 @@ public class InboxSuggestService(
                 && x.ParentCommentId == null, ct);
         if (root is null) return null;
 
+        // N3 / crm-inbox-safety: không đưa bình luận ẩn, chờ duyệt, hoặc đã xoá trên nền tảng.
         var thread = await db.SocialComments.AsNoTracking()
             .Where(x =>
                 !x.IsDeleted
+                && !x.IsHidden
+                && !x.IsPending
+                && !x.IsDeletedOnPlatform
                 && (x.Id == root.Id || x.ParentCommentId == root.Id))
             .OrderByDescending(x => x.CommentedAt ?? x.CreatedAt)
             .Take(MaxContextMessages)
