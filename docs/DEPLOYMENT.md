@@ -12,10 +12,10 @@ Hướng dẫn triển khai backend + frontend. Xem tổng quan tại [README.md
 ## Build artifacts
 
 ```bash
-# Frontend → backend/wwwroot/dist
+# Frontend → backend/wwwroot/dist (VITE_CRM_URL trỏ sang hộp thư CRM)
 cd ClientApp
 npm ci
-npm run build
+VITE_CRM_URL="https://crm.auto.vni.edu.vn/inbox" npm run build
 
 # Backend Linux x64 self-contained (chạy từ repository root)
 cd ..
