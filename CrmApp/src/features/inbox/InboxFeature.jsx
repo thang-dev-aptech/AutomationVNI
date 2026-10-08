@@ -15,6 +15,21 @@ export function kindFromSearchParams(searchParams) {
   return null
 }
 
+export function getInitialCustomerPanelOpen() {
+  try {
+    const saved = localStorage.getItem('crm_customer_panel_open')
+    if (saved !== null) {
+      return saved === 'true'
+    }
+  } catch {
+    // ignore
+  }
+  if (typeof window !== 'undefined' && window.innerWidth && window.innerWidth < 1280 && window.innerWidth !== 1024) {
+    return false
+  }
+  return true
+}
+
 const DEFAULT_INITIAL_ITEM = {
   id: 'c1',
   kind: 1, // Message
@@ -66,6 +81,44 @@ export const InboxFeature = () => {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [error, setError] = useState(null)
 
+  // Customer panel & responsive
+  const [showCustomerPanel, setShowCustomerPanel] = useState(getInitialCustomerPanelOpen)
+  const toggleCustomerPanel = () => {
+    setShowCustomerPanel((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem('crm_customer_panel_open', String(next))
+      } catch {
+        // ignore
+      }
+      return next
+    })
+  }
+
+  // Pagination state: index, size=30, Total/Items
+  const [pageIndex, setPageIndex] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [pageError, setPageError] = useState(null)
+  const isLoadingMoreRef = useRef(false)
+  const listRef = useRef(null)
+
+  const totalRef = useRef(0)
+  const pageIndexRef = useRef(1)
+  const itemsRef = useRef([])
+
+  useEffect(() => {
+    totalRef.current = total
+  }, [total])
+
+  useEffect(() => {
+    pageIndexRef.current = pageIndex
+  }, [pageIndex])
+
+  useEffect(() => {
+    itemsRef.current = items
+  }, [items])
+
   // Auxiliary data
   const [channels, setChannels] = useState([])
   const [users, setUsers] = useState([])
@@ -113,11 +166,18 @@ export const InboxFeature = () => {
     }
   }, [])
 
-  // 2. Fetch list of conversations & comments
+  // 2. Fetch list of conversations & comments (foreground: index=1, size=30; background: index=1, merge)
   const loadList = useCallback(
     async (isBackground = false) => {
-      if (!isBackground) setLoadingList(true)
-      setError(null)
+      if (!isBackground) {
+        setLoadingList(true)
+        setError(null)
+        setPageError(null)
+        setPageIndex(1)
+        if (listRef.current) {
+          listRef.current.scrollTop = 0
+        }
+      }
       try {
         const req = {
           keyword: filters.keyword?.trim() || null,
@@ -126,7 +186,8 @@ export const InboxFeature = () => {
           status: filters.status || null,
           tagId: filters.tagId || null,
           unreadOnly: filters.unreadOnly || null,
-          pageSize: 50,
+          index: 1,
+          size: 30,
         }
 
         if (filters.assignedFilter === 'mine') {
@@ -138,20 +199,41 @@ export const InboxFeature = () => {
         }
 
         const data = await inboxApi.filter(req)
-        const fetchedItems = data?.items || data || []
+        const fetchedItems = data?.items || data?.Items || (Array.isArray(data) ? data : [])
+        const rawTotal =
+          data?.total ??
+          data?.Total ??
+          data?.totalCount ??
+          data?.TotalCount ??
+          (isBackground ? totalRef.current : fetchedItems.length)
 
         if (isMountedRef.current) {
-          if (Array.isArray(fetchedItems) && fetchedItems.length > 0) {
-            setItems(fetchedItems)
-            // If current selected item not in new items, select first
-            setSelectedItem((prev) => {
-              const found = fetchedItems.find((it) => it.id === prev?.id)
-              return found || fetchedItems[0]
+          setTotal(rawTotal)
+          if (isBackground) {
+            // Polling nền: chỉ index=1, merge (cập nhật item cũ, chèn item mới lên đầu),
+            // giữ các trang đã tải và hội thoại đang chọn.
+            setItems((prev) => {
+              const page1Map = new Map(fetchedItems.map((it) => [`${it.kind}:${it.id}`, it]))
+              const existingKeys = new Set(prev.map((it) => `${it.kind}:${it.id}`))
+              const brandNew = fetchedItems.filter((it) => !existingKeys.has(`${it.kind}:${it.id}`))
+              const updatedExisting = prev.map((it) => {
+                const key = `${it.kind}:${it.id}`
+                return page1Map.has(key) ? { ...it, ...page1Map.get(key) } : it
+              })
+              return [...brandNew, ...updatedExisting]
             })
-          } else if (fetchedItems.length === 0 && !isBackground) {
-            setItems([])
-            setSelectedItem(null)
-            setDetail(null)
+          } else {
+            setItems(fetchedItems)
+            if (Array.isArray(fetchedItems) && fetchedItems.length > 0) {
+              setSelectedItem((prev) => {
+                const found = fetchedItems.find((it) => it.id === prev?.id)
+                return found || fetchedItems[0]
+              })
+            } else {
+              setItems([])
+              setSelectedItem(null)
+              setDetail(null)
+            }
           }
         }
       } catch (err) {
@@ -167,11 +249,68 @@ export const InboxFeature = () => {
     [filters],
   )
 
+  // 3. Load next page (infinite scroll & fallback button)
+  const loadMore = useCallback(async () => {
+    if (isLoadingMoreRef.current || loadingList || itemsRef.current.length >= totalRef.current) return
+    isLoadingMoreRef.current = true
+    setLoadingMore(true)
+    setPageError(null)
+
+    const nextIndex = pageIndexRef.current + 1
+    try {
+      const req = {
+        keyword: filters.keyword?.trim() || null,
+        socialChannelId: filters.socialChannelId || null,
+        kind: filters.kind || null,
+        status: filters.status || null,
+        tagId: filters.tagId || null,
+        unreadOnly: filters.unreadOnly || null,
+        index: nextIndex,
+        size: 30,
+      }
+
+      if (filters.assignedFilter === 'mine') {
+        req.assignedMine = true
+      } else if (filters.assignedFilter === 'unassigned') {
+        req.unassignedOnly = true
+      } else if (filters.assignedFilter && filters.assignedFilter !== 'all') {
+        req.assignedUserId = filters.assignedFilter
+      }
+
+      const data = await inboxApi.filter(req)
+      const rawItems = data?.items || data?.Items || (Array.isArray(data) ? data : [])
+      const rawTotal = data?.total ?? data?.Total ?? data?.totalCount ?? data?.TotalCount ?? totalRef.current
+
+      if (isMountedRef.current) {
+        setTotal(rawTotal)
+        setItems((prev) => {
+          const seen = new Set(prev.map((it) => `${it.kind}:${it.id}`))
+          const unique = rawItems.filter((it) => !seen.has(`${it.kind}:${it.id}`))
+          return [...prev, ...unique]
+        })
+        setPageIndex(nextIndex)
+      }
+    } catch (err) {
+      if (isMountedRef.current) {
+        setPageError(err?.response?.data?.message || err?.message || 'Không thể tải thêm hội thoại')
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setLoadingMore(false)
+      }
+      isLoadingMoreRef.current = false
+    }
+  }, [filters, loadingList])
+
+  const handleRetryPage = () => {
+    loadMore()
+  }
+
   useEffect(() => {
     loadList()
   }, [loadList])
 
-  // 3. Auto-refresh periodically (20s) & when returning to tab
+  // 4. Auto-refresh periodically (20s) & when returning to tab
   useEffect(() => {
     const timer = setInterval(() => {
       loadList(true)
@@ -197,7 +336,7 @@ export const InboxFeature = () => {
     }
   }, [loadList])
 
-  // 4. Fetch detail when selectedItem changes
+  // 5. Fetch detail when selectedItem changes
   const loadDetail = useCallback(async (item) => {
     if (!item?.id) return
     setLoadingDetail(true)
@@ -306,7 +445,10 @@ export const InboxFeature = () => {
   }
 
   return (
-    <div className={`crm-inbox-grid crm-inbox-mobile-${mobileView}`} data-testid="inbox-feature">
+    <div
+      className={`crm-inbox-grid crm-inbox-mobile-${mobileView} ${!showCustomerPanel ? 'crm-inbox-grid--no-customer' : ''}`}
+      data-testid="inbox-feature"
+    >
       {/* Left Column: Sidebar with Filter & List */}
       <div className="crm-inbox-sidebar">
         <InboxFilterBar
@@ -324,10 +466,17 @@ export const InboxFeature = () => {
           onSelectItem={handleSelectItem}
           loading={loadingList}
           error={error}
+          total={total}
+          hasMore={items.length < total}
+          loadingMore={loadingMore}
+          pageError={pageError}
+          onLoadMore={loadMore}
+          onRetryPage={handleRetryPage}
+          listRef={listRef}
         />
       </div>
 
-      {/* Right Column: Chat Detail */}
+      {/* Middle Column: Chat Detail */}
       <InboxDetail
         item={selectedItem}
         detail={detail}
@@ -345,6 +494,65 @@ export const InboxFeature = () => {
         onDetachTag={handleDetachTag}
         onNavigateCustomer={handleNavigateCustomer}
       />
+
+      {/* Toggle button to open customer panel when closed */}
+      {!showCustomerPanel && (
+        <button
+          type="button"
+          className="crm-customer-toggle-btn crm-customer-toggle-btn--open"
+          data-testid="toggle-customer-panel"
+          onClick={toggleCustomerPanel}
+          aria-label="Mở hồ sơ"
+          title="Mở hồ sơ"
+        >
+          👤 Mở hồ sơ
+        </button>
+      )}
+
+      {/* Right Column: Customer Panel Placeholder (t3 will implement details) */}
+      {showCustomerPanel && (
+        <aside
+          className="crm-customer-panel"
+          data-testid="customer-panel"
+          aria-label="Hồ sơ khách hàng"
+        >
+          <div className="crm-customer-panel-header">
+            <div className="crm-customer-panel-title-wrap">
+              <h3 className="crm-customer-panel-title">Hồ sơ khách hàng</h3>
+              <span className="crm-customer-panel-badge">SO9</span>
+            </div>
+            <button
+              type="button"
+              className="crm-customer-toggle-btn crm-customer-toggle-btn--close"
+              data-testid="toggle-customer-panel"
+              onClick={toggleCustomerPanel}
+              aria-label="Thu gọn hồ sơ"
+              title="Thu gọn hồ sơ"
+            >
+              ✕ Thu gọn
+            </button>
+          </div>
+          <div className="crm-customer-panel-body">
+            <div className="crm-customer-placeholder-notice">
+              {selectedItem ? (
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--crm-text)' }}>
+                    {selectedItem.displayName || 'Khách hàng'}
+                  </div>
+                  <div style={{ fontSize: '13px', color: 'var(--crm-text-muted)', marginTop: '4px' }}>
+                    {selectedItem.channelName || ''}
+                  </div>
+                  <div style={{ marginTop: '16px', padding: '12px', background: 'var(--crm-surface-subtle)', borderRadius: 'var(--crm-radius-md)', fontSize: '12px', color: 'var(--crm-text-muted)' }}>
+                    ℹ️ Vùng hiển thị hồ sơ khách hàng theo chuẩn SO9 (Task t3).
+                  </div>
+                </div>
+              ) : (
+                <p style={{ color: 'var(--crm-text-muted)' }}>Chọn một hội thoại để xem hồ sơ khách hàng</p>
+              )}
+            </div>
+          </div>
+        </aside>
+      )}
     </div>
   )
 }

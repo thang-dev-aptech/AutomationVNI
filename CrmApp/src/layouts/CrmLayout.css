@@ -200,6 +200,29 @@
   margin: 0 auto;
 }
 
+.crm-layout--full {
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+}
+
+.crm-main-wrapper--full {
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+}
+
+.crm-content.crm-content--full,
+.crm-content.crm-content-full {
+  padding: 0 !important;
+  max-width: none !important;
+  width: 100% !important;
+  margin: 0 !important;
+  height: calc(100vh - var(--crm-header-height));
+  max-height: calc(100vh - var(--crm-header-height));
+  overflow: hidden;
+}
+
 /* Backdrop for Mobile Drawer */
 .crm-mobile-backdrop {
   display: none;

@@ -46,100 +46,105 @@ export const CrmLayout = () => {
 
   const userInitial = user?.userName?.[0] || user?.email?.[0] || 'U'
 
-  return (
-    <div className="crm-layout">
-      {/* Mobile Drawer Backdrop */}
-      <div
-        className={`crm-mobile-backdrop ${mobileOpen ? 'crm-backdrop-open' : ''}`}
-        onClick={() => setMobileOpen(false)}
-        aria-hidden="true"
-      />
+    const isInbox = location.pathname.startsWith('/inbox')
 
-      {/* Sidebar */}
-      <aside className={`crm-sidebar ${mobileOpen ? 'crm-sidebar-open' : ''}`} data-testid="crm-sidebar">
-        <div className="crm-sidebar-brand">
-          <div className="crm-brand-badge">CRM</div>
-          <div className="crm-brand-text">
-            <span className="crm-brand-title">VNI CRM</span>
-            <span className="crm-brand-subtitle">Hộp thư & Chăm sóc</span>
-          </div>
-        </div>
+    return (
+      <div className={`crm-layout ${isInbox ? 'crm-layout--full' : ''}`}>
+        {/* Mobile Drawer Backdrop */}
+        <div
+          className={`crm-mobile-backdrop ${mobileOpen ? 'crm-backdrop-open' : ''}`}
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+        />
 
-        <nav className="crm-nav">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              className={({ isActive }) => `crm-nav-link ${isActive ? 'active' : ''}`}
-              onClick={() => setMobileOpen(false)}
-              data-testid={`nav-${item.path.slice(1)}`}
-            >
-              <Icon name={item.icon} size={18} />
-              <span>{item.name}</span>
-              {item.badge && <span className="crm-nav-link-badge">{item.badge}</span>}
-            </NavLink>
-          ))}
-        </nav>
-
-        <div style={{ padding: '16px', borderTop: '1px solid var(--crm-sidebar-border)' }}>
-          <Button
-            variant="ghost"
-            size="sm"
-            style={{ width: '100%', justifyContent: 'flex-start', color: '#94a3b8' }}
-            onClick={handleLogout}
-            icon={<Icon name="logout" size={16} />}
-            data-testid="sidebar-logout-btn"
-          >
-            Đăng xuất
-          </Button>
-        </div>
-      </aside>
-
-      {/* Main Content Area */}
-      <div className="crm-main-wrapper">
-        <header className="crm-header">
-          <div className="crm-header-left">
-            <button
-              type="button"
-              className="crm-mobile-toggle"
-              onClick={() => setMobileOpen(!mobileOpen)}
-              aria-label="Toggle menu"
-              data-testid="mobile-menu-btn"
-            >
-              <Icon name={mobileOpen ? 'close' : 'menu'} size={20} />
-            </button>
-            <h1 className="crm-header-title">{getPageTitle()}</h1>
-          </div>
-
-          <div className="crm-header-right">
-            <div className="crm-user-profile" data-testid="user-profile-badge">
-              <div className="crm-user-avatar">{userInitial.toUpperCase()}</div>
-              <div className="crm-user-meta">
-                <span className="crm-user-email">{user?.email || 'Người dùng'}</span>
-                <Badge variant={getRoleBadgeVariant(primaryRole)} size="sm">
-                  {primaryRole}
-                </Badge>
-              </div>
+        {/* Sidebar */}
+        <aside className={`crm-sidebar ${mobileOpen ? 'crm-sidebar-open' : ''}`} data-testid="crm-sidebar">
+          <div className="crm-sidebar-brand">
+            <div className="crm-brand-badge">CRM</div>
+            <div className="crm-brand-text">
+              <span className="crm-brand-title">VNI CRM</span>
+              <span className="crm-brand-subtitle">Hộp thư & Chăm sóc</span>
             </div>
+          </div>
 
+          <nav className="crm-nav">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                className={({ isActive }) => `crm-nav-link ${isActive ? 'active' : ''}`}
+                onClick={() => setMobileOpen(false)}
+                data-testid={`nav-${item.path.slice(1)}`}
+              >
+                <Icon name={item.icon} size={18} />
+                <span>{item.name}</span>
+                {item.badge && <span className="crm-nav-link-badge">{item.badge}</span>}
+              </NavLink>
+            ))}
+          </nav>
+
+          <div style={{ padding: '16px', borderTop: '1px solid var(--crm-sidebar-border)' }}>
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
+              style={{ width: '100%', justifyContent: 'flex-start', color: '#94a3b8' }}
               onClick={handleLogout}
               icon={<Icon name="logout" size={16} />}
-              data-testid="header-logout-btn"
+              data-testid="sidebar-logout-btn"
             >
-              Thoát
+              Đăng xuất
             </Button>
           </div>
-        </header>
+        </aside>
 
-        <main className="crm-content">
-          <Outlet />
-        </main>
+        {/* Main Content Area */}
+        <div className={`crm-main-wrapper ${isInbox ? 'crm-main-wrapper--full' : ''}`}>
+          <header className="crm-header">
+            <div className="crm-header-left">
+              <button
+                type="button"
+                className="crm-mobile-toggle"
+                onClick={() => setMobileOpen(!mobileOpen)}
+                aria-label="Toggle menu"
+                data-testid="mobile-menu-btn"
+              >
+                <Icon name={mobileOpen ? 'close' : 'menu'} size={20} />
+              </button>
+              <h1 className="crm-header-title">{getPageTitle()}</h1>
+            </div>
+
+            <div className="crm-header-right">
+              <div className="crm-user-profile" data-testid="user-profile-badge">
+                <div className="crm-user-avatar">{userInitial.toUpperCase()}</div>
+                <div className="crm-user-meta">
+                  <span className="crm-user-email">{user?.email || 'Người dùng'}</span>
+                  <Badge variant={getRoleBadgeVariant(primaryRole)} size="sm">
+                    {primaryRole}
+                  </Badge>
+                </div>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogout}
+                icon={<Icon name="logout" size={16} />}
+                data-testid="header-logout-btn"
+              >
+                Thoát
+              </Button>
+            </div>
+          </header>
+
+          <main
+            className={`crm-content ${isInbox ? 'crm-content--full crm-content-full' : ''}`}
+            data-testid="crm-main-content"
+          >
+            <Outlet />
+          </main>
+        </div>
       </div>
-    </div>
-  )
+    )
 }
 
 export default CrmLayout
