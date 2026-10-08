@@ -33,7 +33,31 @@ export default function ConversationsPage() {
   } = useConversationParams()
 
   const isNarrow = useIsNarrow(768)
-  const [isCustomerInfoOpen, setIsCustomerInfoOpen] = useState(true)
+  const [isCustomerInfoOpen, setIsCustomerInfoOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem('crm_customer_info_panel_open')
+      return saved !== null ? JSON.parse(saved) : true
+    } catch {
+      return true
+    }
+  })
+
+  const handleToggleCustomerInfo = () => {
+    setIsCustomerInfoOpen((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem('crm_customer_info_panel_open', JSON.stringify(next))
+      } catch {}
+      return next
+    })
+  }
+
+  const handleCloseCustomerInfo = () => {
+    setIsCustomerInfoOpen(false)
+    try {
+      localStorage.setItem('crm_customer_info_panel_open', JSON.stringify(false))
+    } catch {}
+  }
 
   // Payload for api/Inbox/filter
   const filterRequest = useMemo(
@@ -122,7 +146,7 @@ export default function ConversationsPage() {
             id={selectedId}
             conversation={selectedItem}
             onBack={handleBackToList}
-            onToggleCustomerInfo={() => setIsCustomerInfoOpen((v) => !v)}
+            onToggleCustomerInfo={handleToggleCustomerInfo}
             isCustomerInfoOpen={isCustomerInfoOpen}
           />
         </section>
@@ -138,7 +162,8 @@ export default function ConversationsPage() {
             kind={selectedKind}
             id={selectedId}
             conversation={selectedItem}
-            onClose={() => setIsCustomerInfoOpen(false)}
+            onClose={handleCloseCustomerInfo}
+            onSelectConversation={handleSelectConversation}
           />
         </section>
       )}
