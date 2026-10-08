@@ -1,0 +1,221 @@
+.conversation-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  background: var(--bg-card, #ffffff);
+}
+
+.conversation-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.conversation-search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--text-muted, #94a3b8);
+  pointer-events: none;
+}
+
+.conversation-search-input {
+  width: 100%;
+  padding: 8px 30px 8px 32px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border, #cbd5e1);
+  background: var(--bg-input, #f8fafc);
+  font-size: 0.88rem;
+  color: var(--text-primary, #1e293b);
+  outline: none;
+  transition: border-color var(--ease, 0.15s ease), box-shadow var(--ease, 0.15s ease);
+}
+
+.conversation-search-input:focus {
+  border-color: var(--color-primary, #2563eb);
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.conversation-search-clear {
+  position: absolute;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: #cbd5e1;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.conversation-icons-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.filter-icon-container {
+  position: relative;
+}
+
+.filter-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-surface, #f8fafc);
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  transition: all var(--ease, 0.15s ease);
+}
+
+.filter-icon-btn:hover {
+  background: var(--bg-hover, #f1f5f9);
+  color: var(--text-primary, #0f172a);
+  border-color: #cbd5e1;
+}
+
+.filter-icon-btn.is-active,
+.filter-icon-btn[aria-pressed="true"] {
+  background: rgba(37, 99, 235, 0.12);
+  border-color: var(--color-primary, #2563eb);
+  color: var(--color-primary, #2563eb);
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.2);
+}
+
+.filter-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-muted, #64748b);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all var(--ease, 0.15s ease);
+}
+
+.filter-clear-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.08);
+  color: var(--color-danger, #ef4444);
+}
+
+.filter-clear-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.filter-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  min-width: 200px;
+  padding: 10px;
+  background: #ffffff;
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.filter-popover--wide {
+  min-width: 280px;
+}
+
+.filter-popover-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.filter-popover-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.filter-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-primary, #1e293b);
+  cursor: pointer;
+}
+
+.filter-popover-empty {
+  font-size: 0.82rem;
+  color: var(--text-muted, #94a3b8);
+  padding: 4px 0;
+}
+
+.filter-date-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-date-btn {
+  padding: 6px 8px;
+  text-align: left;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 4px;
+  background: #f8fafc;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.filter-date-btn:hover {
+  background: #f1f5f9;
+}
+
+.filter-date-btn--clear {
+  color: var(--color-danger, #ef4444);
+  background: transparent;
+  border-color: transparent;
+}
+
+.filter-date-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border, #e2e8f0);
+}
+
+.filter-date-inputs label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--text-muted, #64748b);
+}
+
+.filter-date-inputs input[type="date"] {
+  padding: 4px 6px;
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: 4px;
+  font-size: 0.8rem;
+}

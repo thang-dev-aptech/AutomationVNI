@@ -27,6 +27,7 @@ import BulkChungChiPage from '@/modules/bulk/pages/BulkChungChiPage'
 import BatchProgressPage from '@/modules/bulk/pages/BatchProgressPage'
 import CommentsInboxPage from '@/modules/comments/pages/CommentsInboxPage'
 import PageMessagesInboxPage from '@/modules/messages/pages/PageMessagesInboxPage'
+import ConversationsPage from '@/modules/conversations/pages/ConversationsPage'
 import CrawlInboxPage from '@/modules/content-crawl/pages/CrawlInboxPage'
 import NewsSitePage from '@/modules/news-site/pages/NewsSitePage'
 import LoginPage from '@/modules/auth/pages/LoginPage'
@@ -90,12 +91,11 @@ export default function AppRouter() {
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.jobs} />}>
             <Route path="/jobs" element={<JobsPage />} />
           </Route>
-          <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.comments} />}>
-            <Route path="/comments" element={<CommentsInboxPage />} />
+          <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.conversations} />}>
+            <Route path="/conversations" element={<ConversationsPage />} />
           </Route>
-          <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.messages} />}>
-            <Route path="/messages" element={<PageMessagesInboxPage />} />
-          </Route>
+          <Route path="/messages" element={<Navigate to="/conversations?kind=message" replace />} />
+          <Route path="/comments" element={<Navigate to="/conversations?kind=comment" replace />} />
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.crawl} />}>
             <Route path="/crawl" element={<CrawlInboxPage />} />
             <Route path="/news-site" element={<NewsSitePage />} />
