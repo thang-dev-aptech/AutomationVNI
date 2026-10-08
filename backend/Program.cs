@@ -162,6 +162,7 @@ builder.Services.AddScoped<Backend.Modules.Users.UsersService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Tags.CrmTagService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Inbox.CrmInboxService>();
 builder.Services.AddScoped<Backend.Modules.Inbox.InboxQueryService>();
+builder.Services.AddScoped<Backend.Modules.Inbox.InboxSuggestService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Customers.CrmCustomerService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Customers.CrmCustomerCareService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Reminders.CrmReminderService>();
