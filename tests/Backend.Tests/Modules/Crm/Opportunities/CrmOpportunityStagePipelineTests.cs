@@ -39,7 +39,6 @@ namespace Backend.Tests.Modules.Crm.Opportunities;
 
 /// <summary>
 /// AC 894baa0e (a)-(f): stages, move-stage, stats, filter, pipeline.
-/// Activity count may be 0 until t2 (reminders/notes linked to opportunities).
 /// </summary>
 public sealed class CrmOpportunityStagePipelineTests : IAsyncLifetime
 {
@@ -253,7 +252,7 @@ public sealed class CrmOpportunityStagePipelineTests : IAsyncLifetime
     public async Task D_Stats_OpenWonLostRev_AndAssigneeMineFilter()
     {
         // 3 Open (mine), 2 Won (1e6 + 2.5e6), 1 Lost, 1 archived Open → Total=7
-        // Activity may be 0 until t2.
+        // + 4 nhắc việc + 1 ghi chú gắn cơ hội → Activity=5 (mine: Open1×2, Open2 note, Won1 → 4).
         var c1 = await SeedCustomerAsync("S1", null);
         var c2 = await SeedCustomerAsync("S2", null);
         var c3 = await SeedCustomerAsync("S3", null);
@@ -283,6 +282,24 @@ public sealed class CrmOpportunityStagePipelineTests : IAsyncLifetime
         await SeedOppDirectAsync(c7, "ArchOpen", CrmOpportunityStageIds.Moi, CrmOpportunityStatus.Open,
             expectedValue: 99, assigneeUserId: _actorUserId, isArchived: true);
 
+        var oppIds = new Dictionary<string, Guid>();
+        await using (var seedDb = new AppDbContext(_options))
+        {
+            oppIds = await seedDb.CrmOpportunities.ToDictionaryAsync(x => x.Title, x => x.Id);
+            foreach (var (title, custId) in new[] { ("Open1", c1), ("Open1", c1), ("Won1", c4), ("Open3", c3) })
+                seedDb.CrmCustomerReminders.Add(new CrmCustomerReminderModel
+                {
+                    Id = Guid.NewGuid(), CrmCustomerId = custId, CrmOpportunityId = oppIds[title],
+                    Title = "r", DueAtUtc = DateTime.UtcNow.AddDays(1), CreatedAt = DateTime.UtcNow, CreatedBy = "seed"
+                });
+            seedDb.CrmCustomerNotes.Add(new CrmCustomerNoteModel
+            {
+                Id = Guid.NewGuid(), CrmCustomerId = c2, CrmOpportunityId = oppIds["Open2"], Body = "n",
+                CreatedAt = DateTime.UtcNow, CreatedBy = "seed"
+            });
+            await seedDb.SaveChangesAsync();
+        }
+
         var statsRes = await SendAsync(HttpMethod.Post, "/api/CrmOpportunity/stats", "Admin", new { });
         Assert.Equal(HttpStatusCode.OK, statsRes.StatusCode);
         var stats = await ReadDataAsync(statsRes);
@@ -290,7 +307,7 @@ public sealed class CrmOpportunityStagePipelineTests : IAsyncLifetime
         Assert.Equal(3, stats.GetProperty("open").GetInt32());
         Assert.Equal(2, stats.GetProperty("won").GetInt32());
         Assert.Equal(1, stats.GetProperty("lost").GetInt32());
-        Assert.Equal(0, stats.GetProperty("activity").GetInt32());
+        Assert.Equal(5, stats.GetProperty("activity").GetInt32());
         Assert.Equal(3_500_000m, stats.GetProperty("rev").GetDecimal());
 
         var mineRes = await SendAsync(HttpMethod.Post, "/api/CrmOpportunity/stats", "Admin", new
@@ -305,6 +322,7 @@ public sealed class CrmOpportunityStagePipelineTests : IAsyncLifetime
         Assert.Equal(1, mine.GetProperty("won").GetInt32());
         Assert.Equal(0, mine.GetProperty("lost").GetInt32());
         Assert.Equal(1_000_000m, mine.GetProperty("rev").GetDecimal());
+        Assert.Equal(4, mine.GetProperty("activity").GetInt32());
         Assert.NotEqual(stats.GetProperty("total").GetInt32(), mine.GetProperty("total").GetInt32());
     }
 

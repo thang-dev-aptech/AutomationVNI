@@ -641,6 +641,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.ToTable("CrmCustomerNotes");
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.CrmCustomerId);
+            e.HasIndex(x => x.CrmOpportunityId);
             e.HasIndex(x => x.IsDeleted);
             e.Property(x => x.Body).HasColumnType("TEXT");
         });
@@ -651,6 +652,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.CrmCustomerId);
             e.HasIndex(x => x.AssigneeUserId);
+            e.HasIndex(x => x.CrmOpportunityId);
             e.HasIndex(x => x.DueAtUtc);
             e.HasIndex(x => x.IsDeleted);
             e.HasIndex(x => x.NotifiedAtUtc);

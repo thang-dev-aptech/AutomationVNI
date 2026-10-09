@@ -1,5 +1,6 @@
 using Backend.Data;
 using Backend.Modules.Crm.Customers;
+using Backend.Modules.Crm.Opportunities;
 using Backend.Modules.Notification;
 using Backend.Shared;
 using Backend.Shared.Repositories;
@@ -23,11 +24,13 @@ public class CrmReminderService(
         var title = (request.Title ?? "").Trim();
         if (string.IsNullOrWhiteSpace(title))
             throw new InvalidOperationException("Tiêu đề nhắc việc bắt buộc");
+        await CrmOpportunityService.EnsureLinkableAsync(db, request.CrmOpportunityId, request.CrmCustomerId, ct);
 
         var entity = new CrmCustomerReminderModel
         {
             Id = Guid.NewGuid(),
             CrmCustomerId = request.CrmCustomerId,
+            CrmOpportunityId = request.CrmOpportunityId,
             Title = title,
             DueAtUtc = DateTime.SpecifyKind(request.DueAtUtc, DateTimeKind.Utc),
             AssigneeUserId = request.AssigneeUserId ?? userContext.GetCurrentUserId(),
@@ -35,6 +38,7 @@ public class CrmReminderService(
             CreatedBy = userContext.GetCurrentUserName()
         };
         db.CrmCustomerReminders.Add(entity);
+        await CrmOpportunityService.TouchActivityAsync(db, entity.CrmOpportunityId, ct);
         await db.SaveChangesAsync(ct);
         await customers.AddLogAsync(entity.CrmCustomerId, "CreateReminder", entity.Id.ToString(), ct);
         return await ToResponseAsync(entity, ct);
@@ -71,6 +75,7 @@ public class CrmReminderService(
         entity.CompletedAtUtc = DateTime.UtcNow;
         entity.UpdatedAt = DateTime.UtcNow;
         entity.UpdatedBy = userContext.GetCurrentUserName();
+        await CrmOpportunityService.TouchActivityAsync(db, entity.CrmOpportunityId, ct);
         await db.SaveChangesAsync(ct);
         await customers.AddLogAsync(entity.CrmCustomerId, "CompleteReminder", id.ToString(), ct);
     }
@@ -103,10 +108,11 @@ public class CrmReminderService(
             .Where(x => customerIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, x => x.DisplayName, ct);
 
+        var titles = await OpportunityTitlesAsync(list, ct);
         var buckets = new CrmReminderBucketsResponse();
         foreach (var r in list)
         {
-            var item = ToResponse(r, names.GetValueOrDefault(r.CrmCustomerId));
+            var item = ToResponse(r, names.GetValueOrDefault(r.CrmCustomerId), TitleOf(titles, r));
             if (r.DueAtUtc < todayStartUtc)
                 buckets.Overdue.Add(item);
             else if (r.DueAtUtc < tomorrowStartUtc)
@@ -133,8 +139,43 @@ public class CrmReminderService(
             .Where(x => x.Id == customerId)
             .Select(x => x.DisplayName)
             .FirstOrDefaultAsync(ct);
-        return list.Select(x => ToResponse(x, name)).ToList();
+        var titles = await OpportunityTitlesAsync(list, ct);
+        return list.Select(x => ToResponse(x, name, TitleOf(titles, x))).ToList();
     }
+
+    public async Task<IReadOnlyList<CrmReminderResponse>> ListForOpportunityAsync(
+        Guid opportunityId, CancellationToken ct = default)
+    {
+        var opp = await db.CrmOpportunities.AsNoTracking()
+                      .Where(x => x.Id == opportunityId && !x.IsDeleted)
+                      .Select(x => new { x.Title, x.CrmCustomerId })
+                      .FirstOrDefaultAsync(ct)
+                  ?? throw new KeyNotFoundException("Cơ hội không tồn tại");
+        var list = await db.CrmCustomerReminders.AsNoTracking()
+            .Where(x => !x.IsDeleted && x.CrmOpportunityId == opportunityId)
+            .OrderBy(x => x.IsCompleted)
+            .ThenBy(x => x.DueAtUtc)
+            .ToListAsync(ct);
+        var name = await db.CrmCustomers.AsNoTracking()
+            .Where(x => x.Id == opp.CrmCustomerId)
+            .Select(x => x.DisplayName)
+            .FirstOrDefaultAsync(ct);
+        return list.Select(x => ToResponse(x, name, opp.Title)).ToList();
+    }
+
+    private async Task<Dictionary<Guid, string>> OpportunityTitlesAsync(
+        IEnumerable<CrmCustomerReminderModel> reminders, CancellationToken ct)
+    {
+        var ids = reminders.Where(x => x.CrmOpportunityId != null)
+            .Select(x => x.CrmOpportunityId!.Value).Distinct().ToList();
+        if (ids.Count == 0) return [];
+        return await db.CrmOpportunities.AsNoTracking()
+            .Where(x => ids.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Title, ct);
+    }
+
+    private static string? TitleOf(Dictionary<Guid, string> titles, CrmCustomerReminderModel r)
+        => r.CrmOpportunityId is { } id ? titles.GetValueOrDefault(id) : null;
 
     /// <summary>Worker: sinh thông báo cho nhắc đã tới hạn, đúng một lần.</summary>
     public async Task<int> NotifyDueAsync(CancellationToken ct = default)
@@ -182,14 +223,18 @@ public class CrmReminderService(
             .Where(x => x.Id == r.CrmCustomerId)
             .Select(x => x.DisplayName)
             .FirstOrDefaultAsync(ct);
-        return ToResponse(r, name);
+        var titles = await OpportunityTitlesAsync([r], ct);
+        return ToResponse(r, name, TitleOf(titles, r));
     }
 
-    private static CrmReminderResponse ToResponse(CrmCustomerReminderModel r, string? customerName) => new()
+    private static CrmReminderResponse ToResponse(
+        CrmCustomerReminderModel r, string? customerName, string? opportunityTitle) => new()
     {
         Id = r.Id,
         CrmCustomerId = r.CrmCustomerId,
         CustomerName = customerName,
+        CrmOpportunityId = r.CrmOpportunityId,
+        OpportunityTitle = opportunityTitle,
         Title = r.Title,
         DueAtUtc = r.DueAtUtc,
         AssigneeUserId = r.AssigneeUserId,

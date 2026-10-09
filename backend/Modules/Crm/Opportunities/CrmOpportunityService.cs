@@ -43,6 +43,26 @@ public class CrmOpportunityService(
         };
     }
 
+    /// <summary>Cơ hội phải tồn tại, chưa xoá và cùng khách; null = không gắn. Sai → 400.</summary>
+    public static async Task EnsureLinkableAsync(
+        AppDbContext db, Guid? opportunityId, Guid customerId, CancellationToken ct = default)
+    {
+        if (opportunityId is null) return;
+        var ok = await db.CrmOpportunities.AsNoTracking().AnyAsync(
+            x => x.Id == opportunityId && !x.IsDeleted && x.CrmCustomerId == customerId, ct);
+        if (!ok)
+            throw new InvalidOperationException("Cơ hội không tồn tại hoặc không thuộc khách này");
+    }
+
+    /// <summary>Cập nhật LastActivityAtUtc của cơ hội (lưu cùng SaveChanges của caller).</summary>
+    public static async Task TouchActivityAsync(
+        AppDbContext db, Guid? opportunityId, CancellationToken ct = default)
+    {
+        if (opportunityId is null) return;
+        var opp = await db.CrmOpportunities.FirstOrDefaultAsync(x => x.Id == opportunityId && !x.IsDeleted, ct);
+        if (opp is not null) opp.LastActivityAtUtc = DateTime.UtcNow;
+    }
+
     public async Task<CrmOpportunityStatsResponse> StatsAsync(
         CrmOpportunityFilterRequest request, CancellationToken ct = default)
     {
@@ -50,8 +70,14 @@ public class CrmOpportunityService(
         var filter = CloneFilter(request);
         var query = await BuildFilteredQueryAsync(filter, ct, includeArchivedExplicit: true);
         var rows = await query
-            .Select(x => new { x.Status, x.IsArchived, x.ExpectedValue })
+            .Select(x => new { x.Id, x.Status, x.IsArchived, x.ExpectedValue })
             .ToListAsync(ct);
+        var ids = rows.Select(x => x.Id).ToList();
+        // Hoạt động = nhắc việc + ghi chú (chưa xoá) gắn vào các cơ hội đang được thống kê.
+        var activity = await db.CrmCustomerReminders.CountAsync(
+                           x => !x.IsDeleted && x.CrmOpportunityId != null && ids.Contains(x.CrmOpportunityId.Value), ct)
+                       + await db.CrmCustomerNotes.CountAsync(
+                           x => !x.IsDeleted && x.CrmOpportunityId != null && ids.Contains(x.CrmOpportunityId.Value), ct);
 
         return new CrmOpportunityStatsResponse
         {
@@ -59,7 +85,7 @@ public class CrmOpportunityService(
             Open = rows.Count(x => x.Status == CrmOpportunityStatus.Open && !x.IsArchived),
             Won = rows.Count(x => x.Status == CrmOpportunityStatus.Won && !x.IsArchived),
             Lost = rows.Count(x => x.Status == CrmOpportunityStatus.Lost && !x.IsArchived),
-            Activity = 0, // t2 sẽ đếm nhắc việc + ghi chú gắn cơ hội
+            Activity = activity,
             Rev = rows.Where(x => x.Status == CrmOpportunityStatus.Won && !x.IsArchived)
                 .Sum(x => x.ExpectedValue)
         };

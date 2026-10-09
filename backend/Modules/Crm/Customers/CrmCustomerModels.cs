@@ -32,12 +32,16 @@ public class CrmCustomerNoteModel : BaseEntity
 {
     public Guid CrmCustomerId { get; set; }
     public string Body { get; set; } = string.Empty;
+    /// <summary>Cơ hội mà ghi chú thuộc về (tuỳ chọn; phải cùng khách).</summary>
+    public Guid? CrmOpportunityId { get; set; }
 }
 
 /// <summary>Nhắc việc chăm sóc khách.</summary>
 public class CrmCustomerReminderModel : BaseEntity
 {
     public Guid CrmCustomerId { get; set; }
+    /// <summary>Cơ hội mà nhắc việc thuộc về (tuỳ chọn; phải cùng khách).</summary>
+    public Guid? CrmOpportunityId { get; set; }
     public string Title { get; set; } = string.Empty;
     public DateTime DueAtUtc { get; set; }
     public Guid? AssigneeUserId { get; set; }

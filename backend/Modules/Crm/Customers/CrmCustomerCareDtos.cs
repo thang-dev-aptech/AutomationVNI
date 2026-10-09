@@ -15,6 +15,8 @@ public class UpdateCrmCustomerRequest
 public class CreateCrmCustomerNoteRequest
 {
     public string Body { get; set; } = string.Empty;
+    /// <summary>Tuỳ chọn: gắn ghi chú vào cơ hội (phải tồn tại, chưa xoá, cùng khách).</summary>
+    public Guid? CrmOpportunityId { get; set; }
 }
 
 public class UpdateCrmCustomerNoteRequest
@@ -27,6 +29,7 @@ public class CrmCustomerNoteResponse
     public Guid Id { get; set; }
     public Guid CrmCustomerId { get; set; }
     public string Body { get; set; } = string.Empty;
+    public Guid? CrmOpportunityId { get; set; }
     public DateTime CreatedAt { get; set; }
     public string? CreatedBy { get; set; }
     public DateTime? UpdatedAt { get; set; }

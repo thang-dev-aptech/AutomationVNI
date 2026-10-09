@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Backend.Data;
+using Backend.Modules.Crm.Opportunities;
 using Backend.Modules.PageMessage;
 using Backend.Modules.SocialComment;
 using Backend.Shared;
@@ -128,6 +129,7 @@ public class CrmCustomerCareService(AppDbContext db, IUserContext userContext, C
                 Id = x.Id,
                 CrmCustomerId = x.CrmCustomerId,
                 Body = x.Body,
+                CrmOpportunityId = x.CrmOpportunityId,
                 CreatedAt = x.CreatedAt,
                 CreatedBy = x.CreatedBy,
                 UpdatedAt = x.UpdatedAt
@@ -142,16 +144,19 @@ public class CrmCustomerCareService(AppDbContext db, IUserContext userContext, C
         var body = (request.Body ?? "").Trim();
         if (string.IsNullOrWhiteSpace(body))
             throw new InvalidOperationException("Nội dung ghi chú bắt buộc");
+        await CrmOpportunityService.EnsureLinkableAsync(db, request.CrmOpportunityId, customerId, ct);
 
         var note = new CrmCustomerNoteModel
         {
             Id = Guid.NewGuid(),
             CrmCustomerId = customerId,
+            CrmOpportunityId = request.CrmOpportunityId,
             Body = body,
             CreatedAt = DateTime.UtcNow,
             CreatedBy = userContext.GetCurrentUserName()
         };
         db.CrmCustomerNotes.Add(note);
+        await CrmOpportunityService.TouchActivityAsync(db, note.CrmOpportunityId, ct);
         await db.SaveChangesAsync(ct);
         await customers.AddLogAsync(customerId, "AddNote", note.Id.ToString(), ct);
         return ToNote(note);
@@ -531,6 +536,7 @@ public class CrmCustomerCareService(AppDbContext db, IUserContext userContext, C
         Id = n.Id,
         CrmCustomerId = n.CrmCustomerId,
         Body = n.Body,
+        CrmOpportunityId = n.CrmOpportunityId,
         CreatedAt = n.CreatedAt,
         CreatedBy = n.CreatedBy,
         UpdatedAt = n.UpdatedAt

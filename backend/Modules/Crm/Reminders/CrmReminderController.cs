@@ -35,6 +35,20 @@ public class CrmReminderController(CrmReminderService service) : ControllerBase
         }
     }
 
+    [HttpGet("by-opportunity/{opportunityId:guid}")]
+    [Authorize(Roles = "Admin,ContentManager,Reviewer,Viewer")]
+    public async Task<IActionResult> ByOpportunity(Guid opportunityId, CancellationToken ct)
+    {
+        try
+        {
+            return Ok(ApiResponse.Ok(await service.ListForOpportunityAsync(opportunityId, ct)));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse.Fail("NOT_FOUND", ex.Message));
+        }
+    }
+
     [HttpPost]
     [Authorize(Roles = "Admin,ContentManager,Reviewer")]
     public async Task<IActionResult> Create(
