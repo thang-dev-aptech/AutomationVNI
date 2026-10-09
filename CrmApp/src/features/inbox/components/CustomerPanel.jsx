@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useInRouterContext } from 'react-router-dom'
 import { formatVietnamDateTime } from '../../../shared/utils/dateUtils'
 import { inboxApi } from '../api/inboxApi'
+import { PlatformLogo, PLATFORM_LABELS, platformKeyFromEnum } from './PlatformLogo'
 import { opportunityApi } from '../../opportunities/api/opportunityApi'
 import './CustomerPanel.css'
 
@@ -13,15 +14,20 @@ function useSafeNavigate() {
   })
 }
 
-function getPlatformInfo(platform) {
-  const p = Number(platform)
-  if (p === 1) return { label: 'Facebook', icon: '📘' }
-  if (p === 2) return { label: 'Instagram', icon: '📸' }
-  if (p === 3) return { label: 'TikTok', icon: '🎵' }
-  if (p === 4) return { label: 'YouTube', icon: '▶️' }
-  if (p === 5) return { label: 'Threads', icon: '🧵' }
-  if (p === 6) return { label: 'Zalo', icon: '💬' }
-  return { label: 'Mạng xã hội', icon: '🌐' }
+const MESSAGE_KIND = 1
+
+/**
+ * Logo cho một identity: Facebook của nguồn tin nhắn → Messenger (khi xác định được:
+ * identity ghi nhận nguồn Message, hoặc đúng người đang nhắn trong hội thoại tin nhắn này);
+ * không xác định được thì giữ Facebook.
+ */
+function identityLogoKey(idnt, item, participant) {
+  const key = platformKeyFromEnum(idnt.platform)
+  if (key !== 'facebook') return key
+  const fromMessage =
+    Number(idnt.source) === 1 ||
+    (item?.kind === MESSAGE_KIND && participant?.externalId && idnt.externalId === participant.externalId)
+  return fromMessage ? 'messenger' : 'facebook'
 }
 
 function getStatusLabel(status) {
@@ -327,7 +333,7 @@ export function CustomerPanel({
 
               {expandedSections.info && (
                 <div className="crm-customer-section-body">
-                  <div className="crm-customer-profile-hero">
+                  <div className="crm-customer-profile-hero" data-testid="customer-panel-hero">
                     <div className="crm-customer-avatar">
                       {avatarUrl ? (
                         <img
@@ -456,7 +462,8 @@ export function CustomerPanel({
                   ) : (
                     <div className="crm-customer-identities-list" data-testid="customer-identities-list">
                       {identities.map((idnt, idx) => {
-                        const platInfo = getPlatformInfo(idnt.platform)
+                        const logoKey = identityLogoKey(idnt, item, participant)
+                        const platLabel = PLATFORM_LABELS[logoKey]
                         return (
                           <div
                             key={idx}
@@ -465,13 +472,15 @@ export function CustomerPanel({
                           >
                             <span
                               className="crm-customer-identity-platform-icon"
-                              title={platInfo.label}
+                              title={platLabel}
+                              role="img"
+                              aria-label={platLabel}
                             >
-                              {platInfo.icon}
+                              <PlatformLogo name={logoKey} />
                             </span>
                             <div className="crm-customer-identity-info">
                               <span className="crm-customer-identity-channel">
-                                {idnt.channelName || platInfo.label}
+                                {idnt.channelName || platLabel}
                               </span>
                               <span className="crm-customer-identity-name">
                                 {idnt.displayName || idnt.externalId || 'Khách'}

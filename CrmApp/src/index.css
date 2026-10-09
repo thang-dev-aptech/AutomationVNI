@@ -20,6 +20,8 @@
   --crm-primary-hover: #4338ca;
   --crm-primary-light: #eef2ff;
   --crm-primary-text: #3730a3;
+  --crm-hero-gradient: linear-gradient(135deg, #4338ca 0%, #6d28d9 100%);
+  --crm-hero-text: #ffffff;
 
   /* Secondary / Accent */
   --crm-accent: #0ea5e9;

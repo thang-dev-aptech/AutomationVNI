@@ -3,8 +3,8 @@
 .crm-customer-panel-inner {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 16px;
+  gap: 0;
+  padding: 0;
   background-color: var(--crm-surface);
   color: var(--crm-text);
   font-family: inherit;
@@ -106,13 +106,13 @@
   font-size: 13px;
 }
 
-/* Section cards */
+/* Các mục full chiều rộng, không card: phân cách bằng đường kẻ mảnh */
 .crm-customer-section {
   background: var(--crm-surface);
-  border: 1px solid var(--crm-border);
-  border-radius: var(--crm-radius-md);
+  border: none;
+  border-bottom: 1px solid var(--crm-border);
+  border-radius: 0;
   overflow: hidden;
-  transition: border-color var(--crm-transition-fast);
 }
 
 .crm-customer-section-header {
@@ -176,13 +176,20 @@
   font-size: 13px;
 }
 
-/* 1. Thông tin khách */
+/* 1. Thông tin khách — đầu panel có nền gradient (biến --crm-hero-gradient trong index.css).
+   Chữ trắng trên gradient #4338ca→#6d28d9: tương phản ≥ 6:1 (đạt ≥ 4.5:1). */
 .crm-customer-profile-hero {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--crm-border);
+  margin: -14px -14px 0;
+  padding: 16px 14px;
+  background: var(--crm-hero-gradient, linear-gradient(135deg, #4338ca 0%, #6d28d9 100%));
+  color: var(--crm-hero-text, #ffffff);
+}
+
+.crm-customer-profile-hero .crm-customer-name {
+  color: var(--crm-hero-text, #ffffff);
 }
 
 .crm-customer-avatar {
@@ -254,6 +261,20 @@
   background: var(--crm-primary-hover);
 }
 
+/* Nút trên nền gradient: nền trắng, chữ đậm để giữ tương phản */
+.crm-customer-profile-hero .crm-customer-open-profile-btn {
+  background: #ffffff;
+  color: var(--crm-primary-text);
+}
+
+.crm-customer-profile-hero .crm-customer-open-profile-btn:hover {
+  background: var(--crm-primary-light);
+}
+
+.crm-customer-profile-hero .crm-customer-avatar {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
 .crm-customer-kv-list {
   display: flex;
   flex-direction: column;
@@ -308,15 +329,20 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px;
-  background: var(--crm-surface-subtle);
-  border-radius: var(--crm-radius-sm);
-  border: 1px solid var(--crm-border);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--crm-border);
+}
+
+.crm-customer-identity-card:last-child {
+  border-bottom: none;
 }
 
 .crm-customer-identity-platform-icon {
-  font-size: 18px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
   flex-shrink: 0;
+  line-height: 0;
 }
 
 .crm-customer-identity-info {
