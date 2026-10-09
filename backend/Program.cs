@@ -169,6 +169,8 @@ builder.Services.AddScoped<Backend.Modules.Crm.Reminders.CrmReminderService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Audit.CrmAuditService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Opportunities.CrmOpportunityStageService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Opportunities.CrmOpportunityService>();
+builder.Services.Configure<Backend.Modules.Crm.Reminders.CrmReminderWorkerOptions>(
+    builder.Configuration.GetSection("CrmReminderWorker"));
 builder.Services.AddHostedService<Backend.Modules.Crm.Reminders.CrmReminderWorker>();
 builder.Services.Configure<Backend.Modules.Crm.ScheduledMessages.CrmScheduledMessageWorkerOptions>(
     builder.Configuration.GetSection("CrmScheduledMessageWorker"));

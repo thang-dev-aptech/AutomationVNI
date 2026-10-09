@@ -214,7 +214,7 @@ public sealed class CrmOpportunityActivityLinksTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Stats_Activity_CountsLinkedRemindersAndNotes_NotDeletedOrUnlinked()
+    public async Task Stats_Activity_CountsLinkedNotesOnly_NotRemindersOrDeletedOrUnlinked()
     {
         var a = await SeedCustomerAsync("A");
         var o1 = await SeedOppAsync(a);
@@ -226,11 +226,13 @@ public sealed class CrmOpportunityActivityLinksTests : IAsyncLifetime
         await SeedReminderAsync(a, null);                 // không gắn cơ hội
         await SeedReminderAsync(a, o2, isDeleted: true);  // đã xoá
         await SeedNoteAsync(a, o1);
-        await SeedNoteAsync(a, null);
+        await SeedNoteAsync(a, null);                     // không gắn cơ hội
+        await SeedNoteAsync(a, o2, isDeleted: true);      // đã xoá — không đếm
 
         var stats = (await ReadAsync(await PostAsync("/api/CrmOpportunity/stats", new { }))).GetProperty("data");
 
-        Assert.Equal(5, stats.GetProperty("activity").GetInt32());
+        // Giữ ô Hoạt động = chỉ ghi chú gắn cơ hội (4 nhắc + 1 ghi chú gắn → Activity = 1).
+        Assert.Equal(1, stats.GetProperty("activity").GetInt32());
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -286,13 +288,13 @@ public sealed class CrmOpportunityActivityLinksTests : IAsyncLifetime
         return id;
     }
 
-    private async Task SeedNoteAsync(Guid customerId, Guid? oppId)
+    private async Task SeedNoteAsync(Guid customerId, Guid? oppId, bool isDeleted = false)
     {
         await using var db = new AppDbContext(_options);
         db.CrmCustomerNotes.Add(new CrmCustomerNoteModel
         {
             Id = Guid.NewGuid(), CrmCustomerId = customerId, CrmOpportunityId = oppId, Body = "n",
-            CreatedAt = DateTime.UtcNow, CreatedBy = "seed"
+            IsDeleted = isDeleted, CreatedAt = DateTime.UtcNow, CreatedBy = "seed"
         });
         await db.SaveChangesAsync();
     }

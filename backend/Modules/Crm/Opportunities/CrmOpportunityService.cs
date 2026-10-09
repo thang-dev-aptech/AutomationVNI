@@ -75,11 +75,9 @@ public class CrmOpportunityService(
             .Select(x => new { x.Id, x.Status, x.IsArchived, x.ExpectedValue })
             .ToListAsync(ct);
         var ids = rows.Select(x => x.Id).ToList();
-        // Hoạt động = nhắc việc + ghi chú (chưa xoá) gắn vào các cơ hội đang được thống kê.
-        var activity = await db.CrmCustomerReminders.CountAsync(
-                           x => !x.IsDeleted && x.CrmOpportunityId != null && ids.Contains(x.CrmOpportunityId.Value), ct)
-                       + await db.CrmCustomerNotes.CountAsync(
-                           x => !x.IsDeleted && x.CrmOpportunityId != null && ids.Contains(x.CrmOpportunityId.Value), ct);
+        // Hoạt động = chỉ ghi chú (chưa xoá) gắn cơ hội trong phạm vi lọc — không cộng nhắc việc.
+        var activity = await db.CrmCustomerNotes.CountAsync(
+            x => !x.IsDeleted && x.CrmOpportunityId != null && ids.Contains(x.CrmOpportunityId.Value), ct);
 
         return new CrmOpportunityStatsResponse
         {

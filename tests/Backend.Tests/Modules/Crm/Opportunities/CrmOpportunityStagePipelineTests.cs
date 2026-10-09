@@ -252,7 +252,8 @@ public sealed class CrmOpportunityStagePipelineTests : IAsyncLifetime
     public async Task D_Stats_OpenWonLostRev_AndAssigneeMineFilter()
     {
         // 3 Open (mine), 2 Won (1e6 + 2.5e6), 1 Lost, 1 archived Open → Total=7
-        // + 4 nhắc việc + 1 ghi chú gắn cơ hội → Activity=5 (mine: Open1×2, Open2 note, Won1 → 4).
+        // + 4 nhắc việc + 1 ghi chú gắn cơ hội → Activity=1 (chỉ ghi chú; nhắc việc không đếm).
+        // mine: Open1×2 reminders, Open2 note, Won1 reminder → Activity=1 (chỉ note Open2).
         var c1 = await SeedCustomerAsync("S1", null);
         var c2 = await SeedCustomerAsync("S2", null);
         var c3 = await SeedCustomerAsync("S3", null);
@@ -307,7 +308,7 @@ public sealed class CrmOpportunityStagePipelineTests : IAsyncLifetime
         Assert.Equal(3, stats.GetProperty("open").GetInt32());
         Assert.Equal(2, stats.GetProperty("won").GetInt32());
         Assert.Equal(1, stats.GetProperty("lost").GetInt32());
-        Assert.Equal(5, stats.GetProperty("activity").GetInt32());
+        Assert.Equal(1, stats.GetProperty("activity").GetInt32());
         Assert.Equal(3_500_000m, stats.GetProperty("rev").GetDecimal());
 
         var mineRes = await SendAsync(HttpMethod.Post, "/api/CrmOpportunity/stats", "Admin", new
@@ -322,7 +323,7 @@ public sealed class CrmOpportunityStagePipelineTests : IAsyncLifetime
         Assert.Equal(1, mine.GetProperty("won").GetInt32());
         Assert.Equal(0, mine.GetProperty("lost").GetInt32());
         Assert.Equal(1_000_000m, mine.GetProperty("rev").GetDecimal());
-        Assert.Equal(4, mine.GetProperty("activity").GetInt32());
+        Assert.Equal(1, mine.GetProperty("activity").GetInt32());
         Assert.NotEqual(stats.GetProperty("total").GetInt32(), mine.GetProperty("total").GetInt32());
     }
 
