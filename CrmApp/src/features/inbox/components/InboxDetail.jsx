@@ -1,13 +1,16 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useInRouterContext } from 'react-router-dom'
 import Button from '../../../shared/components/Button'
 import Badge from '../../../shared/components/Badge'
 import Icon from '../../../shared/components/Icon'
 import { formatVietnamDateTime } from '../../../shared/utils/dateUtils'
 import { inboxApi } from '../api/inboxApi'
+import { scheduledMessageApi } from '../api/scheduledMessageApi'
 import { opportunityApi } from '../../opportunities/api/opportunityApi'
 import { toast } from '../../../shared/utils/toast'
 import { useAuth } from '../../../auth/useAuth'
+import ScheduleMessagePopover from './ScheduleMessagePopover'
+import ScheduledMessageList from './ScheduledMessageList'
 
 function useSafeNavigate() {
   const inRouter = useInRouterContext()
@@ -56,10 +59,34 @@ export const InboxDetail = ({
   const [loadingOpportunity, setLoadingOpportunity] = useState(false)
   const [creatingOpportunity, setCreatingOpportunity] = useState(false)
 
+  // Scheduled messages state
+  const [scheduledMessages, setScheduledMessages] = useState([])
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false)
+  const [editingScheduleMessage, setEditingScheduleMessage] = useState(null)
+  const [savingSchedule, setSavingSchedule] = useState(false)
+
   const auth = useAuth()
   const effectiveCanCare = canCare !== undefined ? canCare : auth.canCare
   const effectiveIsReadOnly = isReadOnly !== undefined ? isReadOnly : auth.isReadOnly
   const canSuggestAi = effectiveCanCare && !effectiveIsReadOnly
+
+  // Load scheduled messages for message conversation
+  const loadScheduledMessages = useCallback(async () => {
+    if (!item?.id || item.kind !== 1 || effectiveIsReadOnly) {
+      setScheduledMessages([])
+      return
+    }
+    try {
+      const list = await scheduledMessageApi.listByConversation(item.id)
+      setScheduledMessages(Array.isArray(list) ? list : [])
+    } catch {
+      setScheduledMessages([])
+    }
+  }, [item?.id, item?.kind, effectiveIsReadOnly])
+
+  useEffect(() => {
+    loadScheduledMessages()
+  }, [loadScheduledMessages])
 
   useEffect(() => {
     let active = true
@@ -179,6 +206,54 @@ export const InboxDetail = ({
       alert('Lỗi gửi phản hồi: ' + (err?.response?.data?.message || err?.message))
     } finally {
       setSending(false)
+    }
+  }
+
+
+  const handleOpenScheduleModal = () => {
+    if (!canSend || effectiveIsReadOnly || !isMessage) return
+    setEditingScheduleMessage(null)
+    setScheduleModalOpen(true)
+  }
+
+  const handleOpenEditSchedule = (msg) => {
+    if (effectiveIsReadOnly) return
+    setEditingScheduleMessage(msg)
+    setScheduleModalOpen(true)
+  }
+
+  const handleConfirmSchedule = async ({ text, scheduledAtUtc }) => {
+    setSavingSchedule(true)
+    try {
+      if (editingScheduleMessage) {
+        await scheduledMessageApi.update(editingScheduleMessage.id, { text, scheduledAtUtc })
+        toast.success('Đã cập nhật tin hẹn giờ')
+      } else {
+        await scheduledMessageApi.create({
+          pageConversationId: item.id,
+          text,
+          scheduledAtUtc,
+        })
+        toast.success('Đã hẹn giờ gửi tin')
+        setReplyText('')
+      }
+      setScheduleModalOpen(false)
+      setEditingScheduleMessage(null)
+      await loadScheduledMessages()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể lưu tin hẹn giờ')
+    } finally {
+      setSavingSchedule(false)
+    }
+  }
+
+  const handleCancelSchedule = async (id) => {
+    try {
+      await scheduledMessageApi.cancel(id)
+      toast.success('Đã huỷ tin hẹn giờ')
+      await loadScheduledMessages()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể huỷ tin hẹn giờ')
     }
   }
 
@@ -583,6 +658,16 @@ export const InboxDetail = ({
         )}
       </div>
 
+      {/* Scheduled Messages List */}
+      {isMessage && scheduledMessages.length > 0 && (
+        <ScheduledMessageList
+          messages={scheduledMessages}
+          onEdit={handleOpenEditSchedule}
+          onCancel={handleCancelSchedule}
+          isReadOnly={effectiveIsReadOnly}
+        />
+      )}
+
       {/* Footer / Reply Area */}
       <div className="crm-chat-footer">
         {effectiveIsReadOnly ? (
@@ -679,6 +764,19 @@ export const InboxDetail = ({
                   ✨ AI gợi ý
                 </Button>
               )}
+              {isMessage && !effectiveIsReadOnly && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  disabled={!canSend || sending}
+                  onClick={handleOpenScheduleModal}
+                  data-testid="btn-schedule-send"
+                  title="Hẹn giờ gửi tin nhắn"
+                >
+                  ⏰ Hẹn giờ gửi
+                </Button>
+              )}
               <Button
                 type="submit"
                 variant="primary"
@@ -694,6 +792,23 @@ export const InboxDetail = ({
           </>
         )}
       </div>
+
+      {/* Schedule Message Popover/Modal */}
+      {isMessage && !effectiveIsReadOnly && (
+        <ScheduleMessagePopover
+          isOpen={scheduleModalOpen}
+          onClose={() => {
+            setScheduleModalOpen(false)
+            setEditingScheduleMessage(null)
+          }}
+          onConfirm={handleConfirmSchedule}
+          replyWindowClosesAt={conv?.replyWindowClosesAt || item?.replyWindowClosesAt}
+          initialText={editingScheduleMessage ? editingScheduleMessage.text : replyText}
+          initialScheduledAt={editingScheduleMessage ? editingScheduleMessage.scheduledAtUtc : null}
+          isEdit={Boolean(editingScheduleMessage)}
+          isLoading={savingSchedule}
+        />
+      )}
     </div>
   )
 }

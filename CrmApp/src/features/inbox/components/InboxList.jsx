@@ -112,6 +112,16 @@ export const InboxList = ({
                       {name}
                     </span>
                     <span className="crm-conv-time">
+                      {item.hasPendingScheduled && (
+                        <span
+                          data-testid={`scheduled-icon-${item.id}`}
+                          title="Có tin hẹn giờ đang chờ gửi"
+                          aria-label="Có tin hẹn giờ"
+                          style={{ marginRight: '4px', display: 'inline-flex', verticalAlign: 'middle' }}
+                        >
+                          ⏰
+                        </span>
+                      )}
                       {formatVietnamDateTime(item.lastCustomerActivityAt)}
                     </span>
                   </div>
