@@ -605,6 +605,18 @@ public class PageMessageService(
             .ToList();
         conversation.LastCustomerMessageAt = customerDates.Count > 0 ? customerDates.Max() : null;
         conversation.LastPageMessageAt = pageDates.Count > 0 ? pageDates.Max() : null;
+
+        // Sync: mở lại Replied → New khi có tin khách thật sau lần Page trả lời cuối.
+        // Dựa vào tin trong DB, không dùng Graph unread_count. Không đụng Ignored/InProgress.
+        // Không đổi LastReadAtUtc (ui02-read-state).
+        if (conversation.InboxStatus == MessageInboxStatus.Replied
+            && conversation.LastCustomerMessageAt.HasValue
+            && (conversation.LastPageMessageAt is null
+                || conversation.LastCustomerMessageAt > conversation.LastPageMessageAt))
+        {
+            conversation.InboxStatus = MessageInboxStatus.New;
+        }
+
         var last = messages.Last();
         conversation.Snippet = last.Text ?? (last.AttachmentsJson is null ? "Tin nhắn" : "Tệp đính kèm");
         conversation.LastSyncedAt = DateTime.UtcNow;
