@@ -111,7 +111,7 @@ export const CustomerProfile = ({ customerId, onBack, onCustomerUpdated }) => {
   // Hard Delete (Admin Only)
   const handleHardDelete = async () => {
     if (!isAdmin) return
-    if (!window.confirm('CẢNH BÁO: Bạn đang thực hiện xoá hẳn dữ liệu cá nhân của khách hàng (bao gồm mọi danh tính, ghi chú, nhắc việc). Hành động này không thể hoàn tác! Bạn có chắc chắn?')) return
+    if (!window.confirm('CẢNH BÁO: Bạn đang thực hiện xoá hẳn dữ liệu cá nhân của khách hàng (bao gồm mọi danh tính, ghi chú và dữ liệu chăm sóc liên quan). Hành động này không thể hoàn tác! Bạn có chắc chắn?')) return
     try {
       await customerApi.hardDelete(customerId)
       alert('Đã xoá vĩnh viễn dữ liệu khách hàng')

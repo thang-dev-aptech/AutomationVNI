@@ -88,7 +88,40 @@ describe('AC 3f6105db (a)(b)(c) — Gỡ toàn bộ UI nhắc việc khỏi CrmA
       }
     })
 
-    it('MergeModal.jsx, SettingsFeature.jsx, useAuth.js không còn chứa chữ "nhắc việc"', () => {
+    it('quét tĩnh toàn bộ src (trừ test và comment): không còn bất kỳ chuỗi hiển thị nào chứa "nhắc việc" (kể cả window.confirm/alert/toast)', () => {
+      const sourceFiles = getAllSourceFiles(srcDir)
+      expect(sourceFiles.length).toBeGreaterThan(10)
+
+      for (const filePath of sourceFiles) {
+        const rawContent = fs.readFileSync(filePath, 'utf8')
+        // Loại bỏ multi-line comments /* ... */
+        let stripped = rawContent.replace(/\/\*[\s\S]*?\*\//g, '')
+        // Loại bỏ single-line comments // ...
+        stripped = stripped
+          .split('\n')
+          .map((line) => {
+            const commentIdx = line.search(/(?<!https?:)\/\//)
+            return commentIdx !== -1 ? line.slice(0, commentIdx) : line
+          })
+          .join('\n')
+
+        const relPath = path.relative(srcDir, filePath)
+        const match = stripped.match(/nhắc việc/i)
+        expect(
+          match,
+          `File ${relPath} vẫn còn chứa chuỗi hiển thị "nhắc việc" (ở: "${match ? stripped.slice(Math.max(0, match.index - 20), match.index + 40).trim() : ''}")`
+        ).toBeNull()
+      }
+    })
+
+    it('CustomerProfile.jsx, MergeModal.jsx, SettingsFeature.jsx, useAuth.js không còn chứa chữ "nhắc việc"', () => {
+      const customerProfileContent = fs.readFileSync(
+        path.join(srcDir, 'features/customers/components/CustomerProfile.jsx'),
+        'utf8'
+      )
+      expect(customerProfileContent).toContain('dữ liệu chăm sóc liên quan')
+      expect(customerProfileContent.toLowerCase()).not.toContain('nhắc việc')
+
       const mergeModalContent = fs.readFileSync(
         path.join(srcDir, 'features/customers/components/MergeModal.jsx'),
         'utf8'
