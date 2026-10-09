@@ -15,7 +15,7 @@ export const OpportunityTable = ({
   error = null,
   activeTab = 'all',
   onTabChange,
-  columns,
+  columns = {},
   stats = null,
   stages = [],
   isReadOnly = false,
@@ -33,7 +33,6 @@ export const OpportunityTable = ({
   activeFilterCount = 0,
   childrenHeaderRight,
   childrenFilters,
-  childrenActivities,
 }) => {
   // Move stage sub-modal
   const [movingStageItem, setMovingStageItem] = useState(null)
@@ -108,20 +107,6 @@ export const OpportunityTable = ({
           >
             Lưu trữ
           </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'activities'}
-            className={`crm-opp-tab ${activeTab === 'activities' ? 'crm-opp-tab--active' : ''}`}
-            onClick={() => onTabChange('activities')}
-            data-testid="tab-activities"
-          >
-            Hoạt động
-            {stats && stats.activity > 0 && (
-              <span className="crm-opp-tab-badge" data-testid="badge-tab-activities">{stats.activity}</span>
-            )}
-          </button>
         </div>
 
         {/* Toolbar buttons */}
@@ -165,23 +150,8 @@ export const OpportunityTable = ({
         </div>
       </div>
 
-      {/* Tab Hoạt động */}
-      {activeTab === 'activities' ? (
-        <div
-          className="crm-opp-activities-pane"
-          data-testid="opportunity-activities"
-        >
-          {childrenActivities || (
-            <div className="crm-opp-activities-placeholder">
-              <h4><Icon name="clipboard" size={18} /> Hoạt động & Nhắc việc</h4>
-              <p>Tab Hoạt động quản lý các việc cần làm và nhắc hẹn.</p>
-            </div>
-          )}
-        </div>
-      ) : (
-        <>
-          {childrenFilters}
-          {/* Main Table Body */}
+      {childrenFilters}
+      {/* Main Table Body */}
           <div className="crm-opp-table-wrap">
             <table className="crm-opp-table" data-testid="opportunity-table">
               <thead>
@@ -456,8 +426,6 @@ export const OpportunityTable = ({
               </button>
             </div>
           </div>
-        </>
-      )}
 
       {/* Move Stage Dialog */}
       {movingStageItem && (

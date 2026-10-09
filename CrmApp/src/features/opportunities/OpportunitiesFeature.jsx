@@ -13,7 +13,6 @@ import {
 } from './components/ColumnSettings'
 import { OpportunityDrawer } from './components/OpportunityDrawer'
 import { OpportunityFormModal } from './components/OpportunityFormModal'
-import TasksBoard from '../tasks/components/TasksBoard'
 import { Icon } from '../../shared/components/Icon'
 import './OpportunitiesFeature.css'
 
@@ -23,7 +22,8 @@ export const OpportunitiesFeature = () => {
 
   // URL state parameters
   const view = searchParams.get('view') || 'table'
-  const activeTab = searchParams.get('tab') || 'all'
+  const rawTab = searchParams.get('tab') || 'all'
+  const activeTab = ['all', 'open', 'archived'].includes(rawTab) ? rawTab : 'all'
   const stage = searchParams.get('stage') || ''
   const assignee = searchParams.get('assignee') || 'mine'
   const keyword = searchParams.get('keyword') || ''
@@ -171,10 +171,6 @@ export const OpportunitiesFeature = () => {
 
   // Load opportunities table items
   const fetchOpportunities = useCallback(async () => {
-    if (activeTab === 'activities') {
-      return // activities tab uses placeholder / tasks board
-    }
-
     setTableLoading(true)
     setTableError(null)
 
@@ -414,7 +410,6 @@ export const OpportunitiesFeature = () => {
               onReset={handleFilterReset}
             />
           }
-          childrenActivities={<TasksBoard />}
         />
       )}
 

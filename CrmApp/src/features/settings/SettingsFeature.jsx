@@ -82,7 +82,7 @@ export const SettingsFeature = () => {
                     {canManage
                       ? 'Toàn quyền quản trị: Quản lý khách hàng, cấu hình tag, tự chia, nhập CSV & xuất dữ liệu.'
                       : roles.includes('Reviewer')
-                        ? 'Chăm sóc khách hàng: Trả lời, ghi chú, trạng thái, nhắc việc, tạo khách tay, gộp hồ sơ.'
+                        ? 'Chăm sóc khách hàng: Trả lời, ghi chú, trạng thái, tạo khách tay, gộp hồ sơ.'
                         : 'Chỉ đọc (Viewer): Xem danh sách khách hàng và hội thoại.'}
                   </p>
                 </div>

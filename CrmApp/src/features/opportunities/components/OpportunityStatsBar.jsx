@@ -51,7 +51,7 @@ export const OpportunityStatsBar = ({ stats = null, loading = false }) => {
         <strong className="crm-opp-stat-val" data-testid="stat-lost-val">{s.lost ?? 0}</strong>
       </div>
 
-      <div className="crm-opp-stat-card crm-opp-stat-card--activity" data-testid="stat-activity">
+      <div className="crm-opp-stat-card crm-opp-stat-card--activity" data-testid="stat-activity" title="Ghi chú gắn cơ hội">
         <span className="crm-opp-stat-lbl">Hoạt động</span>
         <strong className="crm-opp-stat-val" data-testid="stat-activity-val">{s.activity ?? 0}</strong>
       </div>

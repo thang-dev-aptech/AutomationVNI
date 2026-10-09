@@ -282,20 +282,6 @@
   background: var(--crm-danger-light);
 }
 
-/* Nhắc việc */
-.crm-opp-reminders-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.crm-opp-reminder-item {
-  gap: 8px;
-}
-
-.crm-opp-reminder-item:last-child {
-  border-bottom: none !important;
-}
-
 @media (max-width: 640px) {
   .crm-opp-drawer {
     width: 100%;

@@ -5,7 +5,6 @@ import { MemoryRouter } from 'react-router-dom'
 import App from '../App'
 import { inboxApi } from '../features/inbox/api/inboxApi'
 import { customerApi } from '../features/customers/api/customerApi'
-import { reminderApi } from '../features/tasks/api/reminderApi'
 import { useAuthStore } from '../auth/authStore'
 
 // Review INBOX-CRM-LAYOUT-01 F1: /customers/:id phải tồn tại trong router thật của App.
@@ -31,7 +30,6 @@ describe('F1 — route /customers/:id (App thật)', () => {
     vi.spyOn(inboxApi, 'listChannels').mockResolvedValue([])
     vi.spyOn(customerApi, 'getTimeline').mockResolvedValue([])
     vi.spyOn(customerApi, 'listNotes').mockResolvedValue([])
-    vi.spyOn(reminderApi, 'listForCustomer').mockResolvedValue([])
     vi.spyOn(customerApi, 'filter').mockResolvedValue({
       items: [{ id: 'cust-list-1', displayName: 'Khách Trong Danh Sách' }],
       total: 1,

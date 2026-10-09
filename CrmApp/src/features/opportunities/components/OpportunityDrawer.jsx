@@ -4,7 +4,6 @@ import { opportunityApi } from '../api/opportunityApi'
 import { formatVietnamDateTime } from '../../../shared/utils/dateUtils'
 import { formatCurrencyVnd } from './OpportunityStatsBar'
 import { SourceBadge } from '../../inbox/components/SourceBadge'
-import { reminderApi } from '../../tasks/api/reminderApi'
 import Icon from '../../../shared/components/Icon'
 import './OpportunityDrawer.css'
 
@@ -25,32 +24,10 @@ export const OpportunityDrawer = ({
   const [addingWatcher, setAddingWatcher] = useState(false)
   const [selectedWatcherId, setSelectedWatcherId] = useState('')
 
-  // Reminders state
-  const [reminders, setReminders] = useState([])
-  const [loadingReminders, setLoadingReminders] = useState(false)
-  const [addingReminder, setAddingReminder] = useState(false)
-  const [reminderTitle, setReminderTitle] = useState('')
-  const [reminderDue, setReminderDue] = useState('')
-  const [savingReminder, setSavingReminder] = useState(false)
-
-  const loadReminders = async (oppId) => {
-    if (!oppId) return
-    setLoadingReminders(true)
-    try {
-      const res = await reminderApi.listForOpportunity(oppId)
-      setReminders(Array.isArray(res) ? res : res?.items || [])
-    } catch {
-      setReminders([])
-    } finally {
-      setLoadingReminders(false)
-    }
-  }
-
   useEffect(() => {
     if (!isOpen || !opportunityId) {
       setData(null)
       setError(null)
-      setReminders([])
       return
     }
 
@@ -60,7 +37,6 @@ export const OpportunityDrawer = ({
       try {
         const detail = await opportunityApi.get(opportunityId)
         setData(detail)
-        loadReminders(opportunityId)
       } catch (err) {
         setError(err?.response?.data?.message || err?.message || 'Không thể tải chi tiết cơ hội')
       } finally {
@@ -70,39 +46,6 @@ export const OpportunityDrawer = ({
 
     loadDetail()
   }, [isOpen, opportunityId])
-
-  const handleCreateReminder = async (e) => {
-    e.preventDefault()
-    if (!reminderTitle.trim() || !reminderDue || !opportunityId) return
-    setSavingReminder(true)
-    try {
-      await reminderApi.create({
-        crmCustomerId: data?.crmCustomerId,
-        crmOpportunityId: opportunityId,
-        title: reminderTitle.trim(),
-        dueAtUtc: new Date(reminderDue).toISOString(),
-      })
-      setReminderTitle('')
-      setReminderDue('')
-      setAddingReminder(false)
-      await loadReminders(opportunityId)
-      onOpportunityUpdated?.()
-    } catch (err) {
-      alert('Lỗi tạo nhắc việc: ' + (err?.response?.data?.message || err?.message))
-    } finally {
-      setSavingReminder(false)
-    }
-  }
-
-  const handleCompleteReminder = async (reminderId) => {
-    try {
-      await reminderApi.complete(reminderId)
-      await loadReminders(opportunityId)
-      onOpportunityUpdated?.()
-    } catch (err) {
-      alert('Lỗi hoàn thành nhắc việc: ' + (err?.message || ''))
-    }
-  }
 
   if (!isOpen) return null
 
@@ -411,120 +354,6 @@ export const OpportunityDrawer = ({
                         </div>
                       )
                     })
-                  )}
-                </div>
-              </div>
-
-              {/* Nhắc việc của cơ hội (Reminders) */}
-              <div className="crm-opp-drawer-card" data-testid="drawer-reminders-card">
-                <div className="crm-opp-drawer-card-header">
-                  <h4 className="crm-opp-drawer-section-title">
-                    Nhắc việc ({reminders.length})
-                  </h4>
-                  {!isReadOnly && !addingReminder && (
-                    <button
-                      type="button"
-                      className="crm-opp-btn-link"
-                      onClick={() => setAddingReminder(true)}
-                      data-testid="btn-add-opp-reminder-toggle"
-                    >
-                      + Thêm nhắc việc
-                    </button>
-                  )}
-                </div>
-
-                {!isReadOnly && addingReminder && (
-                  <form onSubmit={handleCreateReminder} style={{ marginBottom: '12px' }} data-testid="form-add-opp-reminder">
-                    <div style={{ marginBottom: '8px' }}>
-                      <input
-                        type="text"
-                        className="crm-opp-form-control crm-opp-form-control--sm"
-                        placeholder="Nội dung việc cần làm..."
-                        value={reminderTitle}
-                        onChange={(e) => setReminderTitle(e.target.value)}
-                        required
-                        data-testid="input-drawer-reminder-title"
-                      />
-                    </div>
-                    <div style={{ marginBottom: '8px' }}>
-                      <input
-                        type="datetime-local"
-                        className="crm-opp-form-control crm-opp-form-control--sm"
-                        value={reminderDue}
-                        onChange={(e) => setReminderDue(e.target.value)}
-                        required
-                        data-testid="input-drawer-reminder-due"
-                      />
-                    </div>
-                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                      <button
-                        type="button"
-                        className="crm-opp-btn crm-opp-btn--ghost crm-opp-btn--sm"
-                        onClick={() => {
-                          setAddingReminder(false)
-                          setReminderTitle('')
-                          setReminderDue('')
-                        }}
-                      >
-                        Huỷ
-                      </button>
-                      <button
-                        type="submit"
-                        className="crm-opp-btn crm-opp-btn--primary crm-opp-btn--sm"
-                        disabled={savingReminder}
-                        data-testid="btn-save-drawer-reminder"
-                      >
-                        {savingReminder ? 'Đang lưu...' : 'Lưu nhắc việc'}
-                      </button>
-                    </div>
-                  </form>
-                )}
-
-                <div className="crm-opp-reminders-list" data-testid="drawer-reminders-list">
-                  {loadingReminders ? (
-                    <p className="crm-opp-empty-hint">Đang tải nhắc việc...</p>
-                  ) : reminders.length === 0 ? (
-                    <p className="crm-opp-empty-hint">Chưa có nhắc việc nào cho cơ hội này.</p>
-                  ) : (
-                    reminders.map((r) => (
-                      <div
-                        key={r.id}
-                        className="crm-opp-reminder-item"
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '8px 0',
-                          borderBottom: '1px solid var(--crm-border)',
-                        }}
-                        data-testid={`drawer-reminder-${r.id}`}
-                      >
-                        <div>
-                          <strong style={{ fontSize: '13px', textDecoration: r.isCompleted ? 'line-through' : 'none' }}>
-                            {r.title}
-                          </strong>
-                          <div style={{ fontSize: '11px', color: 'var(--crm-text-muted)' }}>
-                            Hạn: {formatVietnamDateTime(r.dueAtUtc)}
-                            {r.isCompleted && (
-                              <span style={{ marginLeft: '6px', color: 'var(--crm-success)' }}>
-                                <Icon name="check" size={12} /> Đã xong
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {!isReadOnly && !r.isCompleted && (
-                          <button
-                            type="button"
-                            className="crm-opp-btn crm-opp-btn--secondary crm-opp-btn--sm"
-                            onClick={() => handleCompleteReminder(r.id)}
-                            data-testid={`btn-complete-drawer-reminder-${r.id}`}
-                            style={{ fontSize: '11px', padding: '3px 8px' }}
-                          >
-                            Hoàn thành
-                          </button>
-                        )}
-                      </div>
-                    ))
                   )}
                 </div>
               </div>

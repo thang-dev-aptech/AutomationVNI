@@ -26,7 +26,7 @@ export const useAuth = () => {
   // Admin/ContentManager = Quản lý (Tag config, Tự chia, Nhập CSV, Xuất, Xoá)
   const canManage = isManager
 
-  // Reviewer = Chăm sóc khách (Trả lời, Ghi chú, Trạng thái, Nhắc việc, Tạo khách tay, Gộp hồ sơ)
+  // Reviewer = Chăm sóc khách (Trả lời, Ghi chú, Trạng thái, Tạo khách tay, Gộp hồ sơ)
   // Admin/ContentManager also have all care rights
   const canCare = isManager || isReviewer
 

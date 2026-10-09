@@ -4,11 +4,9 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import CustomerList from '../features/customers/components/CustomerList'
 import CustomerProfile from '../features/customers/components/CustomerProfile'
-import TasksBoard from '../features/tasks/components/TasksBoard'
 import CsvImportModal from '../features/customers/components/CsvImportModal'
 import MergeModal from '../features/customers/components/MergeModal'
 import { customerApi } from '../features/customers/api/customerApi'
-import { reminderApi } from '../features/tasks/api/reminderApi'
 import { useAuthStore } from '../auth/authStore'
 
 describe('AC crm-profile-care-test (925780ff) — CrmApp Vitest', () => {
@@ -35,7 +33,6 @@ describe('AC crm-profile-care-test (925780ff) — CrmApp Vitest', () => {
       },
     ],
     noteCount: 1,
-    reminderCount: 1,
   }
 
   const mockTimeline = [
@@ -65,50 +62,6 @@ describe('AC crm-profile-care-test (925780ff) — CrmApp Vitest', () => {
       createdAt: '2026-10-06T10:30:00Z',
     },
   ]
-
-  const mockReminders = [
-    {
-      id: 'rem-1',
-      crmCustomerId: '11111111-1111-1111-1111-111111111111',
-      customerName: 'Nguyễn Văn An',
-      title: 'Gọi lại tư vấn học phí',
-      dueAtUtc: '2026-10-07T07:00:00Z',
-      isCompleted: false,
-    },
-  ]
-
-  const mockBuckets = {
-    today: [
-      {
-        id: 'rem-today-1',
-        crmCustomerId: '11111111-1111-1111-1111-111111111111',
-        customerName: 'Nguyễn Văn An',
-        title: 'Hôm nay: Gọi lại xác nhận',
-        dueAtUtc: '2026-10-07T07:00:00Z',
-        isCompleted: false,
-      },
-    ],
-    overdue: [
-      {
-        id: 'rem-overdue-1',
-        crmCustomerId: '22222222-2222-2222-2222-222222222222',
-        customerName: 'Trần Thị Bích',
-        title: 'Quá hạn: Gửi tài liệu học',
-        dueAtUtc: '2026-10-05T07:00:00Z',
-        isCompleted: false,
-      },
-    ],
-    upcoming: [
-      {
-        id: 'rem-upcoming-1',
-        crmCustomerId: '33333333-3333-3333-3333-333333333333',
-        customerName: 'Lê Hoàng Long',
-        title: 'Sắp tới: Kiểm tra thanh toán',
-        dueAtUtc: '2026-10-10T07:00:00Z',
-        isCompleted: false,
-      },
-    ],
-  }
 
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -176,10 +129,9 @@ describe('AC crm-profile-care-test (925780ff) — CrmApp Vitest', () => {
       vi.spyOn(customerApi, 'get').mockResolvedValue(mockCustomer)
       vi.spyOn(customerApi, 'getTimeline').mockResolvedValue(mockTimeline)
       vi.spyOn(customerApi, 'listNotes').mockResolvedValue(mockNotes)
-      vi.spyOn(reminderApi, 'listForCustomer').mockResolvedValue(mockReminders)
     })
 
-    it('renders customer info, identities, timeline, notes, and reminders', async () => {
+    it('renders customer info, identities, timeline, and notes', async () => {
       render(
         <MemoryRouter>
           <CustomerProfile customerId={mockCustomer.id} onBack={vi.fn()} />
@@ -201,13 +153,6 @@ describe('AC crm-profile-care-test (925780ff) — CrmApp Vitest', () => {
       await waitFor(() => {
         expect(screen.getByTestId('notes-pane')).toBeInTheDocument()
         expect(screen.getByText('Khách quan tâm khoá K45')).toBeInTheDocument()
-      })
-
-      // Switch to reminders tab
-      fireEvent.click(screen.getByTestId('tab-reminders'))
-      await waitFor(() => {
-        expect(screen.getByTestId('reminders-pane')).toBeInTheDocument()
-        expect(screen.getByText('Gọi lại tư vấn học phí')).toBeInTheDocument()
       })
 
       // Switch to identities tab
@@ -271,59 +216,7 @@ describe('AC crm-profile-care-test (925780ff) — CrmApp Vitest', () => {
     })
   })
 
-  // 3. TasksBoard (Hôm nay / Quá hạn / Sắp tới)
-  describe('TasksBoard (Màn Việc của tôi: Hôm nay / Quá hạn / Sắp tới)', () => {
-    beforeEach(() => {
-      vi.spyOn(reminderApi, 'getBuckets').mockResolvedValue(mockBuckets)
-    })
-
-    it('renders Today, Overdue, Upcoming buckets and toggles tabs', async () => {
-      render(
-        <MemoryRouter>
-          <TasksBoard />
-        </MemoryRouter>,
-      )
-
-      await waitFor(() => {
-        expect(screen.getByTestId('tab-bucket-today')).toHaveTextContent('Hôm nay (1)')
-        expect(screen.getByTestId('tab-bucket-overdue')).toHaveTextContent('Quá hạn (1)')
-        expect(screen.getByTestId('tab-bucket-upcoming')).toHaveTextContent('Sắp tới (1)')
-      })
-
-      // Today tab is active by default
-      expect(screen.getByText('Hôm nay: Gọi lại xác nhận')).toBeInTheDocument()
-
-      // Switch to Overdue tab
-      fireEvent.click(screen.getByTestId('tab-bucket-overdue'))
-      expect(screen.getByText('Quá hạn: Gửi tài liệu học')).toBeInTheDocument()
-
-      // Switch to Upcoming tab
-      fireEvent.click(screen.getByTestId('tab-bucket-upcoming'))
-      expect(screen.getByText('Sắp tới: Kiểm tra thanh toán')).toBeInTheDocument()
-    })
-
-    it('calls reminderApi.complete when completing a task', async () => {
-      const completeSpy = vi.spyOn(reminderApi, 'complete').mockResolvedValue({ success: true })
-
-      render(
-        <MemoryRouter>
-          <TasksBoard />
-        </MemoryRouter>,
-      )
-
-      await waitFor(() => {
-        expect(screen.getByTestId('btn-complete-task-rem-today-1')).toBeInTheDocument()
-      })
-
-      fireEvent.click(screen.getByTestId('btn-complete-task-rem-today-1'))
-
-      await waitFor(() => {
-        expect(completeSpy).toHaveBeenCalledWith('rem-today-1')
-      })
-    })
-  })
-
-  // 4. CSV Import (Preview + Commit)
+  // 3. CSV Import (Preview + Commit)
   describe('CSV Import Modal (Xem trước + Xác nhận)', () => {
     it('previews CSV and commits when confirmed', async () => {
       const previewSpy = vi.spyOn(customerApi, 'importPreview').mockResolvedValue({
@@ -435,20 +328,18 @@ describe('AC crm-profile-care-test (925780ff) — CrmApp Vitest', () => {
 
   // 6. Mobile 375px responsive rendering check
   describe('Mobile 375px viewport rendering', () => {
-    it('renders customer list and tasks board without errors on small screen', async () => {
+    it('renders customer list without errors on small screen', async () => {
       vi.spyOn(customerApi, 'filter').mockResolvedValue({ items: [] })
-      vi.spyOn(reminderApi, 'getBuckets').mockResolvedValue(mockBuckets)
 
       const { container } = render(
         <div style={{ width: '375px', overflow: 'hidden' }}>
           <MemoryRouter>
-            <TasksBoard />
+            <CustomerList onSelectCustomer={vi.fn()} />
           </MemoryRouter>
         </div>,
       )
 
-      expect(container.querySelector('[data-testid="tasks-board-page"]')).toBeInTheDocument()
-      expect(screen.getByTestId('reminder-bucket-tabs')).toBeInTheDocument()
+      expect(container.querySelector('[data-testid="customer-table"]')).toBeInTheDocument()
     })
   })
 })

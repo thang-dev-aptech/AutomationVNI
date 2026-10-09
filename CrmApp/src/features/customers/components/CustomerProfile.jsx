@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import { customerApi } from '../api/customerApi'
-import { reminderApi } from '../../tasks/api/reminderApi'
 import { useAuth } from '../../../auth/useAuth'
 import Button from '../../../shared/components/Button'
 import Badge from '../../../shared/components/Badge'
@@ -13,12 +12,11 @@ export const CustomerProfile = ({ customerId, onBack, onCustomerUpdated }) => {
   const [customer, setCustomer] = useState(null)
   const [timeline, setTimeline] = useState([])
   const [notes, setNotes] = useState([])
-  const [reminders, setReminders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   // Active sub-tab
-  const [activeTab, setActiveTab] = useState('timeline') // 'timeline' | 'notes' | 'reminders' | 'identities'
+  const [activeTab, setActiveTab] = useState('timeline') // 'timeline' | 'notes' | 'identities'
 
   // Edit info modal
   const [editOpen, setEditOpen] = useState(false)
@@ -28,11 +26,6 @@ export const CustomerProfile = ({ customerId, onBack, onCustomerUpdated }) => {
   // Add note state
   const [newNoteBody, setNewNoteBody] = useState('')
   const [savingNote, setSavingNote] = useState(false)
-
-  // Add reminder state
-  const [reminderTitle, setReminderTitle] = useState('')
-  const [reminderDue, setReminderDue] = useState('')
-  const [savingReminder, setSavingReminder] = useState(false)
 
   // Merge modal state
   const [mergeModalOpen, setMergeModalOpen] = useState(false)
@@ -47,11 +40,10 @@ export const CustomerProfile = ({ customerId, onBack, onCustomerUpdated }) => {
     setLoading(true)
     setError(null)
     try {
-      const [detailData, timelineData, notesData, remindersData] = await Promise.all([
+      const [detailData, timelineData, notesData] = await Promise.all([
         customerApi.get(customerId),
         customerApi.getTimeline(customerId),
         customerApi.listNotes(customerId),
-        reminderApi.listForCustomer(customerId),
       ])
 
       setCustomer(detailData)
@@ -59,7 +51,6 @@ export const CustomerProfile = ({ customerId, onBack, onCustomerUpdated }) => {
       setEditPhone(detailData.phoneE164 || '')
       setTimeline(timelineData || [])
       setNotes(notesData || [])
-      setReminders(remindersData || [])
     } catch (err) {
       const status = err?.response?.status
       setError(status === 404 || status === 400
@@ -160,40 +151,6 @@ export const CustomerProfile = ({ customerId, onBack, onCustomerUpdated }) => {
       setNotes(notes.filter((n) => n.id !== noteId))
     } catch (err) {
       alert('Lỗi xoá ghi chú: ' + (err?.message || ''))
-    }
-  }
-
-  // Add Reminder
-  const handleAddReminder = async (e) => {
-    e.preventDefault()
-    if (!reminderTitle.trim() || !reminderDue || !canCare) return
-    setSavingReminder(true)
-    try {
-      await reminderApi.create({
-        crmCustomerId: customerId,
-        title: reminderTitle.trim(),
-        dueAtUtc: new Date(reminderDue).toISOString(),
-      })
-      setReminderTitle('')
-      setReminderDue('')
-      const updatedReminders = await reminderApi.listForCustomer(customerId)
-      setReminders(updatedReminders || [])
-    } catch (err) {
-      alert('Lỗi tạo nhắc việc: ' + (err?.message || ''))
-    } finally {
-      setSavingReminder(false)
-    }
-  }
-
-  // Complete Reminder
-  const handleCompleteReminder = async (reminderId) => {
-    if (!canCare) return
-    try {
-      await reminderApi.complete(reminderId)
-      const updatedReminders = await reminderApi.listForCustomer(customerId)
-      setReminders(updatedReminders || [])
-    } catch (err) {
-      alert('Lỗi cập nhật: ' + (err?.message || ''))
     }
   }
 
@@ -345,7 +302,6 @@ export const CustomerProfile = ({ customerId, onBack, onCustomerUpdated }) => {
         {[
           { key: 'timeline', label: `Dòng thời gian (${timeline.length})` },
           { key: 'notes', label: `Ghi chú (${notes.length})` },
-          { key: 'reminders', label: `Nhắc việc (${reminders.length})` },
           { key: 'identities', label: `Danh tính liên kết (${customer.identities?.length || 0})` },
         ].map((tab) => (
           <button
@@ -468,79 +424,7 @@ export const CustomerProfile = ({ customerId, onBack, onCustomerUpdated }) => {
         </div>
       )}
 
-      {/* Tab 3: Nhắc việc (Reminders) */}
-      {activeTab === 'reminders' && (
-        <div data-testid="reminders-pane">
-          {canCare && (
-            <form onSubmit={handleAddReminder} style={{ marginBottom: '20px', background: 'var(--crm-surface-subtle)', padding: '16px', borderRadius: 'var(--crm-radius-md)' }} data-testid="add-reminder-form">
-              <h4 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '700' }}>Tạo việc cần làm / nhắc hẹn:</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px', marginBottom: '12px' }}>
-                <input
-                  type="text"
-                  className="crm-form-input"
-                  placeholder="Tiêu đề việc cần nhắc (vd: Gọi lại tư vấn gói tháng)..."
-                  value={reminderTitle}
-                  onChange={(e) => setReminderTitle(e.target.value)}
-                  required
-                  data-testid="input-reminder-title"
-                />
-                <input
-                  type="datetime-local"
-                  className="crm-form-input"
-                  value={reminderDue}
-                  onChange={(e) => setReminderDue(e.target.value)}
-                  required
-                  data-testid="input-reminder-due"
-                />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <Button type="submit" variant="primary" size="sm" isLoading={savingReminder} data-testid="btn-submit-reminder">
-                  Tạo nhắc việc
-                </Button>
-              </div>
-            </form>
-          )}
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }} data-testid="reminders-list">
-            {reminders.map((r) => (
-              <div
-                key={r.id}
-                style={{
-                  background: 'var(--crm-surface)',
-                  border: '1px solid var(--crm-border)',
-                  borderRadius: 'var(--crm-radius-md)',
-                  padding: '14px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-                data-testid={`reminder-item-${r.id}`}
-              >
-                <div>
-                  <h4 style={{ margin: '0 0 4px', fontSize: '14px', textDecoration: r.isCompleted ? 'line-through' : 'none' }}>
-                    {r.title}
-                  </h4>
-                  <div style={{ fontSize: '12px', color: 'var(--crm-text-muted)' }}>
-                    Hạn chót: <strong>{formatVietnamDateTime(r.dueAtUtc)}</strong>
-                  </div>
-                </div>
-                {canCare && (
-                  <Button
-                    variant={r.isCompleted ? 'secondary' : 'primary'}
-                    size="sm"
-                    onClick={() => handleCompleteReminder(r.id)}
-                    data-testid={`btn-complete-reminder-${r.id}`}
-                  >
-                    {r.isCompleted ? 'Đã xong ✓' : 'Hoàn thành'}
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tab 4: Danh tính liên kết (Identities) */}
+      {/* Tab 3: Danh tính liên kết (Identities) */}
       {activeTab === 'identities' && (
         <div data-testid="identities-pane">
           <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--crm-text-muted)' }}>

@@ -105,7 +105,7 @@ export const MergeModal = ({ isOpen, onClose, onSuccess, initialCustomerId = nul
           <div>
             <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800' }}>Gợi ý & Gộp / Tách hồ sơ khách hàng</h3>
             <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--crm-text-muted)' }}>
-              Chuyển toàn bộ danh tính, ghi chú, nhắc việc sang khách giữ lại và có thể tách lại
+              Chuyển toàn bộ danh tính, ghi chú sang khách giữ lại và có thể tách lại
             </p>
           </div>
           <button

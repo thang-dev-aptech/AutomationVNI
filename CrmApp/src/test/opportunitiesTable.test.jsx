@@ -244,7 +244,7 @@ describe('AC fd9216b3 (a)(b)(d) — Opportunities Table & Header & Viewer & Cust
   //                   phân trang "x - y / tổng", menu ⋮
   // =========================================================================
   describe('AC fd9216b3 (b) — Bảng, Tabs, Hiển thị cột, Phân trang, Menu ⋮', () => {
-    it('4 tab đổi bộ lọc status/archived; tab Hoạt động render placeholder data-testid="opportunity-activities"', async () => {
+    it('3 tab đổi bộ lọc status/archived; không còn tab Hoạt động; URL tab=activities rơi về Tất cả', async () => {
       render(
         <MemoryRouter initialEntries={['/tasks']}>
           <LocationTracker />
@@ -284,13 +284,9 @@ describe('AC fd9216b3 (a)(b)(d) — Opportunities Table & Header & Viewer & Cust
       })
       expect(screen.getByTestId('location-search').textContent).toContain('tab=archived')
 
-      // 3. Tab "Hoạt động"
-      const tabActivities = screen.getByTestId('tab-activities')
-      fireEvent.click(tabActivities)
-
-      expect(await screen.findByTestId('opportunity-activities')).toBeInTheDocument()
-      expect(screen.queryByTestId('opportunity-table')).not.toBeInTheDocument()
-      expect(screen.getByTestId('location-search').textContent).toContain('tab=activities')
+      // 3. Không còn tab "Hoạt động"
+      expect(screen.queryByTestId('tab-activities')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('opportunity-activities')).not.toBeInTheDocument()
 
       // 4. Tab "Tất cả"
       const tabAll = screen.getByTestId('tab-all')
@@ -305,6 +301,21 @@ describe('AC fd9216b3 (a)(b)(d) — Opportunities Table & Header & Viewer & Cust
         )
       })
       expect(screen.getByTestId('opportunity-table')).toBeInTheDocument()
+    })
+
+    it('URL cũ ?tab=activities rơi về tab "Tất cả" mà không crash', async () => {
+      render(
+        <MemoryRouter initialEntries={['/tasks?tab=activities']}>
+          <LocationTracker />
+          <Routes>
+            <Route path="/tasks" element={<TasksPage />} />
+          </Routes>
+        </MemoryRouter>
+      )
+
+      expect(await screen.findByTestId('opportunity-table')).toBeInTheDocument()
+      expect(screen.queryByTestId('tab-activities')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('opportunity-activities')).not.toBeInTheDocument()
     })
 
     it('"Hiển thị" ẩn cột rồi render lại vẫn ẩn (localStorage), localStorage throw thì không crash', async () => {

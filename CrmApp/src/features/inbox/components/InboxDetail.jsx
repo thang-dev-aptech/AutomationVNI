@@ -43,7 +43,6 @@ export const InboxDetail = ({
   onAttachTag,
   onDetachTag,
   onNavigateCustomer,
-  onCreateReminder,
   linkedCustomerId,
 }) => {
   const [replyText, setReplyText] = useState('')
@@ -397,22 +396,6 @@ export const InboxDetail = ({
                 data-testid="btn-add-note"
               >
                 Ghi chú
-              </Button>
-
-              {/* Reminder Button */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (onCreateReminder) {
-                    onCreateReminder(item)
-                  } else {
-                    alert('Đã tạo việc nhắc xử lý cho khách hàng')
-                  }
-                }}
-                data-testid="btn-create-reminder"
-              >
-                Nhắc việc
               </Button>
 
               {/* Tag Button */}

@@ -31,7 +31,6 @@ describe('AC e2810e98 (f)-(i) & AC e68ba436 (b) — CrmApp Customer Panel', () =
       email: 'nguyenvana@example.com',
       tagIds: ['tag-1', 'tag-2'],
       noteCount: 2,
-      reminderCount: 1,
       identities: [
         {
           platform: 1,
