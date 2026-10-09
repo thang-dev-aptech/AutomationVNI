@@ -147,6 +147,21 @@ public sealed class CrmInboxListPipelineTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Filter_ItemsCarryChannelPlatform_ForSourceBadge()
+    {
+        var fbPage = await SeedChannelAsync("FB Page");
+        var igPage = await SeedChannelAsync("IG Page", SocialPlatform.Instagram);
+        var fbMsg = await SeedConversationAsync(fbPage, "Messenger khách");
+        var fbCmt = await SeedCommentAsync(fbPage, "FB comment", commentedAt: DateTime.UtcNow.AddHours(-1));
+        var igMsg = await SeedConversationAsync(igPage, "IG khách");
+
+        var byId = (await FilterAsync(new { })).ToDictionary(x => x.GetProperty("id").GetGuid());
+        Assert.Equal((int)SocialPlatform.Facebook, byId[fbMsg].GetProperty("platform").GetInt32());
+        Assert.Equal((int)SocialPlatform.Facebook, byId[fbCmt].GetProperty("platform").GetInt32());
+        Assert.Equal((int)SocialPlatform.Instagram, byId[igMsg].GetProperty("platform").GetInt32());
+    }
+
+    [Fact]
     public async Task Filter_ByPage_AndUnassigned_AndMine()
     {
         var page = await SeedChannelAsync("Filter Page");
@@ -354,14 +369,14 @@ public sealed class CrmInboxListPipelineTests : IAsyncLifetime
         => request.Headers.Authorization = new AuthenticationHeaderValue(
             TestAuthHandler.SchemeName, $"{role}:{_actorUserId:N}");
 
-    private async Task<Guid> SeedChannelAsync(string name)
+    private async Task<Guid> SeedChannelAsync(string name, SocialPlatform platform = SocialPlatform.Facebook)
     {
         await using var db = new AppDbContext(_options);
         var id = Guid.NewGuid();
         db.SocialChannels.Add(new SocialChannelModel
         {
             Id = id,
-            Platform = SocialPlatform.Facebook,
+            Platform = platform,
             ChannelType = SocialChannelType.Page,
             PageName = name,
             ExternalPageId = $"ext-{id:N}",

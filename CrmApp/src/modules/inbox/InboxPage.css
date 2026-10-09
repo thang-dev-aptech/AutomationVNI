@@ -97,6 +97,23 @@
   font-weight: 700;
   color: var(--crm-primary);
   flex-shrink: 0;
+  position: relative;
+}
+
+/* Badge nguồn (Messenger / Facebook / Instagram) ở góc dưới bên phải avatar */
+.crm-conv-source-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--crm-surface);
+  background: var(--crm-surface);
+  box-sizing: border-box;
+  display: flex;
+  overflow: hidden;
+  line-height: 0;
 }
 
 .crm-conv-body {

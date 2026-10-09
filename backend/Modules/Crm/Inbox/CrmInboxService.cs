@@ -585,9 +585,12 @@ public class CrmInboxService(
             .Concat(comments.Values.Select(x => x.SocialChannelId))
             .Distinct()
             .ToList();
-        var channels = await db.SocialChannels.AsNoTracking()
+        var channelRows = await db.SocialChannels.AsNoTracking()
             .Where(x => channelIds.Contains(x.Id))
-            .ToDictionaryAsync(x => x.Id, x => x.PageName, ct);
+            .Select(x => new { x.Id, x.PageName, x.Platform })
+            .ToListAsync(ct);
+        var channels = channelRows.ToDictionary(x => x.Id, x => x.PageName);
+        var platforms = channelRows.ToDictionary(x => x.Id, x => (SocialPlatform?)x.Platform);
 
         var allTags = await LoadTagsForTargetsAsync(
             messageIds.Select(id => (CrmTagTargetType.PageConversation, id))
@@ -609,6 +612,7 @@ public class CrmInboxService(
                     Id = msg.Id,
                     SocialChannelId = msg.SocialChannelId,
                     ChannelName = channels.GetValueOrDefault(msg.SocialChannelId),
+                    Platform = platforms.GetValueOrDefault(msg.SocialChannelId),
                     DisplayName = msg.ParticipantName,
                     Snippet = msg.Snippet,
                     LastCustomerActivityAt = msg.LastCustomerMessageAt ?? msg.LastMessageAt,
@@ -630,6 +634,7 @@ public class CrmInboxService(
                     Id = cmt.Id,
                     SocialChannelId = cmt.SocialChannelId,
                     ChannelName = channels.GetValueOrDefault(cmt.SocialChannelId),
+                    Platform = platforms.GetValueOrDefault(cmt.SocialChannelId),
                     DisplayName = cmt.AuthorName ?? cmt.AuthorUsername,
                     Snippet = cmt.Message,
                     LastCustomerActivityAt = cmt.CommentedAt,

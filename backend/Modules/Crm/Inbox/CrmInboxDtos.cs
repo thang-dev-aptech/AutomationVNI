@@ -37,6 +37,8 @@ public class CrmInboxListItemResponse
     public Guid Id { get; set; }
     public Guid SocialChannelId { get; set; }
     public string? ChannelName { get; set; }
+    /// <summary>Nền tảng của kênh — frontend dùng để gắn badge nguồn lên avatar.</summary>
+    public SocialPlatform? Platform { get; set; }
     public string? DisplayName { get; set; }
     public string? Snippet { get; set; }
     /// <summary>Thời điểm hoạt động phía khách — dùng để sắp xếp.</summary>

@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react'
 import Badge from '../../../shared/components/Badge'
 import { formatVietnamDateTime } from '../../../shared/utils/dateUtils'
+import SourceBadge from './SourceBadge'
 
 const STATUS_CONFIG = {
   1: { label: 'Mới', variant: 'danger' },
@@ -101,6 +102,7 @@ export const InboxList = ({
                   }}
                 >
                   {initial}
+                  <SourceBadge item={item} />
                 </div>
 
                 {/* Body */}
