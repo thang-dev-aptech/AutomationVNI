@@ -372,7 +372,6 @@ export function CustomerPanel({
                           className="crm-customer-open-profile-btn"
                           data-testid="btn-view-opportunity-panel"
                           onClick={() => navigate(`/tasks?opportunity=${openOpportunity.id}`)}
-                          style={{ marginLeft: '6px' }}
                         >
                           <Icon name="target" size={14} /> Xem cơ hội
                         </button>
@@ -384,7 +383,6 @@ export function CustomerPanel({
                             data-testid="btn-create-opportunity-panel"
                             onClick={handleCreateOpportunity}
                             disabled={creatingOpportunity}
-                            style={{ marginLeft: '6px' }}
                           >
                             + Tạo cơ hội
                           </button>

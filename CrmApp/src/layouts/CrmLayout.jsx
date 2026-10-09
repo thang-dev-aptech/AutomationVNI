@@ -11,11 +11,12 @@ const COLLAPSE_KEY = 'vni.crm.sidebar.collapsed'
 export const CrmLayout = () => {
   const { user, logout, roles } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
+  // Mặc định thu gọn (chỉ icon). Chỉ mở rộng khi người dùng đã chọn mở rộng trước đó.
   const [isCollapsed, setIsCollapsed] = useState(() => {
     try {
-      return localStorage.getItem(COLLAPSE_KEY) === 'true'
+      return localStorage.getItem(COLLAPSE_KEY) !== 'false'
     } catch {
-      return false
+      return true
     }
   })
   const navigate = useNavigate()

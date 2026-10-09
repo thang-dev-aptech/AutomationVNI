@@ -23,9 +23,38 @@ describe('AC 85ef074a — CrmApp: nav trái thu gọn/mở rộng (chỉ icon kh
     vi.restoreAllMocks()
   })
 
+  describe('Mặc định khi mở app lần đầu: thu gọn (chỉ icon)', () => {
+    it('chưa có lựa chọn lưu trong localStorage → sidebar thu gọn, nút có aria-expanded="false" và nhãn "Mở rộng menu"', () => {
+      render(
+        <MemoryRouter initialEntries={['/inbox']}>
+          <Routes>
+            <Route path="/" element={<CrmLayout />}>
+              <Route path="inbox" element={<div>Inbox</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>,
+      )
+
+      const sidebar = screen.getByTestId('crm-sidebar')
+      const toggleBtn = screen.getByTestId('sidebar-collapse-btn')
+      expect(sidebar).toHaveClass('collapsed')
+      expect(sidebar).toHaveClass('crm-sidebar--collapsed')
+      expect(screen.getByTestId('crm-main-wrapper')).toHaveClass('crm-main-wrapper--collapsed')
+      expect(toggleBtn).toHaveAttribute('aria-expanded', 'false')
+      expect(toggleBtn).toHaveAttribute('aria-label', 'Mở rộng menu')
+
+      // Bấm mở rộng → lưu lựa chọn 'false' để lần sau vẫn mở rộng
+      fireEvent.click(toggleBtn)
+      expect(sidebar).not.toHaveClass('collapsed')
+      expect(localStorage.getItem(COLLAPSE_KEY)).toBe('false')
+    })
+  })
+
   // (a) Bấm nút thu gọn → sidebar có class collapsed, nhãn chữ ẩn, mỗi link vẫn có aria-label/title đúng tên mục. Bấm lại → mở.
   describe('AC 85ef074a (a) — Thao tác thu gọn/mở rộng sidebar', () => {
     it('bấm nút thu gọn: sidebar có class collapsed, nhãn chữ ẩn, mỗi link có aria-label/title đúng tên mục; bấm lại mở ra', () => {
+      // Người dùng đã chọn mở rộng trước đó
+      localStorage.setItem(COLLAPSE_KEY, 'false')
       render(
         <MemoryRouter initialEntries={['/customers']}>
           <Routes>
@@ -39,7 +68,7 @@ describe('AC 85ef074a — CrmApp: nav trái thu gọn/mở rộng (chỉ icon kh
       const sidebar = screen.getByTestId('crm-sidebar')
       const toggleBtn = screen.getByTestId('sidebar-collapse-btn')
 
-      // Mặc định mở rộng: không có class collapsed, aria-expanded="true"
+      // Đang mở rộng (theo lựa chọn đã lưu): không có class collapsed, aria-expanded="true"
       expect(sidebar).not.toHaveClass('collapsed')
       expect(sidebar).not.toHaveClass('crm-sidebar--collapsed')
       expect(toggleBtn).toHaveAttribute('aria-expanded', 'true')
@@ -141,7 +170,7 @@ describe('AC 85ef074a — CrmApp: nav trái thu gọn/mở rộng (chỉ icon kh
       expect(screen.getByTestId('crm-sidebar')).not.toHaveClass('collapsed')
     })
 
-    it('khi localStorage throw exception: vẫn render bình thường, mặc định mở rộng', () => {
+    it('khi localStorage throw exception: vẫn render bình thường, mặc định thu gọn', () => {
       vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
         throw new Error('SecurityError: LocalStorage is disabled')
       })
@@ -159,26 +188,29 @@ describe('AC 85ef074a — CrmApp: nav trái thu gọn/mở rộng (chỉ icon kh
         </MemoryRouter>,
       )
 
-      // Không crash, mặc định mở rộng
+      // Không crash, mặc định thu gọn
       const sidebar = screen.getByTestId('crm-sidebar')
       const toggleBtn = screen.getByTestId('sidebar-collapse-btn')
 
       expect(sidebar).toBeInTheDocument()
-      expect(sidebar).not.toHaveClass('collapsed')
-      expect(toggleBtn).toHaveAttribute('aria-expanded', 'true')
+      expect(sidebar).toHaveClass('collapsed')
+      expect(toggleBtn).toHaveAttribute('aria-expanded', 'false')
 
       // Bấm toggle -> setItem throw nhưng không crash app
       expect(() => {
         fireEvent.click(toggleBtn)
       }).not.toThrow()
 
-      expect(sidebar).toHaveClass('collapsed')
+      // Toggle vẫn hoạt động trong phiên dù không lưu được
+      expect(sidebar).not.toHaveClass('collapsed')
     })
   })
 
   // (c) Ở /inbox khi thu gọn: main-wrapper có modifier tương ứng.
   describe('AC 85ef074a (c) — Layout full-bleed /inbox khi thu gọn', () => {
     it('ở /inbox: crm-main-wrapper có cả modifier --full và --collapsed khi thu gọn', () => {
+      // Người dùng đã chọn mở rộng trước đó
+      localStorage.setItem(COLLAPSE_KEY, 'false')
       render(
         <MemoryRouter initialEntries={['/inbox']}>
           <Routes>
