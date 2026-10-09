@@ -72,7 +72,9 @@ const DEFAULT_INITIAL_DETAIL = {
 export const InboxFeature = () => {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { canCare, isReadOnly } = useAuth()
+  const { canCare, isReadOnly, isAdmin, isContentManager, isReviewer } = useAuth()
+  // Tập "vừa đọc" key: `${kind}:${id}` -> timestamp (ms). Dùng để chống hồi sinh badge khi polling merge.
+  const readTimestampsRef = useRef(new Map())
 
   // State
   const [items, setItems] = useState([DEFAULT_INITIAL_ITEM])
@@ -229,12 +231,46 @@ export const InboxFeature = () => {
             setItems((prev) => {
               const prevMap = new Map(prev.map((it) => [`${it.kind}:${it.id}`, it]))
               const page1Keys = new Set(fetchedItems.map((it) => `${it.kind}:${it.id}`))
-              const head = fetchedItems.map((it) => ({ ...prevMap.get(`${it.kind}:${it.id}`), ...it }))
+              const head = fetchedItems.map((it) => {
+                const key = `${it.kind}:${it.id}`
+                const prevItem = prevMap.get(key)
+                let unreadCount = it.unreadCount
+
+                const readAt = readTimestampsRef.current.get(key)
+                if (readAt !== undefined) {
+                  const parsedTime = it.lastCustomerActivityAt
+                    ? new Date(it.lastCustomerActivityAt).getTime()
+                    : 0
+                  const activityTime = isNaN(parsedTime) ? 0 : parsedTime
+                  if (activityTime <= readAt) {
+                    unreadCount = 0
+                  }
+                }
+
+                return {
+                  ...prevItem,
+                  ...it,
+                  unreadCount: unreadCount ?? prevItem?.unreadCount ?? 0,
+                }
+              })
               const rest = prev.filter((it) => !page1Keys.has(`${it.kind}:${it.id}`))
               return [...head, ...rest]
             })
           } else {
-            let itemsToDisplay = [...fetchedItems]
+            let itemsToDisplay = fetchedItems.map((it) => {
+              const key = `${it.kind}:${it.id}`
+              const readAt = readTimestampsRef.current.get(key)
+              if (readAt !== undefined) {
+                const parsedTime = it.lastCustomerActivityAt
+                  ? new Date(it.lastCustomerActivityAt).getTime()
+                  : 0
+                const activityTime = isNaN(parsedTime) ? 0 : parsedTime
+                if (activityTime <= readAt) {
+                  return { ...it, unreadCount: 0 }
+                }
+              }
+              return it
+            })
             const targetId = searchParams?.get?.('id')
             const targetKind = kindFromSearchParams(searchParams) || (searchParams?.get?.('kind') === 'comment' ? 2 : 1)
 
@@ -339,7 +375,22 @@ export const InboxFeature = () => {
         setTotal(rawTotal)
         setItems((prev) => {
           const seen = new Set(prev.map((it) => `${it.kind}:${it.id}`))
-          const unique = rawItems.filter((it) => !seen.has(`${it.kind}:${it.id}`))
+          const unique = rawItems
+            .filter((it) => !seen.has(`${it.kind}:${it.id}`))
+            .map((it) => {
+              const key = `${it.kind}:${it.id}`
+              const readAt = readTimestampsRef.current.get(key)
+              if (readAt !== undefined) {
+                const parsedTime = it.lastCustomerActivityAt
+                  ? new Date(it.lastCustomerActivityAt).getTime()
+                  : 0
+                const activityTime = isNaN(parsedTime) ? 0 : parsedTime
+                if (activityTime <= readAt) {
+                  return { ...it, unreadCount: 0 }
+                }
+              }
+              return it
+            })
           return [...prev, ...unique]
         })
         setPageIndex(nextIndex)
@@ -424,10 +475,36 @@ export const InboxFeature = () => {
 
   // Handlers
   const handleSelectItem = (item) => {
-    setSelectedItem(item)
+    if (!item) return
+    const key = `${item.kind}:${item.id}`
+    const canMarkRead = !isReadOnly && (isAdmin || isContentManager || isReviewer || canCare)
+
+    if (canMarkRead) {
+      const now = Date.now()
+      const parsedTime = item.lastCustomerActivityAt
+        ? new Date(item.lastCustomerActivityAt).getTime()
+        : 0
+      const activityTime = isNaN(parsedTime) ? 0 : parsedTime
+      readTimestampsRef.current.set(key, Math.max(now, activityTime))
+
+      if (item.unreadCount > 0) {
+        setItems((prev) =>
+          prev.map((it) =>
+            it.kind === item.kind && it.id === item.id ? { ...it, unreadCount: 0 } : it,
+          ),
+        )
+      }
+
+      inboxApi.markRead(item.kind, item.id).catch((err) => {
+        console.warn('inboxApi.markRead error:', err)
+      })
+    }
+
+    const nextSelected = canMarkRead && item.unreadCount > 0 ? { ...item, unreadCount: 0 } : item
+    setSelectedItem(nextSelected)
     setCustomerProfile(null)
     setMobileView('detail')
-    loadDetail(item)
+    loadDetail(nextSelected)
   }
 
   const handleBackToList = () => {
@@ -440,6 +517,9 @@ export const InboxFeature = () => {
       await inboxApi.sendMessage(selectedItem.id, text)
     } else {
       await inboxApi.replyComment(selectedItem.id, text)
+    }
+    if (selectedItem?.id) {
+      readTimestampsRef.current.set(`${selectedItem.kind}:${selectedItem.id}`, Date.now())
     }
     await loadDetail(selectedItem)
     await loadList(true)

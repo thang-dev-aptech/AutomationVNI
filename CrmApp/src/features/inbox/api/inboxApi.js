@@ -98,5 +98,14 @@ export const inboxApi = {
     const res = await crmApi.get(`/CrmInbox/${normalizedKind}/${id}/customer`)
     return res.data?.data || res.data
   },
+
+  markRead: async (kind, id) => {
+    const normalizedKind =
+      String(kind).toLowerCase() === 'comment' || String(kind) === '2'
+        ? 'comment'
+        : 'message'
+    const res = await crmApi.post(`/CrmInbox/${normalizedKind}/${id}/read`)
+    return res.data?.data || res.data
+  },
 }
 
