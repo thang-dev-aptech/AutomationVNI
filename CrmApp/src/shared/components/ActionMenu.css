@@ -1,0 +1,111 @@
+.crm-action-menu-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.crm-action-menu-trigger {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--crm-radius-sm, 4px);
+  color: var(--crm-text-muted);
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.crm-action-menu-trigger:hover,
+.crm-action-menu-trigger[aria-expanded="true"] {
+  background: var(--crm-surface-subtle);
+  color: var(--crm-text);
+}
+
+.crm-action-menu-dropdown {
+  position: fixed;
+  z-index: 9999;
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: var(--crm-radius-md, 8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.08);
+  min-width: 170px;
+  max-width: 280px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+  animation: crmActionMenuFadeIn 0.12s ease-out;
+}
+
+@keyframes crmActionMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.crm-action-menu-item {
+  background: transparent;
+  border: none;
+  border-radius: var(--crm-radius-sm, 6px);
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--crm-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  transition: background-color 0.1s, color 0.1s;
+  outline: none;
+}
+
+.crm-action-menu-item:hover,
+.crm-action-menu-item:focus,
+.crm-action-menu-item:focus-visible {
+  background: var(--crm-surface-subtle);
+  color: var(--crm-primary-text, #111827);
+}
+
+.crm-action-menu-item--danger {
+  color: var(--crm-danger, #ef4444);
+}
+
+.crm-action-menu-item--danger:hover,
+.crm-action-menu-item--danger:focus,
+.crm-action-menu-item--danger:focus-visible {
+  background: var(--crm-danger-light, #fee2e2);
+  color: var(--crm-danger, #b91c1c);
+}
+
+.crm-action-menu-header {
+  padding: 6px 12px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--crm-text-muted);
+}
+
+.crm-action-menu-divider {
+  border: none;
+  border-top: 1px solid var(--crm-border);
+  margin: 4px 0;
+}
+
+.crm-action-menu-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}

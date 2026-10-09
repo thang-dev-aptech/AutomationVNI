@@ -4,6 +4,9 @@ using Backend.Modules.Campaign;
 using Backend.Modules.Category;
 using Backend.Modules.ChannelGroup;
 using Backend.Modules.ContentCrawl;
+using Backend.Modules.Crm.Assignment;
+using Backend.Modules.Crm.Customers;
+using Backend.Modules.Crm.Tags;
 using Backend.Modules.GenerationJob;
 using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaAsset;
@@ -73,6 +76,26 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<PageConversationModel> PageConversations => Set<PageConversationModel>();
     public DbSet<PageMessageModel> PageMessages => Set<PageMessageModel>();
     public DbSet<MessageActionLogModel> MessageActionLogs => Set<MessageActionLogModel>();
+    public DbSet<CrmTagModel> CrmTags => Set<CrmTagModel>();
+    public DbSet<CrmTagLinkModel> CrmTagLinks => Set<CrmTagLinkModel>();
+    public DbSet<CrmAutoAssignSettingsModel> CrmAutoAssignSettings => Set<CrmAutoAssignSettingsModel>();
+    public DbSet<CrmCustomerModel> CrmCustomers => Set<CrmCustomerModel>();
+    public DbSet<CrmCustomerIdentityModel> CrmCustomerIdentities => Set<CrmCustomerIdentityModel>();
+    public DbSet<CrmCustomerNoteModel> CrmCustomerNotes => Set<CrmCustomerNoteModel>();
+    public DbSet<CrmCustomerReminderModel> CrmCustomerReminders => Set<CrmCustomerReminderModel>();
+    public DbSet<CrmCustomerTagLinkModel> CrmCustomerTagLinks => Set<CrmCustomerTagLinkModel>();
+    public DbSet<CrmCustomerPhoneSuggestionModel> CrmCustomerPhoneSuggestions
+        => Set<CrmCustomerPhoneSuggestionModel>();
+    public DbSet<CrmCustomerActionLogModel> CrmCustomerActionLogs => Set<CrmCustomerActionLogModel>();
+    public DbSet<CrmCustomerMergeRecordModel> CrmCustomerMergeRecords => Set<CrmCustomerMergeRecordModel>();
+    public DbSet<Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel> CrmOpportunityStages
+        => Set<Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel>();
+    public DbSet<Backend.Modules.Crm.Opportunities.CrmOpportunityModel> CrmOpportunities
+        => Set<Backend.Modules.Crm.Opportunities.CrmOpportunityModel>();
+    public DbSet<Backend.Modules.Crm.ScheduledMessages.CrmScheduledMessageModel> CrmScheduledMessages
+        => Set<Backend.Modules.Crm.ScheduledMessages.CrmScheduledMessageModel>();
+    public DbSet<Backend.Modules.Crm.Opportunities.CrmOpportunityWatcherModel> CrmOpportunityWatchers
+        => Set<Backend.Modules.Crm.Opportunities.CrmOpportunityWatcherModel>();
     public DbSet<CrawlSourceModel> CrawlSources => Set<CrawlSourceModel>();
     public DbSet<CrawlRunModel> CrawlRuns => Set<CrawlRunModel>();
     public DbSet<CrawledArticleModel> CrawledArticles => Set<CrawledArticleModel>();
@@ -449,6 +472,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.AuthorUsername).HasMaxLength(200);
             e.Property(x => x.PermalinkUrl).HasMaxLength(1000);
             e.Property(x => x.AssignedTo).HasMaxLength(200);
+            e.HasIndex(x => x.AssignedUserId);
+            e.HasIndex(x => x.LastReadAtUtc);
             e.Property(x => x.Message).HasColumnType("TEXT");
             e.Property(x => x.InternalNote).HasColumnType("TEXT");
         });
@@ -491,6 +516,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasIndex(x => new { x.SocialChannelId, x.ParticipantExternalId });
             e.HasIndex(x => x.InboxStatus);
             e.HasIndex(x => x.LastMessageAt);
+            e.HasIndex(x => x.LastReadAtUtc);
             e.HasIndex(x => x.IsDeleted);
             e.Property(x => x.ExternalConversationId).HasMaxLength(300);
             e.Property(x => x.ParticipantExternalId).HasMaxLength(200);
@@ -498,6 +524,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.ParticipantAvatarUrl).HasMaxLength(1000);
             e.Property(x => x.Snippet).HasColumnType("TEXT");
             e.Property(x => x.AssignedTo).HasMaxLength(200);
+            e.HasIndex(x => x.AssignedUserId);
             e.Property(x => x.InternalNote).HasColumnType("TEXT");
         });
 
@@ -547,6 +574,254 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.IncludeKeywords).HasColumnType("TEXT");
             e.Property(x => x.ExcludeKeywords).HasColumnType("TEXT");
             e.Property(x => x.DefaultChannelIds).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<CrmTagModel>(e =>
+        {
+            e.ToTable("CrmTags");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Name);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.Property(x => x.Color).HasMaxLength(16);
+        });
+
+        modelBuilder.Entity<CrmTagLinkModel>(e =>
+        {
+            e.ToTable("CrmTagLinks");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrmTagId);
+            e.HasIndex(x => new { x.TargetType, x.TargetId });
+            e.HasIndex(x => new { x.CrmTagId, x.TargetType, x.TargetId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0");
+            e.HasIndex(x => x.IsDeleted);
+        });
+
+        modelBuilder.Entity<CrmAutoAssignSettingsModel>(e =>
+        {
+            e.ToTable("CrmAutoAssignSettings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.IsEnabled).HasDefaultValue(false);
+            e.Property(x => x.AssigneeUserIdsJson).HasColumnType("TEXT");
+            e.HasData(new CrmAutoAssignSettingsModel
+            {
+                Id = CrmAutoAssignSettingsModel.SingletonId,
+                IsEnabled = false,
+                AssigneeUserIdsJson = "[]",
+                NextIndex = 0,
+                CreatedAt = new DateTime(2026, 10, 7, 0, 0, 0, DateTimeKind.Utc)
+            });
+        });
+
+        modelBuilder.Entity<CrmCustomerModel>(e =>
+        {
+            e.ToTable("CrmCustomers");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => x.PhoneE164);
+            e.HasIndex(x => x.DisplayName);
+            e.Property(x => x.DisplayName).HasMaxLength(200);
+            e.Property(x => x.PhoneE164).HasMaxLength(20);
+        });
+
+        modelBuilder.Entity<CrmCustomerIdentityModel>(e =>
+        {
+            e.ToTable("CrmCustomerIdentities");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrmCustomerId);
+            e.HasIndex(x => x.SocialChannelId);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => new { x.Platform, x.SocialChannelId, x.ExternalId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0");
+            e.Property(x => x.ExternalId).HasMaxLength(128);
+            e.Property(x => x.DisplayName).HasMaxLength(200);
+            e.Property(x => x.AvatarUrl).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<CrmCustomerNoteModel>(e =>
+        {
+            e.ToTable("CrmCustomerNotes");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrmCustomerId);
+            e.HasIndex(x => x.CrmOpportunityId);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.Body).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<CrmCustomerReminderModel>(e =>
+        {
+            e.ToTable("CrmCustomerReminders");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrmCustomerId);
+            e.HasIndex(x => x.AssigneeUserId);
+            e.HasIndex(x => x.CrmOpportunityId);
+            e.HasIndex(x => x.DueAtUtc);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => x.NotifiedAtUtc);
+            e.Property(x => x.Title).HasMaxLength(300);
+        });
+
+        modelBuilder.Entity<CrmCustomerTagLinkModel>(e =>
+        {
+            e.ToTable("CrmCustomerTagLinks");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrmCustomerId);
+            e.HasIndex(x => x.CrmTagId);
+            e.HasIndex(x => new { x.CrmCustomerId, x.CrmTagId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0");
+            e.HasIndex(x => x.IsDeleted);
+        });
+
+        modelBuilder.Entity<CrmCustomerPhoneSuggestionModel>(e =>
+        {
+            e.ToTable("CrmCustomerPhoneSuggestions");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrmCustomerId);
+            e.HasIndex(x => x.PhoneE164);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.PhoneE164).HasMaxLength(20);
+            e.Property(x => x.RawMatched).HasMaxLength(40);
+        });
+
+        modelBuilder.Entity<CrmCustomerActionLogModel>(e =>
+        {
+            e.ToTable("CrmCustomerActionLogs");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CrmCustomerId);
+            e.HasIndex(x => x.ActionType);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.ActionType).HasMaxLength(64);
+            e.Property(x => x.ActorUserName).HasMaxLength(200);
+            e.Property(x => x.PayloadJson).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<CrmCustomerMergeRecordModel>(e =>
+        {
+            e.ToTable("CrmCustomerMergeRecords");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.KeptCustomerId);
+            e.HasIndex(x => x.MergedCustomerId);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.SnapshotJson).HasColumnType("TEXT");
+        });
+
+        modelBuilder.Entity<Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel>(e =>
+        {
+            e.ToTable("CrmOpportunityStages");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => x.SortOrder);
+            e.Property(x => x.Name).HasMaxLength(120);
+            e.Property(x => x.Color).HasMaxLength(32);
+            e.HasData(
+                new Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel
+                {
+                    Id = Backend.Modules.Crm.Opportunities.CrmOpportunityStageIds.Moi,
+                    Name = "Mới",
+                    Color = "#3B82F6",
+                    SortOrder = 1,
+                    Kind = Backend.Modules.Crm.Opportunities.CrmOpportunityStageKind.Open,
+                    CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, DateTimeKind.Utc),
+                    CreatedBy = "seed"
+                },
+                new Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel
+                {
+                    Id = Backend.Modules.Crm.Opportunities.CrmOpportunityStageIds.DuDieuKien,
+                    Name = "Đủ điều kiện",
+                    Color = "#8B5CF6",
+                    SortOrder = 2,
+                    Kind = Backend.Modules.Crm.Opportunities.CrmOpportunityStageKind.Open,
+                    CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, DateTimeKind.Utc),
+                    CreatedBy = "seed"
+                },
+                new Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel
+                {
+                    Id = Backend.Modules.Crm.Opportunities.CrmOpportunityStageIds.BamDuoi,
+                    Name = "Bám đuổi",
+                    Color = "#F59E0B",
+                    SortOrder = 3,
+                    Kind = Backend.Modules.Crm.Opportunities.CrmOpportunityStageKind.Open,
+                    CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, DateTimeKind.Utc),
+                    CreatedBy = "seed"
+                },
+                new Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel
+                {
+                    Id = Backend.Modules.Crm.Opportunities.CrmOpportunityStageIds.DamPhanChot,
+                    Name = "Đàm phán chốt",
+                    Color = "#10B981",
+                    SortOrder = 4,
+                    Kind = Backend.Modules.Crm.Opportunities.CrmOpportunityStageKind.Open,
+                    CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, DateTimeKind.Utc),
+                    CreatedBy = "seed"
+                },
+                new Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel
+                {
+                    Id = Backend.Modules.Crm.Opportunities.CrmOpportunityStageIds.DaMua,
+                    Name = "Đã mua",
+                    Color = "#059669",
+                    SortOrder = 5,
+                    Kind = Backend.Modules.Crm.Opportunities.CrmOpportunityStageKind.Won,
+                    CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, DateTimeKind.Utc),
+                    CreatedBy = "seed"
+                },
+                new Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel
+                {
+                    Id = Backend.Modules.Crm.Opportunities.CrmOpportunityStageIds.ThatBai,
+                    Name = "Thất bại",
+                    Color = "#EF4444",
+                    SortOrder = 6,
+                    Kind = Backend.Modules.Crm.Opportunities.CrmOpportunityStageKind.Lost,
+                    CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, DateTimeKind.Utc),
+                    CreatedBy = "seed"
+                });
+        });
+
+        modelBuilder.Entity<Backend.Modules.Crm.Opportunities.CrmOpportunityModel>(e =>
+        {
+            e.ToTable("CrmOpportunities");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.StageId, x.IsDeleted });
+            e.HasIndex(x => x.AssigneeUserId);
+            e.HasIndex(x => x.CrmCustomerId);
+            e.HasIndex(x => x.IsDeleted);
+            e.HasIndex(x => x.LastActivityAtUtc);
+            e.HasIndex(x => x.PageConversationId)
+                .IsUnique()
+                .HasFilter("IsDeleted = 0 AND IsArchived = 0 AND Status = 1 AND PageConversationId IS NOT NULL");
+            e.HasIndex(x => x.SocialCommentId)
+                .IsUnique()
+                .HasFilter("IsDeleted = 0 AND IsArchived = 0 AND Status = 1 AND SocialCommentId IS NOT NULL");
+            e.Property(x => x.Title).HasMaxLength(300);
+            e.Property(x => x.AssignedTo).HasMaxLength(200);
+            e.Property(x => x.LostReason).HasMaxLength(500);
+            e.Property(x => x.ExpectedValue).HasPrecision(18, 2);
+        });
+
+        modelBuilder.Entity<Backend.Modules.Crm.ScheduledMessages.CrmScheduledMessageModel>(e =>
+        {
+            e.ToTable("CrmScheduledMessages");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.PageConversationId, x.Status });
+            e.HasIndex(x => new { x.Status, x.ScheduledAtUtc });
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.Text).HasMaxLength(2000);
+            e.Property(x => x.Error).HasMaxLength(1000);
+            e.Property(x => x.SentMessageId).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<Backend.Modules.Crm.Opportunities.CrmOpportunityWatcherModel>(e =>
+        {
+            e.ToTable("CrmOpportunityWatchers");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.OpportunityId);
+            e.HasIndex(x => x.UserId);
+            e.HasIndex(x => new { x.OpportunityId, x.UserId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0");
+            e.HasIndex(x => x.IsDeleted);
         });
 
         modelBuilder.Entity<ContentCrawlPipelineStateModel>(e =>

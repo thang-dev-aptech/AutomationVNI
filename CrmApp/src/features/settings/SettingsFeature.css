@@ -1,0 +1,54 @@
+.crm-settings-grid {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 24px;
+}
+
+.crm-settings-menu {
+  background: var(--crm-surface);
+  border-radius: var(--crm-radius-lg);
+  border: 1px solid var(--crm-border);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.crm-settings-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--crm-radius-md);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--crm-text-muted);
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--crm-transition-fast);
+}
+
+.crm-settings-tab:hover {
+  background: var(--crm-surface-subtle);
+  color: var(--crm-text);
+}
+
+.crm-settings-tab.active {
+  background: var(--crm-primary-light);
+  color: var(--crm-primary);
+}
+
+.crm-settings-card {
+  background: var(--crm-surface);
+  border-radius: var(--crm-radius-lg);
+  border: 1px solid var(--crm-border);
+  padding: 24px;
+}
+
+@media (max-width: 768px) {
+  .crm-settings-grid {
+    grid-template-columns: 1fr;
+  }
+}

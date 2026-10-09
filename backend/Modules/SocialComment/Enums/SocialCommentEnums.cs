@@ -19,7 +19,8 @@ public enum CommentActionType
     IgnorePending = 6,
     Assign = 7,
     SetStatus = 8,
-    AddNote = 9
+    AddNote = 9,
+    MarkRead = 10
 }
 
 public enum WebhookEventStatus

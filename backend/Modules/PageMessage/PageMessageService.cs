@@ -1,7 +1,10 @@
 using System.Text.Json;
 using Backend.Data;
+using Backend.Modules.Crm.Assignment;
+using Backend.Modules.Crm.Customers;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
+using Backend.Modules.Users;
 using Backend.Shared;
 using Backend.Shared.PageMessage;
 using Backend.Shared.Repositories;
@@ -15,6 +18,9 @@ public class PageMessageService(
     AppDbContext db,
     FacebookPageMessagingProvider provider,
     IUserContext userContext,
+    UsersService usersService,
+    CrmAutoAssignService autoAssignService,
+    CrmCustomerService customerService,
     IOptions<SocialPublishOptions> publishOptions,
     ILogger<PageMessageService> logger)
 {
@@ -30,7 +36,14 @@ public class PageMessageService(
         if (request.InboxStatus.HasValue)
             query = query.Where(x => x.InboxStatus == request.InboxStatus.Value);
         if (request.UnreadOnly == true)
-            query = query.Where(x => x.UnreadCount > 0);
+        {
+            query = query.Where(x => db.PageMessages.Any(m =>
+                !m.IsDeleted
+                && m.PageConversationId == x.Id
+                && !m.IsFromPage
+                && m.SentAt != null
+                && (x.LastReadAtUtc == null || m.SentAt > x.LastReadAtUtc)));
+        }
         if (request.OpenWindowOnly == true)
         {
             var cutoff = DateTime.UtcNow.Subtract(StandardReplyWindow);
@@ -77,7 +90,12 @@ public class PageMessageService(
             Total = await query.CountAsync(ct),
             NewCount = await query.CountAsync(x => x.InboxStatus == MessageInboxStatus.New, ct),
             InProgress = await query.CountAsync(x => x.InboxStatus == MessageInboxStatus.InProgress, ct),
-            Unread = await query.CountAsync(x => x.UnreadCount > 0, ct),
+            Unread = await query.CountAsync(x => db.PageMessages.Any(m =>
+                !m.IsDeleted
+                && m.PageConversationId == x.Id
+                && !m.IsFromPage
+                && m.SentAt != null
+                && (x.LastReadAtUtc == null || m.SentAt > x.LastReadAtUtc)), ct),
             ReplyWindowOpen = await query.CountAsync(x => x.LastCustomerMessageAt >= cutoff, ct)
         };
     }
@@ -98,6 +116,10 @@ public class PageMessageService(
             .ToListAsync(ct);
 
         var result = ToResponse(conversation, channelName);
+        result.UnreadCount = messages.Count(m =>
+            !m.IsFromPage
+            && m.SentAt.HasValue
+            && (conversation.LastReadAtUtc is null || m.SentAt > conversation.LastReadAtUtc));
         result.Messages = messages.Select(ToMessageResponse).ToList();
         return result;
     }
@@ -189,8 +211,10 @@ public class PageMessageService(
 
         if (!IsReplyWindowOpen(conversation))
         {
-            throw new InvalidOperationException(
-                "Cửa sổ phản hồi 24 giờ đã đóng. MVP không tự dùng message tag để tránh vi phạm chính sách Meta.");
+            // CRM t1: không HUMAN_AGENT — khoá gửi ngoài 24h, không gọi Graph.
+            throw new ReplyWindowClosedException(
+                "Cửa sổ gửi tin 24 giờ đã đóng (kể từ tin cuối của khách). " +
+                "Không dùng thẻ HUMAN_AGENT — hãy chờ khách nhắn lại hoặc dùng Private Reply từ bình luận.");
         }
 
         var sendResult = await provider.SendTextAsync(
@@ -229,6 +253,7 @@ public class PageMessageService(
         conversation.LastMessageAt = DateTime.UtcNow;
         conversation.LastPageMessageAt = DateTime.UtcNow;
         conversation.InboxStatus = MessageInboxStatus.Replied;
+        conversation.LastReadAtUtc = DateTime.UtcNow;
         conversation.UnreadCount = 0;
         conversation.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
@@ -250,17 +275,37 @@ public class PageMessageService(
 
     public async Task<PageConversationResponse> AssignAsync(
         Guid id,
+        Guid? assignedUserId,
         string? assignedTo,
         CancellationToken ct)
     {
         var conversation = await GetConversationOrThrow(id, ct);
-        conversation.AssignedTo = string.IsNullOrWhiteSpace(assignedTo) ? null : assignedTo.Trim();
+        await ApplyAssigneeAsync(conversation, assignedUserId, assignedTo, ct);
         if (conversation.InboxStatus == MessageInboxStatus.New)
             conversation.InboxStatus = MessageInboxStatus.InProgress;
         conversation.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         await AddActionLogAsync(id, MessageActionType.Assign, conversation.AssignedTo, true, null, null, ct);
         return (await GetAsync(id, ct))!;
+    }
+
+    private async Task ApplyAssigneeAsync(
+        PageConversationModel conversation,
+        Guid? assignedUserId,
+        string? assignedTo,
+        CancellationToken ct)
+    {
+        if (assignedUserId.HasValue)
+        {
+            var user = await usersService.FindActiveByIdAsync(assignedUserId.Value, ct)
+                ?? throw new InvalidOperationException("Người dùng không tồn tại hoặc đã bị khoá");
+            conversation.AssignedUserId = user.Id;
+            conversation.AssignedTo = UsersService.ResolveDisplayName(user);
+            return;
+        }
+
+        conversation.AssignedUserId = null;
+        conversation.AssignedTo = string.IsNullOrWhiteSpace(assignedTo) ? null : assignedTo.Trim();
     }
 
     public async Task<PageConversationResponse> NoteAsync(Guid id, string? note, CancellationToken ct)
@@ -320,6 +365,8 @@ public class PageMessageService(
                     };
                     db.PageConversations.Add(conversation);
                     await db.SaveChangesAsync(ct);
+                    await autoAssignService.TryAssignNewConversationAsync(conversation.Id, ct);
+                    await LinkConversationCustomerAsync(channel, conversation, ct);
                 }
 
                 if (evt.TryGetProperty("message", out var message))
@@ -358,7 +405,8 @@ public class PageMessageService(
                     {
                         if (!conversation.LastCustomerMessageAt.HasValue || timestamp > conversation.LastCustomerMessageAt.Value)
                             conversation.LastCustomerMessageAt = timestamp;
-                        conversation.UnreadCount++;
+                        if (!conversation.LastReadAtUtc.HasValue || timestamp > conversation.LastReadAtUtc.Value)
+                            conversation.UnreadCount++;
                         conversation.InboxStatus = MessageInboxStatus.New;
                     }
                     conversation.UpdatedAt = DateTime.UtcNow;
@@ -433,7 +481,8 @@ public class PageMessageService(
             && (x.ExternalConversationId == dto.ExternalConversationId
                 || (!string.IsNullOrWhiteSpace(dto.ParticipantExternalId)
                     && x.ParticipantExternalId == dto.ParticipantExternalId)), ct);
-        if (conversation is null)
+        var isNew = conversation is null;
+        if (isNew)
         {
             conversation = new PageConversationModel
             {
@@ -447,7 +496,7 @@ public class PageMessageService(
             db.PageConversations.Add(conversation);
         }
 
-        conversation.ExternalConversationId = dto.ExternalConversationId;
+        conversation!.ExternalConversationId = dto.ExternalConversationId;
         if (!string.IsNullOrWhiteSpace(dto.ParticipantExternalId))
             conversation.ParticipantExternalId = dto.ParticipantExternalId;
         if (!string.IsNullOrWhiteSpace(dto.ParticipantName))
@@ -456,14 +505,37 @@ public class PageMessageService(
             conversation.ParticipantAvatarUrl = dto.ParticipantAvatarUrl;
         conversation.Snippet = dto.Snippet ?? conversation.Snippet;
         conversation.LastMessageAt = dto.UpdatedAt ?? conversation.LastMessageAt;
-        conversation.UnreadCount = dto.UnreadCount;
+        // Không ghi đè LastReadAtUtc / UnreadCount từ Graph unread_count (ui02-read-state).
         conversation.MessageCount = Math.Max(dto.MessageCount, conversation.MessageCount);
         conversation.LastSyncedAt = DateTime.UtcNow;
         conversation.UpdatedAt = DateTime.UtcNow;
-        if (dto.UnreadCount > 0 && conversation.InboxStatus == MessageInboxStatus.Replied)
-            conversation.InboxStatus = MessageInboxStatus.New;
         await db.SaveChangesAsync(ct);
+
+        if (isNew)
+        {
+            await autoAssignService.TryAssignNewConversationAsync(conversation.Id, ct);
+            await LinkConversationCustomerAsync(channel, conversation, ct);
+        }
+
         return conversation;
+    }
+
+    private async Task<Guid> LinkConversationCustomerAsync(
+        SocialChannelModel channel,
+        PageConversationModel conversation,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(conversation.ParticipantExternalId))
+            return Guid.Empty;
+
+        return await customerService.EnsureLinkedAsync(
+            channel.Platform,
+            channel.Id,
+            conversation.ParticipantExternalId,
+            conversation.ParticipantName,
+            CrmIdentitySource.Message,
+            conversation.ParticipantAvatarUrl,
+            ct);
     }
 
     private async Task<bool> UpsertMessageAsync(
@@ -499,6 +571,17 @@ public class PageMessageService(
         message.SentAt = dto.SentAt;
         message.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+
+        if (isNew && !message.IsFromPage && !message.IsEcho)
+        {
+            var customerId = await LinkConversationCustomerAsync(channel, conversation, ct);
+            if (customerId != Guid.Empty)
+            {
+                await customerService.SuggestPhonesFromTextAsync(
+                    customerId, dto.Text, sourceMessageId: message.Id, ct: ct);
+            }
+        }
+
         return isNew;
     }
 
@@ -522,6 +605,18 @@ public class PageMessageService(
             .ToList();
         conversation.LastCustomerMessageAt = customerDates.Count > 0 ? customerDates.Max() : null;
         conversation.LastPageMessageAt = pageDates.Count > 0 ? pageDates.Max() : null;
+
+        // Sync: mở lại Replied → New khi có tin khách thật sau lần Page trả lời cuối.
+        // Dựa vào tin trong DB, không dùng Graph unread_count. Không đụng Ignored/InProgress.
+        // Không đổi LastReadAtUtc (ui02-read-state).
+        if (conversation.InboxStatus == MessageInboxStatus.Replied
+            && conversation.LastCustomerMessageAt.HasValue
+            && (conversation.LastPageMessageAt is null
+                || conversation.LastCustomerMessageAt > conversation.LastPageMessageAt))
+        {
+            conversation.InboxStatus = MessageInboxStatus.New;
+        }
+
         var last = messages.Last();
         conversation.Snippet = last.Text ?? (last.AttachmentsJson is null ? "Tin nhắn" : "Tệp đính kèm");
         conversation.LastSyncedAt = DateTime.UtcNow;
@@ -584,9 +679,11 @@ public class PageMessageService(
             LastPageMessageAt = entity.LastPageMessageAt,
             ReplyWindowClosesAt = closesAt,
             IsReplyWindowOpen = closesAt > DateTime.UtcNow,
+            CanReply = closesAt > DateTime.UtcNow,
             UnreadCount = entity.UnreadCount,
             MessageCount = entity.MessageCount,
             InboxStatus = entity.InboxStatus,
+            AssignedUserId = entity.AssignedUserId,
             AssignedTo = entity.AssignedTo,
             InternalNote = entity.InternalNote,
             CreatedAt = entity.CreatedAt,

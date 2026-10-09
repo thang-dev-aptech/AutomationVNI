@@ -1,0 +1,129 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+  /* Surface & Background */
+  --crm-bg: #f8fafc;
+  --crm-surface: #ffffff;
+  --crm-surface-subtle: #f1f5f9;
+  --crm-surface-hover: #e2e8f0;
+  --crm-border: #e2e8f0;
+  --crm-border-strong: #cbd5e1;
+
+  /* Typography */
+  --crm-text: #0f172a;
+  --crm-text-muted: #64748b;
+  --crm-text-subtle: #94a3b8;
+  --crm-text-inverse: #ffffff;
+
+  /* Brand Theme: Indigo CRM */
+  --crm-primary: #4f46e5;
+  --crm-primary-hover: #4338ca;
+  --crm-primary-light: #eef2ff;
+  --crm-primary-text: #3730a3;
+  --crm-hero-gradient: linear-gradient(135deg, #4338ca 0%, #6d28d9 100%);
+  --crm-hero-text: #ffffff;
+
+  /* Secondary / Accent */
+  --crm-accent: #0ea5e9;
+  --crm-accent-light: #f0f9ff;
+  --crm-accent-text: #0369a1;
+
+  /* Status Colors */
+  --crm-success: #10b981;
+  --crm-success-light: #ecfdf5;
+  --crm-success-text: #047857;
+
+  --crm-warning: #f59e0b;
+  --crm-warning-light: #fef3c7;
+  --crm-warning-text: #b45309;
+
+  --crm-danger: #ef4444;
+  --crm-danger-light: #fee2e2;
+  --crm-danger-text: #b91c1c;
+
+  --crm-info: #3b82f6;
+  --crm-info-light: #eff6ff;
+  --crm-info-text: #1d4ed8;
+
+  /* Navigation Sidebar (Dark Luxury Slate) */
+  /* Sidebar đồng bộ với ClientApp (MainLayout.css): gradient xanh thương hiệu -> slate 900 */
+  --crm-sidebar-bg: #0f172a;
+  --crm-sidebar-brand: #2d6cb6;
+  --crm-sidebar-accent: #f08a22;
+  --crm-sidebar-gradient: linear-gradient(90deg, #2d6cb6 0%, #f08a22 50%, #33a457 100%);
+  --crm-sidebar-surface: rgba(255, 255, 255, 0.06);
+  --crm-sidebar-text: #94a3b8;
+  --crm-sidebar-text-active: #f8fafc;
+  --crm-sidebar-border: rgba(255, 255, 255, 0.16);
+  --crm-sidebar-width: 250px;
+  --crm-sidebar-collapsed-width: 72px;
+
+  /* Header */
+  --crm-header-height: 64px;
+
+  /* Radii */
+  --crm-radius-xs: 4px;
+  --crm-radius-sm: 8px;
+  --crm-radius-md: 12px;
+  --crm-radius-lg: 16px;
+  --crm-radius-full: 9999px;
+
+  /* Shadows */
+  --crm-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --crm-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.07);
+  --crm-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.08);
+
+  /* Transitions */
+  --crm-transition-fast: 0.15s ease;
+  --crm-transition-base: 0.25s ease;
+
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.5;
+  color: var(--crm-text);
+  background-color: var(--crm-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100%;
+  background-color: var(--crm-bg);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input, select, textarea {
+  font-family: inherit;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

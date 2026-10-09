@@ -1,0 +1,103 @@
+.crm-login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 20%, #1e1b4b 0%, #090d16 100%);
+  padding: 16px;
+}
+
+.crm-login-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--crm-surface);
+  border-radius: var(--crm-radius-lg);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+  padding: 36px 32px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.crm-login-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.crm-login-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 800;
+  margin-bottom: 16px;
+  box-shadow: 0 8px 16px rgba(79, 70, 229, 0.35);
+}
+
+.crm-login-title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--crm-text);
+  letter-spacing: -0.02em;
+}
+
+.crm-login-subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--crm-text-muted);
+}
+
+.crm-form-group {
+  margin-bottom: 20px;
+}
+
+.crm-form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--crm-text);
+  margin-bottom: 6px;
+}
+
+.crm-form-input {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid var(--crm-border);
+  border-radius: var(--crm-radius-md);
+  outline: none;
+  background-color: var(--crm-surface);
+  color: var(--crm-text);
+  transition: border-color var(--crm-transition-fast), box-shadow var(--crm-transition-fast);
+}
+
+.crm-form-input:focus {
+  border-color: var(--crm-primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.crm-alert-error {
+  padding: 12px 14px;
+  border-radius: var(--crm-radius-md);
+  background-color: var(--crm-danger-light);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: var(--crm-danger-text);
+  font-size: 13px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 375px) {
+  .crm-login-card {
+    padding: 24px 18px;
+  }
+  .crm-login-title {
+    font-size: 19px;
+  }
+}

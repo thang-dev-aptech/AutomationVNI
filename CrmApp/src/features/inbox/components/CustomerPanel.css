@@ -1,0 +1,596 @@
+/* CustomerPanel.css — Hồ sơ khách cột phải trong CrmApp */
+
+.crm-customer-panel-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  background-color: var(--crm-surface);
+  color: var(--crm-text);
+  font-family: inherit;
+}
+
+/* Loading skeleton */
+.crm-customer-skeleton-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.crm-customer-skeleton-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.crm-customer-skeleton-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--crm-surface-hover);
+  animation: crm-skeleton-pulse 1.5s infinite ease-in-out;
+}
+
+.crm-customer-skeleton-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.crm-customer-skeleton-line {
+  height: 12px;
+  border-radius: var(--crm-radius-xs);
+  background: var(--crm-surface-hover);
+  animation: crm-skeleton-pulse 1.5s infinite ease-in-out;
+}
+
+.crm-customer-skeleton-line--title {
+  width: 60%;
+  height: 16px;
+}
+
+.crm-customer-skeleton-line--sub {
+  width: 40%;
+}
+
+.crm-customer-skeleton-card {
+  height: 80px;
+  border-radius: var(--crm-radius-md);
+  background: var(--crm-surface-hover);
+  animation: crm-skeleton-pulse 1.5s infinite ease-in-out;
+}
+
+@keyframes crm-skeleton-pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+/* Error banner */
+.crm-customer-error-banner {
+  padding: 14px;
+  border-radius: var(--crm-radius-md);
+  background: var(--crm-danger-light);
+  border: 1px solid var(--crm-danger);
+  color: var(--crm-danger-text);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.crm-customer-retry-btn {
+  align-self: flex-start;
+  background: var(--crm-danger);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--crm-radius-sm);
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--crm-transition-fast);
+}
+
+.crm-customer-retry-btn:hover {
+  opacity: 0.9;
+}
+
+/* Empty banner */
+.crm-customer-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--crm-text-muted);
+  font-size: 13px;
+}
+
+/* Các mục full chiều rộng, không card: phân cách bằng đường kẻ mảnh */
+.crm-customer-section {
+  background: var(--crm-surface);
+  border: none;
+  border-bottom: 1px solid var(--crm-border);
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.crm-customer-section-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--crm-surface-subtle);
+  border: none;
+  border-bottom: 1px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--crm-text);
+  transition: background var(--crm-transition-fast);
+}
+
+.crm-customer-section-header:hover {
+  background: var(--crm-surface-hover);
+}
+
+.crm-customer-section--expanded .crm-customer-section-header {
+  border-bottom-color: var(--crm-border);
+}
+
+.crm-customer-section-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crm-customer-section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--crm-text);
+}
+
+.crm-customer-section-count {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: var(--crm-radius-xs);
+  background: var(--crm-border);
+  color: var(--crm-text-muted);
+  font-weight: 600;
+}
+
+.crm-customer-section-chevron {
+  font-size: 12px;
+  color: var(--crm-text-muted);
+  transition: transform var(--crm-transition-fast);
+}
+
+.crm-customer-section-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 13px;
+}
+
+/* 1. Thông tin khách — đầu panel có nền gradient (biến --crm-hero-gradient trong index.css).
+   Chữ trắng trên gradient #4338ca→#6d28d9: tương phản ≥ 6:1 (đạt ≥ 4.5:1). */
+.crm-customer-profile-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -14px -14px 0;
+  padding: 16px 14px;
+  background: var(--crm-hero-gradient, linear-gradient(135deg, #4338ca 0%, #6d28d9 100%));
+  color: var(--crm-hero-text, #ffffff);
+}
+
+.crm-customer-profile-hero .crm-customer-name {
+  color: var(--crm-hero-text, #ffffff);
+}
+
+.crm-customer-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--crm-primary-light);
+  color: var(--crm-primary-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  flex-shrink: 0;
+  border: 1px solid var(--crm-border);
+}
+
+.crm-customer-hero-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.crm-customer-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--crm-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crm-customer-unlinked-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--crm-radius-xs);
+  background: var(--crm-warning-light);
+  color: var(--crm-warning-text);
+  font-weight: 600;
+  width: fit-content;
+}
+
+.crm-customer-open-profile-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--crm-primary);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--crm-radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background var(--crm-transition-fast);
+  margin-top: 4px;
+}
+
+.crm-customer-open-profile-btn:hover {
+  background: var(--crm-primary-hover);
+}
+
+/* Nút trên nền gradient: nền trắng, chữ đậm để giữ tương phản */
+.crm-customer-profile-hero .crm-customer-open-profile-btn {
+  background: #ffffff;
+  color: var(--crm-primary-text);
+}
+
+.crm-customer-profile-hero .crm-customer-open-profile-btn:hover {
+  background: var(--crm-primary-light);
+}
+
+.crm-customer-profile-hero .crm-customer-avatar {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.crm-customer-kv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.crm-customer-kv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.crm-customer-kv-label {
+  color: var(--crm-text-muted);
+  font-size: 12px;
+  min-width: 70px;
+}
+
+.crm-customer-kv-value {
+  color: var(--crm-text);
+  font-weight: 500;
+  text-align: right;
+  word-break: break-all;
+}
+
+.crm-customer-tags-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.crm-customer-tag-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--crm-primary-light);
+  color: var(--crm-primary-text);
+  font-weight: 600;
+}
+
+/* 2. Kênh liên lạc */
+.crm-customer-identities-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.crm-customer-identity-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--crm-border);
+}
+
+.crm-customer-identity-card:last-child {
+  border-bottom: none;
+}
+
+.crm-customer-identity-platform-icon {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.crm-customer-identity-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.crm-customer-identity-channel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--crm-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crm-customer-identity-name {
+  font-size: 11px;
+  color: var(--crm-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 3. Thống kê tương tác */
+.crm-customer-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.crm-customer-stat-box {
+  padding: 10px;
+  background: var(--crm-surface-subtle);
+  border-radius: var(--crm-radius-sm);
+  text-align: center;
+}
+
+.crm-customer-stat-num {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--crm-primary);
+  display: block;
+}
+
+.crm-customer-stat-lbl {
+  font-size: 11px;
+  color: var(--crm-text-muted);
+  margin-top: 2px;
+  display: block;
+}
+
+.crm-customer-window-block {
+  padding: 10px;
+  border-radius: var(--crm-radius-sm);
+  background: var(--crm-surface-subtle);
+  border: 1px solid var(--crm-border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.crm-customer-window-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.crm-customer-window-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--crm-radius-xs);
+  font-weight: 600;
+}
+
+.crm-customer-window-badge--open {
+  background: var(--crm-success-light);
+  color: var(--crm-success-text);
+}
+
+.crm-customer-window-badge--closed {
+  background: var(--crm-danger-light);
+  color: var(--crm-danger-text);
+}
+
+.crm-customer-window-time {
+  font-size: 11px;
+  color: var(--crm-text-muted);
+}
+
+/* 4. Ảnh / Video */
+.crm-customer-media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.crm-customer-media-thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--crm-radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--crm-border);
+  background: var(--crm-surface-subtle);
+  cursor: pointer;
+  padding: 0;
+  transition: transform var(--crm-transition-fast), border-color var(--crm-transition-fast);
+}
+
+.crm-customer-media-thumb:hover {
+  transform: scale(1.03);
+  border-color: var(--crm-primary);
+}
+
+.crm-customer-media-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.crm-customer-media-empty,
+.crm-customer-activities-empty {
+  color: var(--crm-text-muted);
+  font-size: 12px;
+  margin: 0;
+  text-align: center;
+  padding: 12px 0;
+}
+
+/* 5. Hoạt động (Timeline) */
+.crm-customer-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+  padding-left: 12px;
+}
+
+.crm-customer-timeline::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 3px;
+  width: 2px;
+  background: var(--crm-border);
+}
+
+.crm-customer-timeline-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.crm-customer-timeline-bullet {
+  position: absolute;
+  left: -13px;
+  top: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--crm-primary);
+  border: 2px solid var(--crm-surface);
+}
+
+.crm-customer-timeline-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.crm-customer-timeline-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--crm-text);
+}
+
+.crm-customer-timeline-time {
+  font-size: 11px;
+  color: var(--crm-text-muted);
+  white-space: nowrap;
+}
+
+.crm-customer-timeline-body {
+  font-size: 12px;
+  color: var(--crm-text-muted);
+}
+
+.crm-customer-timeline-actor {
+  font-size: 11px;
+  color: var(--crm-text-subtle);
+}
+
+/* Lightbox Modal */
+.crm-customer-lightbox-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.crm-customer-lightbox-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.crm-customer-lightbox-content img {
+  max-width: 100%;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: var(--crm-radius-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.crm-customer-lightbox-close {
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #0f172a;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.crm-customer-lightbox-close:hover {
+  background: var(--crm-surface-hover);
+}

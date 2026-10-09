@@ -25,8 +25,7 @@ import PageContextListPage from '@/modules/page-contexts/pages/PageContextListPa
 import BulkCreatePage from '@/modules/bulk/pages/BulkCreatePage'
 import BulkChungChiPage from '@/modules/bulk/pages/BulkChungChiPage'
 import BatchProgressPage from '@/modules/bulk/pages/BatchProgressPage'
-import CommentsInboxPage from '@/modules/comments/pages/CommentsInboxPage'
-import PageMessagesInboxPage from '@/modules/messages/pages/PageMessagesInboxPage'
+import CrmRedirectPage from '@/app/router/CrmRedirectPage'
 import CrawlInboxPage from '@/modules/content-crawl/pages/CrawlInboxPage'
 import NewsSitePage from '@/modules/news-site/pages/NewsSitePage'
 import LoginPage from '@/modules/auth/pages/LoginPage'
@@ -90,12 +89,9 @@ export default function AppRouter() {
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.jobs} />}>
             <Route path="/jobs" element={<JobsPage />} />
           </Route>
-          <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.comments} />}>
-            <Route path="/comments" element={<CommentsInboxPage />} />
-          </Route>
-          <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.messages} />}>
-            <Route path="/messages" element={<PageMessagesInboxPage />} />
-          </Route>
+          <Route path="/conversations" element={<CrmRedirectPage />} />
+          <Route path="/messages" element={<CrmRedirectPage defaultKind="message" />} />
+          <Route path="/comments" element={<CrmRedirectPage defaultKind="comment" />} />
           <Route element={<ProtectedRoute allowedRoles={ROUTE_ROLES.crawl} />}>
             <Route path="/crawl" element={<CrawlInboxPage />} />
             <Route path="/news-site" element={<NewsSitePage />} />

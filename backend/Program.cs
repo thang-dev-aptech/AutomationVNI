@@ -156,7 +156,26 @@ builder.Services.AddHostedService<AiImageFolderBackfillService>();
 builder.Services.AddScoped<IPublishPipelineService, PublishPipelineService>();
 builder.Services.AddScoped<PublishLogRepository>();
 builder.Services.AddScoped<SocialCommentService>();
+builder.Services.AddScoped<Backend.Modules.Crm.Assignment.CrmAutoAssignService>();
 builder.Services.AddScoped<PageMessageService>();
+builder.Services.AddScoped<Backend.Modules.Users.UsersService>();
+builder.Services.AddScoped<Backend.Modules.Crm.Tags.CrmTagService>();
+builder.Services.AddScoped<Backend.Modules.Crm.Inbox.CrmInboxService>();
+builder.Services.AddScoped<Backend.Modules.Inbox.InboxSuggestService>();
+builder.Services.AddScoped<Backend.Modules.Crm.Customers.CrmCustomerService>();
+builder.Services.AddScoped<Backend.Modules.Crm.Customers.CrmCustomerCareService>();
+builder.Services.AddSingleton<Backend.Modules.Crm.Inbox.IInboxSourceRegistry, Backend.Modules.Crm.Inbox.DefaultInboxSourceRegistry>();
+builder.Services.AddScoped<Backend.Modules.Crm.Reminders.CrmReminderService>();
+builder.Services.AddScoped<Backend.Modules.Crm.Audit.CrmAuditService>();
+builder.Services.AddScoped<Backend.Modules.Crm.Opportunities.CrmOpportunityStageService>();
+builder.Services.AddScoped<Backend.Modules.Crm.Opportunities.CrmOpportunityService>();
+builder.Services.Configure<Backend.Modules.Crm.Reminders.CrmReminderWorkerOptions>(
+    builder.Configuration.GetSection("CrmReminderWorker"));
+builder.Services.AddHostedService<Backend.Modules.Crm.Reminders.CrmReminderWorker>();
+builder.Services.Configure<Backend.Modules.Crm.ScheduledMessages.CrmScheduledMessageWorkerOptions>(
+    builder.Configuration.GetSection("CrmScheduledMessageWorker"));
+builder.Services.AddScoped<Backend.Modules.Crm.ScheduledMessages.CrmScheduledMessageService>();
+builder.Services.AddHostedService<Backend.Modules.Crm.ScheduledMessages.CrmScheduledMessageWorker>();
 builder.Services.AddHttpClient<FacebookPageMessagingProvider>();
 builder.Services.AddScoped<ISocialCommentProvider, FacebookCommentProvider>();
 builder.Services.AddScoped<ISocialCommentProvider, ThreadsCommentProvider>();

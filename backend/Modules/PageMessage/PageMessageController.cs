@@ -54,6 +54,10 @@ public class PageMessageController(PageMessageService service) : ControllerBase
         {
             return Ok(ApiResponse.Ok(await service.SendAsync(id, request, ct), "Đã gửi tin nhắn"));
         }
+        catch (ReplyWindowClosedException ex)
+        {
+            return BadRequest(ApiResponse.Fail("REPLY_WINDOW_CLOSED", ex.Message));
+        }
         catch (Exception ex)
         {
             return BadRequest(ApiResponse.Fail("MESSAGE_SEND_FAILED", ex.Message));
@@ -74,7 +78,17 @@ public class PageMessageController(PageMessageService service) : ControllerBase
         Guid id,
         [FromBody] AssignMessageRequest request,
         CancellationToken ct)
-        => Ok(ApiResponse.Ok(await service.AssignAsync(id, request.AssignedTo, ct)));
+    {
+        try
+        {
+            return Ok(ApiResponse.Ok(
+                await service.AssignAsync(id, request.AssignedUserId, request.AssignedTo, ct)));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse.Fail("ASSIGN_FAILED", ex.Message));
+        }
+    }
 
     [HttpPost("{id:guid}/note")]
     [Authorize(Roles = "Admin,ContentManager,Reviewer")]

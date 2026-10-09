@@ -138,35 +138,16 @@ export const NAV_GROUPS = [
     ],
   },
   {
-    kind: 'group',
-    key: 'tuong-tac',
-    label: 'Tương tác',
+    kind: 'item',
+    external: true,
+    href: () => import.meta.env.VITE_CRM_URL || '',
+    label: 'Hội thoại',
     icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sidebar-link-icon"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sidebar-link-icon">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
     ),
-    children: [
-      {
-      to: '/comments',
-      label: 'Comments',
-      icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sidebar-link-icon">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
-      ),
-      visible: (p) => p.canViewComments,
-    },
-      {
-      to: '/messages',
-      label: 'Tin nhắn Page',
-      icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sidebar-link-icon">
-          <path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 9.8 9.8 0 0 1-4-.9L3 21l1.7-4.6A8.4 8.4 0 1 1 21 11.5z" />
-          <path d="m8 13 3-3 2 2 3-3" />
-        </svg>
-      ),
-      visible: (p) => p.canViewMessages,
-    },
-    ],
+    visible: (p) => Boolean(import.meta.env.VITE_CRM_URL && (p.canViewComments || p.canViewMessages)),
   },
   {
     kind: 'group',
@@ -351,6 +332,24 @@ export default function MainLayout() {
         <nav className="sidebar-nav">
           {visibleNav.map((entry) => {
             if (entry.kind === 'item') {
+              if (entry.external) {
+                const targetHref =
+                  typeof entry.href === 'function' ? entry.href() : (entry.href || import.meta.env.VITE_CRM_URL)
+                return (
+                  <a
+                    key={entry.label}
+                    href={targetHref}
+                    className="sidebar-link"
+                    title={isCollapsed ? entry.label : undefined}
+                    data-testid="crm-inbox-link"
+                  >
+                    {entry.icon}
+                    <span className="sidebar-link-label">{entry.label}</span>
+                  </a>
+                )
+              }
+
+              const unreadCount = entry.badge
               return (
                 <NavLink
                   key={entry.to}
@@ -360,6 +359,11 @@ export default function MainLayout() {
                 >
                   {entry.icon}
                   <span className="sidebar-link-label">{entry.label}</span>
+                  {unreadCount > 0 && (
+                    <span className="sidebar-link-badge">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
                 </NavLink>
               )
             }

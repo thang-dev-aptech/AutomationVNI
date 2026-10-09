@@ -1047,6 +1047,989 @@ namespace backend.Migrations
                     b.ToTable("CrawledArticles", (string)null);
                 });
 
+            modelBuilder.Entity("Backend.Modules.Crm.Assignment.CrmAutoAssignSettingsModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AssigneeUserIdsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
+
+                    b.Property<int>("NextIndex")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("CrmAutoAssignSettings", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("c1a7e0b2-4d5f-4a8e-9b3c-1d2e3f4a5b6c"),
+                            AssigneeUserIdsJson = "[]",
+                            CreatedAt = new DateTime(2026, 10, 7, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            IsEnabled = false,
+                            NextIndex = 0
+                        });
+                });
+
+            modelBuilder.Entity("Backend.Modules.Crm.Customers.CrmCustomerActionLogModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActionType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActorUserName")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CrmCustomerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PayloadJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActionType");
+
+                    b.HasIndex("CrmCustomerId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.ToTable("CrmCustomerActionLogs", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Crm.Customers.CrmCustomerIdentityModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AvatarUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CrmCustomerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Platform")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("SocialChannelId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CrmCustomerId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("SocialChannelId");
+
+                    b.HasIndex("Platform", "SocialChannelId", "ExternalId")
+                        .IsUnique()
+                        .HasFilter("IsDeleted = 0");
+
+                    b.ToTable("CrmCustomerIdentities", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Crm.Customers.CrmCustomerMergeRecordModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsUndone")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("KeptCustomerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("MergedCustomerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("KeptCustomerId");
+
+                    b.HasIndex("MergedCustomerId");
+
+                    b.ToTable("CrmCustomerMergeRecords", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Crm.Customers.CrmCustomerModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PhoneE164")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DisplayName");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("PhoneE164");
+
+                    b.ToTable("CrmCustomers", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Crm.Customers.CrmCustomerNoteModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CrmCustomerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CrmOpportunityId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CrmCustomerId");
+
+                    b.HasIndex("CrmOpportunityId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.ToTable("CrmCustomerNotes", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Crm.Customers.CrmCustomerPhoneSuggestionModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CrmCustomerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsDismissed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PhoneE164")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RawMatched")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("SourceCommentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("SourceMessageId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CrmCustomerId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("PhoneE164");
+
+                    b.ToTable("CrmCustomerPhoneSuggestions", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Crm.Customers.CrmCustomerReminderModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("AssigneeUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CrmCustomerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CrmOpportunityId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("DueAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsCompleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("NotifiedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssigneeUserId");
+
+                    b.HasIndex("CrmCustomerId");
+
+                    b.HasIndex("CrmOpportunityId");
+
+                    b.HasIndex("DueAtUtc");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("NotifiedAtUtc");
+
+                    b.ToTable("CrmCustomerReminders", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Crm.Customers.CrmCustomerTagLinkModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CrmCustomerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CrmTagId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CrmCustomerId");
+
+                    b.HasIndex("CrmTagId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("CrmCustomerId", "CrmTagId")
+                        .IsUnique()
+                        .HasFilter("IsDeleted = 0");
+
+                    b.ToTable("CrmCustomerTagLinks", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Crm.Opportunities.CrmOpportunityModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AssignedTo")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("AssigneeUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ClosedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CrmCustomerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("ExpectedValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastActivityAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LostReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("PageConversationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("SocialChannelId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("SocialCommentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("StageId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssigneeUserId");
+
+                    b.HasIndex("CrmCustomerId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("LastActivityAtUtc");
+
+                    b.HasIndex("PageConversationId")
+                        .IsUnique()
+                        .HasFilter("IsDeleted = 0 AND IsArchived = 0 AND Status = 1 AND PageConversationId IS NOT NULL");
+
+                    b.HasIndex("SocialCommentId")
+                        .IsUnique()
+                        .HasFilter("IsDeleted = 0 AND IsArchived = 0 AND Status = 1 AND SocialCommentId IS NOT NULL");
+
+                    b.HasIndex("StageId", "IsDeleted");
+
+                    b.ToTable("CrmOpportunities", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Color")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("SortOrder");
+
+                    b.ToTable("CrmOpportunityStages", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("11111111-1111-1111-1111-111111111101"),
+                            Color = "#3B82F6",
+                            CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CreatedBy = "seed",
+                            IsDeleted = false,
+                            Kind = 1,
+                            Name = "Mới",
+                            SortOrder = 1
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-1111-1111-1111-111111111102"),
+                            Color = "#8B5CF6",
+                            CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CreatedBy = "seed",
+                            IsDeleted = false,
+                            Kind = 1,
+                            Name = "Đủ điều kiện",
+                            SortOrder = 2
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-1111-1111-1111-111111111103"),
+                            Color = "#F59E0B",
+                            CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CreatedBy = "seed",
+                            IsDeleted = false,
+                            Kind = 1,
+                            Name = "Bám đuổi",
+                            SortOrder = 3
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-1111-1111-1111-111111111104"),
+                            Color = "#10B981",
+                            CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CreatedBy = "seed",
+                            IsDeleted = false,
+                            Kind = 1,
+                            Name = "Đàm phán chốt",
+                            SortOrder = 4
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-1111-1111-1111-111111111105"),
+                            Color = "#059669",
+                            CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CreatedBy = "seed",
+                            IsDeleted = false,
+                            Kind = 2,
+                            Name = "Đã mua",
+                            SortOrder = 5
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-1111-1111-1111-111111111106"),
+                            Color = "#EF4444",
+                            CreatedAt = new DateTime(2026, 10, 8, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CreatedBy = "seed",
+                            IsDeleted = false,
+                            Kind = 3,
+                            Name = "Thất bại",
+                            SortOrder = 6
+                        });
+                });
+
+            modelBuilder.Entity("Backend.Modules.Crm.Opportunities.CrmOpportunityWatcherModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("OpportunityId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("OpportunityId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("OpportunityId", "UserId")
+                        .IsUnique()
+                        .HasFilter("IsDeleted = 0");
+
+                    b.ToTable("CrmOpportunityWatchers", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Crm.ScheduledMessages.CrmScheduledMessageModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ClaimToken")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ClaimedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("PageConversationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ScheduledAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("SentAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SentMessageId")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("PageConversationId", "Status");
+
+                    b.HasIndex("Status", "ScheduledAtUtc");
+
+                    b.ToTable("CrmScheduledMessages", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Crm.Tags.CrmTagLinkModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CrmTagId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("TargetId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("TargetType")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CrmTagId");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("TargetType", "TargetId");
+
+                    b.HasIndex("CrmTagId", "TargetType", "TargetId")
+                        .IsUnique()
+                        .HasFilter("IsDeleted = 0");
+
+                    b.ToTable("CrmTagLinks", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Crm.Tags.CrmTagModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Color")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("Name");
+
+                    b.ToTable("CrmTags", (string)null);
+                });
+
             modelBuilder.Entity("Backend.Modules.GenerationJob.GenerationJobModel", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2247,6 +3230,9 @@ namespace backend.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("AssignedUserId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
@@ -2285,6 +3271,9 @@ namespace backend.Migrations
                     b.Property<DateTime?>("LastPageMessageAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("LastReadAtUtc")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("LastSyncedAt")
                         .HasColumnType("TEXT");
 
@@ -2321,6 +3310,8 @@ namespace backend.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AssignedUserId");
+
                     b.HasIndex("ExternalConversationId");
 
                     b.HasIndex("InboxStatus");
@@ -2328,6 +3319,8 @@ namespace backend.Migrations
                     b.HasIndex("IsDeleted");
 
                     b.HasIndex("LastMessageAt");
+
+                    b.HasIndex("LastReadAtUtc");
 
                     b.HasIndex("SocialChannelId");
 
@@ -2994,6 +3987,9 @@ namespace backend.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("AssignedUserId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("AuthorExternalId")
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
@@ -3050,6 +4046,9 @@ namespace backend.Migrations
                     b.Property<bool>("IsPending")
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("LastReadAtUtc")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("LastSyncedAt")
                         .HasColumnType("TEXT");
 
@@ -3093,9 +4092,13 @@ namespace backend.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AssignedUserId");
+
                     b.HasIndex("InboxStatus");
 
                     b.HasIndex("IsDeleted");
+
+                    b.HasIndex("LastReadAtUtc");
 
                     b.HasIndex("ParentCommentId");
 

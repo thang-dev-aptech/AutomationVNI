@@ -71,9 +71,15 @@ vi.mock('../services/campaignApi', async (importOriginal) => {
       getDetail: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
     },
   }
 })
+
+vi.mock('@/shared/utils/confirmAction', () => ({
+  confirmAction: vi.fn(() => true),
+}))
 
 const CAMP_ID = 'c0000000-0000-4000-8000-000000000001'
 
@@ -147,14 +153,40 @@ describe('campaign-ui-test (b) danh sách table + điều hướng chi tiết', 
 
     const table = await screen.findByTestId('campaign-list-table')
     const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent)
+    expect(headers[0]).toBe('Chạy')
     expect(headers).toEqual(
-      expect.arrayContaining(['Tên', 'Trạng thái', 'Page', 'Sắp tới', 'Đã đăng', 'Thất bại']),
+      expect.arrayContaining(['Chạy', 'Tên', 'Trạng thái', 'Page', 'Sắp tới', 'Đã đăng', 'Thất bại']),
     )
     expect(await screen.findByText('Camp Demo')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByTestId(`campaign-row-${CAMP_ID}`))
+    const row = screen.getByTestId(`campaign-row-${CAMP_ID}`)
+    const runSwitch = within(row).getByTestId('campaign-run-switch')
+    expect(within(runSwitch).getByRole('switch')).toBeChecked()
+
+    fireEvent.click(row)
     expect(await screen.findByTestId('detail-page')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe(`/campaigns/${CAMP_ID}`)
+  })
+
+  it('slider đầu dòng tạm dừng chiến dịch Running', async () => {
+    const { confirmAction } = await import('@/shared/utils/confirmAction')
+    campaignApi.pause.mockResolvedValue(wrap({ id: CAMP_ID, status: 2 }))
+
+    render(
+      <QueryClientProvider client={newClient()}>
+        <MemoryRouter>
+          <CampaignListPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    const row = await screen.findByTestId(`campaign-row-${CAMP_ID}`)
+    const switchEl = within(row).getByRole('switch', { name: /Tạm dừng Camp Demo/i })
+    expect(switchEl).toBeChecked()
+
+    await userEvent.click(switchEl)
+    expect(confirmAction).toHaveBeenCalled()
+    expect(campaignApi.pause).toHaveBeenCalledWith(CAMP_ID)
   })
 })
 

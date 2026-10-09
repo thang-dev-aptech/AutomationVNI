@@ -297,3 +297,30 @@
 @media (prefers-reduced-motion: reduce) {
   .sidebar-caret { transition: none; }
 }
+
+.sidebar-link-badge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background-color: var(--color-danger, #ef4444);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.sidebar--collapsed .sidebar-link-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  font-size: 0.65rem;
+}
+

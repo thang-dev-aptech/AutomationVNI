@@ -40,9 +40,12 @@ public class PageConversationResponse
     public DateTime? LastPageMessageAt { get; set; }
     public DateTime? ReplyWindowClosesAt { get; set; }
     public bool IsReplyWindowOpen { get; set; }
+    /// <summary>CRM: có thể gửi tin trong cửa sổ 24h RESPONSE (alias IsReplyWindowOpen).</summary>
+    public bool CanReply { get; set; }
     public int UnreadCount { get; set; }
     public int MessageCount { get; set; }
     public MessageInboxStatus InboxStatus { get; set; }
+    public Guid? AssignedUserId { get; set; }
     public string? AssignedTo { get; set; }
     public string? InternalNote { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -71,6 +74,9 @@ public class SetMessageStatusRequest
 
 public class AssignMessageRequest
 {
+    /// <summary>Ưu tiên: gán theo id người dùng (CRM). Null + AssignedTo trống = bỏ gán.</summary>
+    public Guid? AssignedUserId { get; set; }
+    /// <summary>Legacy automation: chỉ tên. Khi có AssignedUserId thì server tự điền tên.</summary>
     public string? AssignedTo { get; set; }
 }
 
