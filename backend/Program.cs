@@ -164,6 +164,7 @@ builder.Services.AddScoped<Backend.Modules.Crm.Inbox.CrmInboxService>();
 builder.Services.AddScoped<Backend.Modules.Inbox.InboxSuggestService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Customers.CrmCustomerService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Customers.CrmCustomerCareService>();
+builder.Services.AddSingleton<Backend.Modules.Crm.Inbox.IInboxSourceRegistry, Backend.Modules.Crm.Inbox.DefaultInboxSourceRegistry>();
 builder.Services.AddScoped<Backend.Modules.Crm.Reminders.CrmReminderService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Audit.CrmAuditService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Opportunities.CrmOpportunityStageService>();

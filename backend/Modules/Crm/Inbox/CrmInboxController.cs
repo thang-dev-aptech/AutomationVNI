@@ -17,6 +17,12 @@ public class CrmInboxController(CrmInboxService service) : ControllerBase
         CancellationToken ct)
         => Ok(ApiResponse.Ok(await service.FilterAsync(request, ct)));
 
+    /// <summary>Các nguồn có kênh đang hoạt động + số chưa đọc (chip ở đầu danh sách).</summary>
+    [HttpGet("sources")]
+    [Authorize(Roles = "Admin,ContentManager,Reviewer,Viewer")]
+    public async Task<IActionResult> Sources(CancellationToken ct)
+        => Ok(ApiResponse.Ok(await service.GetSourcesAsync(ct)));
+
     [HttpGet("message/{id:guid}")]
     [Authorize(Roles = "Admin,ContentManager,Reviewer,Viewer")]
     public async Task<IActionResult> GetMessage(Guid id, CancellationToken ct)

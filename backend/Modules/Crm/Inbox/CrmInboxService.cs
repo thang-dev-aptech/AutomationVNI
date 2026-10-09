@@ -17,8 +17,11 @@ public class CrmInboxService(
     PageMessageService pageMessageService,
     SocialCommentService socialCommentService,
     CrmCustomerCareService customerCare,
-    IUserContext userContext)
+    IUserContext userContext,
+    IInboxSourceRegistry? sourceRegistry = null)
 {
+    private readonly IInboxSourceRegistry _sources = sourceRegistry ?? new DefaultInboxSourceRegistry();
+
     private static readonly TimeSpan MessageReplyWindow = TimeSpan.FromHours(24);
 
     public async Task<PagedResult<CrmInboxListItemResponse>> FilterAsync(
@@ -34,18 +37,31 @@ public class CrmInboxService(
         if (request.AssignedMine == true)
             assignedFilter = mineId;
 
-        var keys = new List<InboxKey>();
-
-        if (request.Kind is null or CrmInboxItemKind.Message)
+        InboxSource? source = null;
+        if (!string.IsNullOrWhiteSpace(request.Source))
         {
-            keys.AddRange(await QueryMessageKeysAsync(
-                request, assignedFilter, keyword, ct));
+            source = _sources.Find(request.Source)
+                ?? throw new ArgumentException($"Nguồn hộp thư không hợp lệ: {request.Source}");
         }
 
-        if (request.Kind is null or CrmInboxItemKind.Comment)
+        var keys = new List<InboxKey>();
+
+        // Source ∩ Kind: nguồn quyết định (platform, loại item); Kind cũ giữ nguyên và lấy giao.
+        var wantMessages = request.Kind is null or CrmInboxItemKind.Message
+                           && (source is null || source.IncludesMessages);
+        var wantComments = request.Kind is null or CrmInboxItemKind.Comment
+                           && (source is null || source.IncludesComments);
+
+        if (wantMessages)
+        {
+            keys.AddRange(await QueryMessageKeysAsync(
+                request, assignedFilter, keyword, source, ct));
+        }
+
+        if (wantComments)
         {
             keys.AddRange(await QueryCommentKeysAsync(
-                request, assignedFilter, keyword, ct));
+                request, assignedFilter, keyword, source, ct));
         }
 
         var ordered = keys
@@ -64,6 +80,43 @@ public class CrmInboxService(
             Index = index,
             Size = size
         };
+    }
+
+    /// <summary>
+    /// Các nguồn có ít nhất 1 kênh đang hoạt động cùng platform, kèm số hội thoại chưa đọc.
+    /// Unread dùng đúng bộ lọc UnreadOnly của FilterAsync (một định nghĩa duy nhất, không viết lại).
+    /// </summary>
+    public async Task<IReadOnlyList<CrmInboxSourceResponse>> GetSourcesAsync(CancellationToken ct = default)
+    {
+        var activePlatforms = (await db.SocialChannels.AsNoTracking()
+                .Where(x => !x.IsDeleted && x.IsActive)
+                .Select(x => x.Platform)
+                .Distinct()
+                .ToListAsync(ct))
+            .ToHashSet();
+
+        var result = new List<CrmInboxSourceResponse>();
+        foreach (var source in _sources.All.OrderBy(x => x.SortOrder))
+        {
+            if (!activePlatforms.Contains(source.Platform)) continue;
+
+            var unreadRequest = new CrmInboxFilterRequest { UnreadOnly = true };
+            var unread = 0;
+            if (source.IncludesMessages)
+                unread += (await QueryMessageKeysAsync(unreadRequest, null, null, source, ct)).Count;
+            if (source.IncludesComments)
+                unread += (await QueryCommentKeysAsync(unreadRequest, null, null, source, ct)).Count;
+
+            result.Add(new CrmInboxSourceResponse
+            {
+                Key = source.Key,
+                Label = source.Label,
+                Platform = source.Platform,
+                Unread = unread
+            });
+        }
+
+        return result;
     }
 
     public async Task<CrmInboxMessageDetailResponse?> GetMessageAsync(
@@ -514,9 +567,16 @@ public class CrmInboxService(
         CrmInboxFilterRequest request,
         Guid? assignedFilter,
         string? keyword,
+        InboxSource? source,
         CancellationToken ct)
     {
         var query = db.PageConversations.AsNoTracking().Where(x => !x.IsDeleted);
+
+        if (source is not null)
+        {
+            var platform = source.Platform;
+            query = query.Where(x => db.SocialChannels.Any(c => c.Id == x.SocialChannelId && c.Platform == platform));
+        }
 
         if (request.SocialChannelId.HasValue)
             query = query.Where(x => x.SocialChannelId == request.SocialChannelId.Value);
@@ -575,10 +635,17 @@ public class CrmInboxService(
         CrmInboxFilterRequest request,
         Guid? assignedFilter,
         string? keyword,
+        InboxSource? source,
         CancellationToken ct)
     {
         var query = db.SocialComments.AsNoTracking()
             .Where(x => !x.IsDeleted && !x.IsDeletedOnPlatform && !x.IsFromPage && x.ParentCommentId == null);
+
+        if (source is not null)
+        {
+            var platform = source.Platform;
+            query = query.Where(x => db.SocialChannels.Any(c => c.Id == x.SocialChannelId && c.Platform == platform));
+        }
 
         if (request.SocialChannelId.HasValue)
             query = query.Where(x => x.SocialChannelId == request.SocialChannelId.Value);

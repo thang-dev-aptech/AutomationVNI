@@ -20,6 +20,8 @@ public class CrmInboxFilterRequest : PagedFilterRequest
 {
     public Guid? SocialChannelId { get; set; }
     public CrmInboxItemKind? Kind { get; set; }
+    /// <summary>Key nguồn (IInboxSourceRegistry): messenger | facebook | instagram | … Key lạ → 400.</summary>
+    public string? Source { get; set; }
     /// <summary>MessageInboxStatus / CommentInboxStatus (cùng số 1–4 cho New…Ignored).</summary>
     public int? Status { get; set; }
     public Guid? AssignedUserId { get; set; }
@@ -29,6 +31,15 @@ public class CrmInboxFilterRequest : PagedFilterRequest
     public bool? UnreadOnly { get; set; }
     public DateTime? From { get; set; }
     public DateTime? To { get; set; }
+}
+
+public class CrmInboxSourceResponse
+{
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public SocialPlatform Platform { get; set; }
+    /// <summary>Số hội thoại chưa đọc (theo định nghĩa ui02-read-state).</summary>
+    public int Unread { get; set; }
 }
 
 public class CrmInboxListItemResponse
