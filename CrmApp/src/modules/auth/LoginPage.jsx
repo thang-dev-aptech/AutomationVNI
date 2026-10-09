@@ -2,11 +2,14 @@ import React, { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../auth/useAuth'
 import Button from '../../shared/components/Button'
+import { getDevLoginDefaults } from './devLoginDefaults'
 import './LoginPage.css'
 
+const LOGIN_DEFAULTS = getDevLoginDefaults()
+
 export const LoginPage = () => {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState(LOGIN_DEFAULTS.email)
+  const [password, setPassword] = useState(LOGIN_DEFAULTS.password)
   const [errorMsg, setErrorMsg] = useState('')
   const [submitting, setSubmitting] = useState(false)
 

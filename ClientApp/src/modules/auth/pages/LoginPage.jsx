@@ -2,13 +2,16 @@ import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { getErrorMessage } from '@/shared/utils/apiHelpers'
 import { useLogin } from '../hooks/useAuth'
+import { getDevLoginDefaults } from '../devLoginDefaults'
+
+const LOGIN_DEFAULTS = getDevLoginDefaults()
 
 export default function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const loginMutation = useLogin()
-  const [email, setEmail] = useState('admin@vni.local')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState(LOGIN_DEFAULTS.email)
+  const [password, setPassword] = useState(LOGIN_DEFAULTS.password)
   const [errorMessage, setErrorMessage] = useState('')
 
   const redirectTo = location.state?.from || '/dashboard'
