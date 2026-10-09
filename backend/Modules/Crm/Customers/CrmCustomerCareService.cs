@@ -4,6 +4,7 @@ using Backend.Data;
 using Backend.Modules.Crm.Opportunities;
 using Backend.Modules.PageMessage;
 using Backend.Modules.SocialComment;
+using Backend.Modules.SocialComment.Enums;
 using Backend.Shared;
 using Backend.Shared.Repositories;
 using Microsoft.AspNetCore.Http;
@@ -286,7 +287,9 @@ public class CrmCustomerCareService(AppDbContext db, IUserContext userContext, C
             if (commentIds.Count > 0)
             {
                 var cLogs = await db.CommentActionLogs.AsNoTracking()
-                    .Where(x => !x.IsDeleted && commentIds.Contains(x.SocialCommentId))
+                    .Where(x => !x.IsDeleted
+                                && commentIds.Contains(x.SocialCommentId)
+                                && x.ActionType != CommentActionType.MarkRead)
                     .Select(x => new { x.Id, x.ActionType, x.ActorUserName, x.PayloadJson, x.CreatedAt })
                     .ToListAsync(ct);
                 foreach (var log in cLogs)
@@ -295,7 +298,7 @@ public class CrmCustomerCareService(AppDbContext db, IUserContext userContext, C
                     {
                         Kind = "comment-action",
                         At = log.CreatedAt,
-                        Title = $"Thao tác bình luận ({log.ActionType})",
+                        Title = CommentActionTimelineTitle(log.ActionType),
                         Body = log.PayloadJson,
                         RefId = log.Id,
                         Actor = log.ActorUserName,
@@ -576,6 +579,20 @@ public class CrmCustomerCareService(AppDbContext db, IUserContext userContext, C
 
         return -1;
     }
+
+    /// <summary>Nhãn tiếng Việt cho thao tác bình luận trên dòng thời gian (không gồm MarkRead).</summary>
+    internal static string CommentActionTimelineTitle(CommentActionType actionType) => actionType switch
+    {
+        CommentActionType.Reply => "Trả lời bình luận",
+        CommentActionType.Hide => "Ẩn bình luận",
+        CommentActionType.Unhide => "Hiện bình luận",
+        CommentActionType.Delete => "Xoá bình luận",
+        CommentActionType.ApprovePending => "Duyệt bình luận",
+        CommentActionType.SetStatus => "Đổi trạng thái",
+        CommentActionType.Assign => "Giao phụ trách",
+        CommentActionType.AddNote => "Thêm ghi chú",
+        _ => "Thao tác bình luận"
+    };
 
     private static string GetCell(string[] cells, int idx)
         => idx >= 0 && idx < cells.Length ? cells[idx] : "";
