@@ -4,6 +4,7 @@ import { useAuth } from '../../auth/useAuth'
 import { opportunityApi } from './api/opportunityApi'
 import { OpportunityStatsBar } from './components/OpportunityStatsBar'
 import { OpportunityTable } from './components/OpportunityTable'
+import { OpportunityPipeline } from './components/OpportunityPipeline'
 import { OpportunityFilters } from './components/OpportunityFilters'
 import {
   ColumnSettings,
@@ -212,8 +213,8 @@ export const OpportunitiesFeature = () => {
     setIsDrawerOpen(true)
   }
 
-  const handleOpenCreate = () => {
-    setFormInitialData(null)
+  const handleOpenCreate = (prefilledStageId) => {
+    setFormInitialData(prefilledStageId ? { stageId: prefilledStageId } : null)
     setIsFormModalOpen(true)
   }
 
@@ -313,13 +314,45 @@ export const OpportunitiesFeature = () => {
 
       {/* 3. Main Content: Pipeline vs Bảng */}
       {view === 'pipeline' ? (
-        <div className="crm-opp-pipeline-placeholder" data-testid="opportunity-pipeline">
-          <div className="crm-opp-placeholder-box">
-            <span className="crm-opp-placeholder-icon">📊</span>
-            <h3>Chế độ xem Pipeline (Kanban)</h3>
-            <p>Giao diện kéo thả cột giai đoạn đang được triển khai ở Task t4.</p>
-          </div>
-        </div>
+        <OpportunityPipeline
+          filters={{
+            keyword,
+            stageId: stage,
+            stage,
+            assignee,
+            source,
+          }}
+          stages={stages}
+          users={users}
+          isReadOnly={isReadOnly}
+          onOpenCreate={handleOpenCreate}
+          onCardClick={handleRowClick}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onRefresh={() => {
+            fetchStats()
+          }}
+          showFilters={showFilters}
+          onToggleFilters={() => setShowFilters((prev) => !prev)}
+          activeFilterCount={activeFilterCount}
+          childrenFilters={
+            <OpportunityFilters
+              filters={{
+                keyword,
+                stageId: stage,
+                stage,
+                assignee,
+                source,
+              }}
+              onChange={handleFilterChange}
+              stages={stages}
+              users={users}
+              canViewAll={canManage}
+              isOpen={showFilters}
+              onReset={handleFilterReset}
+            />
+          }
+        />
       ) : (
         <OpportunityTable
           items={items}

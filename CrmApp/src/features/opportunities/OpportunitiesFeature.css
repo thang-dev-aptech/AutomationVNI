@@ -916,6 +916,432 @@
   margin: 0;
 }
 
+/* =========================================================================
+   Pipeline Kanban Board Styles (Task t4)
+   ========================================================================= */
+
+.crm-opp-pipeline-container {
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: var(--crm-radius-md, 8px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.crm-opp-pipeline-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--crm-border);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.crm-opp-pipeline-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.crm-opp-pipeline-info-badge {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--crm-text-muted);
+}
+
+.crm-opp-pipeline-loading,
+.crm-opp-pipeline-error {
+  padding: 40px 20px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.crm-opp-pipeline-loading {
+  color: var(--crm-text-muted);
+  font-style: italic;
+}
+
+.crm-opp-pipeline-error {
+  color: var(--crm-danger-text);
+  background: var(--crm-danger-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* Pipeline Board - Horizontal Scrollable */
+.crm-opp-pipeline-board {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  overflow-x: auto;
+  align-items: flex-start;
+  min-height: 520px;
+}
+
+/* Stage Column */
+.crm-opp-pipeline-column {
+  min-width: 280px;
+  max-width: 320px;
+  width: 300px;
+  flex-shrink: 0;
+  background: var(--crm-surface-subtle);
+  border: 1px solid var(--crm-border);
+  border-top: 4px solid var(--stage-color, #4f46e5);
+  border-radius: var(--crm-radius-md, 8px);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 270px);
+  transition: all 0.15s ease-in-out;
+}
+
+.crm-opp-pipeline-column--dragover {
+  background: #eef2ff;
+  border-color: var(--crm-primary);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+}
+
+.crm-opp-column-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--crm-surface);
+  border-bottom: 1px solid var(--crm-border);
+  border-radius: var(--crm-radius-md, 8px) var(--crm-radius-md, 8px) 0 0;
+}
+
+.crm-opp-column-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.crm-opp-column-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.crm-opp-column-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--crm-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.crm-opp-column-badge {
+  background: var(--crm-surface-subtle);
+  color: var(--crm-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--crm-border);
+}
+
+.crm-opp-column-add-btn {
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--crm-primary);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.crm-opp-column-add-btn:hover {
+  background: var(--crm-primary-light);
+}
+
+/* Drop Zone */
+.crm-opp-column-dropzone {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 120px;
+  transition: background-color 0.15s;
+}
+
+.crm-opp-column-dropzone--active {
+  background-color: rgba(79, 70, 229, 0.05);
+}
+
+.crm-opp-column-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 12px;
+  color: var(--crm-text-subtle);
+  font-size: 13px;
+  text-align: center;
+}
+
+.crm-opp-column-empty-icon {
+  font-size: 24px;
+  margin-bottom: 4px;
+}
+
+.crm-opp-column-footer {
+  padding: 10px 14px;
+  border-top: 1px solid var(--crm-border);
+  background: var(--crm-surface);
+  text-align: center;
+  border-radius: 0 0 var(--crm-radius-md, 8px) var(--crm-radius-md, 8px);
+}
+
+.crm-opp-column-loadmore-btn {
+  width: 100%;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--crm-surface-subtle);
+  border: 1px solid var(--crm-border);
+  border-radius: var(--crm-radius-sm, 6px);
+  color: var(--crm-text);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.crm-opp-column-loadmore-btn:hover:not(:disabled) {
+  background: var(--crm-border);
+  border-color: var(--crm-border-strong);
+}
+
+/* Kanban Opportunity Card */
+.crm-opp-card {
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: var(--crm-radius-sm, 6px);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  cursor: grab;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+}
+
+.crm-opp-card:hover {
+  border-color: var(--crm-border-strong);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.crm-opp-card:active {
+  cursor: grabbing;
+}
+
+.crm-opp-card--readonly {
+  cursor: default !important;
+}
+
+.crm-opp-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.crm-opp-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--crm-primary-text);
+  cursor: pointer;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.crm-opp-card-title:hover {
+  color: var(--crm-primary);
+  text-decoration: underline;
+}
+
+.crm-opp-card-menu-wrap {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.crm-opp-card-menu-trigger {
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  font-weight: bold;
+  color: var(--crm-text-muted);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.crm-opp-card-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 60;
+  min-width: 190px;
+}
+
+.crm-opp-card-menu-section-lbl {
+  padding: 6px 12px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--crm-text-muted);
+}
+
+.crm-opp-stage-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+}
+
+.crm-opp-card-customer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--crm-text);
+}
+
+.crm-opp-card-cust-name {
+  font-weight: 600;
+}
+
+.crm-opp-card-cust-phone {
+  color: var(--crm-text-muted);
+  font-size: 11px;
+}
+
+.crm-opp-card-source {
+  font-size: 12px;
+}
+
+.crm-opp-card-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--crm-accent-text, #0369a1);
+}
+
+/* Snippet message bubble */
+.crm-opp-card-snippet {
+  margin-top: 2px;
+}
+
+.crm-opp-snippet-bubble {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  border-radius: 6px;
+  padding: 6px 8px;
+  text-decoration: none;
+  display: block;
+  font-size: 11px;
+  line-height: 1.3;
+  transition: all 0.15s;
+}
+
+.crm-opp-snippet-bubble:hover {
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+/* Card footer */
+.crm-opp-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px dashed var(--crm-border);
+  font-size: 11px;
+  color: var(--crm-text-muted);
+}
+
+.crm-opp-card-assignee {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.crm-opp-assignee-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--crm-primary-light);
+  color: var(--crm-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.crm-opp-assignee-name {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.crm-opp-card-act {
+  font-size: 11px;
+}
+
+/* Toast Alert Banner */
+.crm-opp-toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  margin: 12px 16px 0;
+  border-radius: var(--crm-radius-sm, 6px);
+  font-size: 13px;
+  animation: crm-slide-down 0.2s ease-out;
+}
+
+@keyframes crm-slide-down {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.crm-opp-toast--error {
+  background: var(--crm-danger-light);
+  border: 1px solid var(--crm-danger);
+  color: var(--crm-danger-text);
+}
+
+.crm-opp-toast-close {
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  color: inherit;
+  padding: 0 4px;
+}
+
+.crm-opp-dialog-desc {
+  font-size: 13px;
+  color: var(--crm-text-muted);
+  margin: 0 0 12px;
+  line-height: 1.4;
+}
+
 /* Responsive adjustments */
 @media (max-width: 1024px) {
   .crm-opp-stats-bar {
