@@ -1,0 +1,215 @@
+/* Modal tạo/chỉnh sửa cơ hội — bổ sung style cho class dùng trong OpportunityFormModal
+   mà OpportunitiesFeature.css chưa phủ (padding thân, hàng trường, picker, pill). */
+
+.crm-opp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 24px 0;
+}
+
+.crm-opp-form .crm-opp-modal-footer {
+  margin-left: -24px;
+  margin-right: -24px;
+  margin-top: 8px;
+  flex-shrink: 0;
+}
+
+.crm-opp-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.crm-opp-form-row .crm-opp-form-group {
+  min-width: 0;
+}
+
+.crm-opp-form .crm-opp-form-control {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Chế độ sửa: khách chỉ đọc, cùng cỡ chữ các trường khác */
+.crm-opp-readonly-customer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--crm-text);
+  background: var(--crm-surface-subtle);
+  border: 1px solid var(--crm-border);
+  border-radius: var(--crm-radius-sm, 6px);
+}
+
+.crm-opp-readonly-customer strong {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+/* Picker tìm khách — full width */
+.crm-opp-picker-input-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.crm-opp-picker-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--crm-text-muted);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.crm-opp-picker-input-wrap > .crm-opp-form-control {
+  width: 100%;
+  padding-left: 36px;
+  padding-right: 88px;
+  box-sizing: border-box;
+}
+
+.crm-opp-searching-indicator {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--crm-text-muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.crm-opp-picker-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 120;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: var(--crm-radius-sm, 6px);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.14);
+}
+
+.crm-opp-picker-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--crm-text);
+  border: none;
+  background: transparent;
+}
+
+.crm-opp-picker-item:hover,
+.crm-opp-picker-item:focus {
+  background: var(--crm-surface-subtle);
+  outline: none;
+}
+
+.crm-opp-picker-item strong {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.crm-opp-picker-item small {
+  font-size: 12px;
+  color: var(--crm-text-muted);
+}
+
+.crm-opp-selected-customer-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px 8px 12px;
+  background: var(--crm-surface-subtle);
+  border: 1px solid var(--crm-border);
+  border-radius: var(--crm-radius-sm, 6px);
+  font-size: 14px;
+  color: var(--crm-text);
+}
+
+.crm-opp-selected-customer-pill span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crm-opp-selected-customer-pill strong {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.crm-opp-btn-remove-cust {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--crm-radius-sm, 6px);
+  background: transparent;
+  color: var(--crm-text-muted);
+  cursor: pointer;
+}
+
+.crm-opp-btn-remove-cust:hover {
+  background: var(--crm-surface-hover, var(--crm-surface));
+  color: var(--crm-text);
+}
+
+@media (max-width: 480px) {
+  /* Specificity cao hơn OpportunitiesFeature.css để modal full width ở 390 */
+  .crm-opp-form-modal-backdrop.crm-opp-modal-backdrop {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .crm-opp-form-modal-content.crm-opp-modal-content {
+    max-width: 100%;
+    width: 100%;
+    max-height: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+
+  .crm-opp-form {
+    padding: 16px 16px 0;
+  }
+
+  .crm-opp-form .crm-opp-modal-footer {
+    margin-left: -16px;
+    margin-right: -16px;
+  }
+
+  .crm-opp-form-row {
+    grid-template-columns: 1fr;
+  }
+}

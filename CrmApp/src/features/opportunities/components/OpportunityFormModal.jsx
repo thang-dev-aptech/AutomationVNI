@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { customerApi } from '../../customers/api/customerApi'
 import { opportunityApi } from '../api/opportunityApi'
 import Icon from '../../../shared/components/Icon'
+import './OpportunityFormModal.css'
 
 export const OpportunityFormModal = ({
   isOpen = false,
@@ -154,8 +155,13 @@ export const OpportunityFormModal = ({
   }
 
   return (
-    <div className="crm-opp-modal-backdrop" role="dialog" aria-modal="true" data-testid="opportunity-form-modal">
-      <div className="crm-opp-modal-content">
+    <div
+      className="crm-opp-modal-backdrop crm-opp-form-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      data-testid="opportunity-form-modal"
+    >
+      <div className="crm-opp-modal-content crm-opp-form-modal-content">
         <div className="crm-opp-modal-header">
           <h3 className="crm-opp-modal-title">
             {isEdit ? 'Chỉnh sửa cơ hội' : 'Thêm cơ hội mới'}
@@ -202,6 +208,7 @@ export const OpportunityFormModal = ({
             </label>
             {isEdit ? (
               <div className="crm-opp-readonly-customer" data-testid="readonly-customer">
+                <Icon name="user" size={16} aria-hidden="true" />
                 <strong>{selectedCustomer?.displayName || 'Khách hàng'}</strong>
                 {selectedCustomer?.phoneE164 && <span> • {selectedCustomer.phoneE164}</span>}
               </div>
@@ -210,7 +217,8 @@ export const OpportunityFormModal = ({
                 {selectedCustomer ? (
                   <div className="crm-opp-selected-customer-pill" data-testid="selected-customer-pill">
                     <span>
-                      <Icon name="user" size={14} /> <strong>{selectedCustomer.displayName}</strong>
+                      <Icon name="user" size={14} aria-hidden="true" />{' '}
+                      <strong>{selectedCustomer.displayName}</strong>
                       {selectedCustomer.phoneE164 && ` (${selectedCustomer.phoneE164})`}
                     </span>
                     <button
@@ -226,6 +234,9 @@ export const OpportunityFormModal = ({
                   </div>
                 ) : (
                   <div className="crm-opp-picker-input-wrap">
+                    <span className="crm-opp-picker-search-icon" aria-hidden="true">
+                      <Icon name="search" size={16} />
+                    </span>
                     <input
                       type="text"
                       className="crm-opp-form-control"
