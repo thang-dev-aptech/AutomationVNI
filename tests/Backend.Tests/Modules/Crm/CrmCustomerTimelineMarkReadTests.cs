@@ -133,7 +133,7 @@ public sealed class CrmCustomerTimelineMarkReadTests : IAsyncLifetime
         Assert.Equal("Đổi trạng thái", CrmCustomerCareService.CommentActionTimelineTitle(CommentActionType.SetStatus));
         Assert.Equal("Giao phụ trách", CrmCustomerCareService.CommentActionTimelineTitle(CommentActionType.Assign));
         Assert.Equal("Thêm ghi chú", CrmCustomerCareService.CommentActionTimelineTitle(CommentActionType.AddNote));
-        Assert.Equal("Thao tác bình luận", CrmCustomerCareService.CommentActionTimelineTitle(CommentActionType.IgnorePending));
+        Assert.Equal("Bỏ qua bình luận chờ duyệt", CrmCustomerCareService.CommentActionTimelineTitle(CommentActionType.IgnorePending));
         Assert.Equal("Thao tác bình luận", CrmCustomerCareService.CommentActionTimelineTitle(CommentActionType.MarkRead));
 
         var (customerId, _) = await SeedCustomerWithMarkReadNoiseAsync();

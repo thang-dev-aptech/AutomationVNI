@@ -588,6 +588,7 @@ public class CrmCustomerCareService(AppDbContext db, IUserContext userContext, C
         CommentActionType.Unhide => "Hiện bình luận",
         CommentActionType.Delete => "Xoá bình luận",
         CommentActionType.ApprovePending => "Duyệt bình luận",
+        CommentActionType.IgnorePending => "Bỏ qua bình luận chờ duyệt",
         CommentActionType.SetStatus => "Đổi trạng thái",
         CommentActionType.Assign => "Giao phụ trách",
         CommentActionType.AddNote => "Thêm ghi chú",
