@@ -39,7 +39,7 @@ using Xunit;
 namespace Backend.Tests.Modules.Crm.Inbox;
 
 /// <summary>
-/// AC e2810e98 (a)-(e): GET api/CrmInbox/{kind}/{id}/customer — hồ sơ cột phải SO9.
+/// AC e2810e98 (a)-(e): GET api/CrmInbox/{kind}/{id}/customer — hồ sơ cột phải.
 /// Revert-to-prove: khớp DisplayName → (b) đỏ; SaveChanges trên GET → (c) đỏ.
 /// </summary>
 public sealed class CrmInboxCustomerPanelTests : IAsyncLifetime

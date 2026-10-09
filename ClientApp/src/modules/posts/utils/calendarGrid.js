@@ -131,7 +131,7 @@ export function monthLabel(year, month) {
 
 export const WEEKDAY_LABELS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
 
-/** Nhãn cột tuần đầy đủ theo ảnh SO9. */
+/** Nhãn cột tuần đầy đủ. */
 export const WEEKDAY_FULL_LABELS = [
   'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật',
 ]

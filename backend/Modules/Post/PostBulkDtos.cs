@@ -1,7 +1,7 @@
 namespace Backend.Modules.Post;
 
 /// <summary>
-/// DTO riêng cho POST api/Post/bulk-action (CALENDAR-SO9-01 / R-033).
+/// DTO riêng cho POST api/Post/bulk-action (R-033).
 /// Tách file để không đụng PostDtos.cs (ownership task t2).
 /// </summary>
 public class PostBulkActionRequest

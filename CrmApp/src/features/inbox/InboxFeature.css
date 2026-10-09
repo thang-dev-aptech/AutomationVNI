@@ -115,14 +115,6 @@
   color: var(--crm-text);
 }
 
-.crm-customer-panel-badge {
-  font-size: 11px;
-  padding: 2px 6px;
-  background: var(--crm-primary-light);
-  color: var(--crm-primary);
-  border-radius: var(--crm-radius-sm);
-  font-weight: 600;
-}
 
 .crm-customer-panel-body {
   flex: 1;

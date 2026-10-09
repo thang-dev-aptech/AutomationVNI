@@ -9,7 +9,7 @@ import { useAuthStore } from '../auth/authStore'
 
 const LocationProbe = () => <div data-testid="location-probe">{useLocation().pathname}</div>
 
-describe('AC e2810e98 (f)-(i) & AC e68ba436 (b) — CrmApp Customer Panel SO9', () => {
+describe('AC e2810e98 (f)-(i) & AC e68ba436 (b) — CrmApp Customer Panel', () => {
   const mockTags = [
     { id: 'tag-1', name: 'VIP Gold', colorHex: '#eab308' },
     { id: 'tag-2', name: 'Quan tâm tuyển sinh', colorHex: '#3b82f6' },
@@ -101,8 +101,8 @@ describe('AC e2810e98 (f)-(i) & AC e68ba436 (b) — CrmApp Customer Panel SO9', 
     vi.restoreAllMocks()
   })
 
-  describe('AC e2810e98 (f) — Render 5 sections in SO9 order and collapsible', () => {
-    it('renders all 5 sections in strict SO9 order: Thông tin khách, Kênh liên lạc, Thống kê tương tác, Ảnh/Video, Hoạt động', async () => {
+  describe('AC e2810e98 (f) — Render 5 sections in order and collapsible', () => {
+    it('renders all 5 sections in strict order: Thông tin khách, Kênh liên lạc, Thống kê tương tác, Ảnh/Video, Hoạt động', async () => {
       vi.spyOn(inboxApi, 'getCustomer').mockResolvedValue(mockCustomerDataLinked)
 
       render(

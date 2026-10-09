@@ -84,7 +84,7 @@ public class CrmInboxCommentDetailResponse
 }
 
 /// <summary>
-/// Hồ sơ cột phải SO9 cho hội thoại đang chọn.
+/// Hồ sơ cột phải cho hội thoại đang chọn.
 /// GET không ghi DB; linked chỉ khi khớp chính xác (Platform, SocialChannelId, ExternalId).
 /// </summary>
 public class CrmInboxCustomerPanelResponse

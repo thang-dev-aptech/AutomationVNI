@@ -697,7 +697,7 @@ export const InboxFeature = () => {
         </button>
       )}
 
-      {/* Right Column: Customer Panel SO9 */}
+      {/* Right Column: Customer Panel */}
       {showCustomerPanel && (
         <CustomerPanel
           item={selectedItem}

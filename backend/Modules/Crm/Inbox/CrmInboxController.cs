@@ -44,7 +44,7 @@ public class CrmInboxController(CrmInboxService service) : ControllerBase
     }
 
     /// <summary>
-    /// Hồ sơ khách cột phải SO9. Viewer được đọc. GET không ghi DB.
+    /// Hồ sơ khách cột phải. Viewer được đọc. GET không ghi DB.
     /// kind = message | comment.
     /// </summary>
     [HttpGet("{kind}/{id:guid}/customer")]

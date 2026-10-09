@@ -24,7 +24,7 @@ import {
 import '../components/calendar/CalendarShell.css'
 
 /**
- * Khung trang Lịch SO9: sidebar bộ lọc + chuyển chế độ + state trên URL.
+ * Khung trang Lịch: sidebar bộ lọc + chuyển chế độ + state trên URL.
  * Chế độ Lịch / Danh sách / Theo kênh đều lắp component tương ứng.
  */
 export default function PostCalendarPage() {

@@ -200,7 +200,6 @@ export function CustomerPanel({
         <div className="crm-customer-panel-header">
           <div className="crm-customer-panel-title-wrap">
             <h3 className="crm-customer-panel-title">Hồ sơ khách hàng</h3>
-            <span className="crm-customer-panel-badge">SO9</span>
           </div>
           {onClose && (
             <button
@@ -265,7 +264,6 @@ export function CustomerPanel({
       <div className="crm-customer-panel-header">
         <div className="crm-customer-panel-title-wrap">
           <h3 className="crm-customer-panel-title">Hồ sơ khách hàng</h3>
-          <span className="crm-customer-panel-badge">SO9</span>
         </div>
         {onClose && (
           <button

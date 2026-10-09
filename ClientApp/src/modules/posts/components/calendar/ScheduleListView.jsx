@@ -49,7 +49,7 @@ function eventTimeOf(post) {
 }
 
 /**
- * Bảng danh sách bài theo lịch (ảnh SO9 #2).
+ * Bảng danh sách bài theo lịch.
  * Không có cột Rating / Cài đặt (invariant calendar-views-ui).
  */
 export default function ScheduleListView({
