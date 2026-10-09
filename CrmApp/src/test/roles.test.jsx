@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { useAuthStore } from '../auth/authStore'
 import InboxPage from '../modules/inbox/InboxPage'
 import CustomersPage from '../modules/customers/CustomersPage'
-import TasksPage from '../modules/tasks/TasksPage'
+import TasksBoard from '../features/tasks/components/TasksBoard'
 import SettingsPage from '../modules/settings/SettingsPage'
 
 describe('AC crm-auth-roles-test (42a67d24) - Role-based button visibility', () => {
@@ -53,7 +53,7 @@ describe('AC crm-auth-roles-test (42a67d24) - Role-based button visibility', () 
     it('hides create task and complete buttons in Tasks for Viewer', () => {
       render(
         <MemoryRouter>
-          <TasksPage />
+          <TasksBoard />
         </MemoryRouter>,
       )
 
@@ -120,7 +120,7 @@ describe('AC crm-auth-roles-test (42a67d24) - Role-based button visibility', () 
     it('shows task creation and task completion toggle for Reviewer', () => {
       render(
         <MemoryRouter>
-          <TasksPage />
+          <TasksBoard />
         </MemoryRouter>,
       )
 

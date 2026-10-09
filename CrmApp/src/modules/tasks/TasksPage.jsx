@@ -1,9 +1,9 @@
 import React from 'react'
-import TasksBoard from '../../features/tasks/components/TasksBoard'
+import OpportunitiesFeature from '../../features/opportunities/OpportunitiesFeature'
 import './TasksPage.css'
 
 export const TasksPage = () => {
-  return <TasksBoard />
+  return <OpportunitiesFeature />
 }
 
 export default TasksPage

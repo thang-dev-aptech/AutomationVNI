@@ -36,9 +36,9 @@ describe('CRM Navigation & Menu', () => {
     fireEvent.click(customersNav)
     expect(screen.getByRole('heading', { level: 2, name: 'Hồ sơ Khách hàng' })).toBeInTheDocument()
 
-    // Navigate to Việc của tôi
+    // Navigate to Việc của tôi (màn Cơ hội)
     fireEvent.click(tasksNav)
-    expect(screen.getByRole('heading', { level: 2, name: 'Việc của tôi' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Cơ hội' })).toBeInTheDocument()
 
     // Navigate to Cài đặt
     fireEvent.click(settingsNav)
