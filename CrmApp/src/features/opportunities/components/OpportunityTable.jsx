@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { SourceBadge } from '../../inbox/components/SourceBadge'
+import { ActionMenu } from '../../../shared/components/ActionMenu'
 import { formatVietnamDateTime } from '../../../shared/utils/dateUtils'
 import { formatCurrencyVnd } from './OpportunityStatsBar'
 
@@ -33,25 +34,11 @@ export const OpportunityTable = ({
   childrenFilters,
   childrenActivities,
 }) => {
-  // Action dropdown menu state
-  const [activeMenuId, setActiveMenuId] = useState(null)
-  const menuRef = useRef(null)
-
   // Move stage sub-modal
   const [movingStageItem, setMovingStageItem] = useState(null)
   const [targetStageId, setTargetStageId] = useState('')
   const [lostReason, setLostReason] = useState('')
   const [movingStageError, setMovingStageError] = useState(null)
-
-  useEffect(() => {
-    const handleOutsideClick = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setActiveMenuId(null)
-      }
-    }
-    document.addEventListener('mousedown', handleOutsideClick)
-    return () => document.removeEventListener('mousedown', handleOutsideClick)
-  }, [])
 
   // Calculate pagination display
   const startItem = total === 0 ? 0 : (pageIndex - 1) * pageSize + 1
@@ -370,89 +357,59 @@ export const OpportunityTable = ({
                         className="crm-opp-cell-actions text-center"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <div className="crm-opp-menu-wrap" ref={activeMenuId === opp.id ? menuRef : null}>
-                          <button
-                            type="button"
-                            className="crm-opp-menu-trigger"
-                            onClick={() => setActiveMenuId(activeMenuId === opp.id ? null : opp.id)}
-                            aria-label="Thao tác cơ hội"
-                            data-testid={`btn-actions-${opp.id}`}
-                          >
-                            ⋮
-                          </button>
-
-                          {activeMenuId === opp.id && (
-                            <div className="crm-opp-dropdown-menu" data-testid={`menu-actions-${opp.id}`}>
-                              <button
-                                type="button"
-                                className="crm-opp-dropdown-item"
-                                onClick={() => {
-                                  setActiveMenuId(null)
-                                  onEdit?.(opp)
-                                }}
-                                data-testid={`action-edit-${opp.id}`}
-                              >
-                                ✏️ Chỉnh sửa
-                              </button>
-
-                              <button
-                                type="button"
-                                className="crm-opp-dropdown-item"
-                                onClick={() => {
-                                  setActiveMenuId(null)
-                                  setMovingStageItem(opp)
-                                  setTargetStageId(opp.stageId || '')
-                                  setLostReason('')
-                                  setMovingStageError(null)
-                                }}
-                                data-testid={`action-move-stage-${opp.id}`}
-                              >
-                                🔄 Chuyển giai đoạn
-                              </button>
-
-                              {opp.isArchived ? (
-                                <button
-                                  type="button"
-                                  className="crm-opp-dropdown-item"
-                                  onClick={() => {
-                                    setActiveMenuId(null)
-                                    onUnarchive?.(opp.id)
-                                  }}
-                                  data-testid={`action-unarchive-${opp.id}`}
-                                >
-                                  📂 Bỏ lưu trữ
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="crm-opp-dropdown-item"
-                                  onClick={() => {
-                                    setActiveMenuId(null)
-                                    onArchive?.(opp.id)
-                                  }}
-                                  data-testid={`action-archive-${opp.id}`}
-                                >
-                                  📦 Lưu trữ
-                                </button>
-                              )}
-
-                              <button
-                                type="button"
-                                className="crm-opp-dropdown-item crm-opp-dropdown-item--danger"
-                                onClick={() => {
-                                  setActiveMenuId(null)
-                                  const confirmed = typeof window.confirm === 'function' ? window.confirm(`Xác nhận xoá cơ hội "${opp.title}"?`) : true
-                                  if (confirmed) {
-                                    onDelete?.(opp.id)
-                                  }
-                                }}
-                                data-testid={`action-delete-${opp.id}`}
-                              >
-                                🗑️ Xoá
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                        <ActionMenu
+                          triggerLabel="Thao tác cơ hội"
+                          triggerTestId={`btn-actions-${opp.id}`}
+                          triggerClassName="crm-opp-menu-trigger"
+                          menuTestId={`menu-actions-${opp.id}`}
+                          items={[
+                            {
+                              key: 'edit',
+                              label: '✏️ Chỉnh sửa',
+                              testId: `action-edit-${opp.id}`,
+                              onSelect: () => onEdit?.(opp),
+                            },
+                            {
+                              key: 'move-stage',
+                              label: '🔄 Chuyển giai đoạn',
+                              testId: `action-move-stage-${opp.id}`,
+                              onSelect: () => {
+                                setMovingStageItem(opp)
+                                setTargetStageId(opp.stageId || '')
+                                setLostReason('')
+                                setMovingStageError(null)
+                              },
+                            },
+                            opp.isArchived
+                              ? {
+                                  key: 'unarchive',
+                                  label: '📂 Bỏ lưu trữ',
+                                  testId: `action-unarchive-${opp.id}`,
+                                  onSelect: () => onUnarchive?.(opp.id),
+                                }
+                              : {
+                                  key: 'archive',
+                                  label: '📦 Lưu trữ',
+                                  testId: `action-archive-${opp.id}`,
+                                  onSelect: () => onArchive?.(opp.id),
+                                },
+                            {
+                              key: 'delete',
+                              label: '🗑️ Xoá',
+                              danger: true,
+                              testId: `action-delete-${opp.id}`,
+                              onSelect: () => {
+                                const confirmed =
+                                  typeof window.confirm === 'function'
+                                    ? window.confirm(`Xác nhận xoá cơ hội "${opp.title}"?`)
+                                    : true
+                                if (confirmed) {
+                                  onDelete?.(opp.id)
+                                }
+                              },
+                            },
+                          ]}
+                        />
                       </td>
                     )}
                   </tr>

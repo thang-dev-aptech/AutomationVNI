@@ -495,67 +495,6 @@
   font-size: 32px;
 }
 
-/* Action Menu ⋮ */
-.crm-opp-menu-wrap {
-  position: relative;
-  display: inline-block;
-}
-
-.crm-opp-menu-trigger {
-  background: transparent;
-  border: none;
-  font-size: 18px;
-  font-weight: bold;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-  color: var(--crm-text-muted);
-}
-
-.crm-opp-menu-trigger:hover {
-  background: var(--crm-surface-subtle);
-  color: var(--crm-text);
-}
-
-.crm-opp-dropdown-menu {
-  position: absolute;
-  right: 0;
-  top: 100%;
-  z-index: 50;
-  background: var(--crm-surface);
-  border: 1px solid var(--crm-border);
-  border-radius: var(--crm-radius-sm, 6px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-  min-width: 160px;
-  padding: 4px 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.crm-opp-dropdown-item {
-  background: transparent;
-  border: none;
-  padding: 8px 14px;
-  text-align: left;
-  font-size: 13px;
-  color: var(--crm-text);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.crm-opp-dropdown-item:hover {
-  background: var(--crm-surface-subtle);
-}
-
-.crm-opp-dropdown-item--danger {
-  color: var(--crm-danger);
-}
-
-.crm-opp-dropdown-item--danger:hover {
-  background: var(--crm-danger-light);
-}
 
 /* Pagination */
 .crm-opp-pagination-bar {
@@ -1172,30 +1111,6 @@
   text-decoration: underline;
 }
 
-.crm-opp-card-menu-wrap {
-  position: relative;
-  display: inline-block;
-  flex-shrink: 0;
-}
-
-.crm-opp-card-menu-trigger {
-  background: transparent;
-  border: none;
-  font-size: 16px;
-  font-weight: bold;
-  color: var(--crm-text-muted);
-  cursor: pointer;
-  padding: 0 4px;
-  line-height: 1;
-}
-
-.crm-opp-card-dropdown {
-  position: absolute;
-  right: 0;
-  top: 100%;
-  z-index: 60;
-  min-width: 190px;
-}
 
 .crm-opp-card-menu-section-lbl {
   padding: 6px 12px 2px;

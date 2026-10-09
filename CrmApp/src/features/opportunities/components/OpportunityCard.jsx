@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React from 'react'
 import { Link } from 'react-router-dom'
 import { SourceBadge } from '../../inbox/components/SourceBadge'
+import { ActionMenu } from '../../../shared/components/ActionMenu'
 import { formatCurrencyVnd } from './OpportunityStatsBar'
 
 /**
@@ -50,20 +51,6 @@ export const OpportunityCard = ({
   onDelete,
   onDragStart,
 }) => {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef(null)
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setMenuOpen(false)
-      }
-    }
-    if (menuOpen) {
-      document.addEventListener('mousedown', handleClickOutside)
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [menuOpen])
 
   const handleDragStart = (e) => {
     if (isReadOnly) {
@@ -100,82 +87,61 @@ export const OpportunityCard = ({
         </strong>
 
         {!isReadOnly && (
-          <div className="crm-opp-card-menu-wrap" ref={menuRef}>
-            <button
-              type="button"
-              className="crm-opp-card-menu-trigger"
-              onClick={(e) => {
-                e.stopPropagation()
-                setMenuOpen(!menuOpen)
-              }}
-              aria-label="Thao tác nhanh thẻ"
-              data-testid={`btn-card-menu-${opp.id}`}
-            >
-              ⋮
-            </button>
-
-            {menuOpen && (
-              <div
-                className="crm-opp-dropdown-menu crm-opp-card-dropdown"
-                data-testid={`card-menu-${opp.id}`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="crm-opp-card-menu-section-lbl">Chuyển giai đoạn:</div>
-                {stages
-                  .filter((st) => st.id !== opp.stageId)
-                  .map((st) => (
-                    <button
-                      key={st.id}
-                      type="button"
-                      className="crm-opp-dropdown-item"
-                      onClick={() => {
-                        setMenuOpen(false)
-                        onMoveStage?.(opp, st.id)
-                      }}
-                      data-testid={`action-card-move-to-${st.id}`}
-                    >
+          <ActionMenu
+            triggerLabel="Thao tác nhanh thẻ"
+            triggerTestId={`btn-card-menu-${opp.id}`}
+            triggerClassName="crm-opp-card-menu-trigger"
+            menuTestId={`card-menu-${opp.id}`}
+            menuClassName="crm-opp-card-dropdown"
+            items={[
+              {
+                type: 'header',
+                key: 'header-stage',
+                label: 'Chuyển giai đoạn:',
+              },
+              ...stages
+                .filter((st) => st.id !== opp.stageId)
+                .map((st) => ({
+                  key: `stage-${st.id}`,
+                  label: (
+                    <>
                       <span
                         className="crm-opp-stage-dot"
                         style={{ backgroundColor: st.color || '#6366f1' }}
                       />
                       {st.name}
-                    </button>
-                  ))}
-
-                <hr className="crm-opp-menu-divider" />
-
-                <button
-                  type="button"
-                  className="crm-opp-dropdown-item"
-                  onClick={() => {
-                    setMenuOpen(false)
-                    onEdit?.(opp)
-                  }}
-                  data-testid={`action-card-edit-${opp.id}`}
-                >
-                  ✏️ Chỉnh sửa
-                </button>
-
-                <button
-                  type="button"
-                  className="crm-opp-dropdown-item crm-opp-dropdown-item--danger"
-                  onClick={() => {
-                    setMenuOpen(false)
-                    const confirmed =
-                      typeof window.confirm === 'function'
-                        ? window.confirm(`Xác nhận xoá cơ hội "${opp.title}"?`)
-                        : true
-                    if (confirmed) {
-                      onDelete?.(opp.id)
-                    }
-                  }}
-                  data-testid={`action-card-delete-${opp.id}`}
-                >
-                  🗑️ Xoá
-                </button>
-              </div>
-            )}
-          </div>
+                    </>
+                  ),
+                  testId: `action-card-move-to-${st.id}`,
+                  onSelect: () => onMoveStage?.(opp, st.id),
+                })),
+              {
+                type: 'divider',
+                key: 'divider-1',
+              },
+              {
+                key: 'edit',
+                label: '✏️ Chỉnh sửa',
+                testId: `action-card-edit-${opp.id}`,
+                onSelect: () => onEdit?.(opp),
+              },
+              {
+                key: 'delete',
+                label: '🗑️ Xoá',
+                danger: true,
+                testId: `action-card-delete-${opp.id}`,
+                onSelect: () => {
+                  const confirmed =
+                    typeof window.confirm === 'function'
+                      ? window.confirm(`Xác nhận xoá cơ hội "${opp.title}"?`)
+                      : true
+                  if (confirmed) {
+                    onDelete?.(opp.id)
+                  }
+                },
+              },
+            ]}
+          />
         )}
       </div>
 
