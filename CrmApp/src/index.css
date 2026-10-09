@@ -46,11 +46,15 @@
   --crm-info-text: #1d4ed8;
 
   /* Navigation Sidebar (Dark Luxury Slate) */
-  --crm-sidebar-bg: #090d16;
-  --crm-sidebar-surface: #131b2e;
+  /* Sidebar đồng bộ với ClientApp (MainLayout.css): gradient xanh thương hiệu -> slate 900 */
+  --crm-sidebar-bg: #0f172a;
+  --crm-sidebar-brand: #2d6cb6;
+  --crm-sidebar-accent: #f08a22;
+  --crm-sidebar-gradient: linear-gradient(90deg, #2d6cb6 0%, #f08a22 50%, #33a457 100%);
+  --crm-sidebar-surface: rgba(255, 255, 255, 0.06);
   --crm-sidebar-text: #94a3b8;
-  --crm-sidebar-text-active: #ffffff;
-  --crm-sidebar-border: #1e293b;
+  --crm-sidebar-text-active: #f8fafc;
+  --crm-sidebar-border: rgba(255, 255, 255, 0.16);
   --crm-sidebar-width: 250px;
   --crm-sidebar-collapsed-width: 72px;
 
