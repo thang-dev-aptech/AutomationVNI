@@ -49,6 +49,8 @@ public class CrmInboxListItemResponse
     public int UnreadCount { get; set; }
     public bool CanReply { get; set; }
     public DateTime? ReplyWindowClosesAt { get; set; }
+    /// <summary>Hội thoại tin nhắn có tin hẹn giờ đang chờ gửi (icon đồng hồ).</summary>
+    public bool HasPendingScheduled { get; set; }
     public IReadOnlyList<CrmTagResponse> Tags { get; set; } = [];
 }
 

@@ -672,6 +672,17 @@ public class CrmInboxService(
         var messageUnread = await CountMessageUnreadAsync(messages, ct);
         var commentUnread = await CountCommentUnreadAsync(comments, ct);
 
+        // 1 truy vấn cho cả trang: hội thoại nào có tin hẹn giờ Pending.
+        var pendingScheduled = messageIds.Count == 0
+            ? new HashSet<Guid>()
+            : (await db.CrmScheduledMessages.AsNoTracking()
+                .Where(x => !x.IsDeleted
+                            && x.Status == Backend.Modules.Crm.ScheduledMessages.CrmScheduledMessageStatus.Pending
+                            && messageIds.Contains(x.PageConversationId))
+                .Select(x => x.PageConversationId)
+                .Distinct()
+                .ToListAsync(ct)).ToHashSet();
+
         var now = DateTime.UtcNow;
         var result = new List<CrmInboxListItemResponse>(pageKeys.Count);
         foreach (var key in pageKeys)
@@ -696,6 +707,7 @@ public class CrmInboxService(
                     UnreadCount = messageUnread.GetValueOrDefault(msg.Id),
                     CanReply = closesAt > now,
                     ReplyWindowClosesAt = closesAt,
+                    HasPendingScheduled = pendingScheduled.Contains(msg.Id),
                     Tags = allTags.GetValueOrDefault((CrmTagTargetType.PageConversation, msg.Id)) ?? []
                 });
             }

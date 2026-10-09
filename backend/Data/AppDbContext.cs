@@ -92,6 +92,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
         => Set<Backend.Modules.Crm.Opportunities.CrmOpportunityStageModel>();
     public DbSet<Backend.Modules.Crm.Opportunities.CrmOpportunityModel> CrmOpportunities
         => Set<Backend.Modules.Crm.Opportunities.CrmOpportunityModel>();
+    public DbSet<Backend.Modules.Crm.ScheduledMessages.CrmScheduledMessageModel> CrmScheduledMessages
+        => Set<Backend.Modules.Crm.ScheduledMessages.CrmScheduledMessageModel>();
     public DbSet<Backend.Modules.Crm.Opportunities.CrmOpportunityWatcherModel> CrmOpportunityWatchers
         => Set<Backend.Modules.Crm.Opportunities.CrmOpportunityWatcherModel>();
     public DbSet<CrawlSourceModel> CrawlSources => Set<CrawlSourceModel>();
@@ -796,6 +798,18 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.AssignedTo).HasMaxLength(200);
             e.Property(x => x.LostReason).HasMaxLength(500);
             e.Property(x => x.ExpectedValue).HasPrecision(18, 2);
+        });
+
+        modelBuilder.Entity<Backend.Modules.Crm.ScheduledMessages.CrmScheduledMessageModel>(e =>
+        {
+            e.ToTable("CrmScheduledMessages");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.PageConversationId, x.Status });
+            e.HasIndex(x => new { x.Status, x.ScheduledAtUtc });
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.Text).HasMaxLength(2000);
+            e.Property(x => x.Error).HasMaxLength(1000);
+            e.Property(x => x.SentMessageId).HasMaxLength(200);
         });
 
         modelBuilder.Entity<Backend.Modules.Crm.Opportunities.CrmOpportunityWatcherModel>(e =>

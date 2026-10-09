@@ -169,6 +169,10 @@ builder.Services.AddScoped<Backend.Modules.Crm.Audit.CrmAuditService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Opportunities.CrmOpportunityStageService>();
 builder.Services.AddScoped<Backend.Modules.Crm.Opportunities.CrmOpportunityService>();
 builder.Services.AddHostedService<Backend.Modules.Crm.Reminders.CrmReminderWorker>();
+builder.Services.Configure<Backend.Modules.Crm.ScheduledMessages.CrmScheduledMessageWorkerOptions>(
+    builder.Configuration.GetSection("CrmScheduledMessageWorker"));
+builder.Services.AddScoped<Backend.Modules.Crm.ScheduledMessages.CrmScheduledMessageService>();
+builder.Services.AddHostedService<Backend.Modules.Crm.ScheduledMessages.CrmScheduledMessageWorker>();
 builder.Services.AddHttpClient<FacebookPageMessagingProvider>();
 builder.Services.AddScoped<ISocialCommentProvider, FacebookCommentProvider>();
 builder.Services.AddScoped<ISocialCommentProvider, ThreadsCommentProvider>();
