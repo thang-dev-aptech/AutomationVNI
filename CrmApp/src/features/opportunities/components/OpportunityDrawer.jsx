@@ -5,6 +5,7 @@ import { formatVietnamDateTime } from '../../../shared/utils/dateUtils'
 import { formatCurrencyVnd } from './OpportunityStatsBar'
 import { SourceBadge } from '../../inbox/components/SourceBadge'
 import { reminderApi } from '../../tasks/api/reminderApi'
+import './OpportunityDrawer.css'
 
 export const OpportunityDrawer = ({
   opportunityId,
@@ -192,7 +193,11 @@ export const OpportunityDrawer = ({
           {!loading && !error && data && (
             <div className="crm-opp-drawer-content" data-testid="drawer-content">
               {/* Summary Hero Card */}
-              <div className="crm-opp-drawer-card crm-opp-drawer-hero">
+              <div
+                className="crm-opp-drawer-card crm-opp-drawer-hero"
+                style={data.stageColor ? { '--opp-stage': data.stageColor } : undefined}
+                data-testid="drawer-hero"
+              >
                 <div className="crm-opp-drawer-hero-val">
                   <span className="crm-opp-drawer-hero-lbl">Giá trị dự kiến</span>
                   <strong className="crm-opp-drawer-hero-num" data-testid="drawer-opp-value">

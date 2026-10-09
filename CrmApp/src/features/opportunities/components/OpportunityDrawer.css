@@ -1,0 +1,307 @@
+/* Drawer chi tiết cơ hội — phong cách đồng bộ CustomerPanel (biến theme CrmApp).
+   Bộ chọn có tiền tố .crm-opp-drawer để thắng các quy tắc chung trong OpportunitiesFeature.css. */
+
+.crm-opp-drawer {
+  width: 480px;
+  max-width: 100%;
+}
+
+/* Header dính trên; thân cuộn độc lập */
+.crm-opp-drawer .crm-opp-drawer-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  background: var(--crm-surface);
+}
+
+.crm-opp-drawer .crm-opp-drawer-body {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 20px 24px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.crm-opp-drawer-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.crm-opp-drawer-title-wrap .crm-opp-drawer-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crm-opp-drawer-badge {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--crm-radius-xs, 4px);
+  background: var(--crm-primary-light);
+  color: var(--crm-primary-text);
+}
+
+.crm-opp-drawer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.crm-opp-drawer-close {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--crm-text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  transition: background var(--crm-transition-fast, 0.15s);
+}
+
+.crm-opp-drawer-close:hover {
+  background: var(--crm-surface-hover, var(--crm-surface-subtle));
+  color: var(--crm-text);
+}
+
+.crm-opp-drawer-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.crm-opp-drawer-loading,
+.crm-opp-drawer-error {
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--crm-text-muted);
+}
+
+.crm-opp-drawer-error {
+  border-radius: var(--crm-radius-md);
+  background: var(--crm-danger-light);
+  color: var(--crm-danger-text);
+}
+
+/* Card */
+.crm-opp-drawer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: var(--crm-radius-md);
+}
+
+.crm-opp-drawer-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Hero: tô màu theo giai đoạn qua biến --opp-stage (đặt inline từ stageColor) */
+.crm-opp-drawer-hero {
+  --opp-stage: var(--crm-primary);
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  border-color: color-mix(in srgb, var(--opp-stage) 35%, var(--crm-border));
+  border-left: 4px solid var(--opp-stage);
+  background: color-mix(in srgb, var(--opp-stage) 8%, var(--crm-surface));
+}
+
+.crm-opp-drawer-hero-val {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.crm-opp-drawer-hero-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--crm-text-muted);
+}
+
+.crm-opp-drawer-hero-num {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--crm-text);
+  overflow-wrap: anywhere;
+}
+
+.crm-opp-drawer-hero-status {
+  flex-shrink: 0;
+}
+
+.crm-opp-drawer-hero-status .crm-opp-badge {
+  margin-left: 0;
+}
+
+/* Badge trạng thái */
+.crm-opp-badge--open {
+  background: var(--crm-primary-light);
+  color: var(--crm-primary-text);
+}
+
+.crm-opp-badge--won {
+  background: var(--crm-success-light, #d1fae5);
+  color: var(--crm-success-text, #065f46);
+}
+
+.crm-opp-badge--lost {
+  background: var(--crm-danger-light);
+  color: var(--crm-danger-text);
+}
+
+/* Danh sách label/value thẳng hàng (2 cột) */
+.crm-opp-drawer-kv-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.crm-opp-drawer-kv-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--crm-border);
+  font-size: 13px;
+}
+
+.crm-opp-drawer-kv-row:last-child {
+  border-bottom: none;
+}
+
+.crm-opp-drawer-kv-lbl {
+  color: var(--crm-text-muted);
+  font-weight: 500;
+}
+
+.crm-opp-drawer-kv-val {
+  color: var(--crm-text);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.crm-opp-drawer-snippet {
+  font-style: italic;
+  color: var(--crm-text-muted);
+}
+
+.crm-opp-lost-text {
+  color: var(--crm-danger-text);
+}
+
+.crm-opp-source-flex {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.crm-opp-link--sm {
+  font-size: 12px;
+  color: var(--crm-primary);
+}
+
+/* Link-nút trong tiêu đề card */
+.crm-opp-btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--crm-primary);
+  cursor: pointer;
+}
+
+.crm-opp-btn-link:hover {
+  text-decoration: underline;
+}
+
+.crm-opp-empty-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--crm-text-muted);
+}
+
+/* Người theo dõi */
+.crm-opp-add-watcher-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.crm-opp-add-watcher-box .crm-opp-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.crm-opp-select--sm,
+.crm-opp-form-control--sm {
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.crm-opp-form-control--sm {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.crm-opp-watcher-remove {
+  border: none;
+  background: transparent;
+  color: var(--crm-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: var(--crm-radius-xs, 4px);
+}
+
+.crm-opp-watcher-remove:hover {
+  color: var(--crm-danger);
+  background: var(--crm-danger-light);
+}
+
+/* Nhắc việc */
+.crm-opp-reminders-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.crm-opp-reminder-item {
+  gap: 8px;
+}
+
+.crm-opp-reminder-item:last-child {
+  border-bottom: none !important;
+}
+
+@media (max-width: 640px) {
+  .crm-opp-drawer {
+    width: 100%;
+  }
+
+  .crm-opp-drawer-kv-row {
+    grid-template-columns: 100px minmax(0, 1fr);
+  }
+}
