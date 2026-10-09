@@ -519,6 +519,58 @@ public sealed class CrmOpportunityAuthzPipelineTests : IAsyncLifetime
         Assert.Equal(_actorUserId, (await ReadDataAsync(r2)).GetProperty("assigneeUserId").GetGuid());
     }
 
+    /// <summary>
+    /// "Phụ trách" hiện tên người dùng (như inbox), không phải id dạng hex — kể cả bản ghi cũ
+    /// từng lưu hex trong AssignedTo.
+    /// </summary>
+    [Fact]
+    public async Task AssignedTo_IsUserDisplayName_NotHexId_IncludingLegacyRows()
+    {
+        await using (var db = new AppDbContext(_options))
+        {
+            db.Users.Add(new ApplicationUser
+            {
+                Id = _actorUserId,
+                UserName = "reviewer@vni.local",
+                NormalizedUserName = "REVIEWER@VNI.LOCAL",
+                Email = "reviewer@vni.local",
+                SecurityStamp = Guid.NewGuid().ToString()
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var channelId = await SeedChannelAsync("Page Display Name");
+        var convId = await SeedConversationAsync(channelId, "psid-display-name", "Khách tên");
+        var created = await ReadDataAsync(await SendAsync(
+            HttpMethod.Post, "/api/CrmOpportunity/from-conversation", "Admin",
+            new { kind = "message", id = convId }));
+        var oppId = created.GetProperty("id").GetGuid();
+        Assert.Equal("reviewer@vni.local", created.GetProperty("assignedTo").GetString());
+
+        // Bản ghi cũ: AssignedTo lưu id hex → đọc ra vẫn là tên.
+        await using (var db = new AppDbContext(_options))
+        {
+            (await db.CrmOpportunities.SingleAsync(x => x.Id == oppId)).AssignedTo = _actorUserId.ToString("N");
+            await db.SaveChangesAsync();
+        }
+
+        var detail = await ReadDataAsync(await SendAsync(HttpMethod.Get, $"/api/CrmOpportunity/{oppId}", "Viewer"));
+        Assert.Equal("reviewer@vni.local", detail.GetProperty("assignedTo").GetString());
+
+        var list = await ReadDataAsync(await SendAsync(HttpMethod.Post, "/api/CrmOpportunity/filter", "Admin",
+            new { assigneeFilter = "mine", index = 1, size = 20 }));
+        var row = list.GetProperty("items").EnumerateArray().Single(x => x.GetProperty("id").GetGuid() == oppId);
+        Assert.Equal("reviewer@vni.local", row.GetProperty("assignedTo").GetString());
+
+        var assigned = await ReadDataAsync(await SendAsync(
+            HttpMethod.Post, $"/api/CrmOpportunity/{oppId}/assign", "Admin",
+            new { assigneeUserId = _actorUserId }));
+        Assert.Equal("reviewer@vni.local", assigned.GetProperty("assignedTo").GetString());
+        await using (var db = new AppDbContext(_options))
+            Assert.Equal("reviewer@vni.local",
+                (await db.CrmOpportunities.AsNoTracking().SingleAsync(x => x.Id == oppId)).AssignedTo);
+    }
+
     [Fact]
     public async Task D_SeedingConversationAlone_DoesNotCreateOpportunity()
     {

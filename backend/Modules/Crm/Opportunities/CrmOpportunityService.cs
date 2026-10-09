@@ -4,6 +4,7 @@ using Backend.Modules.Crm.Customers;
 using Backend.Modules.PageMessage;
 using Backend.Modules.SocialChannel.Enums;
 using Backend.Modules.SocialComment;
+using Backend.Modules.Users;
 using Backend.Shared;
 using Backend.Shared.Repositories;
 using Microsoft.Data.Sqlite;
@@ -226,7 +227,7 @@ public class CrmOpportunityService(
             Status = StatusFromKind(stage.Kind),
             IsArchived = false,
             AssigneeUserId = request.AssigneeUserId,
-            AssignedTo = request.AssigneeUserId?.ToString("N"),
+            AssignedTo = await ResolveAssigneeNameAsync(request.AssigneeUserId, ct),
             Source = request.Source,
             SocialChannelId = request.SocialChannelId,
             PageConversationId = request.PageConversationId,
@@ -276,7 +277,7 @@ public class CrmOpportunityService(
         entity.Title = title;
         entity.ExpectedValue = request.ExpectedValue;
         entity.AssigneeUserId = request.AssigneeUserId;
-        entity.AssignedTo = request.AssigneeUserId?.ToString("N");
+        entity.AssignedTo = await ResolveAssigneeNameAsync(request.AssigneeUserId, ct);
         if (request.LostReason is not null)
             entity.LostReason = string.IsNullOrWhiteSpace(request.LostReason) ? null : request.LostReason.Trim();
         entity.LastActivityAtUtc = DateTime.UtcNow;
@@ -342,7 +343,7 @@ public class CrmOpportunityService(
 
         entity.AssigneeUserId = request.AssigneeUserId;
         entity.AssignedTo = string.IsNullOrWhiteSpace(request.AssignedTo)
-            ? request.AssigneeUserId?.ToString("N")
+            ? await ResolveAssigneeNameAsync(request.AssigneeUserId, ct)
             : request.AssignedTo.Trim();
         entity.LastActivityAtUtc = DateTime.UtcNow;
         entity.UpdatedAt = DateTime.UtcNow;
@@ -705,6 +706,16 @@ public class CrmOpportunityService(
             : await db.SocialChannels.AsNoTracking()
                 .Where(x => channelIds.Contains(x.Id))
                 .ToDictionaryAsync(x => x.Id, x => (Name: x.PageName, Platform: x.Platform), ct);
+        // Tên người phụ trách lấy theo AssigneeUserId lúc đọc: bản ghi cũ từng lưu id dạng hex
+        // trong AssignedTo vẫn hiện đúng tên, và đổi tên người dùng cũng được cập nhật.
+        var assigneeIds = rows.Where(x => x.AssigneeUserId.HasValue)
+            .Select(x => x.AssigneeUserId!.Value).Distinct().ToList();
+        var assigneeNames = assigneeIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : (await db.Users.AsNoTracking()
+                .Where(u => assigneeIds.Contains(u.Id))
+                .ToListAsync(ct))
+                .ToDictionary(u => u.Id, UsersService.ResolveDisplayName);
         var watchers = await db.CrmOpportunityWatchers.AsNoTracking()
             .Where(x => !x.IsDeleted && oppIds.Contains(x.OpportunityId))
             .GroupBy(x => x.OpportunityId)
@@ -761,7 +772,10 @@ public class CrmOpportunityService(
                 Status = row.Status,
                 IsArchived = row.IsArchived,
                 AssigneeUserId = row.AssigneeUserId,
-                AssignedTo = row.AssignedTo,
+                AssignedTo = row.AssigneeUserId.HasValue
+                             && assigneeNames.TryGetValue(row.AssigneeUserId.Value, out var assigneeName)
+                    ? assigneeName
+                    : row.AssignedTo,
                 WatcherUserIds = watchers.GetValueOrDefault(row.Id) ?? [],
                 ExpectedValue = row.ExpectedValue,
                 Source = row.Source,
@@ -779,6 +793,14 @@ public class CrmOpportunityService(
         }
 
         return result;
+    }
+
+    /// <summary>Tên hiển thị người phụ trách (giống inbox: UsersService.ResolveDisplayName).</summary>
+    private async Task<string?> ResolveAssigneeNameAsync(Guid? userId, CancellationToken ct)
+    {
+        if (userId is null) return null;
+        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId.Value, ct);
+        return user is null ? userId.Value.ToString("N") : UsersService.ResolveDisplayName(user);
     }
 
     private async Task<CrmOpportunityStageModel> RequireStageAsync(Guid stageId, CancellationToken ct)
