@@ -80,9 +80,13 @@ export const opportunityApi = {
     return res.data?.data || res.data
   },
 
+  // Backend trả {success:true, data:null} khi hội thoại chưa có cơ hội: null là giá trị hợp lệ,
+  // KHÔNG được rơi về cả envelope (`|| res.data` làm UI luôn tưởng đã có cơ hội).
   byConversation: async (kind, id) => {
     const res = await crmApi.get(`/CrmOpportunity/by-conversation/${kind}/${id}`)
-    return res.data?.data || res.data
+    const body = res.data
+    if (body && typeof body === 'object' && 'data' in body) return body.data ?? null
+    return body ?? null
   },
 
   listStages: async () => {

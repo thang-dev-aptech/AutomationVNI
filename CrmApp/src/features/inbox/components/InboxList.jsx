@@ -102,7 +102,7 @@ export const InboxList = ({
                   }}
                 >
                   {initial}
-                  <SourceBadge item={item} />
+                  <SourceBadge item={item} variant="overlay" />
                 </div>
 
                 {/* Body */}

@@ -70,8 +70,12 @@ function InstagramIcon({ gradientId }) {
   )
 }
 
-/** Badge tròn nhỏ gắn ở góc dưới bên phải avatar, cho biết nguồn hội thoại. */
-export function SourceBadge({ item }) {
+/**
+ * Badge tròn nhỏ cho biết nguồn hội thoại.
+ * variant="inline" (mặc định): nằm trong dòng, dùng ở bảng/thẻ/drawer cơ hội.
+ * variant="overlay": absolute ở góc dưới bên phải avatar (cha phải position:relative) — danh sách inbox.
+ */
+export function SourceBadge({ item, variant = 'inline' }) {
   // id gradient phải duy nhất trên trang: mỗi item một <defs> riêng.
   const gradientId = `src-grad-${useId().replace(/:/g, '')}`
   const source = resolveInboxSource(item)
@@ -79,7 +83,7 @@ export function SourceBadge({ item }) {
 
   return (
     <span
-      className={`crm-conv-source-badge crm-conv-source-${source}`}
+      className={`crm-conv-source-badge crm-conv-source-${source}${variant === 'overlay' ? ' crm-conv-source-badge--overlay' : ''}`}
       data-testid={`conv-source-${item.id}`}
       data-source={source}
       title={label}

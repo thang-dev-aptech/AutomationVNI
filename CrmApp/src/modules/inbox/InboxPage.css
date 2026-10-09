@@ -100,11 +100,8 @@
   position: relative;
 }
 
-/* Badge nguồn (Messenger / Facebook / Instagram) ở góc dưới bên phải avatar */
+/* Badge nguồn (Messenger / Facebook / Instagram): mặc định inline; overlay chỉ trên avatar inbox */
 .crm-conv-source-badge {
-  position: absolute;
-  right: -3px;
-  bottom: -3px;
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -114,6 +111,13 @@
   display: flex;
   overflow: hidden;
   line-height: 0;
+  flex-shrink: 0;
+}
+
+.crm-conv-source-badge--overlay {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
 }
 
 .crm-conv-body {

@@ -469,6 +469,57 @@ public sealed class CrmOpportunityAuthzPipelineTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task N1_FromConversation_AssigneeIsConversationOwner_ElseCreator()
+    {
+        var channelId = await SeedChannelAsync("Page Assignee");
+        var owner = Guid.Parse("dddddddd-eeee-ffff-0000-111111111111");
+
+        var assignedConv = await SeedConversationAsync(channelId, "psid-assigned", "Có phụ trách");
+        await using (var db = new AppDbContext(_options))
+        {
+            (await db.PageConversations.SingleAsync(x => x.Id == assignedConv)).AssignedUserId = owner;
+            await db.SaveChangesAsync();
+        }
+        var unassignedConv = await SeedConversationAsync(channelId, "psid-unassigned", "Chưa phụ trách");
+
+        var withOwner = await SendAsync(HttpMethod.Post, "/api/CrmOpportunity/from-conversation", "Admin",
+            new { kind = "message", id = assignedConv });
+        var withoutOwner = await SendAsync(HttpMethod.Post, "/api/CrmOpportunity/from-conversation", "Admin",
+            new { kind = "message", id = unassignedConv });
+
+        Assert.Equal(owner, (await ReadDataAsync(withOwner)).GetProperty("assigneeUserId").GetGuid());
+        Assert.Equal(_actorUserId, (await ReadDataAsync(withoutOwner)).GetProperty("assigneeUserId").GetGuid());
+
+        // Hiện ở chế độ mặc định "của tôi" của người tạo (chỉ cơ hội không có phụ trách → gán cho người tạo).
+        var mine = await SendAsync(HttpMethod.Post, "/api/CrmOpportunity/filter", "Admin",
+            new { assigneeFilter = "mine", index = 1, size = 20 });
+        var mineIds = (await ReadDataAsync(mine)).GetProperty("items").EnumerateArray()
+            .Select(x => x.GetProperty("pageConversationId").GetGuid()).ToList();
+        Assert.Contains(unassignedConv, mineIds);
+        Assert.DoesNotContain(assignedConv, mineIds);
+    }
+
+    [Fact]
+    public async Task N1_FromConversation_Comment_AssigneeIsCommentOwner_ElseCreator()
+    {
+        var channelId = await SeedChannelAsync("Page Cmt Assignee");
+        var owner = Guid.Parse("dddddddd-eeee-ffff-0000-222222222222");
+        var assigned = await SeedTopLevelCommentAsync(channelId, "author-assigned", "x");
+        var plain = await SeedTopLevelCommentAsync(channelId, "author-plain", "y");
+        await using (var db = new AppDbContext(_options))
+        {
+            (await db.SocialComments.SingleAsync(c => c.Id == assigned)).AssignedUserId = owner;
+            await db.SaveChangesAsync();
+        }
+
+        var r1 = await SendAsync(HttpMethod.Post, "/api/CrmOpportunity/from-conversation", "Admin", new { kind = "comment", id = assigned });
+        var r2 = await SendAsync(HttpMethod.Post, "/api/CrmOpportunity/from-conversation", "Admin", new { kind = "comment", id = plain });
+
+        Assert.Equal(owner, (await ReadDataAsync(r1)).GetProperty("assigneeUserId").GetGuid());
+        Assert.Equal(_actorUserId, (await ReadDataAsync(r2)).GetProperty("assigneeUserId").GetGuid());
+    }
+
+    [Fact]
     public async Task D_SeedingConversationAlone_DoesNotCreateOpportunity()
     {
         var before = await CountOppsAsync();

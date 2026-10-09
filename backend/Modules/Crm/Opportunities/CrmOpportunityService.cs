@@ -455,6 +455,7 @@ public class CrmOpportunityService(
         Guid? socialCommentId = null;
         CrmOpportunitySource source;
         string? channelName = null;
+        Guid? conversationAssigneeId;
 
         if (kind == "message")
         {
@@ -473,6 +474,7 @@ public class CrmOpportunityService(
             displayName = conv.ParticipantName;
             avatarUrl = conv.ParticipantAvatarUrl;
             pageConversationId = conv.Id;
+            conversationAssigneeId = conv.AssignedUserId;
             source = CrmOpportunitySource.Message;
             channelName = channel.PageName;
 
@@ -510,6 +512,7 @@ public class CrmOpportunityService(
             displayName = root.AuthorName ?? root.AuthorUsername;
             avatarUrl = null;
             socialCommentId = root.Id;
+            conversationAssigneeId = root.AssignedUserId ?? comment.AssignedUserId;
             source = CrmOpportunitySource.Comment;
             channelName = channel.PageName;
 
@@ -543,6 +546,8 @@ public class CrmOpportunityService(
                 CrmCustomerId = customerId,
                 Title = title,
                 StageId = CrmOpportunityStageIds.Moi,
+                // Người phụ trách hội thoại; chưa có thì người đang tạo (để hiện ở "Việc của tôi").
+                AssigneeUserId = conversationAssigneeId ?? userContext.GetCurrentUserId(),
                 Source = source,
                 SocialChannelId = socialChannelId,
                 PageConversationId = pageConversationId,
