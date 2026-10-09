@@ -471,6 +471,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.PermalinkUrl).HasMaxLength(1000);
             e.Property(x => x.AssignedTo).HasMaxLength(200);
             e.HasIndex(x => x.AssignedUserId);
+            e.HasIndex(x => x.LastReadAtUtc);
             e.Property(x => x.Message).HasColumnType("TEXT");
             e.Property(x => x.InternalNote).HasColumnType("TEXT");
         });
@@ -513,6 +514,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.HasIndex(x => new { x.SocialChannelId, x.ParticipantExternalId });
             e.HasIndex(x => x.InboxStatus);
             e.HasIndex(x => x.LastMessageAt);
+            e.HasIndex(x => x.LastReadAtUtc);
             e.HasIndex(x => x.IsDeleted);
             e.Property(x => x.ExternalConversationId).HasMaxLength(300);
             e.Property(x => x.ParticipantExternalId).HasMaxLength(200);

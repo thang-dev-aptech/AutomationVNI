@@ -36,7 +36,14 @@ public class PageMessageService(
         if (request.InboxStatus.HasValue)
             query = query.Where(x => x.InboxStatus == request.InboxStatus.Value);
         if (request.UnreadOnly == true)
-            query = query.Where(x => x.UnreadCount > 0);
+        {
+            query = query.Where(x => db.PageMessages.Any(m =>
+                !m.IsDeleted
+                && m.PageConversationId == x.Id
+                && !m.IsFromPage
+                && m.SentAt != null
+                && (x.LastReadAtUtc == null || m.SentAt > x.LastReadAtUtc)));
+        }
         if (request.OpenWindowOnly == true)
         {
             var cutoff = DateTime.UtcNow.Subtract(StandardReplyWindow);
@@ -83,7 +90,12 @@ public class PageMessageService(
             Total = await query.CountAsync(ct),
             NewCount = await query.CountAsync(x => x.InboxStatus == MessageInboxStatus.New, ct),
             InProgress = await query.CountAsync(x => x.InboxStatus == MessageInboxStatus.InProgress, ct),
-            Unread = await query.CountAsync(x => x.UnreadCount > 0, ct),
+            Unread = await query.CountAsync(x => db.PageMessages.Any(m =>
+                !m.IsDeleted
+                && m.PageConversationId == x.Id
+                && !m.IsFromPage
+                && m.SentAt != null
+                && (x.LastReadAtUtc == null || m.SentAt > x.LastReadAtUtc)), ct),
             ReplyWindowOpen = await query.CountAsync(x => x.LastCustomerMessageAt >= cutoff, ct)
         };
     }
@@ -104,6 +116,10 @@ public class PageMessageService(
             .ToListAsync(ct);
 
         var result = ToResponse(conversation, channelName);
+        result.UnreadCount = messages.Count(m =>
+            !m.IsFromPage
+            && m.SentAt.HasValue
+            && (conversation.LastReadAtUtc is null || m.SentAt > conversation.LastReadAtUtc));
         result.Messages = messages.Select(ToMessageResponse).ToList();
         return result;
     }
@@ -237,6 +253,7 @@ public class PageMessageService(
         conversation.LastMessageAt = DateTime.UtcNow;
         conversation.LastPageMessageAt = DateTime.UtcNow;
         conversation.InboxStatus = MessageInboxStatus.Replied;
+        conversation.LastReadAtUtc = DateTime.UtcNow;
         conversation.UnreadCount = 0;
         conversation.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
@@ -388,7 +405,8 @@ public class PageMessageService(
                     {
                         if (!conversation.LastCustomerMessageAt.HasValue || timestamp > conversation.LastCustomerMessageAt.Value)
                             conversation.LastCustomerMessageAt = timestamp;
-                        conversation.UnreadCount++;
+                        if (!conversation.LastReadAtUtc.HasValue || timestamp > conversation.LastReadAtUtc.Value)
+                            conversation.UnreadCount++;
                         conversation.InboxStatus = MessageInboxStatus.New;
                     }
                     conversation.UpdatedAt = DateTime.UtcNow;
@@ -487,12 +505,10 @@ public class PageMessageService(
             conversation.ParticipantAvatarUrl = dto.ParticipantAvatarUrl;
         conversation.Snippet = dto.Snippet ?? conversation.Snippet;
         conversation.LastMessageAt = dto.UpdatedAt ?? conversation.LastMessageAt;
-        conversation.UnreadCount = dto.UnreadCount;
+        // Không ghi đè LastReadAtUtc / UnreadCount từ Graph unread_count (ui02-read-state).
         conversation.MessageCount = Math.Max(dto.MessageCount, conversation.MessageCount);
         conversation.LastSyncedAt = DateTime.UtcNow;
         conversation.UpdatedAt = DateTime.UtcNow;
-        if (dto.UnreadCount > 0 && conversation.InboxStatus == MessageInboxStatus.Replied)
-            conversation.InboxStatus = MessageInboxStatus.New;
         await db.SaveChangesAsync(ct);
 
         if (isNew)

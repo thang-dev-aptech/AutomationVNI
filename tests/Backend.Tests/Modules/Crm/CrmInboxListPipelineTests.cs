@@ -411,6 +411,8 @@ public sealed class CrmInboxListPipelineTests : IAsyncLifetime
             Snippet = snippet ?? participantName,
             LastMessageAt = at,
             LastCustomerMessageAt = at,
+            // unreadOnly lọc theo LastReadAtUtc + tin khách (ui02-read-state).
+            LastReadAtUtc = unread > 0 ? null : at,
             InboxStatus = status,
             AssignedUserId = assignedUserId,
             AssignedTo = assignedUserId?.ToString("N"),
@@ -418,6 +420,22 @@ public sealed class CrmInboxListPipelineTests : IAsyncLifetime
             CreatedAt = at,
             CreatedBy = "seed"
         });
+        for (var i = 0; i < Math.Max(unread, 0); i++)
+        {
+            db.PageMessages.Add(new PageMessageModel
+            {
+                Id = Guid.NewGuid(),
+                PageConversationId = id,
+                SocialChannelId = channelId,
+                ExternalMessageId = $"m-{id:N}-{i}",
+                Text = $"msg-{i}",
+                IsFromPage = false,
+                SentAt = at.AddMinutes(i),
+                CreatedAt = at.AddMinutes(i),
+                CreatedBy = "seed"
+            });
+        }
+
         await db.SaveChangesAsync();
         return id;
     }

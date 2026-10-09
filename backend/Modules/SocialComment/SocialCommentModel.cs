@@ -30,5 +30,7 @@ public class SocialCommentModel : BaseEntity
     public string? AssignedTo { get; set; }
     public string? InternalNote { get; set; }
     public DateTime? RepliedAt { get; set; }
+    /// <summary>Thời điểm app đánh dấu đã đọc thread gốc (U1). Chỉ meaningful trên bình luận gốc.</summary>
+    public DateTime? LastReadAtUtc { get; set; }
     public DateTime? LastSyncedAt { get; set; }
 }

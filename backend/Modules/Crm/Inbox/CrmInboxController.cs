@@ -54,6 +54,21 @@ public class CrmInboxController(CrmInboxService service) : ControllerBase
             : Ok(ApiResponse.Ok(data));
     }
 
+    /// <summary>
+    /// Đánh dấu đã đọc. Viewer 403. Không đổi InboxStatus / người phụ trách.
+    /// kind = message | comment.
+    /// </summary>
+    [HttpPost("{kind}/{id:guid}/read")]
+    [Authorize(Roles = "Admin,ContentManager,Reviewer")]
+    public async Task<IActionResult> MarkRead(string kind, Guid id, CancellationToken ct)
+    {
+        if (!TryParseKind(kind, out var parsed))
+            return NotFound(ApiResponse.Fail("NOT_FOUND", "Loại hội thoại không hợp lệ"));
+
+        await service.MarkReadAsync(parsed, id, ct);
+        return Ok(ApiResponse.Ok(new { id, kind = kind.ToLowerInvariant(), read = true }));
+    }
+
     private static bool TryParseKind(string kind, out CrmInboxItemKind parsed)
     {
         if (string.Equals(kind, "message", StringComparison.OrdinalIgnoreCase))

@@ -446,6 +446,15 @@ public class SocialCommentService(
         comment.InboxStatus = CommentInboxStatus.Replied;
         comment.RepliedAt = DateTime.UtcNow;
         comment.UpdatedAt = DateTime.UtcNow;
+
+        // Page trả lời = đã đọc thread gốc (ui02-read-state).
+        var rootId = comment.ParentCommentId ?? comment.Id;
+        var root = rootId == comment.Id
+            ? comment
+            : await db.SocialComments.FirstAsync(x => x.Id == rootId && !x.IsDeleted, ct);
+        root.LastReadAtUtc = DateTime.UtcNow;
+        root.UpdatedAt = DateTime.UtcNow;
+
         await db.SaveChangesAsync(ct);
 
         // Refresh replies for this post

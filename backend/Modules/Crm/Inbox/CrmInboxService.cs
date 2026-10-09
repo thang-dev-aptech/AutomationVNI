@@ -112,6 +112,62 @@ public class CrmInboxService(
         };
     }
 
+    /// <summary>
+    /// Đánh dấu đã đọc (U2). Không đổi InboxStatus / người phụ trách.
+    /// </summary>
+    public async Task MarkReadAsync(CrmInboxItemKind kind, Guid id, CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        if (kind == CrmInboxItemKind.Message)
+        {
+            var conversation = await db.PageConversations
+                .FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, ct)
+                ?? throw new KeyNotFoundException("Hội thoại không tồn tại");
+            conversation.LastReadAtUtc = now;
+            conversation.UnreadCount = 0;
+            conversation.UpdatedAt = now;
+            db.MessageActionLogs.Add(new MessageActionLogModel
+            {
+                Id = Guid.NewGuid(),
+                PageConversationId = id,
+                ActionType = MessageActionType.MarkRead,
+                ActorUserId = userContext.GetCurrentUserId(),
+                ActorUserName = userContext.GetCurrentUserName(),
+                Success = true,
+                CreatedAt = now
+            });
+            await db.SaveChangesAsync(ct);
+            return;
+        }
+
+        if (kind == CrmInboxItemKind.Comment)
+        {
+            var comment = await db.SocialComments
+                .FirstOrDefaultAsync(x =>
+                    x.Id == id
+                    && !x.IsDeleted
+                    && !x.IsDeletedOnPlatform
+                    && x.ParentCommentId == null, ct)
+                ?? throw new KeyNotFoundException("Luồng bình luận không tồn tại");
+            comment.LastReadAtUtc = now;
+            comment.UpdatedAt = now;
+            db.CommentActionLogs.Add(new CommentActionLogModel
+            {
+                Id = Guid.NewGuid(),
+                SocialCommentId = id,
+                ActionType = CommentActionType.MarkRead,
+                ActorUserId = userContext.GetCurrentUserId(),
+                ActorUserName = userContext.GetCurrentUserName(),
+                Success = true,
+                CreatedAt = now
+            });
+            await db.SaveChangesAsync(ct);
+            return;
+        }
+
+        throw new ArgumentOutOfRangeException(nameof(kind));
+    }
+
     private async Task<CrmInboxCustomerPanelResponse?> GetMessageCustomerPanelAsync(
         Guid conversationId, CancellationToken ct)
     {
@@ -471,7 +527,14 @@ public class CrmInboxService(
         if (request.UnassignedOnly == true)
             query = query.Where(x => x.AssignedUserId == null);
         if (request.UnreadOnly == true)
-            query = query.Where(x => x.UnreadCount > 0);
+        {
+            query = query.Where(x => db.PageMessages.Any(m =>
+                !m.IsDeleted
+                && m.PageConversationId == x.Id
+                && !m.IsFromPage
+                && m.SentAt != null
+                && (x.LastReadAtUtc == null || m.SentAt > x.LastReadAtUtc)));
+        }
         if (request.From.HasValue)
             query = query.Where(x => (x.LastCustomerMessageAt ?? x.LastMessageAt ?? x.CreatedAt) >= request.From.Value);
         if (request.To.HasValue)
@@ -526,9 +589,16 @@ public class CrmInboxService(
         if (request.UnassignedOnly == true)
             query = query.Where(x => x.AssignedUserId == null);
         if (request.UnreadOnly == true)
-            query = query.Where(x =>
-                x.InboxStatus == CommentInboxStatus.New
-                || x.InboxStatus == CommentInboxStatus.InProgress);
+        {
+            // Unread = bình luận/trả lời của khách trong thread sau LastReadAtUtc (cùng phạm vi hiển thị).
+            query = query.Where(root => db.SocialComments.Any(c =>
+                !c.IsDeleted
+                && !c.IsDeletedOnPlatform
+                && !c.IsFromPage
+                && (c.Id == root.Id || c.ParentCommentId == root.Id)
+                && c.CommentedAt != null
+                && (root.LastReadAtUtc == null || c.CommentedAt > root.LastReadAtUtc)));
+        }
         if (request.From.HasValue)
             query = query.Where(x => (x.CommentedAt ?? x.CreatedAt) >= request.From.Value);
         if (request.To.HasValue)
@@ -598,6 +668,10 @@ public class CrmInboxService(
                 .ToList(),
             ct);
 
+        // Batch unread theo LastReadAtUtc — không N+1, không số giả theo trạng thái.
+        var messageUnread = await CountMessageUnreadAsync(messages, ct);
+        var commentUnread = await CountCommentUnreadAsync(comments, ct);
+
         var now = DateTime.UtcNow;
         var result = new List<CrmInboxListItemResponse>(pageKeys.Count);
         foreach (var key in pageKeys)
@@ -619,7 +693,7 @@ public class CrmInboxService(
                     Status = (int)msg.InboxStatus,
                     AssignedUserId = msg.AssignedUserId,
                     AssignedTo = msg.AssignedTo,
-                    UnreadCount = msg.UnreadCount,
+                    UnreadCount = messageUnread.GetValueOrDefault(msg.Id),
                     CanReply = closesAt > now,
                     ReplyWindowClosesAt = closesAt,
                     Tags = allTags.GetValueOrDefault((CrmTagTargetType.PageConversation, msg.Id)) ?? []
@@ -641,13 +715,67 @@ public class CrmInboxService(
                     Status = (int)cmt.InboxStatus,
                     AssignedUserId = cmt.AssignedUserId,
                     AssignedTo = cmt.AssignedTo,
-                    UnreadCount = cmt.InboxStatus is CommentInboxStatus.New or CommentInboxStatus.InProgress ? 1 : 0,
+                    UnreadCount = commentUnread.GetValueOrDefault(cmt.Id),
                     // Bình luận trả lời qua SocialComment (không khoá cửa sổ Messenger 24h).
                     CanReply = true,
                     ReplyWindowClosesAt = null,
                     Tags = allTags.GetValueOrDefault((CrmTagTargetType.SocialComment, cmt.Id)) ?? []
                 });
             }
+        }
+
+        return result;
+    }
+
+    private async Task<Dictionary<Guid, int>> CountMessageUnreadAsync(
+        Dictionary<Guid, PageConversationModel> conversations,
+        CancellationToken ct)
+    {
+        if (conversations.Count == 0) return new Dictionary<Guid, int>();
+        var ids = conversations.Keys.ToList();
+        var rows = await db.PageMessages.AsNoTracking()
+            .Where(m => ids.Contains(m.PageConversationId) && !m.IsDeleted && !m.IsFromPage && m.SentAt != null)
+            .Select(m => new { m.PageConversationId, SentAt = m.SentAt!.Value })
+            .ToListAsync(ct);
+
+        var result = ids.ToDictionary(id => id, _ => 0);
+        foreach (var row in rows)
+        {
+            if (!conversations.TryGetValue(row.PageConversationId, out var conv)) continue;
+            if (conv.LastReadAtUtc is null || row.SentAt > conv.LastReadAtUtc.Value)
+                result[row.PageConversationId]++;
+        }
+
+        return result;
+    }
+
+    private async Task<Dictionary<Guid, int>> CountCommentUnreadAsync(
+        Dictionary<Guid, SocialCommentModel> roots,
+        CancellationToken ct)
+    {
+        if (roots.Count == 0) return new Dictionary<Guid, int>();
+        var rootIds = roots.Keys.ToList();
+        var rows = await db.SocialComments.AsNoTracking()
+            .Where(c =>
+                !c.IsDeleted
+                && !c.IsDeletedOnPlatform
+                && !c.IsFromPage
+                && c.CommentedAt != null
+                && (rootIds.Contains(c.Id)
+                    || (c.ParentCommentId != null && rootIds.Contains(c.ParentCommentId.Value))))
+            .Select(c => new
+            {
+                RootId = c.ParentCommentId ?? c.Id,
+                CommentedAt = c.CommentedAt!.Value
+            })
+            .ToListAsync(ct);
+
+        var result = rootIds.ToDictionary(id => id, _ => 0);
+        foreach (var row in rows)
+        {
+            if (!roots.TryGetValue(row.RootId, out var root)) continue;
+            if (root.LastReadAtUtc is null || row.CommentedAt > root.LastReadAtUtc.Value)
+                result[row.RootId]++;
         }
 
         return result;

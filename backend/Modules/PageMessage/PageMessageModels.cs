@@ -16,7 +16,8 @@ public enum MessageActionType
     Assign = 2,
     SetStatus = 3,
     AddNote = 4,
-    Sync = 5
+    Sync = 5,
+    MarkRead = 6
 }
 
 /// <summary>Mirror một hội thoại Messenger giữa Facebook Page và một người dùng.</summary>
@@ -31,6 +32,9 @@ public class PageConversationModel : BaseEntity
     public DateTime? LastMessageAt { get; set; }
     public DateTime? LastCustomerMessageAt { get; set; }
     public DateTime? LastPageMessageAt { get; set; }
+    /// <summary>Thời điểm app đánh dấu đã đọc (U1). Không lấy từ Graph unread_count.</summary>
+    public DateTime? LastReadAtUtc { get; set; }
+    /// <summary>Cache unread theo LastReadAtUtc; sync Graph không được ghi đè.</summary>
     public int UnreadCount { get; set; }
     public int MessageCount { get; set; }
     public MessageInboxStatus InboxStatus { get; set; } = MessageInboxStatus.New;
