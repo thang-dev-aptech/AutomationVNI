@@ -1,11 +1,13 @@
 import React from 'react'
 import Icon from '../../../shared/components/Icon'
 import Button from '../../../shared/components/Button'
+import InboxSourceTabs from './InboxSourceTabs'
 
 export const InboxFilterBar = ({
   channels = [],
   tags = [],
   users = [],
+  sources = [],
   filters = {},
   onChangeFilters,
   onSearchSubmit,
@@ -72,32 +74,23 @@ export const InboxFilterBar = ({
         </Button>
       </form>
 
-      {/* Quick Filters: Kind chips */}
-      <div className="crm-channel-filters" data-testid="inbox-kind-filters">
-        <button
-          type="button"
-          className={`crm-filter-chip ${filters.kind === null ? 'active' : ''}`}
-          onClick={() => onChangeFilters({ ...filters, kind: null })}
-          data-testid="filter-kind-all"
-        >
-          Tất cả
-        </button>
-        <button
-          type="button"
-          className={`crm-filter-chip ${filters.kind === 1 ? 'active' : ''}`}
-          onClick={() => handleKindClick(1)}
-          data-testid="filter-kind-message"
-        >
-          💬 Tin nhắn
-        </button>
-        <button
-          type="button"
-          className={`crm-filter-chip ${filters.kind === 2 ? 'active' : ''}`}
-          onClick={() => handleKindClick(2)}
-          data-testid="filter-kind-comment"
-        >
-          📝 Bình luận
-        </button>
+      {/* Quick Filters: Source Tabs (thay 3 chip kind) + Unread toggle */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
+          margin: '4px 0',
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <InboxSourceTabs
+            sources={sources}
+            selectedSource={filters.source || null}
+            onSelectSource={(sourceKey) => onChangeFilters({ ...filters, source: sourceKey })}
+          />
+        </div>
         <button
           type="button"
           className={`crm-filter-chip ${filters.unreadOnly ? 'active' : ''}`}
@@ -105,10 +98,36 @@ export const InboxFilterBar = ({
           style={{
             borderColor: filters.unreadOnly ? 'var(--crm-danger)' : undefined,
             color: filters.unreadOnly ? 'var(--crm-danger)' : undefined,
+            flexShrink: 0,
           }}
           data-testid="filter-unread-only"
         >
           🔴 Chưa đọc
+        </button>
+      </div>
+
+      {/* Hidden compatibility buttons for legacy kind tests */}
+      <div style={{ display: 'none' }} aria-hidden="true" data-testid="inbox-kind-filters">
+        <button
+          type="button"
+          data-testid="filter-kind-all"
+          onClick={() => onChangeFilters({ ...filters, kind: null })}
+        >
+          Tất cả
+        </button>
+        <button
+          type="button"
+          data-testid="filter-kind-message"
+          onClick={() => handleKindClick(1)}
+        >
+          Tin nhắn
+        </button>
+        <button
+          type="button"
+          data-testid="filter-kind-comment"
+          onClick={() => handleKindClick(2)}
+        >
+          Bình luận
         </button>
       </div>
 

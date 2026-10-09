@@ -107,5 +107,10 @@ export const inboxApi = {
     const res = await crmApi.post(`/CrmInbox/${normalizedKind}/${id}/read`)
     return res.data?.data || res.data
   },
+
+  getSources: async () => {
+    const res = await crmApi.get('/CrmInbox/sources')
+    return res.data?.data || res.data || []
+  },
 }
 

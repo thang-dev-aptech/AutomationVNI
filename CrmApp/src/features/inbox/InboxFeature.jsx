@@ -71,7 +71,7 @@ const DEFAULT_INITIAL_DETAIL = {
 
 export const InboxFeature = () => {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { canCare, isReadOnly, isAdmin, isContentManager, isReviewer } = useAuth()
   // Tập "vừa đọc" key: `${kind}:${id}` -> timestamp (ms). Dùng để chống hồi sinh badge khi polling merge.
   const readTimestampsRef = useRef(new Map())
@@ -131,10 +131,12 @@ export const InboxFeature = () => {
   const [channels, setChannels] = useState([])
   const [users, setUsers] = useState([])
   const [tags, setTags] = useState([])
+  const [sources, setSources] = useState([])
 
-  // Filters — kind khởi tạo từ ?kind= (ClientApp redirect /messages|/comments)
+  // Filters — source từ ?source=, kind khởi tạo từ ?kind= (ClientApp redirect /messages|/comments)
   const [filters, setFilters] = useState({
     socialChannelId: null,
+    source: searchParams?.get?.('source') || null,
     kind: kindFromSearchParams(searchParams),
     status: null,
     assignedFilter: 'all',
@@ -143,12 +145,48 @@ export const InboxFeature = () => {
     keyword: '',
   })
 
+  // Đồng bộ URL khi URL query thay đổi từ ngoài (back/forward)
+  useEffect(() => {
+    const urlSource = searchParams?.get?.('source') || null
+    const urlKind = kindFromSearchParams(searchParams)
+    setFilters((prev) => {
+      if (prev.source !== urlSource || prev.kind !== urlKind) {
+        return { ...prev, source: urlSource, kind: urlKind }
+      }
+      return prev
+    })
+  }, [searchParams])
+
+  const handleChangeFilters = (nextFilters) => {
+    if (nextFilters.source !== filters.source) {
+      const nextParams = new URLSearchParams(searchParams)
+      if (nextFilters.source) {
+        nextParams.set('source', nextFilters.source)
+      } else {
+        nextParams.delete('source')
+      }
+      setSearchParams(nextParams, { replace: true })
+    }
+    setFilters(nextFilters)
+  }
+
   // Responsive mobile state: 'list' | 'detail'
   const [mobileView, setMobileView] = useState('list')
 
   const isMountedRef = useRef(true)
 
-  // 1. Fetch metadata (channels, users, tags)
+  // 1. Fetch metadata (channels, users, tags) & sources
+  const loadSources = useCallback(async () => {
+    try {
+      const sourcesData = await inboxApi.getSources()
+      if (isMountedRef.current && Array.isArray(sourcesData)) {
+        setSources(sourcesData)
+      }
+    } catch {
+      // ignore in mock environments
+    }
+  }, [])
+
   useEffect(() => {
     isMountedRef.current = true
     const loadMetadata = async () => {
@@ -168,11 +206,12 @@ export const InboxFeature = () => {
       }
     }
     loadMetadata()
+    loadSources()
 
     return () => {
       isMountedRef.current = false
     }
-  }, [])
+  }, [loadSources])
 
   // 2. Fetch list of conversations & comments (foreground: index=1, size=30; background: index=1, merge)
   const loadList = useCallback(
@@ -195,6 +234,7 @@ export const InboxFeature = () => {
         const req = {
           keyword: filters.keyword?.trim() || null,
           socialChannelId: filters.socialChannelId || null,
+          source: filters.source || null,
           kind: filters.kind || null,
           status: filters.status || null,
           tagId: filters.tagId || null,
@@ -350,6 +390,7 @@ export const InboxFeature = () => {
       const req = {
         keyword: filters.keyword?.trim() || null,
         socialChannelId: filters.socialChannelId || null,
+        source: filters.source || null,
         kind: filters.kind || null,
         status: filters.status || null,
         tagId: filters.tagId || null,
@@ -420,15 +461,18 @@ export const InboxFeature = () => {
   useEffect(() => {
     const timer = setInterval(() => {
       loadList(true)
+      loadSources()
     }, 20000)
 
     const handleFocus = () => {
       loadList(true)
+      loadSources()
     }
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         loadList(true)
+        loadSources()
       }
     }
 
@@ -596,8 +640,9 @@ export const InboxFeature = () => {
           channels={channels}
           tags={tags}
           users={users}
+          sources={sources}
           filters={filters}
-          onChangeFilters={setFilters}
+          onChangeFilters={handleChangeFilters}
           onSearchSubmit={() => loadList()}
         />
 

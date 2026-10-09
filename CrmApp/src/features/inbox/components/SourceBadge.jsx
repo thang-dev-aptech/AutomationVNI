@@ -6,6 +6,12 @@ const PLATFORM_INSTAGRAM = 3
 
 const MESSAGE_KIND = 1
 
+export const INBOX_SOURCES = {
+  MESSENGER: 'messenger',
+  FACEBOOK: 'facebook',
+  INSTAGRAM: 'instagram',
+}
+
 /**
  * Nguồn của một item inbox:
  * - Instagram: kênh có Platform = Instagram (tin nhắn hoặc bình luận).
@@ -14,8 +20,8 @@ const MESSAGE_KIND = 1
  * Chưa có Zalo vì backend chưa có SocialPlatform Zalo.
  */
 export function resolveInboxSource(item) {
-  if (Number(item?.platform) === PLATFORM_INSTAGRAM) return 'instagram'
-  return item?.kind === MESSAGE_KIND ? 'messenger' : 'facebook'
+  if (Number(item?.platform) === PLATFORM_INSTAGRAM) return INBOX_SOURCES.INSTAGRAM
+  return item?.kind === MESSAGE_KIND ? INBOX_SOURCES.MESSENGER : INBOX_SOURCES.FACEBOOK
 }
 
 /**
