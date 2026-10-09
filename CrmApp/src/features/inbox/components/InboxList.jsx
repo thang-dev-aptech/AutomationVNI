@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from 'react'
 import Badge from '../../../shared/components/Badge'
 import { formatVietnamDateTime } from '../../../shared/utils/dateUtils'
 import SourceBadge from './SourceBadge'
+import Icon from '../../../shared/components/Icon'
 
 const STATUS_CONFIG = {
   1: { label: 'Mới', variant: 'danger' },
@@ -74,7 +75,7 @@ export const InboxList = ({
         </div>
       ) : items.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px', color: 'var(--crm-text-muted)' }}>
-          📭 Không có tin nhắn hoặc bình luận nào phù hợp.
+          <Icon name="inbox-empty" size={18} /> Không có tin nhắn hoặc bình luận nào phù hợp.
         </div>
       ) : (
         <>
@@ -119,7 +120,7 @@ export const InboxList = ({
                           aria-label="Có tin hẹn giờ"
                           style={{ marginRight: '4px', display: 'inline-flex', verticalAlign: 'middle' }}
                         >
-                          ⏰
+                          <Icon name="clock" size={12} />
                         </span>
                       )}
                       {formatVietnamDateTime(item.lastCustomerActivityAt)}
@@ -134,7 +135,7 @@ export const InboxList = ({
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px', alignItems: 'center' }}>
                     {/* Kind */}
                     <Badge variant={isMessage ? 'primary' : 'default'} size="sm">
-                      {isMessage ? '💬 Tin nhắn' : '📝 Bình luận'}
+                      <><Icon name={isMessage ? 'message' : 'note'} size={12} /> {isMessage ? 'Tin nhắn' : 'Bình luận'}</>
                     </Badge>
 
                     {/* Channel */}
@@ -175,7 +176,7 @@ export const InboxList = ({
                         }}
                         title={`Người phụ trách: ${item.assignedTo}`}
                       >
-                        👤 {item.assignedTo}
+                        <Icon name="user" size={12} /> {item.assignedTo}
                       </span>
                     )}
 
@@ -210,7 +211,7 @@ export const InboxList = ({
                         }}
                         title="Quá 24 giờ kể từ tin nhắn cuối của khách"
                       >
-                        ⏰ Quá 24h
+                        <Icon name="clock" size={12} /> Quá 24h
                       </span>
                     )}
 

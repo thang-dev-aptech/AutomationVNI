@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { customerApi } from '../api/customerApi'
 import Button from '../../../shared/components/Button'
 import Badge from '../../../shared/components/Badge'
+import Icon from '../../../shared/components/Icon'
 
 export const MergeModal = ({ isOpen, onClose, onSuccess, initialCustomerId = null }) => {
   const [suggestions, setSuggestions] = useState([])
@@ -155,7 +156,7 @@ export const MergeModal = ({ isOpen, onClose, onSuccess, initialCustomerId = nul
                   >
                     <div>
                       <div style={{ fontSize: '14px', fontWeight: '700' }}>
-                        {s.customerAName} <span style={{ color: 'var(--crm-text-muted)', fontWeight: '400' }}>↔</span> {s.customerBName}
+                        {s.customerAName} <span style={{ color: 'var(--crm-text-muted)', fontWeight: '400' }}><Icon name="arrow-left-right" size={14} aria-label="và" /></span> {s.customerBName}
                       </div>
                       <div style={{ fontSize: '12px', color: 'var(--crm-text-muted)', marginTop: '4px' }}>
                         Lý do: <Badge variant="warning">{s.reason}</Badge>{' '}

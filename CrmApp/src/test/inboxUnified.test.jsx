@@ -159,10 +159,10 @@ describe('AC crm-inbox-list-test (56154ec6) — Unified Inbox Vitest', () => {
       expect(screen.getByTestId(`conv-item-${mockCommentItem.id}`)).toBeInTheDocument()
     })
 
-    expect(screen.getAllByText('💬 Tin nhắn').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('📝 Bình luận').length).toBeGreaterThan(0)
-    expect(screen.getByText('Tuyển sinh')).toBeInTheDocument()
-    expect(screen.getAllByText('👤 Reviewer Care').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Tin nhắn').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Bình luận').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Tuyển sinh').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Reviewer Care').length).toBeGreaterThan(0)
 
     // Test filter kind: click 'Bình luận'
     fireEvent.click(screen.getByTestId('filter-kind-comment'))

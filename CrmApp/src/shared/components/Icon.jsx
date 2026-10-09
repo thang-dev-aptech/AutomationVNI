@@ -63,6 +63,10 @@ import {
   ClipboardList,
   FolderOpen,
   Folder,
+  ThumbsUp,
+  Lightbulb,
+  ArrowLeftRight,
+  CircleDot,
 } from 'lucide-react'
 
 export const ICON_MAP = {
@@ -147,6 +151,10 @@ export const ICON_MAP = {
   'clipboard-list': ClipboardList,
   folder: Folder,
   'folder-open': FolderOpen,
+  'thumbs-up': ThumbsUp,
+  lightbulb: Lightbulb,
+  'arrow-left-right': ArrowLeftRight,
+  'circle-dot': CircleDot,
 }
 
 export const Icon = ({

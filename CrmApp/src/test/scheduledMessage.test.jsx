@@ -503,7 +503,8 @@ describe('Requirement 47c67ee0, AC dc3224c7 (a)-(d) — Hẹn giờ gửi tin nh
       // itemWithPending has clock icon
       const iconItem1 = screen.getByTestId(`scheduled-icon-${itemWithPending.id}`)
       expect(iconItem1).toBeInTheDocument()
-      expect(iconItem1).toHaveTextContent('⏰')
+      expect(iconItem1.querySelector('svg.lucide-clock')).not.toBeNull()
+      expect(iconItem1).toHaveAttribute('aria-label', 'Có tin hẹn giờ')
 
       // itemWithoutPending does NOT have clock icon
       expect(screen.queryByTestId(`scheduled-icon-${itemWithoutPending.id}`)).not.toBeInTheDocument()

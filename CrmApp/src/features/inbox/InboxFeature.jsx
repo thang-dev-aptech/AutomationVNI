@@ -7,6 +7,7 @@ import InboxList from './components/InboxList'
 import InboxDetail from './components/InboxDetail'
 import CustomerPanel from './components/CustomerPanel'
 import './InboxFeature.css'
+import Icon from '../../shared/components/Icon'
 
 /** Map ?kind=message|comment → CrmInbox kind 1|2; khác/không có → null. */
 export function kindFromSearchParams(searchParams) {
@@ -692,7 +693,7 @@ export const InboxFeature = () => {
           aria-label="Mở hồ sơ"
           title="Mở hồ sơ"
         >
-          👤 Mở hồ sơ
+          <Icon name="user" size={16} /> Mở hồ sơ
         </button>
       )}
 

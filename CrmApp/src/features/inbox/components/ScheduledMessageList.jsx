@@ -2,6 +2,7 @@ import React from 'react'
 import Badge from '../../../shared/components/Badge'
 import Button from '../../../shared/components/Button'
 import { formatVietnamDateTime } from '../../../shared/utils/dateUtils'
+import Icon from '../../../shared/components/Icon'
 
 export const ScheduledMessageList = ({
   messages = [],
@@ -37,7 +38,7 @@ export const ScheduledMessageList = ({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '13px', color: 'var(--crm-text)' }}>
-          <span>⏰</span>
+          <Icon name="clock" size={14} />
           <span>Tin hẹn giờ ({visibleMessages.length})</span>
         </div>
       </div>
@@ -101,7 +102,7 @@ export const ScheduledMessageList = ({
                 }}
               >
                 <span data-testid={`scheduled-time-${msg.id}`}>
-                  🕒 Gửi lúc: {formatVietnamDateTime(msg.scheduledAtUtc)}
+                  <Icon name="clock" size={12} /> Gửi lúc: {formatVietnamDateTime(msg.scheduledAtUtc)}
                 </span>
 
                 {/* Sửa / Huỷ buttons only for pending and non-Viewer */}
@@ -143,7 +144,7 @@ export const ScheduledMessageList = ({
                     borderRadius: '4px',
                   }}
                 >
-                  ⚠️ Lý do: {msg.error}
+                  <Icon name="alert" size={12} /> Lý do: {msg.error}
                 </div>
               )}
             </div>

@@ -304,7 +304,7 @@ export const CustomerProfile = ({ customerId, onBack, onCustomerUpdated }) => {
           data-testid="phone-suggestions-box"
         >
           <h4 style={{ margin: '0 0 8px', fontSize: '14px', fontWeight: '700', color: 'var(--crm-warning-text)' }}>
-            💡 Phát hiện gợi ý số điện thoại trong hội thoại/bình luận:
+            <Icon name="lightbulb" size={16} /> Phát hiện gợi ý số điện thoại trong hội thoại/bình luận:
           </h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {customer.phoneSuggestions.map((sug) => (

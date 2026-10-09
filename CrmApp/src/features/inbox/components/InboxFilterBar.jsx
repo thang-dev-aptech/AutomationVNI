@@ -102,7 +102,7 @@ export const InboxFilterBar = ({
           }}
           data-testid="filter-unread-only"
         >
-          🔴 Chưa đọc
+          <Icon name="circle-dot" size={12} /> Chưa đọc
         </button>
       </div>
 
@@ -173,8 +173,8 @@ export const InboxFilterBar = ({
           data-testid="select-filter-assignee"
         >
           <option value="all">Tất cả phụ trách</option>
-          <option value="mine">👤 Của tôi</option>
-          <option value="unassigned">⚪ Chưa gán</option>
+          <option value="mine">Của tôi</option>
+          <option value="unassigned">Chưa gán</option>
           {users.map((u) => (
             <option key={u.id} value={u.id}>
               {u.displayName || u.userName}
@@ -193,7 +193,7 @@ export const InboxFilterBar = ({
           <option value="">Tất cả tag</option>
           {tags.map((t) => (
             <option key={t.id} value={t.id}>
-              🏷️ {t.name}
+              {t.name}
             </option>
           ))}
         </select>

@@ -320,7 +320,7 @@ export const InboxDetail = ({
                 {item.displayName || 'Khách hàng'}
               </h3>
               <Badge variant={isMessage ? 'primary' : 'default'} size="sm">
-                {isMessage ? '💬 Tin nhắn' : '📝 Bình luận'}
+                <><Icon name={isMessage ? 'message' : 'note'} size={12} /> {isMessage ? 'Tin nhắn' : 'Bình luận'}</>
               </Badge>
             </div>
             <div style={{ fontSize: '13px', color: 'var(--crm-text-muted)', marginTop: '2px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -381,10 +381,10 @@ export const InboxDetail = ({
                 onChange={handleAssignChange}
                 data-testid="select-assign-user"
               >
-                <option value="">⚪ Chưa gán</option>
+                <option value="">Chưa gán</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
-                    👤 {u.displayName || u.userName}
+                    {u.displayName || u.userName}
                   </option>
                 ))}
               </select>
@@ -422,7 +422,7 @@ export const InboxDetail = ({
                 onClick={() => setTagSelectOpen(!tagSelectOpen)}
                 data-testid="btn-toggle-tag-select"
               >
-                🏷️ Thêm tag
+                <Icon name="tag" size={16} /> Thêm tag
               </Button>
 
               {/* Opportunity Action: Xem cơ hội vs Tạo cơ hội */}
@@ -434,7 +434,7 @@ export const InboxDetail = ({
                   data-testid="btn-view-opportunity"
                   title="Xem cơ hội đang mở"
                 >
-                  🎯 Xem cơ hội
+                  <Icon name="target" size={16} /> Xem cơ hội
                 </Button>
               ) : (
                 !effectiveIsReadOnly && (
@@ -608,7 +608,7 @@ export const InboxDetail = ({
                     rel="noreferrer"
                     style={{ fontSize: '12px', color: 'var(--crm-primary)', marginTop: '4px', display: 'inline-block' }}
                   >
-                    Xem bài viết trên Facebook ↗
+                    Xem bài viết trên Facebook <Icon name="external-link" size={12} />
                   </a>
                 )}
               </div>
@@ -626,7 +626,7 @@ export const InboxDetail = ({
               <p style={{ margin: 0 }}>{thread?.message || item.snippet}</p>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginTop: '6px', opacity: 0.8 }}>
                 <span>{formatVietnamDateTime(thread?.commentedAt || item.lastCustomerActivityAt)}</span>
-                <span>👍 {thread?.likeCount || 0} lượt thích</span>
+                <span><Icon name="thumbs-up" size={12} /> {thread?.likeCount || 0} lượt thích</span>
               </div>
             </div>
 
@@ -672,7 +672,7 @@ export const InboxDetail = ({
       <div className="crm-chat-footer">
         {effectiveIsReadOnly ? (
           <div className="crm-readonly-notice" data-testid="viewer-readonly-notice">
-            🔒 Chế độ Chỉ đọc (Viewer) — Thao tác trả lời và chỉnh sửa bị vô hiệu hoá
+            <Icon name="lock" size={14} /> Chế độ Chỉ đọc (Viewer) — Thao tác trả lời và chỉnh sửa bị vô hiệu hoá
           </div>
         ) : (
           <>
@@ -690,7 +690,7 @@ export const InboxDetail = ({
                 data-testid="reply-locked-24h"
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '14px', marginBottom: '4px' }}>
-                  <span>⚠️</span>
+                  <Icon name="alert" size={16} />
                   <span>Khoá gửi tin nhắn (Quá 24 giờ)</span>
                 </div>
                 <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5 }}>
@@ -761,7 +761,7 @@ export const InboxDetail = ({
                   data-testid="btn-ai-suggest"
                   title="AI gợi ý trả lời (chỉ tạo bản nháp)"
                 >
-                  ✨ AI gợi ý
+                  <Icon name="sparkles" size={16} /> AI gợi ý
                 </Button>
               )}
               {isMessage && !effectiveIsReadOnly && (
@@ -774,7 +774,7 @@ export const InboxDetail = ({
                   data-testid="btn-schedule-send"
                   title="Hẹn giờ gửi tin nhắn"
                 >
-                  ⏰ Hẹn giờ gửi
+                  <Icon name="clock" size={16} /> Hẹn giờ gửi
                 </Button>
               )}
               <Button

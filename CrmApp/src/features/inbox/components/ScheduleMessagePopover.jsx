@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import Button from '../../../shared/components/Button'
+import Icon from '../../../shared/components/Icon'
 
 // Format Date / ISO to Vietnam local string YYYY-MM-DDTHH:mm for datetime-local input
 export function toVietnamDateTimeLocalString(date) {
@@ -170,7 +171,7 @@ export const ScheduleMessagePopover = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '18px' }}>⏰</span>
+            <Icon name="clock" size={18} />
             <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--crm-text)' }}>
               {isEdit ? 'Chỉnh sửa tin hẹn giờ' : 'Hẹn giờ gửi tin nhắn Messenger'}
             </h3>
@@ -211,7 +212,7 @@ export const ScheduleMessagePopover = ({
               }}
               data-testid="schedule-window-info"
             >
-              <span>{isOverWindow ? '⚠️' : 'ℹ️'}</span>
+              <Icon name={isOverWindow ? 'alert' : 'info'} size={16} />
               <span>
                 {isOverWindow ? `Thời gian hẹn vượt quá: ${windowClosesText}` : windowClosesText}
               </span>

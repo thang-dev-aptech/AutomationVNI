@@ -5,6 +5,7 @@ import { inboxApi } from '../api/inboxApi'
 import { PlatformLogo, PLATFORM_LABELS, platformKeyFromEnum } from './PlatformLogo'
 import { opportunityApi } from '../../opportunities/api/opportunityApi'
 import './CustomerPanel.css'
+import Icon from '../../../shared/components/Icon'
 
 function useSafeNavigate() {
   const inRouter = useInRouterContext()
@@ -297,7 +298,7 @@ export function CustomerPanel({
 
         {error && !loading && (
           <div className="crm-customer-error-banner" data-testid="customer-panel-error">
-            <div>⚠️ {error}</div>
+            <div><Icon name="alert" size={16} /> {error}</div>
             <button
               type="button"
               className="crm-customer-retry-btn"
@@ -375,7 +376,7 @@ export function CustomerPanel({
                           onClick={() => navigate(`/tasks?opportunity=${openOpportunity.id}`)}
                           style={{ marginLeft: '6px' }}
                         >
-                          🎯 Xem cơ hội
+                          <Icon name="target" size={14} /> Xem cơ hội
                         </button>
                       ) : (
                         !isReadOnly && canCare && (
