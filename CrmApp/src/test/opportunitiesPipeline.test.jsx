@@ -228,14 +228,14 @@ describe('AC fd9216b3 (c)(d) — Opportunities Pipeline Kanban', () => {
 
       expect(await screen.findByTestId('opportunity-pipeline')).toBeInTheDocument()
 
-      // 4 stage columns
-      expect(screen.getByTestId('pipeline-column-stg-1')).toBeInTheDocument()
-      expect(screen.getByTestId('pipeline-column-stg-2')).toBeInTheDocument()
-      expect(screen.getByTestId('pipeline-column-stg-3')).toBeInTheDocument()
-      expect(screen.getByTestId('pipeline-column-stg-4')).toBeInTheDocument()
+      // 4 stage columns (cột render sau khi stages/pipeline tải xong — chờ theo điều kiện)
+      expect(await screen.findByTestId('pipeline-column-stg-1')).toBeInTheDocument()
+      expect(await screen.findByTestId('pipeline-column-stg-2')).toBeInTheDocument()
+      expect(await screen.findByTestId('pipeline-column-stg-3')).toBeInTheDocument()
+      expect(await screen.findByTestId('pipeline-column-stg-4')).toBeInTheDocument()
 
       // Count badge on columns
-      expect(screen.getByTestId('stage-count-stg-1')).toHaveTextContent('2')
+      await waitFor(() => expect(screen.getByTestId('stage-count-stg-1')).toHaveTextContent('2'))
       expect(screen.getByTestId('stage-count-stg-2')).toHaveTextContent('1')
       expect(screen.getByTestId('stage-count-stg-3')).toHaveTextContent('1')
       expect(screen.getByTestId('stage-count-stg-4')).toHaveTextContent('0')

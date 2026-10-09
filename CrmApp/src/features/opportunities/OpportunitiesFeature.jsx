@@ -82,7 +82,8 @@ export const OpportunitiesFeature = () => {
   }, [])
 
   // Helper to update search params
-  const updateUrlParams = useCallback((paramsToUpdate) => {
+  // push=true: đổi view/tab tạo một mục lịch sử (Back quay lại); keyword/index vẫn replace.
+  const updateUrlParams = useCallback((paramsToUpdate, { push = false } = {}) => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev)
@@ -95,13 +96,13 @@ export const OpportunitiesFeature = () => {
         })
         return next
       },
-      { replace: true }
+      { replace: !push }
     )
   }, [setSearchParams])
 
   // View switch handler
   const handleViewChange = (newView) => {
-    updateUrlParams({ view: newView })
+    updateUrlParams({ view: newView }, { push: true })
   }
 
   // Tab switch handler
@@ -109,7 +110,7 @@ export const OpportunitiesFeature = () => {
     updateUrlParams({
       tab: newTab === 'all' ? null : newTab,
       index: null,
-    })
+    }, { push: true })
   }
 
   // Filter change handler

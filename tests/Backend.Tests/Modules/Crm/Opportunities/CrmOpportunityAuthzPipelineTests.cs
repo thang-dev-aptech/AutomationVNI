@@ -30,6 +30,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -54,7 +55,8 @@ public sealed class CrmOpportunityAuthzPipelineTests : IAsyncLifetime
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
-        _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
+        _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection)
+            .AddInterceptors(new RaceHookInterceptor(this)).Options;
         using (var seed = new AppDbContext(_options))
             seed.Database.EnsureCreated();
 
@@ -354,6 +356,116 @@ public sealed class CrmOpportunityAuthzPipelineTests : IAsyncLifetime
             $"/api/CrmOpportunity/by-conversation/message/{matchedConv}", "Viewer");
         Assert.Equal(HttpStatusCode.OK, byConv.StatusCode);
         Assert.Equal(matchedOppId, (await ReadDataAsync(byConv)).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task C2_SameExternalIdOnOtherPage_CreatesNewCustomer_NotLinkedToOtherPageCustomer()
+    {
+        var pageA = await SeedChannelAsync("Page A");
+        var pageB = await SeedChannelAsync("Page B");
+        var customerOnA = await SeedCustomerWithIdentityAsync(
+            "Khách trên A", null, pageA, "psid-shared", CrmIdentitySource.Message);
+        var convOnB = await SeedConversationAsync(pageB, "psid-shared", "Khách trên B");
+        var beforeCustomers = await CountCustomersAsync();
+        var beforeIdentities = await CountIdentitiesAsync();
+
+        var res = await SendAsync(HttpMethod.Post, "/api/CrmOpportunity/from-conversation", "Admin", new
+        {
+            kind = "message",
+            id = convOnB
+        });
+
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        Assert.NotEqual(customerOnA, (await ReadDataAsync(res)).GetProperty("crmCustomerId").GetGuid());
+        Assert.Equal(beforeCustomers + 1, await CountCustomersAsync());
+        Assert.Equal(beforeIdentities + 1, await CountIdentitiesAsync());
+    }
+
+    [Fact]
+    public async Task N1_MoveStageBackToOpen_WhenAnotherOpenExistsForConversation_Is400()
+    {
+        var (conv, first) = await CreateFromConversationAsync("psid-n1-move");
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(HttpMethod.Post, $"/api/CrmOpportunity/{first}/move-stage", "Admin",
+            new { stageId = CrmOpportunityStageIds.DaMua })).StatusCode);
+        var second = await FromConversationIdAsync(conv); // first đã Won → tạo cơ hội Open mới
+        Assert.NotEqual(first, second);
+
+        var back = await SendAsync(HttpMethod.Post, $"/api/CrmOpportunity/{first}/move-stage", "Admin",
+            new { stageId = CrmOpportunityStageIds.Moi });
+
+        Assert.Equal(HttpStatusCode.BadRequest, back.StatusCode);
+        await using var db = new AppDbContext(_options);
+        Assert.Equal(CrmOpportunityStatus.Won, (await db.CrmOpportunities.SingleAsync(x => x.Id == first)).Status);
+    }
+
+    [Fact]
+    public async Task N1_Unarchive_WhenAnotherOpenExistsForConversation_Is400()
+    {
+        var (conv, first) = await CreateFromConversationAsync("psid-n1-unarchive");
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(HttpMethod.Post, $"/api/CrmOpportunity/{first}/archive", "Admin")).StatusCode);
+        var second = await FromConversationIdAsync(conv);
+        Assert.NotEqual(first, second);
+
+        var unarchive = await SendAsync(HttpMethod.Post, $"/api/CrmOpportunity/{first}/unarchive", "Admin");
+
+        Assert.Equal(HttpStatusCode.BadRequest, unarchive.StatusCode);
+        await using var db = new AppDbContext(_options);
+        Assert.True((await db.CrmOpportunities.SingleAsync(x => x.Id == first)).IsArchived);
+    }
+
+    [Fact]
+    public async Task N1_ConcurrentFromConversation_UniqueIndexLoser_ReturnsWinnersOpportunity_NotServerError()
+    {
+        var channelId = await SeedChannelAsync("Page Race");
+        var conv = await SeedConversationAsync(channelId, "psid-race", "Race");
+        var customerId = await SeedCustomerWithIdentityAsync("Race", null, channelId, "psid-race", CrmIdentitySource.Message);
+        var winner = Guid.NewGuid();
+        // Mô phỏng request song song thắng cuộc: dòng Open của cùng hội thoại xuất hiện ngay trước SaveChanges của request này.
+        _beforeOpportunitySave = () =>
+        {
+            _beforeOpportunitySave = null;
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = "INSERT INTO CrmOpportunities (Id, CrmCustomerId, Title, StageId, Status, IsArchived, Source, PageConversationId, ExpectedValue, IsDeleted, CreatedAt) " +
+                              $"VALUES ('{winner.ToString().ToUpperInvariant()}', '{customerId.ToString().ToUpperInvariant()}', 'Winner', '{CrmOpportunityStageIds.Moi.ToString().ToUpperInvariant()}', 1, 0, 1, '{conv.ToString().ToUpperInvariant()}', 0, 0, '2026-10-09 00:00:00')";
+            cmd.ExecuteNonQuery();
+        };
+
+        var res = await SendAsync(HttpMethod.Post, "/api/CrmOpportunity/from-conversation", "Admin", new { kind = "message", id = conv });
+
+        Assert.True(res.StatusCode == HttpStatusCode.OK, await res.Content.ReadAsStringAsync());
+        Assert.Equal(winner, (await ReadDataAsync(res)).GetProperty("id").GetGuid());
+        Assert.Equal(1, await CountOppsForConversationAsync(conv));
+    }
+
+    private Action? _beforeOpportunitySave;
+
+    private sealed class RaceHookInterceptor(CrmOpportunityAuthzPipelineTests owner) : SaveChangesInterceptor
+    {
+        public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
+        {
+            if (eventData.Context!.ChangeTracker.Entries<CrmOpportunityModel>().Any(e => e.State == EntityState.Added))
+                owner._beforeOpportunitySave?.Invoke();
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken ct = default)
+            => ValueTask.FromResult(SavingChanges(eventData, result));
+    }
+
+    private async Task<(Guid Conversation, Guid Opportunity)> CreateFromConversationAsync(string externalId)
+    {
+        var channelId = await SeedChannelAsync("Page " + externalId);
+        var conv = await SeedConversationAsync(channelId, externalId, externalId);
+        return (conv, await FromConversationIdAsync(conv));
+    }
+
+    private async Task<Guid> FromConversationIdAsync(Guid conversationId)
+    {
+        var res = await SendAsync(HttpMethod.Post, "/api/CrmOpportunity/from-conversation", "Admin",
+            new { kind = "message", id = conversationId });
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        return (await ReadDataAsync(res)).GetProperty("id").GetGuid();
     }
 
     [Fact]

@@ -1,7 +1,7 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { MemoryRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { OpportunitiesFeature } from '../features/opportunities/OpportunitiesFeature'
 import { TasksPage } from '../modules/tasks/TasksPage'
 import { opportunityApi } from '../features/opportunities/api/opportunityApi'
@@ -158,6 +158,38 @@ describe('AC fd9216b3 (a)(b)(d) — Opportunities Table & Header & Viewer & Cust
           })
         )
       })
+    })
+
+    it('N4: đổi view/tab push history — Back quay về view trước; gõ keyword vẫn replace', async () => {
+      const BackProbe = () => {
+        const navigate = useNavigate()
+        return <button type="button" data-testid="probe-back" onClick={() => navigate(-1)}>back</button>
+      }
+      render(
+        <MemoryRouter initialEntries={['/tasks']}>
+          <LocationTracker />
+          <BackProbe />
+          <Routes>
+            <Route path="/tasks" element={<TasksPage />} />
+          </Routes>
+        </MemoryRouter>
+      )
+      expect(await screen.findByTestId('opportunity-table')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByTestId('btn-view-pipeline'))
+      expect(await screen.findByTestId('opportunity-pipeline')).toBeInTheDocument()
+      expect(screen.getByTestId('location-search').textContent).toContain('view=pipeline')
+
+      fireEvent.click(screen.getByTestId('probe-back'))
+      expect(await screen.findByTestId('opportunity-table')).toBeInTheDocument()
+      expect(screen.queryByTestId('opportunity-pipeline')).not.toBeInTheDocument()
+      expect(screen.getByTestId('location-search').textContent).not.toContain('view=pipeline')
+
+      // tab: push — Back quay về tab trước
+      fireEvent.click(screen.getByTestId('tab-open'))
+      await waitFor(() => expect(screen.getByTestId('location-search').textContent).toContain('tab=open'))
+      fireEvent.click(screen.getByTestId('probe-back'))
+      await waitFor(() => expect(screen.getByTestId('location-search').textContent).not.toContain('tab=open'))
     })
 
     it('chuyển Bảng ↔ Pipeline ghi ?view= lên URL; vào thẳng /tasks?view=pipeline thì mở Pipeline', async () => {

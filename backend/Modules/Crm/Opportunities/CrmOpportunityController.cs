@@ -181,6 +181,10 @@ public class CrmOpportunityController(CrmOpportunityService service) : Controlle
         {
             return NotFound(ApiResponse.Fail("NOT_FOUND", ex.Message));
         }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse.Fail("OPP_INVALID", ex.Message));
+        }
     }
 
     [HttpDelete("{id:guid}")]

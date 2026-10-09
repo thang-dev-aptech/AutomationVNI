@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { inboxApi } from './api/inboxApi'
 import { useAuth } from '../../auth/useAuth'
@@ -111,15 +111,17 @@ export const InboxFeature = () => {
   // Tăng mỗi lần tải lại theo bộ lọc mới: response của bộ lọc cũ (loadMore/polling) bị bỏ.
   const listGenRef = useRef(0)
 
-  useEffect(() => {
+  // Đồng bộ ref ngay lúc commit (layout effect): useEffect có thể chạy muộn sau khi DOM đã hiện
+  // "30 / 75", khiến "Tải thêm" bấm ngay lúc đó thấy total cũ (0) và bị bỏ qua.
+  useLayoutEffect(() => {
     totalRef.current = total
   }, [total])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     pageIndexRef.current = pageIndex
   }, [pageIndex])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     itemsRef.current = items
   }, [items])
 

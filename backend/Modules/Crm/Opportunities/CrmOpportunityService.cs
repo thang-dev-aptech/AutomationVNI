@@ -6,6 +6,7 @@ using Backend.Modules.SocialChannel.Enums;
 using Backend.Modules.SocialComment;
 using Backend.Shared;
 using Backend.Shared.Repositories;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Modules.Crm.Opportunities;
@@ -299,6 +300,10 @@ public class CrmOpportunityService(
             && string.IsNullOrWhiteSpace(request.LostReason))
             throw new InvalidOperationException("LostReason bắt buộc khi chuyển sang giai đoạn Thất bại");
 
+        // Quay về giai đoạn Open không được tạo ra 2 cơ hội Open cho cùng hội thoại/thread.
+        if (stage.Kind == CrmOpportunityStageKind.Open && !entity.IsArchived)
+            await EnsureOpenUniqueAsync(entity.PageConversationId, entity.SocialCommentId, entity.Id, ct);
+
         var now = DateTime.UtcNow;
         entity.StageId = stage.Id;
         entity.Status = StatusFromKind(stage.Kind);
@@ -411,6 +416,8 @@ public class CrmOpportunityService(
         var entity = await db.CrmOpportunities
             .FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, ct)
             ?? throw new KeyNotFoundException("Cơ hội không tồn tại");
+        if (entity.Status == CrmOpportunityStatus.Open)
+            await EnsureOpenUniqueAsync(entity.PageConversationId, entity.SocialCommentId, entity.Id, ct);
         entity.IsArchived = false;
         entity.LastActivityAtUtc = DateTime.UtcNow;
         entity.UpdatedAt = DateTime.UtcNow;
@@ -529,16 +536,27 @@ public class CrmOpportunityService(
             ? $"Cơ hội — {displayName ?? externalId}"
             : request.Title.Trim();
 
-        return await CreateAsync(new CreateCrmOpportunityRequest
+        try
         {
-            CrmCustomerId = customerId,
-            Title = title,
-            StageId = CrmOpportunityStageIds.Moi,
-            Source = source,
-            SocialChannelId = socialChannelId,
-            PageConversationId = pageConversationId,
-            SocialCommentId = socialCommentId
-        }, ct);
+            return await CreateAsync(new CreateCrmOpportunityRequest
+            {
+                CrmCustomerId = customerId,
+                Title = title,
+                StageId = CrmOpportunityStageIds.Moi,
+                Source = source,
+                SocialChannelId = socialChannelId,
+                PageConversationId = pageConversationId,
+                SocialCommentId = socialCommentId
+            }, ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqliteException { SqliteExtendedErrorCode: 2067 })
+        {
+            // Bấm 2 lần / request song song: unique index chặn dòng thứ hai → trả cơ hội đang mở.
+            db.ChangeTracker.Clear();
+            var existing = await GetByConversationAsync(kind, pageConversationId ?? socialCommentId!.Value, ct);
+            if (existing is not null) return existing;
+            throw;
+        }
     }
 
     public async Task<CrmOpportunityDetailResponse?> GetByConversationAsync(
