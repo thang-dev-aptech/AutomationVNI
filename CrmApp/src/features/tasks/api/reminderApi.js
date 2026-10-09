@@ -15,6 +15,11 @@ export const reminderApi = {
     return res.data?.data || res.data
   },
 
+  listForOpportunity: async (opportunityId) => {
+    const res = await crmApi.get(`/CrmReminder/by-opportunity/${opportunityId}`)
+    return res.data?.data || res.data || []
+  },
+
   create: async (data) => {
     const res = await crmApi.post('/CrmReminder', data)
     return res.data?.data || res.data

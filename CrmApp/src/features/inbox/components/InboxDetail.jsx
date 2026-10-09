@@ -1,11 +1,21 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { useNavigate, useInRouterContext } from 'react-router-dom'
 import Button from '../../../shared/components/Button'
 import Badge from '../../../shared/components/Badge'
 import Icon from '../../../shared/components/Icon'
 import { formatVietnamDateTime } from '../../../shared/utils/dateUtils'
 import { inboxApi } from '../api/inboxApi'
+import { opportunityApi } from '../../opportunities/api/opportunityApi'
 import { toast } from '../../../shared/utils/toast'
 import { useAuth } from '../../../auth/useAuth'
+
+function useSafeNavigate() {
+  const inRouter = useInRouterContext()
+  const nav = inRouter ? useNavigate() : null
+  return nav || ((to) => {
+    if (typeof window !== 'undefined') window.location.href = to
+  })
+}
 
 const STATUS_OPTIONS = [
   { value: 1, label: 'Mới', variant: 'danger' },
@@ -41,10 +51,70 @@ export const InboxDetail = ({
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState(null)
 
+  const navigate = useSafeNavigate()
+  const [openOpportunity, setOpenOpportunity] = useState(null)
+  const [loadingOpportunity, setLoadingOpportunity] = useState(false)
+  const [creatingOpportunity, setCreatingOpportunity] = useState(false)
+
   const auth = useAuth()
   const effectiveCanCare = canCare !== undefined ? canCare : auth.canCare
   const effectiveIsReadOnly = isReadOnly !== undefined ? isReadOnly : auth.isReadOnly
   const canSuggestAi = effectiveCanCare && !effectiveIsReadOnly
+
+  useEffect(() => {
+    let active = true
+    if (!item?.id) {
+      setOpenOpportunity(null)
+      return
+    }
+    const checkOpp = async () => {
+      setLoadingOpportunity(true)
+      try {
+        const opp = await opportunityApi.byConversation(
+          item.kind === 2 ? 'comment' : 'message',
+          item.id,
+        )
+        if (active) {
+          if (opp && (opp.status === 1 || !opp.status) && !opp.isArchived) {
+            setOpenOpportunity(opp)
+          } else {
+            setOpenOpportunity(null)
+          }
+        }
+      } catch {
+        if (active) setOpenOpportunity(null)
+      } finally {
+        if (active) setLoadingOpportunity(false)
+      }
+    }
+    checkOpp()
+    return () => {
+      active = false
+    }
+  }, [item?.id, item?.kind])
+
+  const handleCreateOpportunity = async () => {
+    if (creatingOpportunity || !item?.id || effectiveIsReadOnly) return
+    setCreatingOpportunity(true)
+    try {
+      const res = await opportunityApi.fromConversation({
+        kind: item.kind === 2 ? 'comment' : 'message',
+        id: item.id,
+      })
+      toast.success('Đã tạo cơ hội từ hội thoại')
+      setOpenOpportunity(res)
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể tạo cơ hội')
+    } finally {
+      setCreatingOpportunity(false)
+    }
+  }
+
+  const handleViewOpportunity = () => {
+    if (openOpportunity?.id) {
+      navigate(`/tasks?opportunity=${openOpportunity.id}`)
+    }
+  }
 
   if (!item) {
     return (
@@ -279,6 +349,32 @@ export const InboxDetail = ({
               >
                 🏷️ Thêm tag
               </Button>
+
+              {/* Opportunity Action: Xem cơ hội vs Tạo cơ hội */}
+              {openOpportunity ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleViewOpportunity}
+                  data-testid="btn-view-opportunity"
+                  title="Xem cơ hội đang mở"
+                >
+                  🎯 Xem cơ hội
+                </Button>
+              ) : (
+                !effectiveIsReadOnly && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCreateOpportunity}
+                    isLoading={creatingOpportunity}
+                    data-testid="btn-create-opportunity"
+                    title="Tạo cơ hội từ hội thoại này"
+                  >
+                    + Tạo cơ hội
+                  </Button>
+                )
+              )}
             </>
           )}
         </div>

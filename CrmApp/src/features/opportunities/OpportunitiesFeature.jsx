@@ -13,6 +13,7 @@ import {
 } from './components/ColumnSettings'
 import { OpportunityDrawer } from './components/OpportunityDrawer'
 import { OpportunityFormModal } from './components/OpportunityFormModal'
+import TasksBoard from '../tasks/components/TasksBoard'
 import './OpportunitiesFeature.css'
 
 export const OpportunitiesFeature = () => {
@@ -47,6 +48,15 @@ export const OpportunitiesFeature = () => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [isFormModalOpen, setIsFormModalOpen] = useState(false)
   const [formInitialData, setFormInitialData] = useState(null)
+
+  // Sync ?opportunity=<id> URL parameter to auto-open drawer
+  const oppParam = searchParams.get('opportunity')
+  useEffect(() => {
+    if (oppParam) {
+      setSelectedOpportunityId(oppParam)
+      setIsDrawerOpen(true)
+    }
+  }, [oppParam])
 
   // Load stages and users once on mount
   useEffect(() => {
@@ -402,6 +412,7 @@ export const OpportunitiesFeature = () => {
               onReset={handleFilterReset}
             />
           }
+          childrenActivities={<TasksBoard />}
         />
       )}
 
@@ -412,6 +423,9 @@ export const OpportunitiesFeature = () => {
         onClose={() => {
           setIsDrawerOpen(false)
           setSelectedOpportunityId(null)
+          if (searchParams.get('opportunity')) {
+            updateUrlParams({ opportunity: null })
+          }
         }}
         onEdit={(item) => {
           setIsDrawerOpen(false)

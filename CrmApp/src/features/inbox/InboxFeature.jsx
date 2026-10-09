@@ -232,11 +232,52 @@ export const InboxFeature = () => {
               return [...head, ...rest]
             })
           } else {
-            setItems(fetchedItems)
-            if (Array.isArray(fetchedItems) && fetchedItems.length > 0) {
+            let itemsToDisplay = [...fetchedItems]
+            const targetId = searchParams?.get?.('id')
+            const targetKind = kindFromSearchParams(searchParams) || (searchParams?.get?.('kind') === 'comment' ? 2 : 1)
+
+            let targetItem = targetId ? itemsToDisplay.find((it) => String(it.id) === String(targetId)) : null
+
+            if (targetId && !targetItem) {
+              try {
+                let detailData = null
+                if (targetKind === 2) {
+                  detailData = await inboxApi.getComment(targetId)
+                } else {
+                  detailData = await inboxApi.getMessage(targetId)
+                }
+                if (detailData && myGen === listGenRef.current) {
+                  const conv = detailData.conversation || detailData.thread || detailData
+                  targetItem = {
+                    id: targetId,
+                    kind: targetKind,
+                    socialChannelId: conv.socialChannelId || detailData.socialChannelId || null,
+                    channelName: conv.channelName || detailData.channelName || null,
+                    displayName: conv.participantName || conv.authorName || conv.displayName || 'Khách hàng',
+                    snippet: conv.snippet || conv.messages?.[0]?.text || conv.message || '',
+                    lastCustomerActivityAt: conv.lastCustomerActivityAt || conv.lastMessageAt || conv.commentedAt || new Date().toISOString(),
+                    status: conv.inboxStatus || conv.status || 1,
+                    assignedUserId: conv.assignedUserId || null,
+                    assignedTo: conv.assignedTo || null,
+                    unreadCount: conv.unreadCount || 0,
+                    canReply: conv.canReply ?? false,
+                    tags: detailData.tags || [],
+                  }
+                  itemsToDisplay = [targetItem, ...itemsToDisplay]
+                }
+              } catch {
+                // If fetching target item fails, fall through gracefully
+              }
+            }
+
+            if (myGen !== listGenRef.current) return
+            setItems(itemsToDisplay)
+            if (targetItem) {
+              setSelectedItem(targetItem)
+            } else if (itemsToDisplay.length > 0) {
               setSelectedItem((prev) => {
-                const found = fetchedItems.find((it) => it.id === prev?.id)
-                return found || fetchedItems[0]
+                const found = itemsToDisplay.find((it) => it.id === prev?.id)
+                return found || itemsToDisplay[0]
               })
             } else {
               setItems([])

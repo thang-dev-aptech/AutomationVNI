@@ -31,6 +31,7 @@ export const OpportunityTable = ({
   activeFilterCount = 0,
   childrenHeaderRight,
   childrenFilters,
+  childrenActivities,
 }) => {
   // Action dropdown menu state
   const [activeMenuId, setActiveMenuId] = useState(null)
@@ -176,16 +177,18 @@ export const OpportunityTable = ({
         </div>
       </div>
 
-      {/* Tab Hoạt động placeholder ở t3 */}
+      {/* Tab Hoạt động */}
       {activeTab === 'activities' ? (
         <div
           className="crm-opp-activities-pane"
           data-testid="opportunity-activities"
         >
-          <div className="crm-opp-activities-placeholder">
-            <h4>📋 Hoạt động & Nhắc việc</h4>
-            <p>Tab Hoạt động quản lý nhắc việc (sẽ được gắn TasksBoard ở Task t5).</p>
-          </div>
+          {childrenActivities || (
+            <div className="crm-opp-activities-placeholder">
+              <h4>📋 Hoạt động & Nhắc việc</h4>
+              <p>Tab Hoạt động quản lý các việc cần làm và nhắc hẹn.</p>
+            </div>
+          )}
         </div>
       ) : (
         <>

@@ -1,5 +1,5 @@
 import React from 'react'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { useAuthStore } from '../auth/authStore'
@@ -7,6 +7,7 @@ import InboxPage from '../modules/inbox/InboxPage'
 import CustomersPage from '../modules/customers/CustomersPage'
 import TasksBoard from '../features/tasks/components/TasksBoard'
 import SettingsPage from '../modules/settings/SettingsPage'
+import { reminderApi } from '../features/tasks/api/reminderApi'
 
 describe('AC crm-auth-roles-test (42a67d24) - Role-based button visibility', () => {
   beforeEach(() => {
@@ -117,7 +118,20 @@ describe('AC crm-auth-roles-test (42a67d24) - Role-based button visibility', () 
       expect(screen.queryByTestId('btn-delete-cust-1')).not.toBeInTheDocument()
     })
 
-    it('shows task creation and task completion toggle for Reviewer', () => {
+    it('shows task creation and task completion toggle for Reviewer', async () => {
+      vi.spyOn(reminderApi, 'getBuckets').mockResolvedValue({
+        today: [
+          {
+            id: 't-1',
+            title: 'Việc cần làm hôm nay',
+            dueAtUtc: new Date().toISOString(),
+            isCompleted: false,
+          },
+        ],
+        overdue: [],
+        upcoming: [],
+      })
+
       render(
         <MemoryRouter>
           <TasksBoard />
@@ -125,7 +139,7 @@ describe('AC crm-auth-roles-test (42a67d24) - Role-based button visibility', () 
       )
 
       expect(screen.getByTestId('btn-create-task')).toBeInTheDocument()
-      expect(screen.getByTestId('btn-toggle-task-t-1')).toBeInTheDocument()
+      expect(await screen.findByTestId('btn-toggle-task-t-1')).toBeInTheDocument()
     })
 
     it('shows permission denied for management settings tabs for Reviewer', () => {

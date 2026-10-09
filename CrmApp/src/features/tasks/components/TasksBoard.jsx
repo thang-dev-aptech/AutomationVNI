@@ -1,30 +1,17 @@
 import React, { useState, useEffect } from 'react'
 import { reminderApi } from '../api/reminderApi'
 import { customerApi } from '../../customers/api/customerApi'
+import { opportunityApi } from '../../opportunities/api/opportunityApi'
 import { useAuth } from '../../../auth/useAuth'
 import Button from '../../../shared/components/Button'
 import Badge from '../../../shared/components/Badge'
 import Icon from '../../../shared/components/Icon'
 import { formatVietnamDateTime } from '../../../shared/utils/dateUtils'
 
-const defaultInitialBuckets = {
-  today: [
-    {
-      id: 't-1',
-      title: 'Gọi điện tư vấn lộ trình học cho bạn An',
-      customerName: 'Nguyễn Văn An',
-      dueAtUtc: '2026-10-07T07:00:00Z',
-      isCompleted: false,
-    },
-  ],
-  overdue: [],
-  upcoming: [],
-}
-
 export const TasksBoard = ({ onNavigateCustomer }) => {
   const { canCare } = useAuth()
-  const [buckets, setBuckets] = useState(defaultInitialBuckets)
-  const [loading, setLoading] = useState(false)
+  const [buckets, setBuckets] = useState({ today: [], overdue: [], upcoming: [] })
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [viewAll, setViewAll] = useState(false)
   const [activeTab, setActiveTab] = useState('today') // 'today' | 'overdue' | 'upcoming'
@@ -33,8 +20,12 @@ export const TasksBoard = ({ onNavigateCustomer }) => {
   const [createOpen, setCreateOpen] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newDue, setNewDue] = useState('')
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [customerSearching, setCustomerSearching] = useState(false)
   const [selectedCustomerId, setSelectedCustomerId] = useState('')
   const [customers, setCustomers] = useState([])
+  const [customerOpportunities, setCustomerOpportunities] = useState([])
+  const [selectedOpportunityId, setSelectedOpportunityId] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -53,23 +44,65 @@ export const TasksBoard = ({ onNavigateCustomer }) => {
       })
     } catch (err) {
       setError(err?.response?.data?.message || err?.message || 'Không thể tải danh sách nhắc việc')
+      setBuckets({ today: [], overdue: [], upcoming: [] })
     } finally {
       setLoading(false)
     }
   }
 
-  const loadCustomersForSelect = async () => {
+  const loadCustomers = async (kw = '') => {
+    setCustomerSearching(true)
     try {
-      const data = await customerApi.filter({ pageSize: 100 })
+      const data = await customerApi.filter({
+        keyword: kw?.trim() || null,
+        index: 1,
+        size: 20,
+      })
       setCustomers(data?.items || data || [])
     } catch {
-      // ignore
+      setCustomers([])
+    } finally {
+      setCustomerSearching(false)
     }
   }
 
+  useEffect(() => {
+    if (!createOpen) return
+    const timer = setTimeout(() => {
+      loadCustomers(customerSearch)
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [customerSearch, createOpen])
+
+  useEffect(() => {
+    if (!selectedCustomerId) {
+      setCustomerOpportunities([])
+      setSelectedOpportunityId('')
+      return
+    }
+    const loadOpps = async () => {
+      try {
+        const res = await opportunityApi.filter({
+          customerId: selectedCustomerId,
+          crmCustomerId: selectedCustomerId,
+          size: 50,
+        })
+        setCustomerOpportunities(res?.items || [])
+      } catch {
+        setCustomerOpportunities([])
+      }
+    }
+    loadOpps()
+  }, [selectedCustomerId])
+
   const handleOpenCreate = () => {
+    setCustomerSearch('')
+    setSelectedCustomerId('')
+    setSelectedOpportunityId('')
+    setNewTitle('')
+    setNewDue('')
     setCreateOpen(true)
-    loadCustomersForSelect()
+    loadCustomers('')
   }
 
   const handleCreateReminder = async (e) => {
@@ -79,12 +112,15 @@ export const TasksBoard = ({ onNavigateCustomer }) => {
     try {
       await reminderApi.create({
         crmCustomerId: selectedCustomerId,
+        crmOpportunityId: selectedOpportunityId || null,
         title: newTitle.trim(),
         dueAtUtc: new Date(newDue).toISOString(),
       })
       setNewTitle('')
       setNewDue('')
       setSelectedCustomerId('')
+      setSelectedOpportunityId('')
+      setCustomerSearch('')
       setCreateOpen(false)
       loadBuckets()
     } catch (err) {
@@ -152,16 +188,16 @@ export const TasksBoard = ({ onNavigateCustomer }) => {
             onClick={() => setActiveTab('today')}
             data-testid="tab-bucket-today"
           >
-            📅 Hôm nay ({buckets.today.length})
+            📅 Hôm nay ({buckets.today?.length || 0})
           </button>
           <button
             type="button"
             className={`crm-filter-chip ${activeTab === 'overdue' ? 'active' : ''}`}
             onClick={() => setActiveTab('overdue')}
-            style={{ color: buckets.overdue.length > 0 ? 'var(--crm-danger)' : undefined }}
+            style={{ color: buckets.overdue?.length > 0 ? 'var(--crm-danger)' : undefined }}
             data-testid="tab-bucket-overdue"
           >
-            ⚠️ Quá hạn ({buckets.overdue.length})
+            ⚠️ Quá hạn ({buckets.overdue?.length || 0})
           </button>
           <button
             type="button"
@@ -169,7 +205,7 @@ export const TasksBoard = ({ onNavigateCustomer }) => {
             onClick={() => setActiveTab('upcoming')}
             data-testid="tab-bucket-upcoming"
           >
-            ⏰ Sắp tới ({buckets.upcoming.length})
+            ⏰ Sắp tới ({buckets.upcoming?.length || 0})
           </button>
         </div>
 
@@ -197,9 +233,11 @@ export const TasksBoard = ({ onNavigateCustomer }) => {
       {/* Tasks List */}
       <div className="crm-tasks-list" data-testid="bucket-tasks-list">
         {loading && currentList.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '32px', color: 'var(--crm-text-muted)' }}>Đang tải danh sách việc cần làm...</div>
+          <div style={{ textAlign: 'center', padding: '32px', color: 'var(--crm-text-muted)' }} data-testid="tasks-loading">
+            Đang tải danh sách việc cần làm...
+          </div>
         ) : currentList.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px', background: 'var(--crm-surface)', border: '1px solid var(--crm-border)', borderRadius: 'var(--crm-radius-lg)', color: 'var(--crm-text-muted)' }}>
+          <div style={{ textAlign: 'center', padding: '40px', background: 'var(--crm-surface)', border: '1px solid var(--crm-border)', borderRadius: 'var(--crm-radius-lg)', color: 'var(--crm-text-muted)' }} data-testid="tasks-empty">
             🎉 Không có việc nào trong mục này!
           </div>
         ) : (
@@ -233,6 +271,25 @@ export const TasksBoard = ({ onNavigateCustomer }) => {
                     <span>
                       Hạn chót: <strong>{formatVietnamDateTime(task.dueAtUtc)}</strong>
                     </span>
+                    {task.opportunityTitle && (
+                      <>
+                        <span>•</span>
+                        <span
+                          className="crm-reminder-opp-badge"
+                          data-testid={`reminder-opportunity-${task.id}`}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            color: 'var(--crm-primary)',
+                            fontWeight: '600',
+                            fontSize: '12px',
+                          }}
+                        >
+                          🎯 {task.opportunityTitle}
+                        </span>
+                      </>
+                    )}
                     {task.isCompleted && (
                       <Badge variant="success" size="sm">Đã xong</Badge>
                     )}
@@ -288,7 +345,18 @@ export const TasksBoard = ({ onNavigateCustomer }) => {
             <h3 style={{ margin: '0 0 16px', fontSize: '18px', fontWeight: '700' }}>Tạo việc cần làm / nhắc hẹn mới</h3>
             <form onSubmit={handleCreateReminder}>
               <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', marginBottom: '4px' }}>Khách hàng</label>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', marginBottom: '4px' }}>
+                  Khách hàng <span style={{ color: 'var(--crm-danger)' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  className="crm-form-input"
+                  placeholder="Tìm khách theo tên, SĐT..."
+                  value={customerSearch}
+                  onChange={(e) => setCustomerSearch(e.target.value)}
+                  data-testid="input-customer-search"
+                  style={{ marginBottom: '6px' }}
+                />
                 <select
                   className="crm-form-input"
                   required
@@ -299,7 +367,35 @@ export const TasksBoard = ({ onNavigateCustomer }) => {
                   <option value="">-- Chọn khách hàng --</option>
                   {customers.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.displayName} {c.phoneE164 ? `(${c.phoneE164})` : ''}
+                      {c.displayName || c.name} {c.phoneE164 ? `(${c.phoneE164})` : ''}
+                    </option>
+                  ))}
+                </select>
+                {customerSearching && (
+                  <small style={{ color: 'var(--crm-text-muted)', fontSize: '11px' }}>Đang tìm khách hàng...</small>
+                )}
+              </div>
+
+              {/* Gắn cơ hội (tuỳ chọn) */}
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', marginBottom: '4px' }}>
+                  Gắn vào cơ hội (tuỳ chọn)
+                </label>
+                <select
+                  className="crm-form-input"
+                  value={selectedOpportunityId}
+                  onChange={(e) => setSelectedOpportunityId(e.target.value)}
+                  data-testid="select-reminder-opportunity"
+                  disabled={!selectedCustomerId || customerOpportunities.length === 0}
+                >
+                  <option value="">
+                    {customerOpportunities.length === 0
+                      ? selectedCustomerId ? '-- Không có cơ hội nào --' : '-- Chọn khách hàng trước --'
+                      : '-- Không gắn cơ hội --'}
+                  </option>
+                  {customerOpportunities.map((opp) => (
+                    <option key={opp.id} value={opp.id}>
+                      {opp.title}
                     </option>
                   ))}
                 </select>

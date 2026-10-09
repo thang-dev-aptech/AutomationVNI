@@ -1,8 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useInRouterContext } from 'react-router-dom'
 import { formatVietnamDateTime } from '../../../shared/utils/dateUtils'
 import { inboxApi } from '../api/inboxApi'
+import { opportunityApi } from '../../opportunities/api/opportunityApi'
 import './CustomerPanel.css'
+
+function useSafeNavigate() {
+  const inRouter = useInRouterContext()
+  const nav = inRouter ? useNavigate() : null
+  return nav || ((to) => {
+    if (typeof window !== 'undefined') window.location.href = to
+  })
+}
 
 function getPlatformInfo(platform) {
   const p = Number(platform)
@@ -40,7 +49,7 @@ export function CustomerPanel({
   onClose,
   onCustomerLoaded,
 }) {
-  const navigate = useNavigate()
+  const navigate = useSafeNavigate()
 
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -61,6 +70,55 @@ export function CustomerPanel({
       ...prev,
       [sectionKey]: !prev[sectionKey],
     }))
+  }
+
+  // Opportunity state
+  const [openOpportunity, setOpenOpportunity] = useState(null)
+  const [creatingOpportunity, setCreatingOpportunity] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    if (!item?.id) {
+      setOpenOpportunity(null)
+      return
+    }
+    const checkOpp = async () => {
+      try {
+        const opp = await opportunityApi.byConversation(
+          item.kind === 2 ? 'comment' : 'message',
+          item.id,
+        )
+        if (active) {
+          if (opp && (opp.status === 1 || !opp.status) && !opp.isArchived) {
+            setOpenOpportunity(opp)
+          } else {
+            setOpenOpportunity(null)
+          }
+        }
+      } catch {
+        if (active) setOpenOpportunity(null)
+      }
+    }
+    checkOpp()
+    return () => {
+      active = false
+    }
+  }, [item?.id, item?.kind])
+
+  const handleCreateOpportunity = async () => {
+    if (creatingOpportunity || !item?.id || isReadOnly) return
+    setCreatingOpportunity(true)
+    try {
+      const res = await opportunityApi.fromConversation({
+        kind: item.kind === 2 ? 'comment' : 'message',
+        id: item.id,
+      })
+      setOpenOpportunity(res)
+    } catch {
+      // ignore
+    } finally {
+      setCreatingOpportunity(false)
+    }
   }
 
   // Ref to track current request id to prevent race conditions on item switch
@@ -302,6 +360,30 @@ export function CustomerPanel({
                         >
                           Mở hồ sơ
                         </button>
+                      )}
+                      {openOpportunity ? (
+                        <button
+                          type="button"
+                          className="crm-customer-open-profile-btn"
+                          data-testid="btn-view-opportunity-panel"
+                          onClick={() => navigate(`/tasks?opportunity=${openOpportunity.id}`)}
+                          style={{ marginLeft: '6px' }}
+                        >
+                          🎯 Xem cơ hội
+                        </button>
+                      ) : (
+                        !isReadOnly && canCare && (
+                          <button
+                            type="button"
+                            className="crm-customer-open-profile-btn"
+                            data-testid="btn-create-opportunity-panel"
+                            onClick={handleCreateOpportunity}
+                            disabled={creatingOpportunity}
+                            style={{ marginLeft: '6px' }}
+                          >
+                            + Tạo cơ hội
+                          </button>
+                        )
                       )}
                     </div>
                   </div>
