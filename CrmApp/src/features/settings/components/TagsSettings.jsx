@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { tagApi } from '../api/settingsApi'
 import Button from '../../../shared/components/Button'
+import Icon from '../../../shared/components/Icon'
 
 const PRESET_COLORS = [
   '#4F46E5', // Indigo
@@ -149,7 +150,7 @@ export const TagsSettings = ({ canManage = false }) => {
         }}
         data-testid="tags-permission-denied"
       >
-        🔒 Bạn không có quyền cấu hình Tag. Tính năng này chỉ dành cho Admin và ContentManager.
+        <Icon name="lock" size={16} /> Bạn không có quyền cấu hình Tag. Tính năng này chỉ dành cho Admin và ContentManager.
       </div>
     )
   }
@@ -171,10 +172,13 @@ export const TagsSettings = ({ canManage = false }) => {
             color: 'var(--crm-success-text, #065f46)',
             fontSize: '13px',
             fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
           }}
           data-testid="tags-action-message"
         >
-          ✓ {actionMessage}
+          <Icon name="check" size={14} /> {actionMessage}
         </div>
       )}
 
@@ -187,10 +191,13 @@ export const TagsSettings = ({ canManage = false }) => {
             background: 'var(--crm-danger-light, #fef2f2)',
             color: 'var(--crm-danger, #ef4444)',
             fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
           }}
           data-testid="tags-error-message"
         >
-          ⚠️ {error}
+          <Icon name="alert" size={14} /> {error}
         </div>
       )}
 
@@ -401,11 +408,14 @@ export const TagsSettings = ({ canManage = false }) => {
                     fontSize: '12px',
                     padding: '4px 6px',
                     borderRadius: 'var(--crm-radius-sm)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
                   }}
                   data-testid={`btn-edit-tag-${tag.id || tag.name}`}
                   title="Chỉnh sửa thẻ"
+                  aria-label="Chỉnh sửa thẻ"
                 >
-                  ✎
+                  <Icon name="edit" size={14} />
                 </button>
                 <button
                   type="button"
@@ -418,11 +428,14 @@ export const TagsSettings = ({ canManage = false }) => {
                     fontSize: '14px',
                     padding: '4px 6px',
                     borderRadius: 'var(--crm-radius-sm)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
                   }}
                   data-testid={`btn-remove-tag-${tag.id}`}
                   title="Xóa thẻ"
+                  aria-label="Xóa thẻ"
                 >
-                  ×
+                  <Icon name="close" size={14} />
                 </button>
                 {/* Backwards compatibility data-testid */}
                 <span style={{ display: 'none' }} data-testid={`btn-remove-tag-${tag.name}`} onClick={() => handleDeleteTag(tag)} />

@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useAuth } from '../../auth/useAuth'
 import Badge from '../../shared/components/Badge'
+import Icon from '../../shared/components/Icon'
 import TagsSettings from './components/TagsSettings'
 import AutoAssignSettings from './components/AutoAssignSettings'
 import './SettingsFeature.css'
@@ -38,7 +39,7 @@ export const SettingsFeature = () => {
             onClick={() => setActiveTab('tags')}
             data-testid="tab-tags"
           >
-            Cấu hình Tag {canManage ? '' : '🔒'}
+            Cấu hình Tag {!canManage && <Icon name="lock" size={14} />}
           </button>
 
           <button
@@ -47,7 +48,7 @@ export const SettingsFeature = () => {
             onClick={() => setActiveTab('routing')}
             data-testid="tab-routing"
           >
-            Phân chia tự động {canManage ? '' : '🔒'}
+            Phân chia tự động {!canManage && <Icon name="lock" size={14} />}
           </button>
         </div>
 

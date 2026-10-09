@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { Icon } from '../../../shared/components/Icon'
 
 export const LostReasonDialog = ({
   isOpen = false,
@@ -42,9 +43,10 @@ export const LostReasonDialog = ({
             type="button"
             className="crm-opp-modal-close"
             onClick={onCancel}
+            aria-label="Đóng"
             data-testid="btn-close-lost-reason-dialog"
           >
-            ✕
+            <Icon name="close" size={16} />
           </button>
         </div>
 
@@ -52,7 +54,7 @@ export const LostReasonDialog = ({
           <div className="crm-opp-modal-body">
             {error && (
               <div className="crm-opp-form-error" data-testid="lost-reason-error">
-                ⚠️ {error}
+                <Icon name="alert" size={14} /> {error}
               </div>
             )}
 

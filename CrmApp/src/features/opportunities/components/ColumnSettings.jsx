@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { Icon } from '../../../shared/components/Icon'
 
 export const DEFAULT_COLUMNS = {
   title: true,
@@ -85,7 +86,7 @@ export const ColumnSettings = ({ columns = DEFAULT_COLUMNS, onChange }) => {
         aria-haspopup="true"
         aria-expanded={open}
       >
-        ⚙️ Hiển thị cột
+        <Icon name="settings" size={16} /> Hiển thị cột
       </button>
 
       {open && (

@@ -5,6 +5,7 @@ import { formatVietnamDateTime } from '../../../shared/utils/dateUtils'
 import { formatCurrencyVnd } from './OpportunityStatsBar'
 import { SourceBadge } from '../../inbox/components/SourceBadge'
 import { reminderApi } from '../../tasks/api/reminderApi'
+import Icon from '../../../shared/components/Icon'
 import './OpportunityDrawer.css'
 
 export const OpportunityDrawer = ({
@@ -162,7 +163,7 @@ export const OpportunityDrawer = ({
                 onClick={() => onEdit?.(data)}
                 data-testid="drawer-btn-edit"
               >
-                ✏️ Chỉnh sửa
+                <Icon name="edit" size={14} /> Chỉnh sửa
               </button>
             )}
             <button
@@ -172,7 +173,7 @@ export const OpportunityDrawer = ({
               aria-label="Đóng chi tiết"
               data-testid="btn-close-drawer"
             >
-              ✕
+              <Icon name="close" size={16} />
             </button>
           </div>
         </div>
@@ -186,7 +187,7 @@ export const OpportunityDrawer = ({
 
           {error && (
             <div className="crm-opp-drawer-error" data-testid="drawer-error">
-              ⚠️ {error}
+              <Icon name="alert" size={14} /> {error}
             </div>
           )}
 
@@ -222,7 +223,7 @@ export const OpportunityDrawer = ({
                         title="Xem hồ sơ khách"
                         data-testid="drawer-customer-link"
                       >
-                        👤 <strong>{data.customerName || 'Khách hàng'}</strong> →
+                        <Icon name="user" size={14} /> <strong>{data.customerName || 'Khách hàng'}</strong> →
                       </Link>
                     </span>
                   </div>
@@ -280,7 +281,7 @@ export const OpportunityDrawer = ({
                           )}
                         </span>
                       ) : (
-                        <span>✍️ Thủ công</span>
+                        <span><Icon name="pencil" size={12} /> Thủ công</span>
                       )}
                     </span>
                   </div>
@@ -394,16 +395,17 @@ export const OpportunityDrawer = ({
                       const name = u?.displayName || u?.userName || wid
                       return (
                         <div key={wid} className="crm-opp-watcher-tag" data-testid={`watcher-${wid}`}>
-                          <span>👤 {name}</span>
+                          <span><Icon name="user" size={14} /> {name}</span>
                           {!isReadOnly && (
                             <button
                               type="button"
                               className="crm-opp-watcher-remove"
                               onClick={() => handleRemoveWatcher(wid)}
                               title="Bỏ theo dõi"
+                              aria-label="Bỏ theo dõi"
                               data-testid={`btn-remove-watcher-${wid}`}
                             >
-                              ✕
+                              <Icon name="close" size={14} />
                             </button>
                           )}
                         </div>
@@ -503,7 +505,11 @@ export const OpportunityDrawer = ({
                           </strong>
                           <div style={{ fontSize: '11px', color: 'var(--crm-text-muted)' }}>
                             Hạn: {formatVietnamDateTime(r.dueAtUtc)}
-                            {r.isCompleted && <span style={{ marginLeft: '6px', color: 'var(--crm-success)' }}>✓ Đã xong</span>}
+                            {r.isCompleted && (
+                              <span style={{ marginLeft: '6px', color: 'var(--crm-success)' }}>
+                                <Icon name="check" size={12} /> Đã xong
+                              </span>
+                            )}
                           </div>
                         </div>
                         {!isReadOnly && !r.isCompleted && (

@@ -4,6 +4,7 @@ import { SourceBadge } from '../../inbox/components/SourceBadge'
 import { ActionMenu } from '../../../shared/components/ActionMenu'
 import { formatVietnamDateTime } from '../../../shared/utils/dateUtils'
 import { formatCurrencyVnd } from './OpportunityStatsBar'
+import Icon from '../../../shared/components/Icon'
 
 export const OpportunityTable = ({
   items = [],
@@ -143,7 +144,7 @@ export const OpportunityTable = ({
             data-testid="btn-refresh-opportunities"
             title="Làm mới danh sách"
           >
-            🔄 Làm mới
+            <Icon name="refresh" size={16} /> Làm mới
           </button>
 
           <button
@@ -152,7 +153,7 @@ export const OpportunityTable = ({
             onClick={onToggleFilters}
             data-testid="btn-toggle-filters"
           >
-            🔍 Lọc
+            <Icon name="search" size={16} /> Lọc
             {activeFilterCount > 0 && (
               <span className="crm-opp-filter-badge" data-testid="active-filter-badge">
                 {activeFilterCount}
@@ -172,7 +173,7 @@ export const OpportunityTable = ({
         >
           {childrenActivities || (
             <div className="crm-opp-activities-placeholder">
-              <h4>📋 Hoạt động & Nhắc việc</h4>
+              <h4><Icon name="clipboard" size={18} /> Hoạt động & Nhắc việc</h4>
               <p>Tab Hoạt động quản lý các việc cần làm và nhắc hẹn.</p>
             </div>
           )}
@@ -212,7 +213,7 @@ export const OpportunityTable = ({
                   <tr>
                     <td colSpan={10} className="crm-opp-table-state-cell">
                       <div className="crm-opp-error-banner" data-testid="table-error-banner">
-                        <span>⚠️ {error}</span>
+                        <span><Icon name="alert" size={14} /> {error}</span>
                         <button
                           type="button"
                           className="crm-opp-btn crm-opp-btn--sm crm-opp-btn--danger"
@@ -230,7 +231,7 @@ export const OpportunityTable = ({
                   <tr>
                     <td colSpan={10} className="crm-opp-table-state-cell">
                       <div className="crm-opp-empty-state" data-testid="table-empty-state">
-                        <span className="crm-opp-empty-icon">📭</span>
+                        <span className="crm-opp-empty-icon"><Icon name="inbox-empty" size={32} /></span>
                         <p>Không có cơ hội nào phù hợp với bộ lọc.</p>
                       </div>
                     </td>
@@ -266,7 +267,7 @@ export const OpportunityTable = ({
                             onClick={(e) => e.stopPropagation()}
                             data-testid={`opp-customer-${opp.id}`}
                           >
-                            👤 {opp.customerName || 'Khách hàng'}
+                            <Icon name="user" size={14} /> {opp.customerName || 'Khách hàng'}
                           </Link>
                         ) : (
                           <span>—</span>
@@ -296,7 +297,7 @@ export const OpportunityTable = ({
                             <span>{opp.channelName || 'Kênh'}</span>
                           </span>
                         ) : (
-                          <span className="crm-opp-source-tag">✍️ Thủ công</span>
+                          <span className="crm-opp-source-tag"><Icon name="pencil" size={12} /> Thủ công</span>
                         )}
                       </td>
                     )}
@@ -313,7 +314,7 @@ export const OpportunityTable = ({
                       <td className="crm-opp-cell-watchers">
                         {opp.watcherUserIds?.length > 0 ? (
                           <span className="crm-opp-watchers-badge" title="Người theo dõi">
-                            👁️ {opp.watcherUserIds.length}
+                            <Icon name="eye" size={14} /> {opp.watcherUserIds.length}
                           </span>
                         ) : (
                           <span className="crm-opp-text-muted">—</span>
@@ -365,13 +366,15 @@ export const OpportunityTable = ({
                           items={[
                             {
                               key: 'edit',
-                              label: '✏️ Chỉnh sửa',
+                              label: 'Chỉnh sửa',
+                              icon: <Icon name="edit" size={14} />,
                               testId: `action-edit-${opp.id}`,
                               onSelect: () => onEdit?.(opp),
                             },
                             {
                               key: 'move-stage',
-                              label: '🔄 Chuyển giai đoạn',
+                              label: 'Chuyển giai đoạn',
+                              icon: <Icon name="refresh" size={14} />,
                               testId: `action-move-stage-${opp.id}`,
                               onSelect: () => {
                                 setMovingStageItem(opp)
@@ -383,19 +386,22 @@ export const OpportunityTable = ({
                             opp.isArchived
                               ? {
                                   key: 'unarchive',
-                                  label: '📂 Bỏ lưu trữ',
+                                  label: 'Bỏ lưu trữ',
+                                  icon: <Icon name="folder-open" size={14} />,
                                   testId: `action-unarchive-${opp.id}`,
                                   onSelect: () => onUnarchive?.(opp.id),
                                 }
                               : {
                                   key: 'archive',
-                                  label: '📦 Lưu trữ',
+                                  label: 'Lưu trữ',
+                                  icon: <Icon name="archive" size={14} />,
                                   testId: `action-archive-${opp.id}`,
                                   onSelect: () => onArchive?.(opp.id),
                                 },
                             {
                               key: 'delete',
-                              label: '🗑️ Xoá',
+                              label: 'Xoá',
+                              icon: <Icon name="trash" size={14} />,
                               danger: true,
                               testId: `action-delete-${opp.id}`,
                               onSelect: () => {
@@ -463,14 +469,16 @@ export const OpportunityTable = ({
                 type="button"
                 className="crm-opp-modal-close"
                 onClick={() => setMovingStageItem(null)}
+                aria-label="Đóng"
+                data-testid="btn-close-move-stage-modal"
               >
-                ✕
+                <Icon name="close" size={16} />
               </button>
             </div>
 
             <div className="crm-opp-modal-body">
               {movingStageError && (
-                <div className="crm-opp-form-error">⚠️ {movingStageError}</div>
+                <div className="crm-opp-form-error"><Icon name="alert" size={14} /> {movingStageError}</div>
               )}
               <p>
                 Cơ hội: <strong>{movingStageItem.title}</strong>

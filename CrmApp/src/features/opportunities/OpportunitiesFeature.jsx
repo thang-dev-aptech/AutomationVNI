@@ -14,6 +14,7 @@ import {
 import { OpportunityDrawer } from './components/OpportunityDrawer'
 import { OpportunityFormModal } from './components/OpportunityFormModal'
 import TasksBoard from '../tasks/components/TasksBoard'
+import { Icon } from '../../shared/components/Icon'
 import './OpportunitiesFeature.css'
 
 export const OpportunitiesFeature = () => {
@@ -305,7 +306,7 @@ export const OpportunitiesFeature = () => {
               data-testid="btn-view-table"
               aria-pressed={view !== 'pipeline'}
             >
-              📑 Bảng
+              <Icon name="table" size={16} /> Bảng
             </button>
             <button
               type="button"
@@ -314,7 +315,7 @@ export const OpportunitiesFeature = () => {
               data-testid="btn-view-pipeline"
               aria-pressed={view === 'pipeline'}
             >
-              📊 Pipeline
+              <Icon name="kanban" size={16} /> Pipeline
             </button>
           </div>
         </div>

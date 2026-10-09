@@ -58,6 +58,11 @@ import {
   User,
   Users,
   X,
+  Target,
+  PartyPopper,
+  ClipboardList,
+  FolderOpen,
+  Folder,
 } from 'lucide-react'
 
 export const ICON_MAP = {
@@ -135,6 +140,13 @@ export const ICON_MAP = {
   'message-circle': MessageCircle,
   'mail-open': MailOpen,
   'bar-chart': BarChart2,
+  target: Target,
+  'party-popper': PartyPopper,
+  celebrate: PartyPopper,
+  clipboard: ClipboardList,
+  'clipboard-list': ClipboardList,
+  folder: Folder,
+  'folder-open': FolderOpen,
 }
 
 export const Icon = ({

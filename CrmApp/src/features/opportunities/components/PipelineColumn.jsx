@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { OpportunityCard } from './OpportunityCard'
+import Icon from '../../../shared/components/Icon'
 
 export const PipelineColumn = ({
   column,
@@ -90,7 +91,7 @@ export const PipelineColumn = ({
       >
         {items.length === 0 ? (
           <div className="crm-opp-column-empty" data-testid={`empty-column-${column.stageId}`}>
-            <span className="crm-opp-column-empty-icon">📭</span>
+            <span className="crm-opp-column-empty-icon"><Icon name="inbox-empty" size={32} /></span>
             <p>Chưa có cơ hội</p>
           </div>
         ) : (

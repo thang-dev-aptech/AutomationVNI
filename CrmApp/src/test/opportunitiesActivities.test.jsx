@@ -228,7 +228,7 @@ describe('AC 176ae13f (c)(d) & AC fd9216b3 (b) — Tab Hoạt động & Nhắc v
       // Card hiển thị tên cơ hội với badge
       await waitFor(() => {
         expect(screen.getByTestId('reminder-opportunity-rem-99')).toHaveTextContent(
-          '🎯 Cơ hội khoá Fullstack Web'
+          'Cơ hội khoá Fullstack Web'
         )
       })
 

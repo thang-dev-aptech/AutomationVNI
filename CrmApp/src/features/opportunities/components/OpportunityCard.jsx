@@ -2,6 +2,7 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import { SourceBadge } from '../../inbox/components/SourceBadge'
 import { ActionMenu } from '../../../shared/components/ActionMenu'
+import Icon from '../../../shared/components/Icon'
 import { formatCurrencyVnd } from './OpportunityStatsBar'
 
 /**
@@ -121,13 +122,15 @@ export const OpportunityCard = ({
               },
               {
                 key: 'edit',
-                label: '✏️ Chỉnh sửa',
+                label: 'Chỉnh sửa',
+                icon: <Icon name="edit" size={14} />,
                 testId: `action-card-edit-${opp.id}`,
                 onSelect: () => onEdit?.(opp),
               },
               {
                 key: 'delete',
-                label: '🗑️ Xoá',
+                label: 'Xoá',
+                icon: <Icon name="trash" size={14} />,
                 danger: true,
                 testId: `action-card-delete-${opp.id}`,
                 onSelect: () => {
@@ -148,11 +151,11 @@ export const OpportunityCard = ({
       {/* Customer & phone info */}
       <div className="crm-opp-card-customer">
         <span className="crm-opp-card-cust-name" data-testid={`card-customer-${opp.id}`}>
-          👤 {opp.customerName || 'Khách hàng'}
+          <Icon name="user" size={14} /> {opp.customerName || 'Khách hàng'}
         </span>
         {opp.customerPhoneE164 && (
           <span className="crm-opp-card-cust-phone" data-testid={`card-phone-${opp.id}`}>
-            📞 {opp.customerPhoneE164}
+            <Icon name="phone" size={14} /> {opp.customerPhoneE164}
           </span>
         )}
       </div>
@@ -171,7 +174,9 @@ export const OpportunityCard = ({
             <span>{opp.channelName || 'Kênh'}</span>
           </span>
         ) : (
-          <span className="crm-opp-source-tag">✍️ Thủ công</span>
+          <span className="crm-opp-source-tag">
+            <Icon name="pencil" size={12} /> Thủ công
+          </span>
         )}
       </div>
 
@@ -191,14 +196,14 @@ export const OpportunityCard = ({
               data-testid={`card-snippet-${opp.id}`}
               title="Mở hội thoại trong Hộp thư"
             >
-              💬 <span>{snippet}</span>
+              <Icon name="message" size={14} /> <span>{snippet}</span>
             </Link>
           ) : (
             <div
               className="crm-opp-snippet-bubble"
               data-testid={`card-snippet-${opp.id}`}
             >
-              💬 <span>{snippet}</span>
+              <Icon name="message" size={14} /> <span>{snippet}</span>
             </div>
           )}
         </div>

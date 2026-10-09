@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { autoAssignApi, usersApi } from '../api/settingsApi'
 import Button from '../../../shared/components/Button'
 import Badge from '../../../shared/components/Badge'
+import Icon from '../../../shared/components/Icon'
 
 export const AutoAssignSettings = ({ canManage = false }) => {
   const [loading, setLoading] = useState(() => Boolean(canManage))
@@ -109,7 +110,7 @@ export const AutoAssignSettings = ({ canManage = false }) => {
         }}
         data-testid="routing-permission-denied"
       >
-        🔒 Bạn không có quyền cấu hình Tự chia khách hàng. Tính năng này chỉ dành cho Admin và ContentManager.
+        <Icon name="lock" size={16} /> Bạn không có quyền cấu hình Tự chia khách hàng. Tính năng này chỉ dành cho Admin và ContentManager.
       </div>
     )
   }
@@ -147,7 +148,7 @@ export const AutoAssignSettings = ({ canManage = false }) => {
           }}
           data-testid="auto-assign-success"
         >
-          ✓ {successMessage}
+          <Icon name="check" size={14} /> {successMessage}
         </div>
       )}
 
@@ -160,10 +161,13 @@ export const AutoAssignSettings = ({ canManage = false }) => {
             background: 'var(--crm-danger-light, #fef2f2)',
             color: 'var(--crm-danger, #ef4444)',
             fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
           }}
           data-testid="auto-assign-error"
         >
-          ⚠️ {error}
+          <Icon name="alert" size={14} /> {error}
         </div>
       )}
 
@@ -222,7 +226,9 @@ export const AutoAssignSettings = ({ canManage = false }) => {
               color: 'var(--crm-text)',
             }}
           >
-            <div style={{ fontWeight: '600', marginBottom: '4px' }}>ℹ️ Nguyên tắc hoạt động:</div>
+            <div style={{ fontWeight: '600', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Icon name="info" size={16} /> Nguyên tắc hoạt động:
+            </div>
             <ul style={{ margin: 0, paddingLeft: '20px', color: 'var(--crm-text-muted)' }}>
               <li>Chỉ gán hội thoại MỚI chưa có người phụ trách.</li>
               <li>Hội thoại đã có người phụ trách sẽ KHÔNG bị ghi đè.</li>

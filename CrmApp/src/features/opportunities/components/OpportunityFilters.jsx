@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import Icon from '../../../shared/components/Icon'
 
 export const OpportunityFilters = ({
   filters,
@@ -48,8 +49,9 @@ export const OpportunityFilters = ({
               className="crm-opp-input-clear"
               onClick={() => setSearchTerm('')}
               title="Xoá tìm kiếm"
+              aria-label="Xoá tìm kiếm"
             >
-              ✕
+              <Icon name="close" size={14} />
             </button>
           )}
         </div>

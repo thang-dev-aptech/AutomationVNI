@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { opportunityApi } from '../api/opportunityApi'
 import { PipelineColumn } from './PipelineColumn'
 import { LostReasonDialog } from './LostReasonDialog'
+import Icon from '../../../shared/components/Icon'
 
 export const OpportunityPipeline = ({
   filters,
@@ -233,14 +234,15 @@ export const OpportunityPipeline = ({
       {/* Toast Alert Banner */}
       {toast && (
         <div className="crm-opp-toast crm-opp-toast--error" data-testid="pipeline-toast">
-          <span>⚠️ {toast}</span>
+          <span><Icon name="alert" size={14} /> {toast}</span>
           <button
             type="button"
             className="crm-opp-toast-close"
             onClick={() => setToast(null)}
+            aria-label="Đóng thông báo"
             data-testid="btn-close-toast"
           >
-            ✕
+            <Icon name="close" size={14} />
           </button>
         </div>
       )}
@@ -249,7 +251,7 @@ export const OpportunityPipeline = ({
       <div className="crm-opp-pipeline-toolbar">
         <div className="crm-opp-pipeline-toolbar-left">
           <span className="crm-opp-pipeline-info-badge">
-            📌 {columns.length} giai đoạn
+            <Icon name="pin" size={14} /> {columns.length} giai đoạn
           </span>
         </div>
 
@@ -275,7 +277,7 @@ export const OpportunityPipeline = ({
             data-testid="btn-refresh-pipeline"
             title="Làm mới Pipeline"
           >
-            🔄 Làm mới
+            <Icon name="refresh" size={16} /> Làm mới
           </button>
 
           <button
@@ -284,7 +286,7 @@ export const OpportunityPipeline = ({
             onClick={onToggleFilters}
             data-testid="btn-toggle-filters"
           >
-            🔍 Lọc
+            <Icon name="search" size={16} /> Lọc
             {activeFilterCount > 0 && (
               <span className="crm-opp-filter-badge" data-testid="active-filter-badge">
                 {activeFilterCount}
@@ -307,7 +309,7 @@ export const OpportunityPipeline = ({
       {/* Error state */}
       {error && !loading && (
         <div className="crm-opp-pipeline-error" data-testid="pipeline-error">
-          <span>⚠️ {error}</span>
+          <span><Icon name="alert" size={14} /> {error}</span>
           <button
             type="button"
             className="crm-opp-btn crm-opp-btn--sm crm-opp-btn--danger"

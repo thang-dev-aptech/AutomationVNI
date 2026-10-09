@@ -188,7 +188,7 @@ export const TasksBoard = ({ onNavigateCustomer }) => {
             onClick={() => setActiveTab('today')}
             data-testid="tab-bucket-today"
           >
-            📅 Hôm nay ({buckets.today?.length || 0})
+            <Icon name="calendar" size={16} /> Hôm nay ({buckets.today?.length || 0})
           </button>
           <button
             type="button"
@@ -197,7 +197,7 @@ export const TasksBoard = ({ onNavigateCustomer }) => {
             style={{ color: buckets.overdue?.length > 0 ? 'var(--crm-danger)' : undefined }}
             data-testid="tab-bucket-overdue"
           >
-            ⚠️ Quá hạn ({buckets.overdue?.length || 0})
+            <Icon name="alert" size={16} /> Quá hạn ({buckets.overdue?.length || 0})
           </button>
           <button
             type="button"
@@ -205,7 +205,7 @@ export const TasksBoard = ({ onNavigateCustomer }) => {
             onClick={() => setActiveTab('upcoming')}
             data-testid="tab-bucket-upcoming"
           >
-            ⏰ Sắp tới ({buckets.upcoming?.length || 0})
+            <Icon name="clock" size={16} /> Sắp tới ({buckets.upcoming?.length || 0})
           </button>
         </div>
 
@@ -238,7 +238,7 @@ export const TasksBoard = ({ onNavigateCustomer }) => {
           </div>
         ) : currentList.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px', background: 'var(--crm-surface)', border: '1px solid var(--crm-border)', borderRadius: 'var(--crm-radius-lg)', color: 'var(--crm-text-muted)' }} data-testid="tasks-empty">
-            🎉 Không có việc nào trong mục này!
+            <Icon name="party-popper" size={18} /> Không có việc nào trong mục này!
           </div>
         ) : (
           currentList.map((task) => (
@@ -286,7 +286,7 @@ export const TasksBoard = ({ onNavigateCustomer }) => {
                             fontSize: '12px',
                           }}
                         >
-                          🎯 {task.opportunityTitle}
+                          <Icon name="target" size={14} /> {task.opportunityTitle}
                         </span>
                       </>
                     )}
@@ -308,7 +308,13 @@ export const TasksBoard = ({ onNavigateCustomer }) => {
                     onClick={() => handleComplete(task.id)}
                     data-testid={task.id === 't-1' ? 'btn-toggle-task-t-1' : `btn-complete-task-${task.id}`}
                   >
-                    {task.isCompleted ? 'Đã xong ✓' : 'Hoàn thành'}
+                    {task.isCompleted ? (
+                      <>
+                        <Icon name="check" size={14} /> Đã xong
+                      </>
+                    ) : (
+                      'Hoàn thành'
+                    )}
                   </Button>
                   <Button
                     variant="ghost"

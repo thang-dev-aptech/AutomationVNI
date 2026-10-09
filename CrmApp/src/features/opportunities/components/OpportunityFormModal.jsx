@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { customerApi } from '../../customers/api/customerApi'
 import { opportunityApi } from '../api/opportunityApi'
+import Icon from '../../../shared/components/Icon'
 
 export const OpportunityFormModal = ({
   isOpen = false,
@@ -166,14 +167,14 @@ export const OpportunityFormModal = ({
             aria-label="Đóng"
             data-testid="btn-close-modal"
           >
-            ✕
+            <Icon name="close" size={16} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="crm-opp-form">
           {error && (
             <div className="crm-opp-form-error" data-testid="modal-error">
-              ⚠️ {error}
+              <Icon name="alert" size={14} /> {error}
             </div>
           )}
 
@@ -209,7 +210,7 @@ export const OpportunityFormModal = ({
                 {selectedCustomer ? (
                   <div className="crm-opp-selected-customer-pill" data-testid="selected-customer-pill">
                     <span>
-                      👤 <strong>{selectedCustomer.displayName}</strong>
+                      <Icon name="user" size={14} /> <strong>{selectedCustomer.displayName}</strong>
                       {selectedCustomer.phoneE164 && ` (${selectedCustomer.phoneE164})`}
                     </span>
                     <button
@@ -217,9 +218,10 @@ export const OpportunityFormModal = ({
                       className="crm-opp-btn-remove-cust"
                       onClick={() => setSelectedCustomer(null)}
                       title="Chọn khách khác"
+                      aria-label="Chọn khách khác"
                       data-testid="btn-remove-customer"
                     >
-                      ✕
+                      <Icon name="close" size={14} />
                     </button>
                   </div>
                 ) : (

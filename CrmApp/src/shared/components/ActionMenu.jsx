@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import Icon from './Icon'
 import './ActionMenu.css'
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
@@ -19,7 +20,7 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
  */
 export const ActionMenu = ({
   items = [],
-  trigger = '⋮',
+  trigger,
   triggerLabel = 'Thao tác',
   triggerTestId,
   triggerClassName = '',
@@ -322,7 +323,7 @@ export const ActionMenu = ({
         disabled={disabled}
         data-testid={triggerTestId}
       >
-        {trigger}
+        {trigger ?? <Icon name="more-vertical" size={16} />}
       </button>
 
       {isOpen &&

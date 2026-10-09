@@ -607,10 +607,10 @@ describe('AC fd9216b3 (a)(b)(d) — Opportunities Table & Header & Viewer & Cust
       fireEvent.click(screen.getByTestId('opp-row-opp-1'))
 
       expect(await screen.findByTestId('opportunity-drawer')).toBeInTheDocument()
-      expect(screen.getByText('👤 Học viên 1')).toBeInTheDocument()
 
       // Link to customer profile
       const custLink = screen.getByTestId('drawer-customer-link')
+      expect(custLink).toHaveTextContent('Học viên 1')
       expect(custLink).toHaveAttribute('href', '/customers/cust-1')
 
       // Close drawer
