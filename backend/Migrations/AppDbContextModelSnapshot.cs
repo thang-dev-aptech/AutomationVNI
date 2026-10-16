@@ -509,6 +509,10 @@ namespace backend.Migrations
                     b.Property<bool>("Passed")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("ProfileHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<double>("Score")
                         .HasColumnType("REAL");
 

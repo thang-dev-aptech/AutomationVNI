@@ -15,6 +15,12 @@ public class CampaignMediaScoreModel : BaseEntity
 
     /// <summary>
     /// Chi phí ước tính của lượt chấm (gán vào một dòng mỗi pass) — dùng Sum theo ScoredAt ngày UTC.
+    /// Cộng dồn khi chấm lại cùng dòng.
     /// </summary>
     public decimal CostUsd { get; set; }
+
+    /// <summary>
+    /// PageProfile.Hash tại thời điểm chấm. NULL = dòng cũ / chưa biết → chấm lại khi rescore.
+    /// </summary>
+    public string? ProfileHash { get; set; }
 }

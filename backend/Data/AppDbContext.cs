@@ -341,6 +341,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
                 .HasDatabaseName("IX_CampaignMediaScores_Campaign_Media_Channel_Pass_Active");
             e.HasIndex(x => x.IsDeleted);
             e.Property(x => x.CostUsd).HasPrecision(18, 6);
+            e.Property(x => x.ProfileHash).HasMaxLength(64);
         });
 
         modelBuilder.Entity<PostModel>(e =>

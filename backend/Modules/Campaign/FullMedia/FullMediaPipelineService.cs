@@ -146,6 +146,31 @@ public class FullMediaPipelineService(
         return processed;
     }
 
+    /// <summary>
+    /// Đưa ảnh Failed về Pending để worker thử lại (không API — t6 sẽ gọi).
+    /// Không xoá CampaignMediaScores. Chỉ đổi đúng một dòng đang Failed.
+    /// </summary>
+    public async Task<bool> ResetFailedToPendingAsync(
+        Guid campaignId, Guid mediaAssetId, CancellationToken ct = default)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var updated = await db.CampaignMediaEvaluations
+            .Where(e => !e.IsDeleted
+                && e.CampaignId == campaignId
+                && e.MediaAssetId == mediaAssetId
+                && e.Status == CampaignMediaEvaluationStatus.Failed)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(e => e.Status, CampaignMediaEvaluationStatus.Pending)
+                .SetProperty(e => e.ReasonCode, (string?)null)
+                .SetProperty(e => e.NextAttemptAt, (DateTime?)null)
+                .SetProperty(e => e.Attempts, 0)
+                .SetProperty(e => e.UpdatedAt, now)
+                .SetProperty(e => e.UpdatedBy, Actor), ct);
+        return updated == 1;
+    }
+
     /// <summary>Xử lý một ảnh đã biết (test / gọi trực tiếp). Tự tạo evaluation Pending rồi claim.</summary>
     public async Task ProcessImageAsync(Guid campaignId, Guid mediaAssetId, CancellationToken ct = default)
     {
@@ -390,15 +415,14 @@ public class FullMediaPipelineService(
         var candidates = snap.Scoreable
             .Select(p => new PageFitCandidate(p.ChannelId, p.Profile.Text))
             .ToList();
+        var profileHashes = snap.Scoreable.ToDictionary(p => p.ChannelId, p => p.Profile.Hash);
+        var inputHashFinal = ComputeHashFromProfiles(snap.Scoreable, stateA);
 
         PageFitResult score1;
         try
         {
-            using var scope = scopeFactory.CreateScope();
-            var scorer = scope.ServiceProvider.GetRequiredService<IPageFitScorer>();
-            using var stageCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            stageCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, opts.StageTimeoutSeconds)));
-            score1 = await scorer.ScoreAsync(stateA, candidates, stageCts.Token);
+            score1 = await ScorePassSelectiveAsync(
+                work, stateA, candidates, pass: 1, profileHashes, minScore, ct);
         }
         catch (PageFitPermanentException ex)
         {
@@ -417,7 +441,6 @@ public class FullMediaPipelineService(
         }
 
         cost += score1.EstimatedCostUsd;
-        await PersistScoresAsync(work, pass: 1, score1, minScore, ct);
 
         var pass1Ids = score1.Scores
             .Where(kv => FitThreshold.Passes(kv.Value, minScore))
@@ -426,10 +449,17 @@ public class FullMediaPipelineService(
 
         if (pass1Ids.Count == 0)
         {
+            // Rescore không còn page cần chấm và không ai đạt → giữ Rejected, cập nhật InputHash.
+            if (score1.Scores.Count == 0)
+            {
+                await FinalizeStatusAsync(work.EvaluationId, CampaignMediaEvaluationStatus.Rejected,
+                    "below_threshold", null, null, cost, ct, inputHashFinal);
+                return ImageProcessOutcome.TerminalOk;
+            }
+
             var best = score1.Scores.OrderByDescending(kv => kv.Value).First();
-            var inputHash = ComputeHashFromProfiles(snap.Scoreable, stateA);
             await FinalizeStatusAsync(work.EvaluationId, CampaignMediaEvaluationStatus.Rejected,
-                "below_threshold", best.Value, best.Key, cost, ct, inputHash);
+                "below_threshold", best.Value, best.Key, cost, ct, inputHashFinal);
             return ImageProcessOutcome.TerminalOk;
         }
 
@@ -483,11 +513,8 @@ public class FullMediaPipelineService(
         PageFitResult score2;
         try
         {
-            using var scope = scopeFactory.CreateScope();
-            var scorer = scope.ServiceProvider.GetRequiredService<IPageFitScorer>();
-            using var stageCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            stageCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, opts.StageTimeoutSeconds)));
-            score2 = await scorer.ScoreAsync(stateB, pass1Candidates, stageCts.Token);
+            score2 = await ScorePassSelectiveAsync(
+                work, stateB, pass1Candidates, pass: 2, profileHashes, minScore, ct);
         }
         catch (PageFitPermanentException)
         {
@@ -503,13 +530,10 @@ public class FullMediaPipelineService(
         }
 
         cost += score2.EstimatedCostUsd;
-        await PersistScoresAsync(work, pass: 2, score2, minScore, ct);
 
         var accepted = pass1Ids
             .Where(id => score2.Scores.TryGetValue(id, out var s) && FitThreshold.Passes(s, minScore))
             .ToList();
-
-        var inputHashFinal = ComputeHashFromProfiles(snap.Scoreable, stateA);
 
         if (accepted.Count == 0)
         {
@@ -524,6 +548,73 @@ public class FullMediaPipelineService(
         }
 
         return await CreatePostsForAcceptedAsync(work, snap, accepted, score2, cost, inputHashFinal, ct);
+    }
+
+    /// <summary>
+    /// Chấm một lượt: khi IsRescore chỉ gọi bộ chấm cho page mới / đổi ProfileHash / ProfileHash NULL.
+    /// Page khớp hash dùng lại điểm đã lưu (không ghi đè CostUsd).
+    /// </summary>
+    private async Task<PageFitResult> ScorePassSelectiveAsync(
+        WorkItem work,
+        string stateText,
+        IReadOnlyList<PageFitCandidate> candidates,
+        int pass,
+        IReadOnlyDictionary<Guid, string> profileHashes,
+        double minScore,
+        CancellationToken ct)
+    {
+        var merged = new Dictionary<Guid, double>();
+        var toScore = new List<PageFitCandidate>();
+
+        if (work.IsRescore && candidates.Count > 0)
+        {
+            using var scope = scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var existing = await db.CampaignMediaScores.AsNoTracking()
+                .Where(s => !s.IsDeleted
+                    && s.CampaignId == work.CampaignId
+                    && s.MediaAssetId == work.MediaAssetId
+                    && s.Pass == pass)
+                .ToListAsync(ct);
+            var byChannel = existing.ToDictionary(s => s.SocialChannelId);
+
+            foreach (var c in candidates)
+            {
+                if (byChannel.TryGetValue(c.ChannelId, out var row)
+                    && !string.IsNullOrEmpty(row.ProfileHash)
+                    && profileHashes.TryGetValue(c.ChannelId, out var cur)
+                    && string.Equals(row.ProfileHash, cur, StringComparison.Ordinal))
+                {
+                    merged[c.ChannelId] = row.Score;
+                }
+                else
+                {
+                    toScore.Add(c);
+                }
+            }
+        }
+        else
+        {
+            toScore.AddRange(candidates);
+        }
+
+        if (toScore.Count == 0)
+            return new PageFitResult(merged, 0m, 0);
+
+        PageFitResult live;
+        using (var scope = scopeFactory.CreateScope())
+        {
+            var scorer = scope.ServiceProvider.GetRequiredService<IPageFitScorer>();
+            using var stageCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            stageCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, options.Value.StageTimeoutSeconds)));
+            live = await scorer.ScoreAsync(stateText, toScore, stageCts.Token);
+        }
+
+        foreach (var kv in live.Scores)
+            merged[kv.Key] = kv.Value;
+
+        await PersistScoresAsync(work, pass, live, minScore, profileHashes, ct);
+        return new PageFitResult(merged, live.EstimatedCostUsd, live.RequestCount);
     }
 
     private async Task<VisionDescription?> LoadCachedDescriptionAsync(
@@ -745,7 +836,12 @@ public class FullMediaPipelineService(
     }
 
     private async Task PersistScoresAsync(
-        WorkItem work, int pass, PageFitResult result, double minScore, CancellationToken ct)
+        WorkItem work,
+        int pass,
+        PageFitResult result,
+        double minScore,
+        IReadOnlyDictionary<Guid, string> profileHashes,
+        CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -755,6 +851,10 @@ public class FullMediaPipelineService(
         {
             var passCost = !costAssigned ? result.EstimatedCostUsd : 0m;
             costAssigned = true;
+            profileHashes.TryGetValue(channelId, out var profileHash);
+            if (profileHash is { Length: > 64 })
+                profileHash = profileHash[..64];
+
             var existing = await db.CampaignMediaScores
                 .FirstOrDefaultAsync(s => !s.IsDeleted
                     && s.CampaignId == work.CampaignId
@@ -774,6 +874,7 @@ public class FullMediaPipelineService(
                     Passed = FitThreshold.Passes(score, minScore),
                     ScoredAt = now,
                     CostUsd = passCost,
+                    ProfileHash = profileHash,
                     CreatedAt = now,
                     CreatedBy = Actor,
                 });
@@ -783,8 +884,11 @@ public class FullMediaPipelineService(
                 existing.Score = score;
                 existing.Passed = FitThreshold.Passes(score, minScore);
                 existing.ScoredAt = now;
-                existing.CostUsd = passCost;
+                // Cộng dồn chi phí phát sinh — không ghi đè làm mất lượt trước (F4 / N-B).
+                existing.CostUsd += passCost;
+                existing.ProfileHash = profileHash;
                 existing.UpdatedAt = now;
+                existing.UpdatedBy = Actor;
             }
         }
 

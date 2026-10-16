@@ -503,15 +503,20 @@ public sealed class FullMediaPipelineReviewFixTests : IAsyncLifetime
             Assert.False(string.IsNullOrEmpty(eval.InputHash));
         }
 
+        int attemptsBefore;
+        await using (var db = new AppDbContext(_options))
+            attemptsBefore = (await db.CampaignMediaEvaluations.SingleAsync()).Attempts;
+
         var calls = vision.CallsA;
         var scoreCalls = scorer.Calls;
         await pipeline.ProcessDueAsync();
         Assert.Equal(calls, vision.CallsA);
         Assert.Equal(scoreCalls, scorer.Calls);
         await using var db2 = new AppDbContext(_options);
-        // Mutation T12 (bỏ so sánh InputHash) sẽ claim lại → Pending vision_cache_missing / chấm lại.
-        Assert.Equal(CampaignMediaEvaluationStatus.Rejected,
-            (await db2.CampaignMediaEvaluations.SingleAsync()).Status);
+        var eval2 = await db2.CampaignMediaEvaluations.SingleAsync();
+        Assert.Equal(CampaignMediaEvaluationStatus.Rejected, eval2.Status);
+        // Mutation T12 (bỏ so sánh InputHash) sẽ claim lại dù hash giống → Attempts tăng.
+        Assert.Equal(attemptsBefore, eval2.Attempts);
     }
 
     [Fact]

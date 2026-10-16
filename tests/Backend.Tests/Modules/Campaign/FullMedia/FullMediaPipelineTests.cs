@@ -262,14 +262,18 @@ public sealed class FullMediaPipelineTests : IAsyncLifetime
 
         var callsA = vision.CallsA;
         var scoreCalls = scorer.Calls;
+        int attemptsBefore;
+        await using (var dbA = new AppDbContext(_options))
+            attemptsBefore = (await dbA.CampaignMediaEvaluations.SingleAsync()).Attempts;
 
         // ProcessDue không nhận lại Rejected cùng hash (T12)
         await pipeline.ProcessDueAsync();
         Assert.Equal(callsA, vision.CallsA);
         Assert.Equal(scoreCalls, scorer.Calls);
         await using var db = new AppDbContext(_options);
-        Assert.Equal(CampaignMediaEvaluationStatus.Rejected,
-            (await db.CampaignMediaEvaluations.SingleAsync()).Status);
+        var eval = await db.CampaignMediaEvaluations.SingleAsync();
+        Assert.Equal(CampaignMediaEvaluationStatus.Rejected, eval.Status);
+        Assert.Equal(attemptsBefore, eval.Attempts);
     }
 
     [Fact]
