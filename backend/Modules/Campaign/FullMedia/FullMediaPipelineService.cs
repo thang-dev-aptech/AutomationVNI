@@ -42,6 +42,7 @@ public class FullMediaPipelineService(
         "no_free_slot",
         "slot_conflict",
         "no_slots",
+        "profile_changed_while_waiting",
     };
 
     internal static readonly HashSet<string> InfraReasons = new(StringComparer.Ordinal)
@@ -191,8 +192,10 @@ public class FullMediaPipelineService(
 
         var postOnly = IsAwaitingSlotReason(priorReason)
             && await HasPass2ScoresAsync(campaignId, mediaAssetId, ct);
+        // Hồ sơ đổi lúc chờ khe → chạy lại chấm (không Vision), không post-only.
+        var isRescore = IsProfileChangedWhileWaiting(priorReason);
         await ProcessClaimedAsync(
-            new WorkItem(claimed.Value, campaignId, mediaAssetId, IsRescore: false, IsPostOnly: postOnly),
+            new WorkItem(claimed.Value, campaignId, mediaAssetId, IsRescore: isRescore, IsPostOnly: postOnly),
             ct);
     }
 
@@ -264,9 +267,10 @@ public class FullMediaPipelineService(
                 {
                     var postOnly = IsAwaitingSlotReason(eval.ReasonCode)
                         && await HasPass2ScoresAsync(db, campaign.Id, mediaId, ct);
+                    var isRescore = IsProfileChangedWhileWaiting(eval.ReasonCode);
                     var claimed = await TryClaimAsync(campaign.Id, mediaId, ct);
                     if (claimed is not null)
-                        return new WorkItem(claimed.Value, campaign.Id, mediaId, IsRescore: false, IsPostOnly: postOnly);
+                        return new WorkItem(claimed.Value, campaign.Id, mediaId, IsRescore: isRescore, IsPostOnly: postOnly);
                 }
 
                 if (eval.Status == CampaignMediaEvaluationStatus.Rejected
@@ -328,20 +332,31 @@ public class FullMediaPipelineService(
             snap = new CampaignSnapshot(campaign, channelIds, profiles);
         }
 
-        if (snap.Scoreable.Count == 0)
+        // Post-only: vẫn chạy khi không còn page scoreable (Filter sẽ loại → profile_changed).
+        if (snap.Scoreable.Count == 0 && !work.IsPostOnly)
         {
             await FinalizePendingAsync(work.EvaluationId, "no_scoreable_pages", 0, ct);
             return ImageProcessOutcome.Waiting;
         }
 
-        // F1-b: chỉ tạo bài lại — không Vision/PageFit
+        // F1-b: chỉ tạo bài lại — không Vision/PageFit; kiểm lại ProfileHash/ngưỡng trước khi đăng.
         if (work.IsPostOnly)
         {
             var acceptedFromScores = await LoadAcceptedChannelIdsFromScoresAsync(
-                work.CampaignId, work.MediaAssetId, minScore, ct);
+                work.CampaignId, work.MediaAssetId, ct);
             if (acceptedFromScores.Count == 0)
             {
                 await FinalizePendingAsync(work.EvaluationId, "no_free_slot", 0, ct);
+                return ImageProcessOutcome.Waiting;
+            }
+
+            var stillValid = await FilterPostOnlyStillValidPagesAsync(
+                work.CampaignId, work.MediaAssetId, acceptedFromScores, minScore, ct);
+
+            if (stillValid.Count == 0)
+            {
+                // Hồ sơ đổi / hết tin được điểm → chờ chấm lại (IsRescore), không đăng sai.
+                await FinalizePendingAsync(work.EvaluationId, "profile_changed_while_waiting", 0, ct);
                 return ImageProcessOutcome.Waiting;
             }
 
@@ -356,11 +371,13 @@ public class FullMediaPipelineService(
             }
 
             var emptyScores = new PageFitResult(
-                acceptedFromScores.ToDictionary(id => id, _ => minScore),
+                stillValid.ToDictionary(id => id, _ => minScore),
                 0m,
                 0);
+            // Một phần: chỉ đăng page còn khớp; page bị loại không tự chấm lại khi Accepted
+            // (trạng thái đơn — xem báo cáo).
             return await CreatePostsForAcceptedAsync(
-                work, snap, acceptedFromScores, emptyScores, cost: 0, inputHash ?? "", ct);
+                work, snap, stillValid, emptyScores, cost: 0, inputHash ?? "", ct);
         }
 
         decimal cost = 0;
@@ -1158,23 +1175,75 @@ public class FullMediaPipelineService(
     }
 
     private async Task<List<Guid>> LoadAcceptedChannelIdsFromScoresAsync(
-        Guid campaignId, Guid mediaId, double minScore, CancellationToken ct)
+        Guid campaignId, Guid mediaId, CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var pass2 = await db.CampaignMediaScores.AsNoTracking()
+        // Chỉ lọc Passed; FitThreshold.Passes chạy lại trong FilterPostOnlyStillValidPagesAsync.
+        return await db.CampaignMediaScores.AsNoTracking()
             .Where(s => !s.IsDeleted
                 && s.CampaignId == campaignId
                 && s.MediaAssetId == mediaId
                 && s.Pass == 2
                 && s.Passed)
-            .Select(s => new { s.SocialChannelId, s.Score })
-            .ToListAsync(ct);
-        return pass2
-            .Where(s => FitThreshold.Passes(s.Score, minScore))
             .Select(s => s.SocialChannelId)
             .Distinct()
-            .ToList();
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Post-only: chỉ giữ page còn IsScoreable, ProfileHash khớp cả hai lượt, điểm vẫn ≥ ngưỡng.
+    /// </summary>
+    private async Task<List<Guid>> FilterPostOnlyStillValidPagesAsync(
+        Guid campaignId,
+        Guid mediaId,
+        IReadOnlyList<Guid> candidateIds,
+        double minScore,
+        CancellationToken ct)
+    {
+        if (candidateIds.Count == 0) return [];
+
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var contexts = await db.PageContexts.AsNoTracking()
+            .Where(p => !p.IsDeleted && candidateIds.Contains(p.SocialChannelId))
+            .ToListAsync(ct);
+        var ctxByChannel = contexts.ToDictionary(c => c.SocialChannelId);
+
+        var scores = await db.CampaignMediaScores.AsNoTracking()
+            .Where(s => !s.IsDeleted
+                && s.CampaignId == campaignId
+                && s.MediaAssetId == mediaId
+                && candidateIds.Contains(s.SocialChannelId)
+                && (s.Pass == 1 || s.Pass == 2))
+            .ToListAsync(ct);
+
+        var still = new List<Guid>();
+        foreach (var channelId in candidateIds)
+        {
+            if (!ctxByChannel.TryGetValue(channelId, out var ctx))
+                continue;
+
+            var profile = PageProfileSnapshot.Build(ctx);
+            if (!profile.IsScoreable)
+                continue;
+
+            var pass1 = scores.FirstOrDefault(s => s.SocialChannelId == channelId && s.Pass == 1);
+            var pass2 = scores.FirstOrDefault(s => s.SocialChannelId == channelId && s.Pass == 2);
+            if (pass1 is null || pass2 is null)
+                continue;
+            if (string.IsNullOrEmpty(pass1.ProfileHash) || string.IsNullOrEmpty(pass2.ProfileHash))
+                continue;
+            if (!string.Equals(pass1.ProfileHash, profile.Hash, StringComparison.Ordinal)
+                || !string.Equals(pass2.ProfileHash, profile.Hash, StringComparison.Ordinal))
+                continue;
+            if (!FitThreshold.Passes(pass1.Score, minScore) || !FitThreshold.Passes(pass2.Score, minScore))
+                continue;
+
+            still.Add(channelId);
+        }
+
+        return still;
     }
 
     private async Task<bool> HasPass2ScoresAsync(Guid campaignId, Guid mediaId, CancellationToken ct)
@@ -1195,6 +1264,9 @@ public class FullMediaPipelineService(
 
     private static bool IsAwaitingSlotReason(string? reason)
         => reason is "no_free_slot" or "slot_conflict";
+
+    private static bool IsProfileChangedWhileWaiting(string? reason)
+        => string.Equals(reason, "profile_changed_while_waiting", StringComparison.Ordinal);
 
     private static async Task<string?> ComputeInputHashAsync(
         AppDbContext db, Guid campaignId, Guid mediaId, IReadOnlyList<Guid> channelIds, CancellationToken ct)
