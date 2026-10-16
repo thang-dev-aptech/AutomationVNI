@@ -4,6 +4,7 @@ using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaCaption;
 using Backend.Modules.MediaFolder;
 using Backend.Tests.Modules.MediaAsset;
+using Backend.Tests.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -16,7 +17,7 @@ namespace Backend.Tests.Modules.MediaCaption;
 
 public sealed class MediaCaptionDeadlineTests : IAsyncLifetime
 {
-    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private readonly SqliteConnection _connection = SqliteTestDatabase.OpenInMemory();
     private DbContextOptions<AppDbContext> _dbOptions = null!;
 
     private sealed class HangSaveInterceptor : SaveChangesInterceptor
@@ -41,7 +42,6 @@ public sealed class MediaCaptionDeadlineTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        await _connection.OpenAsync();
     }
 
     public async Task DisposeAsync()

@@ -3,6 +3,7 @@ using Backend.Modules.PageContext;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
 using Backend.Shared.Repositories;
+using Backend.Tests.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -18,8 +19,7 @@ public sealed class PageContextTopicsExclusionsTests : IDisposable
 
     public PageContextTopicsExclusionsTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using var db = new AppDbContext(_options);
         db.Database.EnsureCreated();

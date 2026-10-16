@@ -8,6 +8,7 @@ using Backend.Modules.Inbox;
 using Backend.Shared;
 using Backend.Shared.Ai;
 using Backend.Shared.Repositories;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -34,8 +35,7 @@ public sealed class InboxRemovedRoutesTests : IAsyncLifetime
 
     public InboxRemovedRoutesTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
         var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using (var seed = new AppDbContext(options))
             seed.Database.EnsureCreated();

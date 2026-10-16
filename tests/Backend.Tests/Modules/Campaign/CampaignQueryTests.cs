@@ -10,6 +10,7 @@ using Backend.Modules.Post.Enums;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
 using Backend.Shared.Repositories;
+using Backend.Tests.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -31,8 +32,7 @@ public sealed class CampaignQueryTests : IAsyncLifetime
 
     public CampaignQueryTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using var db = new AppDbContext(_options);
         db.Database.EnsureCreated();

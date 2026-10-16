@@ -9,6 +9,7 @@ using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
 using Backend.Shared;
 using Backend.Shared.Repositories;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -36,8 +37,7 @@ public class MediaFolderLifecycleAuthPipelineTests : IAsyncLifetime
 
     public MediaFolderLifecycleAuthPipelineTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
 
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite(_connection)

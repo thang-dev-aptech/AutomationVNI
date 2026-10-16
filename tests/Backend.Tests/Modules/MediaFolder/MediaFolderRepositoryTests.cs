@@ -3,6 +3,7 @@ using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaFolder;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
+using Backend.Tests.Shared;
 using Xunit;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -23,8 +24,7 @@ public class MediaFolderRepositoryTests : IDisposable
 
     public MediaFolderRepositoryTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
         var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         _db = new AppDbContext(options);
         _db.Database.EnsureCreated();

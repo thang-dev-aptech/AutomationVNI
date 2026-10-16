@@ -10,6 +10,7 @@ using Backend.Modules.MediaFolder;
 using Backend.Shared;
 using Backend.Shared.Repositories;
 using Backend.Shared.Storage;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -35,8 +36,7 @@ public class GoogleDriveControllerTests
     [Fact]
     public async Task ScanNowEndpoint_EnforcesRoles()
     {
-        var connection = new SqliteConnection("DataSource=:memory:");
-        await connection.OpenAsync();
+        var connection = SqliteTestDatabase.OpenInMemory();
         var dbOptions = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
         await using (var db = new AppDbContext(dbOptions))
             await db.Database.EnsureCreatedAsync();
@@ -65,8 +65,7 @@ public class GoogleDriveControllerTests
     public async Task ScanNowEndpoint_ReturnsDisabledMessage_WhenStateDisabled()
     {
         // AC gdrive03-scan-now-disabled-test (84a92bd6) — phần controller.
-        var connection = new SqliteConnection("DataSource=:memory:");
-        await connection.OpenAsync();
+        var connection = SqliteTestDatabase.OpenInMemory();
         var dbOptions = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
         await using (var db = new AppDbContext(dbOptions))
             await db.Database.EnsureCreatedAsync();
@@ -92,8 +91,7 @@ public class GoogleDriveControllerTests
     [Fact]
     public async Task PipelineState_ExhaustedCountIsUncapped_AndPostReturnsSameCount()
     {
-        var connection = new SqliteConnection("DataSource=:memory:");
-        await connection.OpenAsync();
+        var connection = SqliteTestDatabase.OpenInMemory();
         var dbOptions = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
         await using (var db = new AppDbContext(dbOptions))
         {
@@ -148,8 +146,7 @@ public class GoogleDriveControllerTests
     [Fact]
     public async Task PipelineStateEndpoints_EnforceAuthenticationAndRolesWithoutForbiddenWrites()
     {
-        var connection = new SqliteConnection("DataSource=:memory:");
-        await connection.OpenAsync();
+        var connection = SqliteTestDatabase.OpenInMemory();
         var dbOptions = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
         await using (var db = new AppDbContext(dbOptions))
             await db.Database.EnsureCreatedAsync();

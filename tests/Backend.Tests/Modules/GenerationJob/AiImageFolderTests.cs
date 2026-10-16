@@ -13,6 +13,7 @@ using Backend.Shared.Ai;
 using Backend.Shared.SocialPublish;
 using Backend.Shared.Storage;
 using Backend.Tests.Modules.MediaFolder;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -25,12 +26,11 @@ namespace Backend.Tests.Modules.GenerationJob;
 
 public sealed class AiImageFolderTests : IDisposable
 {
-    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private readonly SqliteConnection _connection = SqliteTestDatabase.OpenInMemory();
     private readonly DbContextOptions<AppDbContext> _options;
 
     public AiImageFolderTests()
     {
-        _connection.Open();
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using var db = new AppDbContext(_options);
         db.Database.EnsureCreated();

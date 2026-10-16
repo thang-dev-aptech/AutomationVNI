@@ -5,6 +5,7 @@ using Backend.Data;
 using Backend.Modules.MediaAsset;
 using Backend.Shared.Ai;
 using Backend.Shared.Storage;
+using Backend.Tests.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -19,12 +20,11 @@ public sealed class MediaAnalysisStorageTimeoutTests : IDisposable
     private static readonly TimeSpan StorageTimeout = TimeSpan.FromMilliseconds(100);
     private const string AnalysisJson = "{\"keywords\":[\"khai giảng\",\"học sinh\",\"sân trường\"],\"altText\":\"alt\",\"description\":\"description\"}";
 
-    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private readonly SqliteConnection _connection = SqliteTestDatabase.OpenInMemory();
     private readonly DbContextOptions<AppDbContext> _options;
 
     public MediaAnalysisStorageTimeoutTests()
     {
-        _connection.Open();
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using var db = new AppDbContext(_options);
         db.Database.EnsureCreated();

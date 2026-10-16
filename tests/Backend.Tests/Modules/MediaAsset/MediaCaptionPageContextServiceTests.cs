@@ -5,6 +5,7 @@ using Backend.Modules.MediaFolder;
 using Backend.Modules.PageContext;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
+using Backend.Tests.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -18,14 +19,13 @@ namespace Backend.Tests.Modules.MediaAsset;
 /// </summary>
 public sealed class MediaCaptionPageContextServiceTests : IDisposable
 {
-    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private readonly SqliteConnection _connection = SqliteTestDatabase.OpenInMemory();
     private readonly DbContextOptions<AppDbContext> _options;
     private readonly Guid _page = Guid.NewGuid();
     private Guid _assetInPage;
 
     public MediaCaptionPageContextServiceTests()
     {
-        _connection.Open();
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using var db = new AppDbContext(_options);
         db.Database.EnsureCreated();

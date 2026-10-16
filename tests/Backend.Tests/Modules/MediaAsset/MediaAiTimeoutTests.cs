@@ -1,5 +1,6 @@
 using Backend.Data;
 using Backend.Modules.MediaAsset;
+using Backend.Tests.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,12 +18,11 @@ public sealed class MediaAiTimeoutTests : IDisposable
     private const string AnalysisJson = "{\"keywords\":[\"khai giảng\",\"học sinh\",\"sân trường\"],\"altText\":\"a\",\"description\":\"d\"}";
     private static readonly string CaptionJson = CaptionAi.Json("Bài thử");
 
-    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private readonly SqliteConnection _connection = SqliteTestDatabase.OpenInMemory();
     private readonly DbContextOptions<AppDbContext> _options;
 
     public MediaAiTimeoutTests()
     {
-        _connection.Open();
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using var db = new AppDbContext(_options);
         db.Database.EnsureCreated();

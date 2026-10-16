@@ -12,6 +12,7 @@ using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
 using Backend.Shared.SocialPublish;
 using Backend.Tests.Modules.MediaFolder;
+using Backend.Tests.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,8 +35,7 @@ public class GenerationJobChungChiGalleryTests : IDisposable
 
     public GenerationJobChungChiGalleryTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
 
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite(_connection)

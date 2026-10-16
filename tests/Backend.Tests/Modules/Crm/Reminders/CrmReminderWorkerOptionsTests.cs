@@ -4,6 +4,7 @@ using Backend.Modules.Crm.Customers;
 using Backend.Modules.Crm.Reminders;
 using Backend.Modules.Notification;
 using Backend.Shared.Repositories;
+using Backend.Tests.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,13 +17,12 @@ namespace Backend.Tests.Modules.Crm.Reminders;
 /// <summary>AC 3f6105db (d)(f): CrmReminderWorker:Enabled mặc định false; Enabled=true vẫn NotifyDue.</summary>
 public sealed class CrmReminderWorkerOptionsTests : IAsyncLifetime
 {
-    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private readonly SqliteConnection _connection = SqliteTestDatabase.OpenInMemory();
     private DbContextOptions<AppDbContext> _dbOptions = null!;
     private ServiceProvider _services = null!;
 
     public async Task InitializeAsync()
     {
-        await _connection.OpenAsync();
         _dbOptions = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         await using (var db = new AppDbContext(_dbOptions))
             await db.Database.EnsureCreatedAsync();

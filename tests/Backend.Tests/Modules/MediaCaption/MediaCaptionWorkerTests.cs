@@ -4,6 +4,7 @@ using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaCaption;
 using Backend.Modules.MediaFolder;
 using Backend.Shared.Repositories;
+using Backend.Tests.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,13 +16,12 @@ namespace Backend.Tests.Modules.MediaCaption;
 
 public sealed class MediaCaptionWorkerTests : IAsyncLifetime
 {
-    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private readonly SqliteConnection _connection = SqliteTestDatabase.OpenInMemory();
     private DbContextOptions<AppDbContext> _dbOptions = null!;
     private ServiceProvider _services = null!;
 
     public async Task InitializeAsync()
     {
-        await _connection.OpenAsync();
         _dbOptions = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         await using var db = new AppDbContext(_dbOptions);
         await db.Database.EnsureCreatedAsync();

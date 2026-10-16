@@ -4,6 +4,7 @@ using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaFolder;
 using Backend.Shared.Repositories;
+using Backend.Tests.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -24,8 +25,7 @@ public class MediaIntelligenceCaptionTests : IDisposable
 
     public MediaIntelligenceCaptionTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using var db = new AppDbContext(_options);
         db.Database.EnsureCreated();

@@ -5,6 +5,7 @@ using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
 using Backend.Shared;
 using Backend.Shared.Repositories;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
@@ -27,8 +28,7 @@ public class MediaFolderBulkCreateTests : IDisposable
 
     public MediaFolderBulkCreateTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
 
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite(_connection)
@@ -619,8 +619,7 @@ public class MediaFolderBulkCreateTests : IDisposable
     [Fact]
     public async Task BulkCreate_PersistenceFailure_RollsBackEntireBatch()
     {
-        await using var connection = new SqliteConnection("DataSource=:memory:");
-        await connection.OpenAsync();
+        await using var connection = SqliteTestDatabase.OpenInMemory();
 
         var interceptor = new FailAfterFirstSaveInterceptor();
         var options = new DbContextOptionsBuilder<AppDbContext>()

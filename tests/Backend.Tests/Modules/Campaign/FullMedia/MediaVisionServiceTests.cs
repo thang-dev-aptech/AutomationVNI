@@ -4,6 +4,7 @@ using Backend.Modules.Campaign.FullMedia;
 using Backend.Modules.MediaAsset;
 using Backend.Shared.Storage;
 using Backend.Tests.Modules.MediaAsset;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -22,8 +23,7 @@ public sealed class MediaVisionServiceTests : IDisposable
 
     public MediaVisionServiceTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using var db = new AppDbContext(_options);
         db.Database.EnsureCreated();

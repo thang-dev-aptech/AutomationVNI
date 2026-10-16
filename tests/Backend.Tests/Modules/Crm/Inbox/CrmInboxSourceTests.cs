@@ -23,6 +23,7 @@ using Backend.Shared.Repositories;
 using Backend.Shared.SocialComment;
 using Backend.Shared.SocialPublish;
 using Backend.Shared.Threads;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -54,8 +55,7 @@ public sealed class CrmInboxSourceTests : IAsyncLifetime
 
     public CrmInboxSourceTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using (var seed = new AppDbContext(_options))
             seed.Database.EnsureCreated();

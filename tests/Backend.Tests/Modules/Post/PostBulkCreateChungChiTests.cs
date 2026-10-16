@@ -7,6 +7,7 @@ using Backend.Modules.Post.Enums;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
 using Backend.Tests.Modules.MediaFolder;
+using Backend.Tests.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -21,8 +22,7 @@ public class PostBulkCreateChungChiTests : IDisposable
 
     public PostBulkCreateChungChiTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
 
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite(_connection)
