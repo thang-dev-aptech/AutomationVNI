@@ -4,7 +4,7 @@ using Backend.Modules.ApiLog;
 using Backend.Modules.Auth;
 using Backend.Modules.Category;
 using Backend.Modules.ContentCrawl;
-using Backend.Modules.Campaign.FullMedia.Scoring;
+using Backend.Modules.Campaign.FullMedia;
 using Backend.Modules.GenerationJob;
 using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaAsset;
@@ -131,12 +131,7 @@ builder.Services.AddScoped<Backend.Modules.Post.RecycleSourcePicker>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<Backend.Modules.Campaign.CampaignWorkerOptions>(
     builder.Configuration.GetSection("CampaignWorker"));
-builder.Services.Configure<Backend.Modules.Campaign.FullMedia.FullMediaPipelineOptions>(
-    builder.Configuration.GetSection(Backend.Modules.Campaign.FullMedia.FullMediaPipelineOptions.SectionName));
-builder.Services.AddScoped<Backend.Modules.Campaign.FullMedia.MediaVisionService>();
-builder.Services.AddScoped<Backend.Modules.Campaign.FullMedia.IMediaVisionDescriber>(
-    sp => sp.GetRequiredService<Backend.Modules.Campaign.FullMedia.MediaVisionService>());
-builder.Services.AddFullMediaPageFit(builder.Configuration);
+builder.Services.AddFullMediaPipeline(builder.Configuration);
 builder.Services.AddScoped<SocialChannelRepository>();
 builder.Services.AddScoped<SocialConnectionRepository>();
 builder.Services.AddScoped<PageContextRepository>();

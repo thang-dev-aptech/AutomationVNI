@@ -55,6 +55,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<CampaignChannelGroupModel> CampaignChannelGroups => Set<CampaignChannelGroupModel>();
     public DbSet<Backend.Modules.Campaign.FullMedia.MediaVisionProfileModel> MediaVisionProfiles
         => Set<Backend.Modules.Campaign.FullMedia.MediaVisionProfileModel>();
+    public DbSet<Backend.Modules.Campaign.FullMedia.CampaignMediaEvaluationModel> CampaignMediaEvaluations
+        => Set<Backend.Modules.Campaign.FullMedia.CampaignMediaEvaluationModel>();
+    public DbSet<Backend.Modules.Campaign.FullMedia.CampaignMediaScoreModel> CampaignMediaScores
+        => Set<Backend.Modules.Campaign.FullMedia.CampaignMediaScoreModel>();
     public DbSet<SocialConnectionModel> SocialConnections => Set<SocialConnectionModel>();
     public DbSet<PageContextModel> PageContexts => Set<PageContextModel>();
     public DbSet<PostModel> Posts => Set<PostModel>();
@@ -310,6 +314,32 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
                 .IsUnique()
                 .HasFilter("IsDeleted = 0")
                 .HasDatabaseName("IX_CampaignChannelGroups_Campaign_Group_Active");
+        });
+
+        modelBuilder.Entity<Backend.Modules.Campaign.FullMedia.CampaignMediaEvaluationModel>(e =>
+        {
+            e.ToTable("CampaignMediaEvaluations");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.CampaignId, x.MediaAssetId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0")
+                .HasDatabaseName("IX_CampaignMediaEvaluations_Campaign_Media_Active");
+            e.HasIndex(x => new { x.Status, x.NextAttemptAt });
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.ReasonCode).HasMaxLength(100);
+            e.Property(x => x.InputHash).HasMaxLength(64);
+            e.Property(x => x.CostUsd).HasPrecision(18, 6);
+        });
+
+        modelBuilder.Entity<Backend.Modules.Campaign.FullMedia.CampaignMediaScoreModel>(e =>
+        {
+            e.ToTable("CampaignMediaScores");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.CampaignId, x.MediaAssetId, x.SocialChannelId, x.Pass })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0")
+                .HasDatabaseName("IX_CampaignMediaScores_Campaign_Media_Channel_Pass_Active");
+            e.HasIndex(x => x.IsDeleted);
         });
 
         modelBuilder.Entity<PostModel>(e =>

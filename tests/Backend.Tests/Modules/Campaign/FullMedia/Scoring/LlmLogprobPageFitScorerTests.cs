@@ -356,11 +356,19 @@ public sealed class LlmLogprobPageFitScorerTests
     [Fact]
     public void Program_Calls_AddFullMediaPageFit()
     {
-        var programPath = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory, "..", "..", "..", "..", "..", "backend", "Program.cs"));
+        // N1: Program chỉ gọi AddFullMediaPipeline; PageFit được đăng ký bên trong extension.
+        var root = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var programPath = Path.Combine(root, "backend", "Program.cs");
         Assert.True(File.Exists(programPath), $"Program.cs not found at {programPath}");
-        var text = File.ReadAllText(programPath);
-        Assert.Contains("AddFullMediaPageFit", text);
+        var program = File.ReadAllText(programPath);
+        Assert.Contains("AddFullMediaPipeline", program);
+        Assert.DoesNotContain("AddFullMediaPageFit(builder.Configuration)", program);
+
+        var extPath = Path.Combine(root, "backend", "Modules", "Campaign", "FullMedia",
+            "FullMediaPipelineServiceCollectionExtensions.cs");
+        Assert.True(File.Exists(extPath));
+        Assert.Contains("AddFullMediaPageFit", File.ReadAllText(extPath));
     }
 
     [Fact]

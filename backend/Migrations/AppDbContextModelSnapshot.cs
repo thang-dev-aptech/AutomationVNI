@@ -338,6 +338,9 @@ namespace backend.Migrations
                     b.Property<int>("MediaType")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("Mode")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(300)
@@ -347,8 +350,17 @@ namespace backend.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("QualityPauseReason")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("QualityPausedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("ScheduleMode")
                         .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("SourceFolderId")
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTime>("StartDate")
                         .HasColumnType("TEXT");
@@ -375,6 +387,149 @@ namespace backend.Migrations
                     b.HasIndex("Status");
 
                     b.ToTable("Campaigns", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Campaign.FullMedia.CampaignMediaEvaluationModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("BestChannelId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("BestScore")
+                        .HasColumnType("REAL");
+
+                    b.Property<Guid>("CampaignId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("CostUsd")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("EvaluatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("InputHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("MediaAssetId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("NextAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReasonCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("CampaignId", "MediaAssetId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_CampaignMediaEvaluations_Campaign_Media_Active")
+                        .HasFilter("IsDeleted = 0");
+
+                    b.HasIndex("Status", "NextAttemptAt");
+
+                    b.ToTable("CampaignMediaEvaluations", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Modules.Campaign.FullMedia.CampaignMediaScoreModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CampaignId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("MediaAssetId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Pass")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Passed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("Score")
+                        .HasColumnType("REAL");
+
+                    b.Property<DateTime>("ScoredAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SocialChannelId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("CampaignId", "MediaAssetId", "SocialChannelId", "Pass")
+                        .IsUnique()
+                        .HasDatabaseName("IX_CampaignMediaScores_Campaign_Media_Channel_Pass_Active")
+                        .HasFilter("IsDeleted = 0");
+
+                    b.ToTable("CampaignMediaScores", (string)null);
                 });
 
             modelBuilder.Entity("Backend.Modules.Campaign.FullMedia.MediaVisionProfileModel", b =>

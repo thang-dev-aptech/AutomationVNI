@@ -177,7 +177,7 @@ public sealed class CampaignReviewFixesTests : IAsyncLifetime
         await using (var db = new AppDbContext(_options))
         {
             var campaign = await db.Campaigns.SingleAsync(c => c.Id == camp1);
-            var slots = CreateService().BuildSlots(
+            var slots = CampaignGenerationService.BuildSlots(
                 campaign,
                 ["15:00", "16:00"],
                 [],

@@ -396,6 +396,17 @@ public class MediaIntelligenceService(
         => GenerateCaptionCoreAsync(mediaId, useFolderPage: false, pageId, ct);
 
     /// <summary>
+    /// FULLMEDIA t4: sinh caption theo PageContext của page, trả chuỗi — KHÔNG ghi MediaAsset
+    /// (mỗi page một caption riêng khi tạo bài Full Media).
+    /// </summary>
+    public async Task<string> GenerateCaptionTextForPageAsync(
+        Guid mediaId, Guid pageId, CancellationToken ct = default)
+    {
+        var media = await LoadCaptionTargetAsync(mediaId, track: false, ct);
+        return await GenerateCaptionTextAsync(media, useFolderPage: false, pageId, ct);
+    }
+
+    /// <summary>
     /// FULLMEDIA t2: tên model Vision hiệu dụng (override nếu có, không thì model mặc định của provider).
     /// Chỉ đọc cấu hình — không gọi mạng.
     /// </summary>

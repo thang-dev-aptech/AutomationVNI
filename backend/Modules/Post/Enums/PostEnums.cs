@@ -61,5 +61,8 @@ public enum GenerationFlow
     /// <summary>
     /// Bài dùng ảnh người dùng chọn sẵn trong Media. Không đi qua GenerateForPostAsync.
     /// </summary>
-    UserSelectedMedia = 8
+    UserSelectedMedia = 8,
+
+    /// <summary>Bài tự tạo bởi chiến dịch Full Media (Vision + PageFit + kênh lịch).</summary>
+    FullMedia = 9
 }
