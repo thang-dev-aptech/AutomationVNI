@@ -396,6 +396,16 @@ public class MediaIntelligenceService(
         => GenerateCaptionCoreAsync(mediaId, useFolderPage: false, pageId, ct);
 
     /// <summary>
+    /// FULLMEDIA t2: tên model Vision hiệu dụng (override nếu có, không thì model mặc định của provider).
+    /// Chỉ đọc cấu hình — không gọi mạng.
+    /// </summary>
+    public string ResolveVisionModelName(string? modelOverride)
+    {
+        var (_, _, defaultModel) = ResolveConfig();
+        return string.IsNullOrWhiteSpace(modelOverride) ? defaultModel : modelOverride.Trim();
+    }
+
+    /// <summary>
     /// FULLMEDIA t2: gọi chat completions Vision với ảnh + prompt cố định, trả content (JSON string).
     /// Tái dùng ResolveConfig / CallChatCompletionsAsync / timeout hiện có. Không đổi hành vi caption/tag.
     /// </summary>

@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Backend.Data;
@@ -38,7 +37,11 @@ public class MediaVisionService(
     public async Task<VisionDescription> DescribeAsync(
         Guid mediaAssetId, VisionPass pass, CancellationToken ct = default)
     {
+        EnsurePassModelsIndependentIfEnabled(pass);
+
         var media = await LoadMediaAsync(mediaAssetId, ct);
+        // Luôn đọc + băm nội dung ảnh (kể cả khi có cache) để phát hiện FileHash đổi.
+        // An toàn nhờ MaxImageBytes; chấp nhận chi phí I/O để cache không dùng nhầm nội dung cũ.
         var (bytes, mime) = await ReadImageBytesAsync(media, ct);
         var fileHash = ComputeFileHash(bytes);
 
@@ -60,6 +63,16 @@ public class MediaVisionService(
             media = await LoadMediaAsync(mediaAssetId, ct);
             description = await DescribeAsync(mediaAssetId, pass, ct);
         }
+        catch (VisionImageRejectedException ex)
+        {
+            return new VisionOutcome(VisionUsability.Unusable, null, ex.ReasonCode);
+        }
+        catch (VisionConfigurationException ex)
+        {
+            logger.LogWarning(ex, "Vision configuration rejected for media {MediaId}: {Reason}",
+                mediaAssetId, ex.ReasonCode);
+            return new VisionOutcome(VisionUsability.Failed, null, ex.ReasonCode);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Vision describe failed for media {MediaId}", mediaAssetId);
@@ -68,6 +81,7 @@ public class MediaVisionService(
 
         var opts = options.Value;
         var attemptsLeft = Math.Max(0, opts.MaxVisionFallbackAttempts);
+        var fallbackModel = opts.VisionFallbackModel?.Trim();
 
         while (true)
         {
@@ -78,7 +92,13 @@ public class MediaVisionService(
             if (!needsRetry)
                 return new VisionOutcome(VisionUsability.Usable, description);
 
-            if (attemptsLeft <= 0 || string.IsNullOrWhiteSpace(opts.VisionFallbackModel))
+            // F1(a): mô tả đã lưu chính là kết quả VisionFallbackModel → không gọi AI dự phòng lại.
+            var alreadyUsedFallback = !string.IsNullOrWhiteSpace(fallbackModel)
+                && string.Equals(description.Model, fallbackModel, StringComparison.Ordinal);
+
+            if (attemptsLeft <= 0
+                || string.IsNullOrWhiteSpace(fallbackModel)
+                || alreadyUsedFallback)
             {
                 var reason = description.Unclear || description.Confidence < opts.MinVisionConfidence
                     ? "unclear_or_low_confidence"
@@ -92,13 +112,32 @@ public class MediaVisionService(
                 var (bytes, mime) = await ReadImageBytesAsync(media, ct);
                 var fileHash = ComputeFileHash(bytes);
                 description = await CallAndCacheAsync(
-                    mediaAssetId, fileHash, pass, bytes, mime, opts.VisionFallbackModel!, ct);
+                    mediaAssetId, fileHash, pass, bytes, mime, fallbackModel, ct);
+            }
+            catch (VisionImageRejectedException ex)
+            {
+                return new VisionOutcome(VisionUsability.Unusable, description, ex.ReasonCode);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 logger.LogWarning(ex, "Vision fallback failed for media {MediaId}", mediaAssetId);
                 return new VisionOutcome(VisionUsability.Failed, description, "fallback_failed");
             }
+        }
+    }
+
+    private void EnsurePassModelsIndependentIfEnabled(VisionPass pass)
+    {
+        var opts = options.Value;
+        if (!opts.Enabled || pass != VisionPass.B) return;
+
+        var effectiveA = intelligence.ResolveVisionModelName(ResolvePassModel(VisionPass.A));
+        var effectiveB = intelligence.ResolveVisionModelName(ResolvePassModel(VisionPass.B));
+        if (string.Equals(effectiveA, effectiveB, StringComparison.Ordinal))
+        {
+            throw new VisionConfigurationException(
+                "vision_models_not_independent",
+                $"VisionModel A và B phải khác nhau khi FullMediaPipeline.Enabled=true (hiện cùng '{effectiveA}').");
         }
     }
 
@@ -138,7 +177,7 @@ public class MediaVisionService(
         MediaAssetModel media, CancellationToken ct)
     {
         if (!media.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("Vision chỉ hỗ trợ file ảnh");
+            throw new VisionImageRejectedException("not_an_image", "Vision chỉ hỗ trợ file ảnh");
         if (string.IsNullOrWhiteSpace(media.StoragePath) || !await storage.ExistsAsync(media.StoragePath, ct))
             throw new ArgumentException("File ảnh không tồn tại trên storage");
 
@@ -152,7 +191,8 @@ public class MediaVisionService(
         {
             total += read;
             if (total > maxBytes)
-                throw new ArgumentException($"Ảnh vượt giới hạn {maxBytes} bytes");
+                throw new VisionImageRejectedException(
+                    "image_too_large", $"Ảnh vượt giới hạn {maxBytes} bytes");
             await memory.WriteAsync(buffer.AsMemory(0, read), ct);
         }
 

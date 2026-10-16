@@ -7,6 +7,7 @@ using Backend.Tests.Modules.MediaAsset;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -112,11 +113,39 @@ public sealed class MediaVisionServiceTests : IDisposable
         var handler = new ScriptedChatHandler(VisionJson(unclear: false, keywords: ["mèo"]));
         var svc = CreateService(handler, storage, PipelineOpts(maxBytes: 16));
 
-        await Assert.ThrowsAsync<ArgumentException>(() => svc.DescribeAsync(_mediaId, VisionPass.A));
+        var ex = await Assert.ThrowsAsync<VisionImageRejectedException>(
+            () => svc.DescribeAsync(_mediaId, VisionPass.A));
+        Assert.Equal("image_too_large", ex.ReasonCode);
         Assert.Empty(handler.RequestBodies);
 
         var outcome = await svc.GetUsableAsync(_mediaId, VisionPass.A);
-        Assert.Equal(VisionUsability.Failed, outcome.Status);
+        Assert.Equal(VisionUsability.Unusable, outcome.Status);
+        Assert.Equal("image_too_large", outcome.ReasonCode);
+        Assert.Empty(handler.RequestBodies);
+    }
+
+    [Fact]
+    public async Task NotAnImage_Rejected_NoAiCall()
+    {
+        await using (var db = new AppDbContext(_options))
+        {
+            var media = await db.MediaAssets.FindAsync(_mediaId);
+            Assert.NotNull(media);
+            media!.MimeType = "application/pdf";
+            await db.SaveChangesAsync();
+        }
+
+        var handler = new ScriptedChatHandler(VisionJson(unclear: false, keywords: ["mèo"]));
+        var svc = CreateService(handler);
+
+        var ex = await Assert.ThrowsAsync<VisionImageRejectedException>(
+            () => svc.DescribeAsync(_mediaId, VisionPass.A));
+        Assert.Equal("not_an_image", ex.ReasonCode);
+        Assert.Empty(handler.RequestBodies);
+
+        var outcome = await svc.GetUsableAsync(_mediaId, VisionPass.A);
+        Assert.Equal(VisionUsability.Unusable, outcome.Status);
+        Assert.Equal("not_an_image", outcome.ReasonCode);
         Assert.Empty(handler.RequestBodies);
     }
 
@@ -132,6 +161,202 @@ public sealed class MediaVisionServiceTests : IDisposable
 
         Assert.Equal(VisionUsability.Unusable, outcome.Status);
         Assert.False(outcome.Status == VisionUsability.Usable);
+    }
+
+    [Fact]
+    public async Task GetUsableTwice_OnUnusable_DoesNotRecallAi()
+    {
+        var handler = new ScriptedChatHandler(
+            VisionJson(unclear: true, confidence: 0.9, keywords: ["mèo", "thú cưng"]),
+            VisionJson(unclear: true, confidence: 0.9, keywords: ["mèo", "thú cưng"]),
+            VisionJson(unclear: true, confidence: 0.9, keywords: ["mèo", "thú cưng"]));
+        var svc = CreateService(handler, opts: PipelineOpts(fallback: "fallback-model"));
+
+        var first = await svc.GetUsableAsync(_mediaId, VisionPass.A);
+        var afterFirst = handler.RequestBodies.Count;
+        Assert.Equal(VisionUsability.Unusable, first.Status);
+        Assert.Equal(2, afterFirst);
+
+        var second = await svc.GetUsableAsync(_mediaId, VisionPass.A);
+        Assert.Equal(VisionUsability.Unusable, second.Status);
+        Assert.Equal(afterFirst, handler.RequestBodies.Count);
+    }
+
+    [Fact]
+    public async Task GetUsableTwice_OnUsableAfterFallback_DoesNotRecallAi()
+    {
+        var handler = new ScriptedChatHandler(
+            VisionJson(unclear: true, confidence: 0.9, keywords: ["mèo", "thú cưng"]),
+            VisionJson(unclear: false, confidence: 0.95, keywords: ["mèo", "thú cưng"]),
+            VisionJson(unclear: false, confidence: 0.95, keywords: ["mèo", "thú cưng"]));
+        var svc = CreateService(handler, opts: PipelineOpts(fallback: "fallback-model"));
+
+        var first = await svc.GetUsableAsync(_mediaId, VisionPass.A);
+        var afterFirst = handler.RequestBodies.Count;
+        Assert.Equal(VisionUsability.Usable, first.Status);
+        Assert.Equal(2, afterFirst);
+        Assert.Equal("fallback-model", first.Description!.Model);
+
+        var second = await svc.GetUsableAsync(_mediaId, VisionPass.A);
+        Assert.Equal(VisionUsability.Usable, second.Status);
+        Assert.Equal(afterFirst, handler.RequestBodies.Count);
+        Assert.Equal("fallback-model", second.Description!.Model);
+    }
+
+    [Fact]
+    public async Task Enabled_SameModel_PassB_FailsWithoutAi()
+    {
+        var handler = new ScriptedChatHandler(VisionJson(unclear: false, keywords: ["mèo", "thú cưng"]));
+        var svc = CreateService(handler, opts: PipelineOpts(
+            enabled: true, modelA: "same-model", modelB: "same-model"));
+
+        var outcome = await svc.GetUsableAsync(_mediaId, VisionPass.B);
+
+        Assert.Equal(VisionUsability.Failed, outcome.Status);
+        Assert.Equal("vision_models_not_independent", outcome.ReasonCode);
+        Assert.Empty(handler.RequestBodies);
+
+        await Assert.ThrowsAsync<VisionConfigurationException>(
+            () => svc.DescribeAsync(_mediaId, VisionPass.B));
+        Assert.Empty(handler.RequestBodies);
+    }
+
+    [Fact]
+    public async Task Enabled_DistinctModels_BothPassesRun()
+    {
+        var handler = new ScriptedChatHandler(
+            VisionJson(unclear: false, keywords: ["mèo", "thú cưng"]),
+            VisionJson(unclear: false, keywords: ["mèo", "thú cưng"]));
+        var svc = CreateService(handler, opts: PipelineOpts(
+            enabled: true, modelA: "vision-a", modelB: "vision-b"));
+
+        await svc.DescribeAsync(_mediaId, VisionPass.A);
+        await svc.DescribeAsync(_mediaId, VisionPass.B);
+
+        Assert.Equal(2, handler.RequestBodies.Count);
+        Assert.Contains("\"model\":\"vision-a\"", handler.RequestBodies[0]);
+        Assert.Contains("\"model\":\"vision-b\"", handler.RequestBodies[1]);
+    }
+
+    [Fact]
+    public async Task Enabled_EmptyModels_FallsBackToDefault_FailsIndependence()
+    {
+        var handler = new ScriptedChatHandler(VisionJson(unclear: false, keywords: ["mèo", "thú cưng"]));
+        var svc = CreateService(handler, opts: PipelineOpts(
+            enabled: true, modelA: "", modelB: ""));
+
+        var outcome = await svc.GetUsableAsync(_mediaId, VisionPass.B);
+
+        Assert.Equal(VisionUsability.Failed, outcome.Status);
+        Assert.Equal("vision_models_not_independent", outcome.ReasonCode);
+        Assert.Empty(handler.RequestBodies);
+    }
+
+    [Fact]
+    public async Task Disabled_SameEffectiveModel_StillRuns()
+    {
+        var handler = new ScriptedChatHandler(
+            VisionJson(unclear: false, keywords: ["mèo", "thú cưng"]),
+            VisionJson(unclear: false, keywords: ["mèo", "thú cưng"]));
+        var svc = CreateService(handler, opts: PipelineOpts(
+            enabled: false, modelA: "", modelB: ""));
+
+        await svc.DescribeAsync(_mediaId, VisionPass.A);
+        await svc.DescribeAsync(_mediaId, VisionPass.B);
+
+        Assert.Equal(2, handler.RequestBodies.Count);
+        Assert.Contains("\"model\":\"vision-test\"", handler.RequestBodies[0]);
+        Assert.Contains("\"model\":\"vision-test\"", handler.RequestBodies[1]);
+    }
+
+    [Fact]
+    public async Task GetUsable_Consistent_ReturnsUsable()
+    {
+        var handler = new ScriptedChatHandler(
+            VisionJson(unclear: false, confidence: 0.95, keywords: ["mèo", "thú cưng"]));
+        var svc = CreateService(handler);
+
+        var outcome = await svc.GetUsableAsync(_mediaId, VisionPass.A);
+
+        Assert.Equal(VisionUsability.Usable, outcome.Status);
+        Assert.NotNull(outcome.Description);
+        Assert.Single(handler.RequestBodies);
+    }
+
+    [Fact]
+    public async Task GetUsable_UnclearThenFallbackGood_ReturnsUsable()
+    {
+        var handler = new ScriptedChatHandler(
+            VisionJson(unclear: true, confidence: 0.9, keywords: ["mèo", "thú cưng"]),
+            VisionJson(unclear: false, confidence: 0.95, keywords: ["mèo", "thú cưng"]));
+        var svc = CreateService(handler, opts: PipelineOpts(fallback: "fallback-model"));
+
+        var outcome = await svc.GetUsableAsync(_mediaId, VisionPass.A);
+
+        Assert.Equal(VisionUsability.Usable, outcome.Status);
+        Assert.Equal(2, handler.RequestBodies.Count);
+        Assert.Contains("\"model\":\"fallback-model\"", handler.RequestBodies[1]);
+        Assert.Equal("fallback-model", outcome.Description!.Model);
+    }
+
+    [Fact]
+    public async Task GetUsable_LowConfidenceAlone_TriggersFallback()
+    {
+        var handler = new ScriptedChatHandler(
+            VisionJson(unclear: false, confidence: 0.2, keywords: ["mèo", "thú cưng"]),
+            VisionJson(unclear: false, confidence: 0.2, keywords: ["mèo", "thú cưng"]));
+        var svc = CreateService(handler, opts: PipelineOpts(fallback: "fallback-model"));
+
+        var outcome = await svc.GetUsableAsync(_mediaId, VisionPass.A);
+
+        Assert.Equal(VisionUsability.Unusable, outcome.Status);
+        Assert.Equal(2, handler.RequestBodies.Count);
+    }
+
+    [Fact]
+    public async Task PassBNotServedFromPassACache_AndEachUsesItsModel()
+    {
+        var handler = new ScriptedChatHandler(
+            VisionJson(unclear: false, keywords: ["mèo", "thú cưng"]),
+            VisionJson(unclear: false, keywords: ["mèo", "thú cưng"]));
+        var svc = CreateService(handler, opts: PipelineOpts(
+            enabled: false, modelA: "vision-a", modelB: "vision-b"));
+
+        await svc.DescribeAsync(_mediaId, VisionPass.A);
+        await svc.DescribeAsync(_mediaId, VisionPass.B);
+
+        Assert.Equal(2, handler.RequestBodies.Count);
+        Assert.Contains("\"model\":\"vision-a\"", handler.RequestBodies[0]);
+        Assert.Contains("\"model\":\"vision-b\"", handler.RequestBodies[1]);
+    }
+
+    [Fact]
+    public async Task GetUsable_NoFallbackModel_ImmediatelyUnusable_NoExtraCall()
+    {
+        var handler = new ScriptedChatHandler(
+            VisionJson(unclear: true, confidence: 0.9, keywords: ["mèo", "thú cưng"]),
+            VisionJson(unclear: false, confidence: 0.95, keywords: ["mèo", "thú cưng"]));
+        var svc = CreateService(handler, opts: PipelineOpts(fallback: ""));
+
+        var outcome = await svc.GetUsableAsync(_mediaId, VisionPass.A);
+
+        Assert.Equal(VisionUsability.Unusable, outcome.Status);
+        Assert.Single(handler.RequestBodies);
+    }
+
+    [Fact]
+    public void Di_MediaVisionService_And_IMediaVisionDescriber_SameInstance()
+    {
+        var handler = new ScriptedChatHandler(VisionJson(unclear: false, keywords: ["mèo"]));
+        var services = new ServiceCollection();
+        services.AddScoped<MediaVisionService>(_ => CreateService(handler));
+        services.AddScoped<IMediaVisionDescriber>(sp => sp.GetRequiredService<MediaVisionService>());
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var concrete = scope.ServiceProvider.GetRequiredService<MediaVisionService>();
+        var viaInterface = scope.ServiceProvider.GetRequiredService<IMediaVisionDescriber>();
+        Assert.Same(concrete, viaInterface);
     }
 
     private MediaVisionService CreateService(
@@ -157,13 +382,16 @@ public sealed class MediaVisionServiceTests : IDisposable
 
     private static FullMediaPipelineOptions PipelineOpts(
         string? fallback = "fallback-model",
-        long maxBytes = 5_242_880)
+        long maxBytes = 5_242_880,
+        bool enabled = false,
+        string? modelA = "vision-a",
+        string? modelB = "vision-b")
         => new()
         {
-            Enabled = false,
-            VisionModelA = "vision-a",
-            VisionModelB = "vision-b",
-            VisionFallbackModel = fallback,
+            Enabled = enabled,
+            VisionModelA = modelA ?? "",
+            VisionModelB = modelB ?? "",
+            VisionFallbackModel = fallback ?? "",
             MaxImageBytes = maxBytes,
             MinVisionConfidence = 0.5,
             MaxVisionFallbackAttempts = 1,
