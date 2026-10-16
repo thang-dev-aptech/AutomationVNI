@@ -1,0 +1,868 @@
+{
+  "description": "Mutation chống hồi quy FULLMEDIA-01 (pipeline, worker, bộ chấm logprobs, Vision). Xem tests/mutations/README.md.",
+  "mutations": [
+    {
+      "id": "T1",
+      "description": "Ngưỡng dùng > thay vì >= (0.94 không còn được nhận)",
+      "file": "backend/Modules/Campaign/FullMedia/FitThreshold.cs",
+      "original": "=> score >= minFitScore;",
+      "replacement": "=> score > minFitScore;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "ThresholdBoundary_0939Rejects_094Accepts",
+        "FitThreshold_SingleComparisonSite_UsesGreaterOrEqual"
+      ]
+    },
+    {
+      "id": "T2",
+      "description": "Ngưỡng mặc định 0.94 hạ xuống 0.90",
+      "file": "backend/Modules/Campaign/FullMedia/FitThreshold.cs",
+      "original": "DefaultMinFitScore = 0.94;",
+      "replacement": "DefaultMinFitScore = 0.90;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "ThresholdBoundary_0939Rejects_094Accepts"
+      ]
+    },
+    {
+      "id": "T3",
+      "description": "Bỏ đồng thuận hai lượt: page đạt lượt một là nhận, bỏ qua lượt hai",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        var accepted = pass1Ids\n            .Where(id => score2.Scores.TryGetValue(id, out var s) && FitThreshold.Passes(s, minScore))\n            .ToList();",
+      "replacement": "        var accepted = pass1Ids.ToList();",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "TwoPassConsensus_Pass1OkPass2Fail_Rejected"
+      ]
+    },
+    {
+      "id": "T4",
+      "description": "Vision B vẫn được gọi khi lượt một không page nào đạt",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        if (pass1Ids.Count == 0)\n",
+      "replacement": "        if (pass1Ids.Count < 0)\n",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "TwoPassConsensus_Pass1OnlyNotAccepted_VisionBNotCalledWhenRejected"
+      ]
+    },
+    {
+      "id": "T5",
+      "description": "Fan-out chỉ đăng một page (bỏ các page đạt khác)",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "return await CreatePostsForAcceptedAsync(work, snap, accepted, score2, cost, inputHashFinal, ct);",
+      "replacement": "return await CreatePostsForAcceptedAsync(work, snap, accepted.Take(1).ToList(), score2, cost, inputHashFinal, ct);",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "FanOut_ThreePages_ThreeScheduledPostsSameSlotJitter",
+        "TwoImages_SamePage_ThreePagesFanOut_EachImageOneSharedSlot"
+      ]
+    },
+    {
+      "id": "T6",
+      "description": "Mỗi page một khe khác nhau thay vì khe chung",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                            CampaignSlotAt = slotUtc,",
+      "replacement": "                            CampaignSlotAt = slotUtc.AddMinutes(created),",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "FanOut_ThreePages_ThreeScheduledPostsSameSlotJitter",
+        "TwoImages_SamePage_ThreePagesFanOut_EachImageOneSharedSlot"
+      ]
+    },
+    {
+      "id": "T7",
+      "description": "Không kiểm ảnh đã đăng trên page (cho đăng lại)",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        return AlreadyPostedOnPageCoreAsync(db, campaignId, mediaId, channelId, ct);",
+      "replacement": "        return Task.FromResult(false);",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "NoRepeatOnSamePage",
+        "NoRepeat_SamePage_DirectCheck",
+        "PartialPagesAlreadyPosted_OnlyMissingPageGetsPost"
+      ]
+    },
+    {
+      "id": "T8",
+      "description": "Lỗi caption một page làm hỏng cả ảnh (không cô lập)",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                catch (Exception ex)\n                {\n                    logger.LogWarning(ex,\n                        \"Caption/post thất bại",
+      "replacement": "                catch (Exception ex) when (ex is null)\n                {\n                    logger.LogWarning(ex,\n                        \"Caption/post thất bại",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "CaptionFailureIsolated"
+      ]
+    },
+    {
+      "id": "T9",
+      "description": "Page hồ sơ rỗng vẫn được gửi chấm",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            if (!profile.IsScoreable) continue;\n",
+      "replacement": "",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "AllPagesEmptyProfile_StaysPending",
+        "SomeEmptyProfile_SkippedOthersScored"
+      ]
+    },
+    {
+      "id": "T10",
+      "description": "Không page nào chấm được → Rejected thay vì giữ Pending",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            await FinalizePendingAsync(work.EvaluationId, \"no_scoreable_pages\", 0, ct);",
+      "replacement": "            await FinalizeStatusAsync(work.EvaluationId, CampaignMediaEvaluationStatus.Rejected, \"no_scoreable_pages\", null, null, 0, ct);",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "AllPagesEmptyProfile_StaysPending"
+      ]
+    },
+    {
+      "id": "T11",
+      "description": "PageFitPermanentException → Rejected thay vì giữ Pending",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            await FinalizePendingAsync(work.EvaluationId, \"pagefit_permanent\", 0, ct);",
+      "replacement": "            await FinalizeStatusAsync(work.EvaluationId, CampaignMediaEvaluationStatus.Rejected, \"pagefit_permanent\", null, null, 0, ct);",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "ScorerPermanentFailure_StaysPending_NoPost"
+      ]
+    },
+    {
+      "id": "T12",
+      "description": "Rejected được chấm lại dù InputHash không đổi",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                        && !string.Equals(inputHash, eval.InputHash, StringComparison.Ordinal))",
+      "replacement": ")",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "RejectedNotRescoredSameInputHash",
+        "RejectedSameInputHash_NotRescored_ViaProcessDue"
+      ]
+    },
+    {
+      "id": "T13",
+      "description": "Chấm lại gọi lại Vision thay vì dùng mô tả đã lưu",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        if (work.IsRescore)\n        {\n            using var scope = scopeFactory.CreateScope();\n            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();\n            var loadedA",
+      "replacement": "        if (work.IsRescore && false)\n        {\n            using var scope = scopeFactory.CreateScope();\n            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();\n            var loadedA",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineNaNbTests",
+      "expect_red": [
+        "RescoredOnProfileHashChange_NoVisionCall",
+        "Rescore_StillNoVisionCall"
+      ]
+    },
+    {
+      "id": "T14",
+      "description": "Bỏ trần MaxRescores",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                    && eval.Attempts < Math.Max(0, options.Value.MaxRescores))",
+      "replacement": ")",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineNaNbTests",
+      "expect_red": [
+        "Rescore_MaxRescores_BlocksFurtherRescore"
+      ]
+    },
+    {
+      "id": "T15",
+      "description": "ProcessDueAsync chạy cả khi Enabled=false",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        if (!opts.Enabled)\n            return 0;\n",
+      "replacement": "",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "ProcessDue_Disabled_ZeroCalls"
+      ]
+    },
+    {
+      "id": "T15b",
+      "description": "Worker bỏ kiểm Enabled lúc khởi động",
+      "file": "backend/Modules/Campaign/FullMedia/CampaignFullMediaWorker.cs",
+      "original": "        if (!settings.Enabled)\n        {",
+      "replacement": "        if (false)\n        {",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "WorkerDisabled_ZeroCalls"
+      ]
+    },
+    {
+      "id": "T16",
+      "description": "Giữ giao dịch DB (khoá ghi) trong lúc chờ Vision A",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                var vision = scope.ServiceProvider.GetRequiredService<IMediaVisionDescriber>();\n                using var stageCts = CancellationTokenSource.CreateLinkedTokenSource(ct);\n                stageCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, opts.StageTimeoutSeconds)));\n                outcomeA",
+      "replacement": "                var vision = scope.ServiceProvider.GetRequiredService<IMediaVisionDescriber>();\n                var heldDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();\n                await using var heldTx = await heldDb.Database.BeginTransactionAsync(ct);\n                await heldDb.Database.ExecuteSqlRawAsync(\"UPDATE Campaigns SET Name = Name\", ct);\n                using var stageCts = CancellationTokenSource.CreateLinkedTokenSource(ct);\n                stageCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, opts.StageTimeoutSeconds)));\n                outcomeA",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "UserWriteDuringHeldAiCall_NoSqliteBusy"
+      ],
+      "timeout": 300
+    },
+    {
+      "id": "T17",
+      "description": "Claim không nguyên tử (đọc rồi mới ghi, có cửa sổ race)",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        var updated = await db.CampaignMediaEvaluations\n            .Where(e => !e.IsDeleted\n                && e.CampaignId == campaignId\n                && e.MediaAssetId == mediaId\n                && e.Status == CampaignMediaEvaluationStatus.Pending\n                && (e.NextAttemptAt == null || e.NextAttemptAt <= now))\n            .ExecuteUpdateAsync(",
+      "replacement": "        var wasPending = await db.CampaignMediaEvaluations\n            .AnyAsync(e => !e.IsDeleted\n                && e.CampaignId == campaignId\n                && e.MediaAssetId == mediaId\n                && e.Status == CampaignMediaEvaluationStatus.Pending\n                && (e.NextAttemptAt == null || e.NextAttemptAt <= now), ct);\n        await Task.Delay(50, ct);\n        var updated = !wasPending ? 0 : await db.CampaignMediaEvaluations\n            .Where(e => !e.IsDeleted && e.CampaignId == campaignId && e.MediaAssetId == mediaId)\n            .ExecuteUpdateAsync(",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "TwoWorkers_ClaimOnce"
+      ]
+    },
+    {
+      "id": "T18",
+      "description": "Timeout từng giai đoạn bị nới (tối thiểu 10s thay vì 1s)",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                stageCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, opts.StageTimeoutSeconds)));\n                outcomeA",
+      "replacement": "                stageCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(10, opts.StageTimeoutSeconds)));\n                outcomeA",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "HungProvider_TimesOut"
+      ]
+    },
+    {
+      "id": "T19",
+      "description": "Cầu chì không bao giờ mở",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaCircuitBreaker.cs",
+      "original": "        if (_consecutiveInfraFailures < Math.Max(1, threshold))",
+      "replacement": "        if (_consecutiveInfraFailures >= 0)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "CircuitBreaker_OpensAfterNConsecutiveInfraFailures",
+        "CircuitBreaker_OpenCallsNoAi_ClosesAfterCooldown"
+      ]
+    },
+    {
+      "id": "T20",
+      "description": "Bỏ trần MaxImagesPerTick",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        while (processed < maxTick && !ct.IsCancellationRequested)",
+      "replacement": "        while (!ct.IsCancellationRequested)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "Caps_PerTickPerDayCost"
+      ]
+    },
+    {
+      "id": "T20b",
+      "description": "Bỏ trần MaxImagesPerDay",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        if (todayCount >= opts.MaxImagesPerDay)\n            return false;\n",
+      "replacement": "",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "Caps_PerTickPerDayCost"
+      ]
+    },
+    {
+      "id": "T21",
+      "description": "Gọi bộ chấm qua Task.Run (vi phạm tuần tự)",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            live = await scorer.ScoreAsync(stateText, toScore, stageCts.Token);",
+      "replacement": "            live = await Task.Run(() => scorer.ScoreAsync(stateText, toScore, stageCts.Token));",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "SequentialOnly_NoTaskRunInPipeline"
+      ]
+    },
+    {
+      "id": "T22",
+      "description": "ResetStuck không đưa Scoring treo về Pending",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                && (e.Status == CampaignMediaEvaluationStatus.Scoring\n",
+      "replacement": "                && (e.Status == CampaignMediaEvaluationStatus.Accepted\n",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "StuckRunning_ResetOnStart"
+      ]
+    },
+    {
+      "id": "T23",
+      "description": "PickNext không lọc chiến dịch QualityPausedAt",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                && c.QualityPausedAt == null\n",
+      "replacement": "\n",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "PausedCampaign_NotPicked_ByPickNext"
+      ]
+    },
+    {
+      "id": "T23b",
+      "description": "Sau khi claim không kiểm lại QualityPausedAt/Status",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            if (campaign.Status != CampaignStatus.Running || campaign.QualityPausedAt is not null)",
+      "replacement": "            if (false)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "PausedAfterClaim_ReleasesPending_CampaignPaused"
+      ]
+    },
+    {
+      "id": "T24",
+      "description": "N2: Vision A/B cùng model vẫn được nhận",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            if (string.Equals(descA.Model, outcomeB.Description.Model, StringComparison.Ordinal))",
+      "replacement": "            if (false)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "VisionABSameModel_NeverAccepted_StaysPending"
+      ]
+    },
+    {
+      "id": "T25",
+      "description": "Program.cs không gọi AddFullMediaPipeline",
+      "file": "backend/Program.cs",
+      "original": "builder.Services.AddFullMediaPipeline(builder.Configuration);\n",
+      "replacement": "\n",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "Program_Calls_AddFullMediaPipeline",
+        "Program_Calls_AddFullMediaPageFit"
+      ]
+    },
+    {
+      "id": "T25b",
+      "description": "Program.cs chỉ còn lời gọi AddFullMediaPipeline trong comment",
+      "file": "backend/Program.cs",
+      "original": "builder.Services.AddFullMediaPipeline(builder.Configuration);\n",
+      "replacement": "// builder.Services.AddFullMediaPipeline(builder.Configuration);\n",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "Program_Calls_AddFullMediaPipeline",
+        "Program_Calls_AddFullMediaPageFit"
+      ]
+    },
+    {
+      "id": "T26",
+      "description": "Bỏ trần chi phí theo ngày",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        return todayCost < opts.MaxDailyCostUsd;",
+      "replacement": "        return true;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "DailyCostCap_StopsNextImage"
+      ]
+    },
+    {
+      "id": "T27",
+      "description": "Post không đặt ApprovedBy = campaign-worker",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                            ApprovedBy = Actor,",
+      "replacement": "                            ApprovedBy = null,",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "FanOut_ThreePages_ThreeScheduledPostsSameSlotJitter"
+      ]
+    },
+    {
+      "id": "T27b",
+      "description": "Post tạo với Status Approved thay vì Scheduled",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                            Status = PostStatus.Scheduled,",
+      "replacement": "                            Status = PostStatus.Approved,",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "FanOut_ThreePages_ThreeScheduledPostsSameSlotJitter"
+      ]
+    },
+    {
+      "id": "T27c",
+      "description": "Post tạo với GenerationFlow khác FullMedia",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                            GenerationFlow = GenerationFlow.FullMedia,",
+      "replacement": "                            GenerationFlow = default,",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
+      "expect_red": [
+        "FanOut_ThreePages_ThreeScheduledPostsSameSlotJitter"
+      ]
+    },
+    {
+      "id": "F1-a",
+      "description": "Chọn khe không loại khe đã có bài",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            freeSlots = slots.Where(s => !occupied.Contains(s)).OrderBy(s => s).ToList();",
+      "replacement": "            freeSlots = slots.OrderBy(s => s).ToList();",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "TwoImages_SamePage_ConsecutiveFreeSlots",
+        "NoFreeSlot_StaysPending_NoRescoreNoVisionCall",
+        "TwoImages_SamePage_ThreePagesFanOut_EachImageOneSharedSlot"
+      ]
+    },
+    {
+      "id": "F1-b",
+      "description": "Xung đột khe không thử khe kế tiếp",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        const int maxSlotTries = 5;",
+      "replacement": "        const int maxSlotTries = 1;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "SlotRace_RetriesNextFreeSlot"
+      ]
+    },
+    {
+      "id": "F2-a",
+      "description": "Cầu chì: thành công không reset bộ đếm",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaCircuitBreaker.cs",
+      "original": "    public void RecordSuccessOrTerminal()\n    {\n        _consecutiveInfraFailures = 0;\n    }",
+      "replacement": "    public void RecordSuccessOrTerminal()\n    {\n    }",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "CircuitBreaker_SuccessResetsCounter"
+      ]
+    },
+    {
+      "id": "F2-b",
+      "description": "Cầu chì: không tự đóng sau cooldown",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaCircuitBreaker.cs",
+      "original": "            if (timeProvider.GetUtcNow() >= until)",
+      "replacement": "            if (false)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "CircuitBreaker_OpenCallsNoAi_ClosesAfterCooldown"
+      ]
+    },
+    {
+      "id": "F2-c",
+      "description": "Cầu chì: lỗi hạ tầng không được đếm",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            else if (outcome == ImageProcessOutcome.InfraFailure)",
+      "replacement": "            else if (outcome == ImageProcessOutcome.Waiting)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "CircuitBreaker_OpensAfterNConsecutiveInfraFailures",
+        "CircuitBreaker_OpenCallsNoAi_ClosesAfterCooldown"
+      ]
+    },
+    {
+      "id": "F3-a",
+      "description": "Pending không bao giờ thành Failed sau MaxPendingAttempts",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            if (eval.Attempts >= maxAttempts)",
+      "replacement": "            if (false)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "Pending_MaxAttempts_BecomesFailedAndNotifiesOnce"
+      ]
+    },
+    {
+      "id": "F3-b",
+      "description": "Backoff Pending cố định 5 phút",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                ?? now.AddMinutes(PendingBackoffMinutes[backoffIdx]);",
+      "replacement": "                ?? now.AddMinutes(PendingBackoffMinutes[0]);",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "Pending_BackoffGrows"
+      ]
+    },
+    {
+      "id": "F3-c",
+      "description": "Lý do chờ vẫn tiêu hao Attempts",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            eval.Attempts = Math.Max(0, eval.Attempts - 1);\n",
+      "replacement": "",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelinePostOnlyTests",
+      "expect_red": [
+        "WaitingReasons_DoNotConsumeAttempts",
+        "PostOnly_ProfileChanged_DoesNotConsumeMaxPendingAttempts"
+      ]
+    },
+    {
+      "id": "F4",
+      "description": "Chi phí ngày cộng cả điểm chấm các ngày trước",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                && s.ScoredAt >= dayStart\n",
+      "replacement": "\n",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineReviewFixTests",
+      "expect_red": [
+        "DailyCost_CountsOnlyTodaysSpend"
+      ]
+    },
+    {
+      "id": "m1",
+      "description": "Chấm lại gọi bộ chấm cho mọi page, bỏ qua ProfileHash đã lưu",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        if (work.IsRescore && candidates.Count > 0)",
+      "replacement": "        if (false)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineNaNbTests",
+      "expect_red": [
+        "Rescore_OnlyChangedPageIsScored",
+        "Rescore_NewPage_Scored_OldPagesNotCalled",
+        "Rescore_AllHashesUnchanged_NoScorerCall_StaysRejected"
+      ]
+    },
+    {
+      "id": "m2",
+      "description": "Điểm cũ không có ProfileHash được coi là khớp",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                    && !string.IsNullOrEmpty(row.ProfileHash)\n                    && profileHashes.TryGetValue(c.ChannelId, out var cur)\n                    && string.Equals(row.ProfileHash, cur, StringComparison.Ordinal))",
+      "replacement": "                    && profileHashes.TryGetValue(c.ChannelId, out var cur)\n                    && (string.IsNullOrEmpty(row.ProfileHash) || string.Equals(row.ProfileHash, cur, StringComparison.Ordinal)))",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineNaNbTests",
+      "expect_red": [
+        "Rescore_LegacyScoreWithoutProfileHash_Rescored"
+      ]
+    },
+    {
+      "id": "m2-eq",
+      "description": "Bỏ riêng điều kiện !IsNullOrEmpty(row.ProfileHash) khi so hash đã lưu",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                    && !string.IsNullOrEmpty(row.ProfileHash)\n                    && profileHashes.TryGetValue(c.ChannelId, out var cur)",
+      "replacement": "                    && profileHashes.TryGetValue(c.ChannelId, out var cur)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineNaNbTests",
+      "expect_red": [
+        "Rescore_LegacyScoreWithoutProfileHash_Rescored"
+      ],
+      "equivalent": true,
+      "reason": "ProfileHash hiện tại của page luôn khác null/rỗng (SHA-256), nên string.Equals(null|\"\", cur) đã là false; bỏ kiểm IsNullOrEmpty không đổi hành vi."
+    },
+    {
+      "id": "m3",
+      "description": "Chấm lại ghi đè CostUsd thay vì cộng dồn",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                existing.CostUsd += passCost;",
+      "replacement": "                existing.CostUsd = passCost;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineNaNbTests",
+      "expect_red": [
+        "Rescore_CostAccumulatesNotOverwritten"
+      ]
+    },
+    {
+      "id": "m4",
+      "description": "Điểm mới lưu không kèm ProfileHash",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                    ProfileHash = profileHash,\n                    CreatedAt = now,",
+      "replacement": "                    ProfileHash = null,\n                    CreatedAt = now,",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineNaNbTests",
+      "expect_red": [
+        "Rescore_OnlyChangedPageIsScored",
+        "Rescore_NewPage_Scored_OldPagesNotCalled",
+        "Rescore_AllHashesUnchanged_NoScorerCall_StaysRejected"
+      ]
+    },
+    {
+      "id": "m5",
+      "description": "ResetFailedToPending không đưa Attempts về 0",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                .SetProperty(e => e.Attempts, 0)\n",
+      "replacement": "",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineNaNbTests",
+      "expect_red": [
+        "ResetFailed_FailedBecomesPending_ClearsAttemptsAndReason"
+      ]
+    },
+    {
+      "id": "m5b",
+      "description": "ResetFailedToPending đổi cả dòng không ở trạng thái Failed",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                && e.MediaAssetId == mediaAssetId\n                && e.Status == CampaignMediaEvaluationStatus.Failed)",
+      "replacement": "                && e.MediaAssetId == mediaAssetId)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineNaNbTests",
+      "expect_red": [
+        "ResetFailed_NonFailedUnchanged_ReturnsFalse"
+      ]
+    },
+    {
+      "id": "P1",
+      "description": "Post-only không kiểm lại ProfileHash",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            if (!string.Equals(pass1.ProfileHash, profile.Hash, StringComparison.Ordinal)\n                || !string.Equals(pass2.ProfileHash, profile.Hash, StringComparison.Ordinal))\n                continue;\n",
+      "replacement": "",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelinePostOnlyTests",
+      "expect_red": [
+        "PostOnly_ProfileChangedWhileWaiting_NoPost_RescoredNextRun_NoVisionCall",
+        "PostOnly_OnePageChanged_OnlyUnchangedPagePosted"
+      ]
+    },
+    {
+      "id": "P2",
+      "description": "Post-only không kiểm lại ngưỡng điểm",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            if (!FitThreshold.Passes(pass1.Score, minScore) || !FitThreshold.Passes(pass2.Score, minScore))\n                continue;\n",
+      "replacement": "",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelinePostOnlyTests",
+      "expect_red": [
+        "PostOnly_ScoreDroppedBelowThreshold_NotPosted"
+      ]
+    },
+    {
+      "id": "P3",
+      "description": "Post-only không loại page đã hết IsScoreable",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            if (!profile.IsScoreable)\n                continue;\n",
+      "replacement": "",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelinePostOnlyTests",
+      "expect_red": [
+        "PostOnly_PageBecomesUnscoreable_NotPosted"
+      ]
+    },
+    {
+      "id": "P4",
+      "description": "Hồ sơ đổi lúc chờ khe không chuyển sang chấm lại (IsRescore=false)",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        var isRescore = IsProfileChangedWhileWaiting(priorReason);",
+      "replacement": "        var isRescore = false;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelinePostOnlyTests",
+      "expect_red": [
+        "PostOnly_ProfileChangedWhileWaiting_NoPost_RescoredNextRun_NoVisionCall"
+      ]
+    },
+    {
+      "id": "P5",
+      "description": "Post-only chấp nhận điểm cũ không có ProfileHash",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            if (string.IsNullOrEmpty(pass1.ProfileHash) || string.IsNullOrEmpty(pass2.ProfileHash))\n                continue;\n            if (!string.Equals",
+      "replacement": "            if (string.IsNullOrEmpty(pass1.ProfileHash) || string.IsNullOrEmpty(pass2.ProfileHash))\n                { still.Add(channelId); continue; }\n            if (!string.Equals",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelinePostOnlyTests",
+      "expect_red": [
+        "PostOnly_LegacyScoreWithoutProfileHash_NotPosted_Rescored"
+      ]
+    },
+    {
+      "id": "V1",
+      "description": "Bỏ kiểm Unclear",
+      "file": "backend/Modules/Campaign/FullMedia/MediaVisionService.cs",
+      "original": "            var needsRetry = description.Unclear\n",
+      "replacement": "            var needsRetry = false\n",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.MediaVisionServiceTests",
+      "expect_red": [
+        "UnclearDescription_RetriesFallbackThenUnusable"
+      ]
+    },
+    {
+      "id": "V2",
+      "description": "Gọi lại model dự phòng dù mô tả đã từ model dự phòng (F1(a) của de3f2a9)",
+      "file": "backend/Modules/Campaign/FullMedia/MediaVisionService.cs",
+      "original": "            var alreadyUsedFallback = !string.IsNullOrWhiteSpace(fallbackModel)",
+      "replacement": "            var alreadyUsedFallback = false && !string.IsNullOrWhiteSpace(fallbackModel)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.MediaVisionServiceTests",
+      "expect_red": [
+        "GetUsableTwice_OnUnusable_DoesNotRecallAi"
+      ]
+    },
+    {
+      "id": "V3",
+      "description": "Không kiểm Vision A/B độc lập khi Enabled",
+      "file": "backend/Modules/Campaign/FullMedia/MediaVisionService.cs",
+      "original": "        if (!opts.Enabled || pass != VisionPass.B) return;",
+      "replacement": "        return;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.MediaVisionServiceTests",
+      "expect_red": [
+        "Enabled_SameModel_PassB_FailsWithoutAi",
+        "Enabled_EmptyModels_FallsBackToDefault_FailsIndependence"
+      ]
+    },
+    {
+      "id": "V4",
+      "description": "Bỏ kiểm nhất quán tag",
+      "file": "backend/Modules/Campaign/FullMedia/MediaVisionService.cs",
+      "original": "                || !TagConsistency.IsConsistent(description, media);",
+      "replacement": ";",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.MediaVisionServiceTests",
+      "expect_red": [
+        "TagsContradict_FallbackThenUnusable"
+      ]
+    },
+    {
+      "id": "M1",
+      "description": "Công thức điểm dùng P(YES) thay vì P(YES)/(P(YES)+P(NO))",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "return (pYes / (pYes + pNo), promptTokens, completionTokens);",
+      "replacement": "return (pYes, promptTokens, completionTokens);",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "ScoreFromTopLogprobs_Formula",
+        "InterleavedOtherTokens_StillScoresCorrectly",
+        "CaseAndWhitespaceVariants_AreAccumulated"
+      ]
+    },
+    {
+      "id": "M2",
+      "description": "Không chuẩn hoá hoa/thường của token",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "=> (token ?? string.Empty).Trim().ToUpperInvariant();",
+      "replacement": "=> (token ?? string.Empty).Trim();",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "CaseAndWhitespaceVariants_AreAccumulated"
+      ]
+    },
+    {
+      "id": "M3",
+      "description": "Không cộng dồn xác suất các biến thể token",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "                if (token == \"YES\") pYes += p;",
+      "replacement": "                if (token == \"YES\") pYes = p;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "CaseAndWhitespaceVariants_AreAccumulated"
+      ]
+    },
+    {
+      "id": "M4",
+      "description": "Thiếu logprobs không fail closed (tự cho điểm 1.0)",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "                throw new PageFitPermanentException(\n                    \"logprobs_unsupported\",\n                    \"PageFit response missing logprobs (fail closed)\");",
+      "replacement": "                return (1.0, promptTokens, completionTokens);",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "MissingLogprobs_PermanentFailClosed_NoScoreFromContent"
+      ]
+    },
+    {
+      "id": "M5",
+      "description": "top_logprobs rỗng không fail closed",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "                throw new PageFitPermanentException(\n                    \"logprobs_unsupported\",\n                    \"PageFit top_logprobs empty (fail closed)\");",
+      "replacement": "                return (1.0, promptTokens, completionTokens);",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "EmptyTopLogprobs_PermanentFailClosed"
+      ]
+    },
+    {
+      "id": "M6",
+      "description": "Request max_tokens khác 1",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "            max_tokens = 1,",
+      "replacement": "            max_tokens = 5,",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "RequestShape_LogprobsMaxTokensTemperature_AndAuth"
+      ]
+    },
+    {
+      "id": "M7",
+      "description": "Request không bật logprobs",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "            logprobs = true,",
+      "replacement": "            logprobs = false,",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "RequestShape_LogprobsMaxTokensTemperature_AndAuth"
+      ]
+    },
+    {
+      "id": "M8",
+      "description": "403 không còn là lỗi vĩnh viễn (rơi vào nhánh tạm)",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "            if (status is 401 or 403)",
+      "replacement": "            if (status is 401)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "Http401_403_PermanentNoRetry"
+      ]
+    },
+    {
+      "id": "M9",
+      "description": "429 bỏ qua Retry-After, chỉ dùng backoff",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "                    ? ra\n",
+      "replacement": "                    ? TimeSpan.FromSeconds(Math.Pow(2, attempt))\n",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "RateLimit_HonorsRetryAfter_ThenSucceeds"
+      ]
+    },
+    {
+      "id": "M10",
+      "description": "Retry-After không bị giới hạn bởi MaxRetryAfterSeconds",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "        return delay > max ? max : delay;",
+      "replacement": "        return delay;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "RateLimit_RetryAfterCappedAtMaxRetryAfterSeconds"
+      ]
+    },
+    {
+      "id": "M11",
+      "description": "429 thử lại quá MaxRetries",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "        var maxAttempts = Math.Max(0, opts.MaxRetries) + 1;",
+      "replacement": "        var maxAttempts = Math.Max(0, opts.MaxRetries) + 2;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "RateLimit_ExhaustsMaxRetries_Transient"
+      ]
+    },
+    {
+      "id": "M12",
+      "description": "Bỏ khoảng nghỉ giữa các request",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "            if (i > 0 && opts.MinDelayBetweenRequestsMs > 0)",
+      "replacement": "            if (false)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "RequestsAreSequential_WithMinDelay"
+      ]
+    },
+    {
+      "id": "M12b",
+      "description": "Gửi request song song cho các page",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "        for (var i = 0; i < pages.Count; i++)\n        {\n            ct.ThrowIfCancellationRequested();\n            if (i > 0 && opts.MinDelayBetweenRequestsMs > 0)\n                await Task.Delay(TimeSpan.FromMilliseconds(opts.MinDelayBetweenRequestsMs), timeProvider, ct);\n\n            var page = pages[i];\n            var (score, promptTokens, completionTokens, attempts) =\n                await ScoreOnePageAsync(url, config.ApiKey, model, imageStateText, page, ct);",
+      "replacement": "        var all = await Task.WhenAll(pages.Select(pg => ScoreOnePageAsync(url, config.ApiKey, model, imageStateText, pg, ct)));\n        for (var i = 0; i < pages.Count; i++)\n        {\n            var page = pages[i];\n            var (score, promptTokens, completionTokens, attempts) = all[i];",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "RequestsAreSequential_WithMinDelay"
+      ]
+    },
+    {
+      "id": "M13",
+      "description": "Body gửi kèm dữ liệu ảnh",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "                new { role = \"user\", content = userText },",
+      "replacement": "                new { role = \"user\", content = userText + \" data:image/png;base64,AAAA\" },",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "BodyContainsNoImageOrDataUrl_OnlyMarkers"
+      ]
+    },
+    {
+      "id": "M14",
+      "description": "Log lỗi HTTP không redact khoá",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "        var snippet = Redact(body, TryGetApiKey());",
+      "replacement": "        var snippet = body;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "ApiKeyNotLogged_OnSuccessOrError"
+      ]
+    },
+    {
+      "id": "M15",
+      "description": "Điểm gán sai ChannelId (luôn page đầu)",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "            scores[page.ChannelId] = score;",
+      "replacement": "            scores[pages[0].ChannelId] = score;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "MultiPage_MapsChannelIdToScore_EmptyPagesZeroRequests"
+      ]
+    },
+    {
+      "id": "M16",
+      "description": "HttpClient của PageFit không lấy TimeoutSeconds",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/FullMediaPageFitServiceCollectionExtensions.cs",
+      "original": "            client.Timeout = TimeSpan.FromSeconds(seconds);\n",
+      "replacement": "",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "Di_AddFullMediaPageFit_ResolvesScorer_AndBindsOptions"
+      ]
+    },
+    {
+      "id": "M17",
+      "description": "Body 200 không phải JSON bị coi là lỗi vĩnh viễn",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "            throw new PageFitTransientException(\n                \"invalid_response\",",
+      "replacement": "            throw new PageFitPermanentException(\n                \"invalid_response\",",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "Http200_HtmlBody_TransientInvalidResponse",
+        "Http200_UsagePromptTokensAsString_TransientInvalidResponse"
+      ]
+    }
+  ]
+}
