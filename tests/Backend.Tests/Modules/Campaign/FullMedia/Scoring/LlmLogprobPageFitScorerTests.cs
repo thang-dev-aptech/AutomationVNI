@@ -377,6 +377,44 @@ public sealed class LlmLogprobPageFitScorerTests
                 new PageFitCandidate(PageB, "B")], default));
     }
 
+    [Fact]
+    public async Task Http200_HtmlBody_TransientInvalidResponse()
+    {
+        var handler = new ScriptedHandler("<html><body>gateway error</body></html>");
+        var ex = await Assert.ThrowsAsync<PageFitTransientException>(() =>
+            CreateScorer(handler).ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default));
+        Assert.Equal("invalid_response", ex.ReasonCode);
+    }
+
+    [Fact]
+    public async Task Http200_UsagePromptTokensAsString_TransientInvalidResponse()
+    {
+        var body = """
+            {"choices":[{"logprobs":{"content":[{"token":"YES","logprob":0,"top_logprobs":[{"token":"YES","logprob":0},{"token":"NO","logprob":-1}]}]}}],
+             "usage":{"prompt_tokens":"twelve","completion_tokens":1}}
+            """;
+        var handler = new ScriptedHandler(body);
+        var ex = await Assert.ThrowsAsync<PageFitTransientException>(() =>
+            CreateScorer(handler).ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default));
+        Assert.Equal("invalid_response", ex.ReasonCode);
+    }
+
+    [Fact]
+    public async Task RateLimit_RetryAfterCappedAtMaxRetryAfterSeconds()
+    {
+        var time = new RecordingTimeProvider();
+        var handler = new SequenceStatusHandler(
+            (HttpStatusCode.TooManyRequests, "{}", ("Retry-After", "3600")),
+            (HttpStatusCode.OK, LogprobJson(0.9, 0.1), null));
+        var svc = CreateScorer(handler, timeProvider: time, maxRetries: 2, minDelayMs: 0,
+            maxRetryAfterSeconds: 60);
+
+        await svc.ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
+
+        Assert.Contains(time.Delays, d => Math.Abs(d.TotalSeconds - 60) < 0.01);
+        Assert.DoesNotContain(time.Delays, d => d.TotalSeconds > 61);
+    }
+
     // --- helpers ---
 
     private static LlmLogprobPageFitScorer CreateScorer(
@@ -387,9 +425,11 @@ public sealed class LlmLogprobPageFitScorerTests
         decimal inputPrice = 0,
         decimal outputPrice = 0,
         TimeProvider? timeProvider = null,
-        ILogger<LlmLogprobPageFitScorer>? logger = null)
+        ILogger<LlmLogprobPageFitScorer>? logger = null,
+        int maxRetryAfterSeconds = 60)
         => CreateScorer(new HttpClient(handler) { BaseAddress = new Uri("http://unused/") },
-            modelOverride, maxRetries, minDelayMs, inputPrice, outputPrice, timeProvider, logger);
+            modelOverride, maxRetries, minDelayMs, inputPrice, outputPrice, timeProvider, logger,
+            maxRetryAfterSeconds);
 
     private static LlmLogprobPageFitScorer CreateScorer(
         HttpClient http,
@@ -399,7 +439,8 @@ public sealed class LlmLogprobPageFitScorerTests
         decimal inputPrice = 0,
         decimal outputPrice = 0,
         TimeProvider? timeProvider = null,
-        ILogger<LlmLogprobPageFitScorer>? logger = null)
+        ILogger<LlmLogprobPageFitScorer>? logger = null,
+        int maxRetryAfterSeconds = 60)
     {
         var ai = Options.Create(new AiProvidersOptions
         {
@@ -423,6 +464,7 @@ public sealed class LlmLogprobPageFitScorerTests
             TopLogprobs = 5,
             MinDelayBetweenRequestsMs = minDelayMs,
             MaxRetries = maxRetries,
+            MaxRetryAfterSeconds = maxRetryAfterSeconds,
             InputPricePerMillionUsd = inputPrice,
             OutputPricePerMillionUsd = outputPrice,
         });

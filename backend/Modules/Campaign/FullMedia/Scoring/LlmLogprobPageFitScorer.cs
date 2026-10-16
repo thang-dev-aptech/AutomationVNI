@@ -93,6 +93,7 @@ public sealed class LlmLogprobPageFitScorer(
                 var delay = ex.Data["retryAfter"] is TimeSpan ra && ra > TimeSpan.Zero
                     ? ra
                     : TimeSpan.FromSeconds(Math.Pow(2, attempt));
+                delay = CapRetryAfter(delay);
                 logger.LogWarning("PageFit 429, waiting {Delay} before retry {Attempt}/{Max}",
                     delay, attempt + 1, maxAttempts);
                 await Task.Delay(delay, timeProvider, ct);
@@ -198,70 +199,106 @@ public sealed class LlmLogprobPageFitScorer(
 
     private (double Score, int PromptTokens, int CompletionTokens) ParseSuccess(string raw)
     {
-        using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(raw) ? "{}" : raw);
-        var root = doc.RootElement;
-
-        var promptTokens = 0;
-        var completionTokens = 0;
-        if (root.TryGetProperty("usage", out var usage))
+        try
         {
-            if (usage.TryGetProperty("prompt_tokens", out var pt)) promptTokens = pt.GetInt32();
-            if (usage.TryGetProperty("completion_tokens", out var ctTok)) completionTokens = ctTok.GetInt32();
-        }
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(raw) ? "{}" : raw);
+            var root = doc.RootElement;
 
-        if (!root.TryGetProperty("choices", out var choices)
-            || choices.ValueKind != JsonValueKind.Array
-            || choices.GetArrayLength() == 0)
+            var promptTokens = 0;
+            var completionTokens = 0;
+            if (root.TryGetProperty("usage", out var usage))
+            {
+                if (usage.TryGetProperty("prompt_tokens", out var pt))
+                    promptTokens = ReadTokenCount(pt, "prompt_tokens");
+                if (usage.TryGetProperty("completion_tokens", out var ctTok))
+                    completionTokens = ReadTokenCount(ctTok, "completion_tokens");
+            }
+
+            if (!root.TryGetProperty("choices", out var choices)
+                || choices.ValueKind != JsonValueKind.Array
+                || choices.GetArrayLength() == 0)
+            {
+                throw new PageFitPermanentException("logprobs_unsupported", "PageFit response missing choices");
+            }
+
+            var choice0 = choices[0];
+            if (!choice0.TryGetProperty("logprobs", out var logprobs)
+                || logprobs.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            {
+                throw new PageFitPermanentException(
+                    "logprobs_unsupported",
+                    "PageFit response missing logprobs (fail closed)");
+            }
+
+            if (!logprobs.TryGetProperty("content", out var content)
+                || content.ValueKind != JsonValueKind.Array
+                || content.GetArrayLength() == 0)
+            {
+                throw new PageFitPermanentException(
+                    "logprobs_unsupported",
+                    "PageFit logprobs.content empty (fail closed)");
+            }
+
+            var first = content[0];
+            if (!first.TryGetProperty("top_logprobs", out var top)
+                || top.ValueKind != JsonValueKind.Array
+                || top.GetArrayLength() == 0)
+            {
+                throw new PageFitPermanentException(
+                    "logprobs_unsupported",
+                    "PageFit top_logprobs empty (fail closed)");
+            }
+
+            double pYes = 0;
+            double pNo = 0;
+            foreach (var entry in top.EnumerateArray())
+            {
+                if (!entry.TryGetProperty("token", out var tokenEl)) continue;
+                if (!entry.TryGetProperty("logprob", out var lpEl)) continue;
+                var token = NormalizeToken(tokenEl.GetString());
+                var p = Math.Exp(lpEl.GetDouble());
+                if (token == "YES") pYes += p;
+                else if (token == "NO") pNo += p;
+            }
+
+            if (pYes <= 0 && pNo <= 0)
+                throw new PageFitTransientException("no_yes_no_token", "PageFit top_logprobs had no YES/NO token");
+
+            if (pYes > 0 && pNo <= 0) return (1.0, promptTokens, completionTokens);
+            if (pNo > 0 && pYes <= 0) return (0.0, promptTokens, completionTokens);
+            return (pYes / (pYes + pNo), promptTokens, completionTokens);
+        }
+        catch (PageFitPermanentException)
         {
-            throw new PageFitPermanentException("logprobs_unsupported", "PageFit response missing choices");
+            throw;
         }
-
-        var choice0 = choices[0];
-        if (!choice0.TryGetProperty("logprobs", out var logprobs)
-            || logprobs.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        catch (PageFitTransientException)
         {
-            throw new PageFitPermanentException(
-                "logprobs_unsupported",
-                "PageFit response missing logprobs (fail closed)");
+            throw;
         }
-
-        if (!logprobs.TryGetProperty("content", out var content)
-            || content.ValueKind != JsonValueKind.Array
-            || content.GetArrayLength() == 0)
+        catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException
+                                       or ArgumentException or NotSupportedException)
         {
-            throw new PageFitPermanentException(
-                "logprobs_unsupported",
-                "PageFit logprobs.content empty (fail closed)");
+            throw new PageFitTransientException(
+                "invalid_response",
+                "PageFit response body is not a usable JSON logprobs payload",
+                ex);
         }
+    }
 
-        var first = content[0];
-        if (!first.TryGetProperty("top_logprobs", out var top)
-            || top.ValueKind != JsonValueKind.Array
-            || top.GetArrayLength() == 0)
-        {
-            throw new PageFitPermanentException(
-                "logprobs_unsupported",
-                "PageFit top_logprobs empty (fail closed)");
-        }
+    private static int ReadTokenCount(JsonElement el, string field)
+    {
+        if (el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out var n))
+            return n;
+        throw new FormatException($"usage.{field} must be an integer");
+    }
 
-        double pYes = 0;
-        double pNo = 0;
-        foreach (var entry in top.EnumerateArray())
-        {
-            if (!entry.TryGetProperty("token", out var tokenEl)) continue;
-            if (!entry.TryGetProperty("logprob", out var lpEl)) continue;
-            var token = NormalizeToken(tokenEl.GetString());
-            var p = Math.Exp(lpEl.GetDouble());
-            if (token == "YES") pYes += p;
-            else if (token == "NO") pNo += p;
-        }
-
-        if (pYes <= 0 && pNo <= 0)
-            throw new PageFitTransientException("no_yes_no_token", "PageFit top_logprobs had no YES/NO token");
-
-        if (pYes > 0 && pNo <= 0) return (1.0, promptTokens, completionTokens);
-        if (pNo > 0 && pYes <= 0) return (0.0, promptTokens, completionTokens);
-        return (pYes / (pYes + pNo), promptTokens, completionTokens);
+    private TimeSpan CapRetryAfter(TimeSpan delay)
+    {
+        var maxSec = pageFitOptions.Value.MaxRetryAfterSeconds;
+        if (maxSec <= 0) maxSec = 60;
+        var max = TimeSpan.FromSeconds(maxSec);
+        return delay > max ? max : delay;
     }
 
     private (AiProviderConfig Config, string Model) ResolveProviderAndModel()
@@ -322,31 +359,31 @@ public sealed class LlmLogprobPageFitScorer(
                 + completionTokens * opts.OutputPricePerMillionUsd) / 1_000_000m;
     }
 
-    private static TimeSpan? ParseRetryAfter(HttpResponseMessage response)
+    private TimeSpan? ParseRetryAfter(HttpResponseMessage response)
     {
-        if (response.Headers.RetryAfter?.Delta is { } delta)
-            return delta > TimeSpan.Zero ? delta : null;
-        if (response.Headers.RetryAfter?.Date is { } date)
+        TimeSpan? raw = null;
+        if (response.Headers.RetryAfter?.Delta is { } delta && delta > TimeSpan.Zero)
+            raw = delta;
+        else if (response.Headers.RetryAfter?.Date is { } date)
         {
             var wait = date - DateTimeOffset.UtcNow;
-            return wait > TimeSpan.Zero ? wait : null;
+            if (wait > TimeSpan.Zero) raw = wait;
         }
-
-        if (response.Headers.TryGetValues("Retry-After", out var values))
+        else if (response.Headers.TryGetValues("Retry-After", out var values))
         {
-            var raw = values.FirstOrDefault();
-            if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds)
+            var text = values.FirstOrDefault();
+            if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds)
                 && seconds > 0)
-                return TimeSpan.FromSeconds(seconds);
-            if (DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture,
-                    DateTimeStyles.AssumeUniversal, out var when))
+                raw = TimeSpan.FromSeconds(seconds);
+            else if (DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture,
+                         DateTimeStyles.AssumeUniversal, out var when))
             {
                 var wait = when - DateTimeOffset.UtcNow;
-                return wait > TimeSpan.Zero ? wait : null;
+                if (wait > TimeSpan.Zero) raw = wait;
             }
         }
 
-        return null;
+        return raw is null ? null : CapRetryAfter(raw.Value);
     }
 
     private void LogHttpError(int status, string body)
