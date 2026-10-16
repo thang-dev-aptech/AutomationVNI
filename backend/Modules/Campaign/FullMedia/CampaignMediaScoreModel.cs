@@ -12,4 +12,9 @@ public class CampaignMediaScoreModel : BaseEntity
     public double Score { get; set; }
     public bool Passed { get; set; }
     public DateTime ScoredAt { get; set; }
+
+    /// <summary>
+    /// Chi phí ước tính của lượt chấm (gán vào một dòng mỗi pass) — dùng Sum theo ScoredAt ngày UTC.
+    /// </summary>
+    public decimal CostUsd { get; set; }
 }

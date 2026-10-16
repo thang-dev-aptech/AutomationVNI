@@ -478,6 +478,10 @@ namespace backend.Migrations
                     b.Property<Guid>("CampaignId")
                         .HasColumnType("TEXT");
 
+                    b.Property<decimal>("CostUsd")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 

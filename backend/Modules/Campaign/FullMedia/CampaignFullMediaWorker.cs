@@ -5,16 +5,15 @@ namespace Backend.Modules.Campaign.FullMedia;
 
 /// <summary>
 /// Worker Full Media — khuôn CampaignWorker. Enabled=false mặc định;
-/// không mở scope/DB/AI khi tắt.
+/// không mở scope/DB/AI khi tắt. Cầu chì thực thi trong FullMediaPipelineService.
 /// </summary>
 public class CampaignFullMediaWorker(
     IServiceScopeFactory scopeFactory,
     IOptions<FullMediaPipelineOptions> options,
+    TimeProvider timeProvider,
+    FullMediaCircuitBreaker circuitBreaker,
     ILogger<CampaignFullMediaWorker> logger) : BackgroundService
 {
-    private int _consecutiveFailures;
-    private DateTimeOffset? _circuitOpenUntil;
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var settings = options.Value;
@@ -39,7 +38,6 @@ public class CampaignFullMediaWorker(
             return;
         }
 
-        // Đưa Scoring/Verifying treo về Pending
         try
         {
             using var bootScope = scopeFactory.CreateScope();
@@ -57,18 +55,26 @@ public class CampaignFullMediaWorker(
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            // Re-read Enabled mỗi vòng — tắt giữa chừng thì dừng sạch
             if (!options.Value.Enabled)
             {
                 logger.LogInformation("CampaignFullMediaWorker đã tắt — dừng");
                 return;
             }
 
-            if (_circuitOpenUntil is { } until && DateTimeOffset.UtcNow < until)
+            if (circuitBreaker.IsOpen)
             {
-                var wait = until - DateTimeOffset.UtcNow;
-                try { await Task.Delay(wait, stoppingToken); }
-                catch (OperationCanceledException) { break; }
+                // Chờ tới khi mạch đóng (TimeProvider) — tối đa Interval.
+                try
+                {
+                    await Task.Delay(
+                        TimeSpan.FromSeconds(Math.Max(15, options.Value.IntervalSeconds)),
+                        stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
                 continue;
             }
 
@@ -77,7 +83,6 @@ public class CampaignFullMediaWorker(
                 using var scope = scopeFactory.CreateScope();
                 var pipeline = scope.ServiceProvider.GetRequiredService<FullMediaPipelineService>();
                 await pipeline.ProcessDueAsync(stoppingToken);
-                _consecutiveFailures = 0;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -85,21 +90,10 @@ public class CampaignFullMediaWorker(
             }
             catch (Exception ex)
             {
-                _consecutiveFailures++;
-                logger.LogError(ex, "CampaignFullMediaWorker lỗi vòng lặp (liên tiếp={N})",
-                    _consecutiveFailures);
-                var threshold = Math.Max(1, options.Value.CircuitBreakerFailures);
-                if (_consecutiveFailures >= threshold)
-                {
-                    var cool = Math.Max(1, options.Value.CircuitBreakerCooldownSeconds);
-                    _circuitOpenUntil = DateTimeOffset.UtcNow.AddSeconds(cool);
-                    logger.LogWarning(
-                        "CampaignFullMediaWorker ngắt mạch {Seconds}s sau {N} lỗi",
-                        cool, _consecutiveFailures);
-                    _consecutiveFailures = 0;
-                }
+                logger.LogError(ex, "CampaignFullMediaWorker lỗi vòng lặp");
             }
 
+            _ = timeProvider; // giữ inject để test/host resolve
             try
             {
                 await Task.Delay(

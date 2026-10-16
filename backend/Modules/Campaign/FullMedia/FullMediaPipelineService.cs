@@ -27,10 +27,32 @@ public class FullMediaPipelineService(
     IServiceScopeFactory scopeFactory,
     IOptions<FullMediaPipelineOptions> options,
     TimeProvider timeProvider,
+    FullMediaCircuitBreaker circuitBreaker,
     ILogger<FullMediaPipelineService> logger)
 {
     public const string Actor = "campaign-worker";
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+    private static readonly int[] PendingBackoffMinutes = [5, 15, 60, 240];
+
+    /// <summary>Lý do chờ điều kiện ngoài — không tính MaxPendingAttempts, không đếm cầu chì.</summary>
+    internal static readonly HashSet<string> WaitingReasons = new(StringComparer.Ordinal)
+    {
+        "no_scoreable_pages",
+        "campaign_paused",
+        "no_free_slot",
+        "slot_conflict",
+        "no_slots",
+    };
+
+    internal static readonly HashSet<string> InfraReasons = new(StringComparer.Ordinal)
+    {
+        "pagefit_transient",
+        "pagefit_permanent",
+        "vision_failed",
+        "vision_b_failed",
+        "stage_timeout",
+        "pipeline_error",
+    };
 
     /// <summary>Cho phép test gắn Random seed (jitter).</summary>
     public Random Random { get; set; } = Random.Shared;
@@ -59,11 +81,17 @@ public class FullMediaPipelineService(
         if (!opts.Enabled)
             return 0;
 
+        if (circuitBreaker.IsOpen)
+            return 0;
+
         var processed = 0;
         var maxTick = Math.Max(1, opts.MaxImagesPerTick);
 
         while (processed < maxTick && !ct.IsCancellationRequested)
         {
+            if (circuitBreaker.IsOpen)
+                break;
+
             if (!await CanAffordNextAsync(ct))
                 break;
 
@@ -71,9 +99,10 @@ public class FullMediaPipelineService(
             if (work is null)
                 break;
 
+            ImageProcessOutcome outcome;
             try
             {
-                await ProcessClaimedAsync(work, ct);
+                outcome = await ProcessClaimedAsync(work, ct);
                 processed++;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -85,7 +114,32 @@ public class FullMediaPipelineService(
                 logger.LogError(ex,
                     "FullMedia pipeline lỗi ảnh campaign={CampaignId} media={MediaId}",
                     work.CampaignId, work.MediaAssetId);
-                await MarkFailedOrPendingAsync(work.EvaluationId, "pipeline_error", ct);
+                await FinalizePendingAsync(work.EvaluationId, "pipeline_error", 0, ct);
+                outcome = ImageProcessOutcome.InfraFailure;
+                processed++;
+            }
+
+            if (outcome == ImageProcessOutcome.TerminalOk)
+            {
+                circuitBreaker.RecordSuccessOrTerminal();
+            }
+            else if (outcome == ImageProcessOutcome.InfraFailure)
+            {
+                if (circuitBreaker.RecordInfraFailure(
+                        opts.CircuitBreakerFailures,
+                        opts.CircuitBreakerCooldownSeconds,
+                        out var shouldNotify))
+                {
+                    if (shouldNotify)
+                    {
+                        await NotifyAsync(
+                            "Full Media: ngắt mạch pipeline",
+                            $"Circuit mở {opts.CircuitBreakerCooldownSeconds}s sau lỗi hạ tầng liên tiếp",
+                            ct);
+                    }
+
+                    break;
+                }
             }
         }
 
@@ -96,13 +150,29 @@ public class FullMediaPipelineService(
     public async Task ProcessImageAsync(Guid campaignId, Guid mediaAssetId, CancellationToken ct = default)
     {
         await EnsureEvaluationAsync(campaignId, mediaAssetId, ct);
+        string? priorReason = null;
+        using (var scope = scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            priorReason = await db.CampaignMediaEvaluations.AsNoTracking()
+                .Where(e => !e.IsDeleted && e.CampaignId == campaignId && e.MediaAssetId == mediaAssetId)
+                .Select(e => e.ReasonCode)
+                .FirstOrDefaultAsync(ct);
+        }
+
         var claimed = await TryClaimAsync(campaignId, mediaAssetId, ct);
         if (claimed is null)
             return;
-        await ProcessClaimedAsync(new WorkItem(claimed.Value, campaignId, mediaAssetId, IsRescore: false), ct);
+
+        var postOnly = IsAwaitingSlotReason(priorReason)
+            && await HasPass2ScoresAsync(campaignId, mediaAssetId, ct);
+        await ProcessClaimedAsync(
+            new WorkItem(claimed.Value, campaignId, mediaAssetId, IsRescore: false, IsPostOnly: postOnly),
+            ct);
     }
 
-    private async Task<WorkItem?> PickNextWorkAsync(CancellationToken ct)
+    /// <summary>Chọn việc kế tiếp — internal để test T23.</summary>
+    internal async Task<WorkItem?> PickNextWorkAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -138,29 +208,40 @@ public class FullMediaPipelineService(
 
             foreach (var mediaId in mediaIds)
             {
-                if (await AlreadyPostedOnAnyPageAsync(db, campaign.Id, mediaId, ct))
-                    continue;
-
                 var eval = await db.CampaignMediaEvaluations.AsNoTracking()
                     .FirstOrDefaultAsync(e => !e.IsDeleted
                         && e.CampaignId == campaign.Id
                         && e.MediaAssetId == mediaId, ct);
+
+                if (eval?.Status == CampaignMediaEvaluationStatus.Accepted)
+                    continue;
+                if (eval?.Status == CampaignMediaEvaluationStatus.Failed)
+                    continue;
+                if (eval?.Status == CampaignMediaEvaluationStatus.Unusable)
+                    continue;
+
+                // Bỏ qua khi mọi page đang chạy đã có bài với ảnh này.
+                if (channelIds.Count > 0
+                    && await AllChannelsHaveMediaAsync(db, campaign.Id, mediaId, channelIds, ct))
+                    continue;
 
                 if (eval is null)
                 {
                     await EnsureEvaluationAsync(campaign.Id, mediaId, ct);
                     var claimed = await TryClaimAsync(campaign.Id, mediaId, ct);
                     if (claimed is not null)
-                        return new WorkItem(claimed.Value, campaign.Id, mediaId, IsRescore: false);
+                        return new WorkItem(claimed.Value, campaign.Id, mediaId, IsRescore: false, IsPostOnly: false);
                     continue;
                 }
 
                 if (eval.Status == CampaignMediaEvaluationStatus.Pending
                     && (eval.NextAttemptAt is null || eval.NextAttemptAt <= now))
                 {
+                    var postOnly = IsAwaitingSlotReason(eval.ReasonCode)
+                        && await HasPass2ScoresAsync(db, campaign.Id, mediaId, ct);
                     var claimed = await TryClaimAsync(campaign.Id, mediaId, ct);
                     if (claimed is not null)
-                        return new WorkItem(claimed.Value, campaign.Id, mediaId, IsRescore: false);
+                        return new WorkItem(claimed.Value, campaign.Id, mediaId, IsRescore: false, IsPostOnly: postOnly);
                 }
 
                 if (eval.Status == CampaignMediaEvaluationStatus.Rejected
@@ -177,7 +258,7 @@ public class FullMediaPipelineService(
                                 .SetProperty(e => e.UpdatedAt, now), ct);
                         var claimed = await TryClaimAsync(campaign.Id, mediaId, ct);
                         if (claimed is not null)
-                            return new WorkItem(claimed.Value, campaign.Id, mediaId, IsRescore: true);
+                            return new WorkItem(claimed.Value, campaign.Id, mediaId, IsRescore: true, IsPostOnly: false);
                     }
                 }
             }
@@ -186,26 +267,24 @@ public class FullMediaPipelineService(
         return null;
     }
 
-    private async Task ProcessClaimedAsync(WorkItem work, CancellationToken ct)
+    private async Task<ImageProcessOutcome> ProcessClaimedAsync(WorkItem work, CancellationToken ct)
     {
         try
         {
-            await ProcessClaimedCoreAsync(work, ct);
+            return await ProcessClaimedCoreAsync(work, ct);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            // Timeout giai đoạn (StageTimeoutSeconds) — không nuốt stoppingToken.
             await FinalizePendingAsync(work.EvaluationId, "stage_timeout", 0, ct);
+            return ImageProcessOutcome.InfraFailure;
         }
     }
 
-    private async Task ProcessClaimedCoreAsync(WorkItem work, CancellationToken ct)
+    private async Task<ImageProcessOutcome> ProcessClaimedCoreAsync(WorkItem work, CancellationToken ct)
     {
         var opts = options.Value;
         var minScore = opts.MinFitScore;
-        var now = timeProvider.GetUtcNow().UtcDateTime;
 
-        // --- Đọc ngữ cảnh (scope ngắn) ---
         CampaignSnapshot snap;
         using (var scope = scopeFactory.CreateScope())
         {
@@ -215,8 +294,8 @@ public class FullMediaPipelineService(
                 .FirstAsync(c => c.Id == work.CampaignId && !c.IsDeleted, ct);
             if (campaign.Status != CampaignStatus.Running || campaign.QualityPausedAt is not null)
             {
-                await ReleaseToPendingAsync(work.EvaluationId, "campaign_paused", ct);
-                return;
+                await FinalizePendingAsync(work.EvaluationId, "campaign_paused", 0, ct);
+                return ImageProcessOutcome.Waiting;
             }
 
             var channelIds = await gen.ResolveRunningChannelIdsAsync(campaign.Id, ct);
@@ -226,8 +305,37 @@ public class FullMediaPipelineService(
 
         if (snap.Scoreable.Count == 0)
         {
-            await FinalizePendingAsync(work.EvaluationId, "no_scoreable_pages", cost: 0, ct);
-            return;
+            await FinalizePendingAsync(work.EvaluationId, "no_scoreable_pages", 0, ct);
+            return ImageProcessOutcome.Waiting;
+        }
+
+        // F1-b: chỉ tạo bài lại — không Vision/PageFit
+        if (work.IsPostOnly)
+        {
+            var acceptedFromScores = await LoadAcceptedChannelIdsFromScoresAsync(
+                work.CampaignId, work.MediaAssetId, minScore, ct);
+            if (acceptedFromScores.Count == 0)
+            {
+                await FinalizePendingAsync(work.EvaluationId, "no_free_slot", 0, ct);
+                return ImageProcessOutcome.Waiting;
+            }
+
+            string? inputHash;
+            using (var scope = scopeFactory.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                inputHash = await db.CampaignMediaEvaluations.AsNoTracking()
+                    .Where(e => e.Id == work.EvaluationId)
+                    .Select(e => e.InputHash)
+                    .FirstOrDefaultAsync(ct);
+            }
+
+            var emptyScores = new PageFitResult(
+                acceptedFromScores.ToDictionary(id => id, _ => minScore),
+                0m,
+                0);
+            return await CreatePostsForAcceptedAsync(
+                work, snap, acceptedFromScores, emptyScores, cost: 0, inputHash ?? "", ct);
         }
 
         decimal cost = 0;
@@ -237,7 +345,6 @@ public class FullMediaPipelineService(
 
         if (work.IsRescore)
         {
-            // T13: không gọi Vision — chỉ đọc mô tả đã lưu.
             using var scope = scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var loadedA = await LoadCachedDescriptionAsync(db, work.MediaAssetId, VisionPass.A, ct);
@@ -245,7 +352,7 @@ public class FullMediaPipelineService(
             if (loadedA is null)
             {
                 await FinalizePendingAsync(work.EvaluationId, "vision_cache_missing", 0, ct);
-                return;
+                return ImageProcessOutcome.InfraFailure;
             }
 
             descA = loadedA;
@@ -266,14 +373,14 @@ public class FullMediaPipelineService(
             if (outcomeA.Status == VisionUsability.Unusable)
             {
                 await FinalizeStatusAsync(work.EvaluationId, CampaignMediaEvaluationStatus.Unusable,
-                    outcomeA.ReasonCode ?? "unusable", bestScore: null, bestChannel: null, 0, ct);
-                return;
+                    outcomeA.ReasonCode ?? "unusable", null, null, 0, ct);
+                return ImageProcessOutcome.TerminalOk;
             }
 
             if (outcomeA.Status != VisionUsability.Usable || outcomeA.Description is null)
             {
                 await FinalizePendingAsync(work.EvaluationId, outcomeA.ReasonCode ?? "vision_failed", 0, ct);
-                return;
+                return ImageProcessOutcome.InfraFailure;
             }
 
             descA = outcomeA.Description;
@@ -300,13 +407,13 @@ public class FullMediaPipelineService(
             await NotifyAsync("Full Media: lỗi chấm điểm vĩnh viễn",
                 $"campaign={work.CampaignId} media={work.MediaAssetId} code={ex.Message}", ct);
             await FinalizePendingAsync(work.EvaluationId, "pagefit_permanent", 0, ct);
-            return;
+            return ImageProcessOutcome.InfraFailure;
         }
         catch (PageFitTransientException ex)
         {
             await FinalizePendingAsync(work.EvaluationId, "pagefit_transient", 0, ct);
             logger.LogWarning(ex, "PageFit transient campaign={CampaignId}", work.CampaignId);
-            return;
+            return ImageProcessOutcome.InfraFailure;
         }
 
         cost += score1.EstimatedCostUsd;
@@ -323,7 +430,7 @@ public class FullMediaPipelineService(
             var inputHash = ComputeHashFromProfiles(snap.Scoreable, stateA);
             await FinalizeStatusAsync(work.EvaluationId, CampaignMediaEvaluationStatus.Rejected,
                 "below_threshold", best.Value, best.Key, cost, ct, inputHash);
-            return;
+            return ImageProcessOutcome.TerminalOk;
         }
 
         string stateB;
@@ -332,20 +439,19 @@ public class FullMediaPipelineService(
             if (descB is null)
             {
                 await FinalizePendingAsync(work.EvaluationId, "vision_b_cache_missing", cost, ct);
-                return;
+                return ImageProcessOutcome.InfraFailure;
             }
 
             if (string.Equals(descA.Model, descB.Model, StringComparison.Ordinal))
             {
                 await FinalizePendingAsync(work.EvaluationId, "vision_not_independent", cost, ct);
-                return;
+                return ImageProcessOutcome.Waiting;
             }
 
             stateB = descB.ToState();
         }
         else
         {
-            // Vision B chỉ khi lượt một có page đạt
             VisionOutcome outcomeB;
             using (var scope = scopeFactory.CreateScope())
             {
@@ -358,16 +464,15 @@ public class FullMediaPipelineService(
             if (outcomeB.Status != VisionUsability.Usable || outcomeB.Description is null)
             {
                 await FinalizePendingAsync(work.EvaluationId, outcomeB.ReasonCode ?? "vision_b_failed", cost, ct);
-                return;
+                return ImageProcessOutcome.InfraFailure;
             }
 
-            // N2: hai model phải khác nhau
             if (string.Equals(descA.Model, outcomeB.Description.Model, StringComparison.Ordinal))
             {
                 await NotifyAsync("Full Media: Vision A/B không độc lập",
                     $"campaign={work.CampaignId} media={work.MediaAssetId} reason=vision_not_independent", ct);
                 await FinalizePendingAsync(work.EvaluationId, "vision_not_independent", cost, ct);
-                return;
+                return ImageProcessOutcome.Waiting;
             }
 
             stateB = outcomeB.Description.ToState();
@@ -389,12 +494,12 @@ public class FullMediaPipelineService(
             await NotifyAsync("Full Media: lỗi chấm điểm vĩnh viễn (lượt 2)",
                 $"campaign={work.CampaignId} media={work.MediaAssetId}", ct);
             await FinalizePendingAsync(work.EvaluationId, "pagefit_permanent", cost, ct);
-            return;
+            return ImageProcessOutcome.InfraFailure;
         }
         catch (PageFitTransientException)
         {
             await FinalizePendingAsync(work.EvaluationId, "pagefit_transient", cost, ct);
-            return;
+            return ImageProcessOutcome.InfraFailure;
         }
 
         cost += score2.EstimatedCostUsd;
@@ -415,10 +520,10 @@ public class FullMediaPipelineService(
                 .First();
             await FinalizeStatusAsync(work.EvaluationId, CampaignMediaEvaluationStatus.Rejected,
                 "below_threshold_pass2", best.Value, best.Key, cost, ct, inputHashFinal);
-            return;
+            return ImageProcessOutcome.TerminalOk;
         }
 
-        await CreatePostsForAcceptedAsync(work, snap, accepted, score2, cost, inputHashFinal, ct);
+        return await CreatePostsForAcceptedAsync(work, snap, accepted, score2, cost, inputHashFinal, ct);
     }
 
     private async Task<VisionDescription?> LoadCachedDescriptionAsync(
@@ -443,7 +548,7 @@ public class FullMediaPipelineService(
         }
     }
 
-    private async Task CreatePostsForAcceptedAsync(
+    private async Task<ImageProcessOutcome> CreatePostsForAcceptedAsync(
         WorkItem work,
         CampaignSnapshot snap,
         List<Guid> acceptedChannelIds,
@@ -453,131 +558,190 @@ public class FullMediaPipelineService(
         CancellationToken ct)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        DateTime slotUtc;
-        DateTime scheduledAt;
+        List<Guid> pagesNeedingPosts;
+        List<DateTime> freeSlots;
+        int jitter;
+        Guid? authorId;
 
         using (var scope = scopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            pagesNeedingPosts = [];
+            foreach (var channelId in acceptedChannelIds)
+            {
+                if (!await AlreadyPostedOnPageAsync(db, work.CampaignId, work.MediaAssetId, channelId, ct))
+                    pagesNeedingPosts.Add(channelId);
+            }
+
+            if (pagesNeedingPosts.Count == 0)
+            {
+                await FinalizeStatusAsync(work.EvaluationId, CampaignMediaEvaluationStatus.Accepted,
+                    "accepted", score2.Scores.Values.DefaultIfEmpty(0).Max(),
+                    acceptedChannelIds.FirstOrDefault(), cost, ct, inputHash);
+                return ImageProcessOutcome.TerminalOk;
+            }
+
             var campaign = await db.Campaigns.AsNoTracking()
                 .FirstAsync(c => c.Id == work.CampaignId, ct);
+            jitter = campaign.JitterMinutes;
+            authorId = campaign.CreatedByUserId;
             var publishTimes = DeserializeStringList(campaign.PublishTimesJson);
             var weekdays = DeserializeIntList(campaign.WeekdaysJson);
             var slots = CampaignGenerationService.BuildSlots(campaign, publishTimes, weekdays, now);
             if (slots.Count == 0)
             {
-                await FinalizePendingAsync(work.EvaluationId, "no_slots", cost, ct);
-                return;
+                await FinalizePendingAsync(work.EvaluationId, "no_slots", cost, ct, inputHash,
+                    nextAttemptAt: now.AddHours(1));
+                return ImageProcessOutcome.Waiting;
             }
 
-            slotUtc = slots[0];
-            scheduledAt = CampaignGenerationService.ApplyJitter(
-                slotUtc, campaign.JitterMinutes, now, Random);
+            var occupied = await GetOccupiedSlotsAsync(db, work.CampaignId, pagesNeedingPosts, ct);
+            freeSlots = slots.Where(s => !occupied.Contains(s)).OrderBy(s => s).ToList();
+            if (freeSlots.Count == 0)
+            {
+                await FinalizePendingAsync(work.EvaluationId, "no_free_slot", cost, ct, inputHash,
+                    nextAttemptAt: now.AddHours(1));
+                return ImageProcessOutcome.Waiting;
+            }
         }
 
-        var created = 0;
+        const int maxSlotTries = 5;
+        var tries = Math.Min(maxSlotTries, freeSlots.Count);
         double? bestScore = null;
         Guid? bestChannel = null;
-
-        foreach (var channelId in acceptedChannelIds)
+        foreach (var id in pagesNeedingPosts)
         {
-            if (score2.Scores.TryGetValue(channelId, out var sc))
+            if (score2.Scores.TryGetValue(id, out var sc)
+                && (bestScore is null || sc > bestScore))
             {
-                if (bestScore is null || sc > bestScore)
-                {
-                    bestScore = sc;
-                    bestChannel = channelId;
-                }
-            }
-
-            try
-            {
-                string caption;
-                using (var stageCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
-                {
-                    stageCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, options.Value.StageTimeoutSeconds)));
-                    if (CaptionFactory is not null)
-                    {
-                        caption = await CaptionFactory(work.MediaAssetId, channelId, stageCts.Token);
-                    }
-                    else
-                    {
-                        using var scope = scopeFactory.CreateScope();
-                        var intelligence = scope.ServiceProvider.GetRequiredService<MediaIntelligenceService>();
-                        caption = await intelligence.GenerateCaptionTextForPageAsync(
-                            work.MediaAssetId, channelId, stageCts.Token);
-                    }
-                }
-
-                using (var scope = scopeFactory.CreateScope())
-                {
-                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                    if (await AlreadyPostedOnPageAsync(db, work.CampaignId, work.MediaAssetId, channelId, ct))
-                        continue;
-
-                    var author = snap.Campaign.CreatedByUserId ?? Guid.Empty;
-                    var postId = Guid.NewGuid();
-                    db.Posts.Add(new PostModel
-                    {
-                        Id = postId,
-                        Title = "Full Media",
-                        Content = caption,
-                        SocialChannelId = channelId,
-                        GenerationFlow = GenerationFlow.FullMedia,
-                        Status = PostStatus.Scheduled,
-                        CampaignId = work.CampaignId,
-                        CampaignSlotAt = slotUtc,
-                        ScheduledPublishAt = scheduledAt,
-                        ScheduleTimezone = CampaignGenerationService.ScheduleTimezone,
-                        UserId = author,
-                        ApprovedBy = Actor,
-                        ApprovedAt = now,
-                        CreatedAt = now,
-                        CreatedBy = Actor,
-                    });
-                    db.PostMedias.Add(new PostMediaModel
-                    {
-                        Id = Guid.NewGuid(),
-                        PostId = postId,
-                        MediaId = work.MediaAssetId,
-                        MediaRole = MediaRole.Primary,
-                        SortOrder = 0,
-                        CreatedAt = now,
-                        CreatedBy = Actor,
-                    });
-
-                    try
-                    {
-                        await db.SaveChangesAsync(ct);
-                        created++;
-                    }
-                    catch (DbUpdateException ex) when (CampaignGenerationService.IsUniqueViolation(ex))
-                    {
-                        logger.LogDebug(ex, "FullMedia slot collision campaign={CampaignId} channel={ChannelId}",
-                            work.CampaignId, channelId);
-                    }
-                }
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex,
-                    "Caption/post thất bại channel={ChannelId} media={MediaId} — tiếp tục page khác",
-                    channelId, work.MediaAssetId);
+                bestScore = sc;
+                bestChannel = id;
             }
         }
 
-        if (created == 0)
+        for (var tryIdx = 0; tryIdx < tries; tryIdx++)
         {
-            await FinalizePendingAsync(work.EvaluationId, "no_posts_created", cost, ct);
-            return;
+            var slotUtc = freeSlots[tryIdx];
+            var scheduledAt = CampaignGenerationService.ApplyJitter(slotUtc, jitter, now, Random);
+            var created = 0;
+            var slotConflict = false;
+
+            foreach (var channelId in pagesNeedingPosts)
+            {
+                try
+                {
+                    string caption;
+                    using (var stageCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+                    {
+                        stageCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, options.Value.StageTimeoutSeconds)));
+                        if (CaptionFactory is not null)
+                            caption = await CaptionFactory(work.MediaAssetId, channelId, stageCts.Token);
+                        else
+                        {
+                            using var scope = scopeFactory.CreateScope();
+                            var intelligence = scope.ServiceProvider.GetRequiredService<MediaIntelligenceService>();
+                            caption = await intelligence.GenerateCaptionTextForPageAsync(
+                                work.MediaAssetId, channelId, stageCts.Token);
+                        }
+                    }
+
+                    using (var scope = scopeFactory.CreateScope())
+                    {
+                        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                        if (await AlreadyPostedOnPageAsync(db, work.CampaignId, work.MediaAssetId, channelId, ct))
+                            continue;
+
+                        var postId = Guid.NewGuid();
+                        db.Posts.Add(new PostModel
+                        {
+                            Id = postId,
+                            Title = "Full Media",
+                            Content = caption,
+                            SocialChannelId = channelId,
+                            GenerationFlow = GenerationFlow.FullMedia,
+                            Status = PostStatus.Scheduled,
+                            CampaignId = work.CampaignId,
+                            CampaignSlotAt = slotUtc,
+                            ScheduledPublishAt = scheduledAt,
+                            ScheduleTimezone = CampaignGenerationService.ScheduleTimezone,
+                            UserId = authorId ?? Guid.Empty,
+                            ApprovedBy = Actor,
+                            ApprovedAt = now,
+                            CreatedAt = now,
+                            CreatedBy = Actor,
+                        });
+                        db.PostMedias.Add(new PostMediaModel
+                        {
+                            Id = Guid.NewGuid(),
+                            PostId = postId,
+                            MediaId = work.MediaAssetId,
+                            MediaRole = MediaRole.Primary,
+                            SortOrder = 0,
+                            CreatedAt = now,
+                            CreatedBy = Actor,
+                        });
+
+                        try
+                        {
+                            await db.SaveChangesAsync(ct);
+                            created++;
+                        }
+                        catch (DbUpdateException ex) when (CampaignGenerationService.IsUniqueViolation(ex))
+                        {
+                            logger.LogWarning(ex,
+                                "FullMedia slot_conflict campaign={CampaignId} channel={ChannelId} slot={Slot} — thử khe kế",
+                                work.CampaignId, channelId, slotUtc);
+                            slotConflict = true;
+                            break;
+                        }
+                    }
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex,
+                        "Caption/post thất bại channel={ChannelId} media={MediaId} — tiếp tục page khác",
+                        channelId, work.MediaAssetId);
+                }
+            }
+
+            if (created > 0 && !slotConflict)
+            {
+                await FinalizeStatusAsync(work.EvaluationId, CampaignMediaEvaluationStatus.Accepted,
+                    "accepted", bestScore, bestChannel, cost, ct, inputHash);
+                return ImageProcessOutcome.TerminalOk;
+            }
+
+            if (created > 0 && slotConflict)
+            {
+                // Một phần page đã tạo — chấp nhận Accepted nếu không còn page thiếu.
+                using var scope = scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var stillMissing = 0;
+                foreach (var ch in pagesNeedingPosts)
+                {
+                    if (!await AlreadyPostedOnPageAsync(db, work.CampaignId, work.MediaAssetId, ch, ct))
+                        stillMissing++;
+                }
+
+                if (stillMissing == 0)
+                {
+                    await FinalizeStatusAsync(work.EvaluationId, CampaignMediaEvaluationStatus.Accepted,
+                        "accepted", bestScore, bestChannel, cost, ct, inputHash);
+                    return ImageProcessOutcome.TerminalOk;
+                }
+            }
+
+            if (!slotConflict && created == 0)
+                break;
         }
 
-        await FinalizeStatusAsync(work.EvaluationId, CampaignMediaEvaluationStatus.Accepted,
-            "accepted", bestScore, bestChannel, cost, ct, inputHash);
+        await FinalizePendingAsync(work.EvaluationId, "slot_conflict", cost, ct, inputHash,
+            nextAttemptAt: now.AddHours(1));
+        return ImageProcessOutcome.Waiting;
     }
 
     private async Task PersistScoresAsync(
@@ -586,8 +750,11 @@ public class FullMediaPipelineService(
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var now = timeProvider.GetUtcNow().UtcDateTime;
+        var costAssigned = false;
         foreach (var (channelId, score) in result.Scores)
         {
+            var passCost = !costAssigned ? result.EstimatedCostUsd : 0m;
+            costAssigned = true;
             var existing = await db.CampaignMediaScores
                 .FirstOrDefaultAsync(s => !s.IsDeleted
                     && s.CampaignId == work.CampaignId
@@ -606,6 +773,7 @@ public class FullMediaPipelineService(
                     Score = score,
                     Passed = FitThreshold.Passes(score, minScore),
                     ScoredAt = now,
+                    CostUsd = passCost,
                     CreatedAt = now,
                     CreatedBy = Actor,
                 });
@@ -615,6 +783,7 @@ public class FullMediaPipelineService(
                 existing.Score = score;
                 existing.Passed = FitThreshold.Passes(score, minScore);
                 existing.ScoredAt = now;
+                existing.CostUsd = passCost;
                 existing.UpdatedAt = now;
             }
         }
@@ -668,19 +837,27 @@ public class FullMediaPipelineService(
         }
         catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
-            // race — bỏ qua
+            // race
         }
     }
 
-    private async Task FinalizePendingAsync(Guid evaluationId, string reason, decimal cost, CancellationToken ct)
-        => await FinalizeStatusAsync(evaluationId, CampaignMediaEvaluationStatus.Pending, reason,
-            null, null, cost, ct);
-
-    private async Task ReleaseToPendingAsync(Guid evaluationId, string reason, CancellationToken ct)
-        => await FinalizePendingAsync(evaluationId, reason, 0, ct);
-
-    private async Task MarkFailedOrPendingAsync(Guid evaluationId, string reason, CancellationToken ct)
-        => await FinalizePendingAsync(evaluationId, reason, 0, ct);
+    private Task FinalizePendingAsync(
+        Guid evaluationId,
+        string reason,
+        decimal cost,
+        CancellationToken ct,
+        string? inputHash = null,
+        DateTime? nextAttemptAt = null)
+        => FinalizeStatusAsync(
+            evaluationId,
+            CampaignMediaEvaluationStatus.Pending,
+            reason,
+            null,
+            null,
+            cost,
+            ct,
+            inputHash,
+            nextAttemptAt);
 
     private async Task FinalizeStatusAsync(
         Guid evaluationId,
@@ -690,34 +867,82 @@ public class FullMediaPipelineService(
         Guid? bestChannel,
         decimal costDelta,
         CancellationToken ct,
-        string? inputHash = null)
+        string? inputHash = null,
+        DateTime? nextAttemptAtOverride = null)
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var eval = await db.CampaignMediaEvaluations.FirstAsync(e => e.Id == evaluationId, ct);
-        eval.Status = status;
-        eval.ReasonCode = reason;
+        var waiting = reason is not null && WaitingReasons.Contains(reason);
+        var infra = reason is not null && InfraReasons.Contains(reason);
+
+        if (status == CampaignMediaEvaluationStatus.Pending && waiting)
+        {
+            // Không tính vào MaxPendingAttempts — hoàn Attempts tăng lúc claim.
+            eval.Attempts = Math.Max(0, eval.Attempts - 1);
+            eval.Status = CampaignMediaEvaluationStatus.Pending;
+            eval.ReasonCode = reason;
+            eval.NextAttemptAt = nextAttemptAtOverride ?? now.AddHours(1);
+        }
+        else if (status == CampaignMediaEvaluationStatus.Pending && !waiting)
+        {
+            var maxAttempts = Math.Max(1, options.Value.MaxPendingAttempts);
+            if (eval.Attempts >= maxAttempts)
+            {
+                eval.Status = CampaignMediaEvaluationStatus.Failed;
+                eval.ReasonCode = reason;
+                eval.EvaluatedAt = now;
+                eval.NextAttemptAt = null;
+                eval.CostUsd += costDelta;
+                if (bestScore is not null) eval.BestScore = bestScore;
+                if (bestChannel is not null) eval.BestChannelId = bestChannel;
+                if (inputHash is not null) eval.InputHash = inputHash;
+                eval.UpdatedAt = now;
+                eval.UpdatedBy = Actor;
+                await db.SaveChangesAsync(ct);
+                await NotifyAsync(
+                    "Full Media: ảnh Failed sau quá số lần thử",
+                    $"evaluation={evaluationId} reason={reason} attempts={eval.Attempts}",
+                    ct);
+                logger.LogInformation(
+                    "FullMedia evaluation {EvaluationId} → Failed reason={Reason}",
+                    evaluationId, reason);
+                return;
+            }
+
+            eval.Status = CampaignMediaEvaluationStatus.Pending;
+            eval.ReasonCode = reason;
+            var backoffIdx = Math.Clamp(eval.Attempts - 1, 0, PendingBackoffMinutes.Length - 1);
+            eval.NextAttemptAt = nextAttemptAtOverride
+                ?? now.AddMinutes(PendingBackoffMinutes[backoffIdx]);
+        }
+        else
+        {
+            eval.Status = status;
+            eval.ReasonCode = reason;
+            if (status is CampaignMediaEvaluationStatus.Accepted
+                or CampaignMediaEvaluationStatus.Rejected
+                or CampaignMediaEvaluationStatus.Unusable
+                or CampaignMediaEvaluationStatus.Failed)
+            {
+                eval.EvaluatedAt = now;
+            }
+        }
+
         if (bestScore is not null) eval.BestScore = bestScore;
         if (bestChannel is not null) eval.BestChannelId = bestChannel;
         eval.CostUsd += costDelta;
         eval.UpdatedAt = now;
         eval.UpdatedBy = Actor;
-        if (status is CampaignMediaEvaluationStatus.Accepted
-            or CampaignMediaEvaluationStatus.Rejected
-            or CampaignMediaEvaluationStatus.Unusable)
-        {
-            eval.EvaluatedAt = now;
-        }
-
         if (inputHash is not null)
             eval.InputHash = inputHash;
-        if (status == CampaignMediaEvaluationStatus.Pending)
-            eval.NextAttemptAt = now.AddMinutes(5);
+
+        _ = infra; // phân loại dùng ở ProcessDue qua ReasonCode đọc lại nếu cần
         await db.SaveChangesAsync(ct);
         logger.LogInformation(
             "FullMedia evaluation {EvaluationId} → {Status} reason={Reason} best={Best}",
-            evaluationId, status, reason, bestScore);
+            evaluationId, eval.Status, reason, bestScore);
     }
 
     private async Task NotifyAsync(string title, string message, CancellationToken ct)
@@ -734,7 +959,7 @@ public class FullMediaPipelineService(
             ct: ct);
     }
 
-    private async Task<bool> CanAffordNextAsync(CancellationToken ct)
+    internal async Task<bool> CanAffordNextAsync(CancellationToken ct)
     {
         var opts = options.Value;
         using var scope = scopeFactory.CreateScope();
@@ -753,30 +978,24 @@ public class FullMediaPipelineService(
         if (todayCount >= opts.MaxImagesPerDay)
             return false;
 
-        // MaxDailyCostUsd theo ngày UTC từ tổng CostUsd (ổn định qua restart).
-        var todayCost = await db.CampaignMediaEvaluations.AsNoTracking()
-            .Where(e => !e.IsDeleted
-                && e.UpdatedAt != null
-                && e.UpdatedAt >= dayStart
-                && e.UpdatedAt < dayEnd)
-            .SumAsync(e => (decimal?)e.CostUsd, ct) ?? 0m;
+        // F4 (ii): chỉ cộng CostUsd của lượt chấm có ScoredAt hôm nay (UTC).
+        var todayCost = await db.CampaignMediaScores.AsNoTracking()
+            .Where(s => !s.IsDeleted
+                && s.ScoredAt >= dayStart
+                && s.ScoredAt < dayEnd)
+            .SumAsync(s => (decimal?)s.CostUsd, ct) ?? 0m;
 
         return todayCost < opts.MaxDailyCostUsd;
     }
 
-    private static async Task<bool> AlreadyPostedOnAnyPageAsync(
-        AppDbContext db, Guid campaignId, Guid mediaId, CancellationToken ct)
+    /// <summary>Kiểm tra đã đăng ảnh trên page — internal cho mutation T7.</summary>
+    internal static Task<bool> AlreadyPostedOnPageAsync(
+        AppDbContext db, Guid campaignId, Guid mediaId, Guid channelId, CancellationToken ct)
     {
-        var postIds = await db.Posts.AsNoTracking()
-            .Where(p => !p.IsDeleted && p.CampaignId == campaignId && p.Status != PostStatus.Cancelled)
-            .Select(p => p.Id)
-            .ToListAsync(ct);
-        if (postIds.Count == 0) return false;
-        return await db.PostMedias.AsNoTracking()
-            .AnyAsync(m => !m.IsDeleted && m.MediaId == mediaId && postIds.Contains(m.PostId), ct);
+        return AlreadyPostedOnPageCoreAsync(db, campaignId, mediaId, channelId, ct);
     }
 
-    private static async Task<bool> AlreadyPostedOnPageAsync(
+    private static async Task<bool> AlreadyPostedOnPageCoreAsync(
         AppDbContext db, Guid campaignId, Guid mediaId, Guid channelId, CancellationToken ct)
     {
         var postIds = await db.Posts.AsNoTracking()
@@ -789,6 +1008,32 @@ public class FullMediaPipelineService(
         if (postIds.Count == 0) return false;
         return await db.PostMedias.AsNoTracking()
             .AnyAsync(m => !m.IsDeleted && m.MediaId == mediaId && postIds.Contains(m.PostId), ct);
+    }
+
+    private static async Task<bool> AllChannelsHaveMediaAsync(
+        AppDbContext db, Guid campaignId, Guid mediaId, IReadOnlyList<Guid> channelIds, CancellationToken ct)
+    {
+        foreach (var ch in channelIds)
+        {
+            if (!await AlreadyPostedOnPageCoreAsync(db, campaignId, mediaId, ch, ct))
+                return false;
+        }
+
+        return channelIds.Count > 0;
+    }
+
+    private static async Task<HashSet<DateTime>> GetOccupiedSlotsAsync(
+        AppDbContext db, Guid campaignId, IReadOnlyList<Guid> channelIds, CancellationToken ct)
+    {
+        var slots = await db.Posts.AsNoTracking()
+            .Where(p => !p.IsDeleted
+                && p.CampaignId == campaignId
+                && channelIds.Contains(p.SocialChannelId)
+                && p.CampaignSlotAt != null
+                && p.Status != PostStatus.Cancelled)
+            .Select(p => p.CampaignSlotAt!.Value)
+            .ToListAsync(ct);
+        return slots.ToHashSet();
     }
 
     private static async Task<List<ScoreablePage>> LoadScoreableProfilesAsync(
@@ -807,6 +1052,45 @@ public class FullMediaPipelineService(
 
         return list;
     }
+
+    private async Task<List<Guid>> LoadAcceptedChannelIdsFromScoresAsync(
+        Guid campaignId, Guid mediaId, double minScore, CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var pass2 = await db.CampaignMediaScores.AsNoTracking()
+            .Where(s => !s.IsDeleted
+                && s.CampaignId == campaignId
+                && s.MediaAssetId == mediaId
+                && s.Pass == 2
+                && s.Passed)
+            .Select(s => new { s.SocialChannelId, s.Score })
+            .ToListAsync(ct);
+        return pass2
+            .Where(s => FitThreshold.Passes(s.Score, minScore))
+            .Select(s => s.SocialChannelId)
+            .Distinct()
+            .ToList();
+    }
+
+    private async Task<bool> HasPass2ScoresAsync(Guid campaignId, Guid mediaId, CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        return await HasPass2ScoresAsync(db, campaignId, mediaId, ct);
+    }
+
+    private static Task<bool> HasPass2ScoresAsync(
+        AppDbContext db, Guid campaignId, Guid mediaId, CancellationToken ct)
+        => db.CampaignMediaScores.AsNoTracking()
+            .AnyAsync(s => !s.IsDeleted
+                && s.CampaignId == campaignId
+                && s.MediaAssetId == mediaId
+                && s.Pass == 2
+                && s.Passed, ct);
+
+    private static bool IsAwaitingSlotReason(string? reason)
+        => reason is "no_free_slot" or "slot_conflict";
 
     private static async Task<string?> ComputeInputHashAsync(
         AppDbContext db, Guid campaignId, Guid mediaId, IReadOnlyList<Guid> channelIds, CancellationToken ct)
@@ -872,7 +1156,12 @@ public class FullMediaPipelineService(
         catch (JsonException) { return []; }
     }
 
-    private sealed record WorkItem(Guid EvaluationId, Guid CampaignId, Guid MediaAssetId, bool IsRescore);
+    internal sealed record WorkItem(
+        Guid EvaluationId,
+        Guid CampaignId,
+        Guid MediaAssetId,
+        bool IsRescore,
+        bool IsPostOnly);
 
     private sealed record CampaignSnapshot(
         CampaignModel Campaign,

@@ -340,6 +340,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
                 .HasFilter("IsDeleted = 0")
                 .HasDatabaseName("IX_CampaignMediaScores_Campaign_Media_Channel_Pass_Active");
             e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.CostUsd).HasPrecision(18, 6);
         });
 
         modelBuilder.Entity<PostModel>(e =>

@@ -15,6 +15,7 @@ public static class FullMediaPipelineServiceCollectionExtensions
     {
         services.Configure<FullMediaPipelineOptions>(
             configuration.GetSection(FullMediaPipelineOptions.SectionName));
+        services.AddSingleton<FullMediaCircuitBreaker>();
         services.AddScoped<MediaVisionService>();
         services.AddScoped<IMediaVisionDescriber>(sp => sp.GetRequiredService<MediaVisionService>());
         services.AddFullMediaPageFit(configuration);

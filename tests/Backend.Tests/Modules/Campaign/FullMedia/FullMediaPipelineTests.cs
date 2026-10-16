@@ -235,13 +235,41 @@ public sealed class FullMediaPipelineTests : IAsyncLifetime
         var vision = new FakeVision();
         var scorer = new FakeScorer();
         scorer.PassScores[1] = pages.ToDictionary(p => p, _ => 0.5);
-        var pipeline = CreatePipeline(vision, scorer, o => o.MaxRescores = 3);
+        var pipeline = CreatePipeline(vision, scorer, o =>
+        {
+            o.Enabled = true;
+            o.MaxRescores = 3;
+        });
         await pipeline.ProcessImageAsync(campaignId, mediaId);
-        var callsA = vision.CallsA;
+        // Seed profile khớp FakeVision để PickNext tính được InputHash (T12).
+        await using (var dbSeed = new AppDbContext(_options))
+        {
+            const string json =
+                """{"topic":"t","audience":"a","tone":"tone","setting":"set","textInImage":"","keywords":["k"],"confidence":0.9,"unclear":false}""";
+            dbSeed.MediaVisionProfiles.Add(new MediaVisionProfileModel
+            {
+                Id = Guid.NewGuid(),
+                MediaAssetId = mediaId,
+                FileHash = "fh",
+                Pass = VisionPass.A,
+                DescriptionJson = json,
+                Confidence = 0.9,
+                Model = "model-a",
+                CreatedAt = DateTime.UtcNow,
+            });
+            await dbSeed.SaveChangesAsync();
+        }
 
-        // ProcessDue không nhận lại Rejected cùng hash
+        var callsA = vision.CallsA;
+        var scoreCalls = scorer.Calls;
+
+        // ProcessDue không nhận lại Rejected cùng hash (T12)
         await pipeline.ProcessDueAsync();
-        Assert.Equal(callsA, vision.CallsA); // T12, T13
+        Assert.Equal(callsA, vision.CallsA);
+        Assert.Equal(scoreCalls, scorer.Calls);
+        await using var db = new AppDbContext(_options);
+        Assert.Equal(CampaignMediaEvaluationStatus.Rejected,
+            (await db.CampaignMediaEvaluations.SingleAsync()).Status);
     }
 
     [Fact]
@@ -336,7 +364,10 @@ public sealed class FullMediaPipelineTests : IAsyncLifetime
     {
         var counter = new CountingScopeFactory();
         var opts = Options.Create(new FullMediaPipelineOptions { Enabled = false });
-        var worker = new CampaignFullMediaWorker(counter, opts, NullLogger<CampaignFullMediaWorker>.Instance);
+        var clock = new FixedTimeProvider(DateTimeOffset.UtcNow);
+        var worker = new CampaignFullMediaWorker(
+            counter, opts, clock, new FullMediaCircuitBreaker(clock),
+            NullLogger<CampaignFullMediaWorker>.Instance);
         using var cts = new CancellationTokenSource();
         await worker.StartAsync(cts.Token);
         await Task.Delay(50);
@@ -385,14 +416,16 @@ public sealed class FullMediaPipelineTests : IAsyncLifetime
     [Fact]
     public void CircuitBreaker_Configured_AndWorkerChecks()
     {
-        // T19
+        // T19 / F2: cầu chì trong service + FullMediaCircuitBreaker
         Assert.True(new FullMediaPipelineOptions().CircuitBreakerFailures > 0);
-        var path = Path.GetFullPath(Path.Combine(
+        var root = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory, "..", "..", "..", "..", "..",
-            "backend", "Modules", "Campaign", "FullMedia", "CampaignFullMediaWorker.cs"));
-        var text = File.ReadAllText(path);
-        Assert.Contains("CircuitBreakerFailures", text);
-        Assert.Contains("_circuitOpenUntil", text);
+            "backend", "Modules", "Campaign", "FullMedia"));
+        var service = File.ReadAllText(Path.Combine(root, "FullMediaPipelineService.cs"));
+        Assert.Contains("CircuitBreakerFailures", service);
+        Assert.Contains("RecordInfraFailure", service);
+        var breaker = File.ReadAllText(Path.Combine(root, "FullMediaCircuitBreaker.cs"));
+        Assert.Contains("_openUntil", breaker);
     }
 
     [Fact]
@@ -404,8 +437,10 @@ public sealed class FullMediaPipelineTests : IAsyncLifetime
             StartupDelaySeconds = 30,
             IntervalSeconds = 60,
         });
+        var clock = new FixedTimeProvider(DateTimeOffset.UtcNow);
         var worker = new CampaignFullMediaWorker(
-            new CountingScopeFactory(), opts, NullLogger<CampaignFullMediaWorker>.Instance);
+            new CountingScopeFactory(), opts, clock, new FullMediaCircuitBreaker(clock),
+            NullLogger<CampaignFullMediaWorker>.Instance);
         using var cts = new CancellationTokenSource();
         await worker.StartAsync(cts.Token);
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -472,7 +507,7 @@ public sealed class FullMediaPipelineTests : IAsyncLifetime
         Assert.Contains("MaxImagesPerTick", text);
         Assert.Contains("MaxImagesPerDay", text);
         Assert.Contains("MaxDailyCostUsd", text);
-        Assert.Contains("SumAsync", text); // T26: cost từ DB
+        Assert.Contains("CampaignMediaScores", text); // T26: cost theo ScoredAt hôm nay
     }
 
     [Fact]
@@ -590,7 +625,6 @@ public sealed class FullMediaPipelineTests : IAsyncLifetime
         services.AddScoped<RecycleSourcePicker>();
         services.AddScoped<MediaFolderRepository>();
         services.AddScoped<IUserContext, StubUserContext>();
-        // MediaIntelligence tối thiểu — Vision đăng ký trong extension cần nó ở runtime resolve lazy
         services.AddFullMediaPipeline(config);
         using var sp = services.BuildServiceProvider();
         Assert.NotNull(sp.GetService<FullMediaPipelineService>());
@@ -600,11 +634,11 @@ public sealed class FullMediaPipelineTests : IAsyncLifetime
     [Fact]
     public void Program_Calls_AddFullMediaPipeline()
     {
-        // T25
+        // T25 — phải là lời gọi thật, không chỉ chuỗi trong comment.
         var programPath = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory, "..", "..", "..", "..", "..", "backend", "Program.cs"));
         var text = File.ReadAllText(programPath);
-        Assert.Contains("AddFullMediaPipeline", text);
+        Assert.Contains("builder.Services.AddFullMediaPipeline(builder.Configuration);", text);
         Assert.DoesNotContain("AddScoped<Backend.Modules.Campaign.FullMedia.MediaVisionService>()", text);
     }
 
@@ -668,6 +702,7 @@ public sealed class FullMediaPipelineTests : IAsyncLifetime
         services.AddLogging();
         services.AddSingleton(clock);
         services.AddSingleton(Options.Create(opts));
+        services.AddSingleton(new FullMediaCircuitBreaker(clock));
         services.AddScoped(_ => new AppDbContext(dbOptions));
         services.AddScoped<CampaignGenerationService>();
         services.AddScoped<RecycleSourcePicker>();

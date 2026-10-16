@@ -36,6 +36,12 @@ public class FullMediaPipelineOptions
     /// <summary>Trần số lần chấm lại ảnh Rejected khi InputHash đổi.</summary>
     public int MaxRescores { get; set; } = 3;
 
+    /// <summary>
+    /// Trần số lần Pending do lỗi (không gồm chờ khe/hồ sơ/tạm dừng).
+    /// Hết lần → Failed.
+    /// </summary>
+    public int MaxPendingAttempts { get; set; } = 5;
+
     /// <summary>Timeout mỗi cuộc gọi ngoài (Vision / Score / Caption), giây.</summary>
     public int StageTimeoutSeconds { get; set; } = 90;
 
