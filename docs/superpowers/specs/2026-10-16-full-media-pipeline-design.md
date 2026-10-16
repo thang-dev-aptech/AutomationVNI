@@ -23,6 +23,7 @@ lấy ảnh khác. Toàn bộ quá trình **tự động, không có bước duy
 | D8 | Hồ sơ page được dịch sang tiếng Anh **một lần tổng thể**; sau đó chỉ dịch lại page vừa tạo/sửa. Bản dịch **ẩn** (chỉ ở backend, không trả qua API cho frontend, không hiện trên UI). |
 | D9 | Worker **không được ảnh hưởng** tiến trình khác của app (mục 8). |
 | D10 | **Không có thao tác con người** trong quá trình (không duyệt tay, không nút đánh giá lại, không gán nhãn). Hệ thống tự kiểm tra chính nó (mục 7). |
+| D11 | Jev được gọi qua **Vercel AI Gateway** (tính tiền theo token, không dùng gói trả trước của `jev-ai.pro`): `POST https://ai-gateway.vercel.sh/typesafe/v1/systemone`, model `typesafe-ai/jev`, câu hỏi kiểu `noul`, kèm `providerOptions.gateway.zeroDataRetention = true`. |
 
 ## 3. Ngoài phạm vi (bản đầu)
 
@@ -102,10 +103,15 @@ Tất cả không FK constraint (theo quy ước dự án); migration đủ cặ
 
 ### 6.3 Chấm điểm (Jev)
 - Giao diện `IPageFitScorer` (cài đặt đầu tiên: `JevPageFitScorer`), thay được bằng model
-  OpenAI-compatible mà không đổi pipeline.
-- Một request Jev: `state` = mô tả ảnh (tiếng Anh), `questions` = một câu `noul` cho mỗi page ứng
-  viên, dựng từ `ProfileEnglishJson`; quá 64 page thì tách request. Model `jev-latest`.
-  Điểm của page = xác suất "có" (0–1). Đạt khi **≥ 0,94**.
+  khác mà không đổi pipeline.
+- Một request Jev tới Vercel AI Gateway (D11): `state` = mô tả ảnh (tiếng Anh), `questions` = một
+  câu `noul` cho mỗi page ứng viên, dựng từ `ProfileEnglishJson`; quá 64 page thì tách request.
+  Model `typesafe-ai/jev`. Điểm của page = xác suất "có" (0–1). Đạt khi **≥ 0,94**.
+- Chi phí mỗi request được đọc từ `provider_metadata.gateway.cost` và cộng vào bộ đếm chi phí
+  theo ngày (dùng cho trần chi phí ở mục 8). Lỗi 429 thì tôn trọng `Retry-After` và exponential
+  backoff; lỗi 401/402/403 là lỗi vĩnh viễn: dừng và thông báo, không thử dồn dập.
+- **Không bắn loạt request thử**: có báo cáo team bị Gateway chặn vì "nghi lạm dụng" sau khoảng 20
+  request thử. Worker và bước kiểm chuẩn phải giãn nhịp (tuần tự, có khoảng nghỉ).
 - Lượt hai (Vision B + Jev lần nữa) chỉ chạy cho ảnh có ít nhất một page đạt ở lượt một. Page được
   nhận khi đạt ở **cả hai lượt**.
 
@@ -181,9 +187,10 @@ Trong `CampaignController`, `[Authorize(Roles="Admin,ContentManager")]` trên **
 ## 11. Cấu hình
 
 `FullMediaPipeline` (Enabled=false, IntervalSeconds, MinFitScore=0.94, MaxImagesPerTick,
-MaxImagesPerDay, trần số lần chấm lại, ngưỡng cầu chì/kiểm chuẩn) và `Jev` (BaseUrl, Model, timeout;
-`ApiKey` **chỉ từ biến môi trường hoặc `appsettings.Production.json`**, không bao giờ vào file
-được commit; log phải redact theo convention c125649e). Thêm mục vào `appsettings.json` chỉ với
+MaxImagesPerDay, MaxDailyCostUsd, trần số lần chấm lại, ngưỡng cầu chì/kiểm chuẩn) và `Jev`
+(BaseUrl=`https://ai-gateway.vercel.sh/typesafe`, Model=`typesafe-ai/jev`, ZeroDataRetention=true,
+timeout; `ApiKey` đọc từ biến môi trường `AI_GATEWAY_API_KEY` hoặc `appsettings.Production.json`,
+**không bao giờ vào file được commit**; log phải redact theo convention c125649e). Thêm mục vào `appsettings.json` chỉ với
 giá trị rỗng/mặc định an toàn.
 
 ## 12. Giả định cần xác nhận khi duyệt spec
@@ -195,8 +202,10 @@ giá trị rỗng/mặc định an toàn.
    `ResolveRunningChannelIdsAsync` hiện có), chỉ các page dùng được cho ảnh.
 4. Model Vision B (khác Vision A) và mức chỉ số của kiểm chuẩn/cầu chì sẽ chốt bằng một lần chạy
    thử với ảnh/hồ sơ thật trước khi bật `Enabled` trên production.
-5. Cách gửi/định dạng của Jev cho `noul` đã đọc từ tài liệu công khai; cần một request thử nhỏ
-   (chỉ gửi chữ, không gửi ảnh) để xác nhận trước khi viết bộ chấm điểm.
+5. Định dạng `noul` qua Gateway đã đọc từ tài liệu Vercel (cập nhật 2026-10-05); cần **một**
+   request thử nhỏ (chỉ gửi chữ, không gửi ảnh) để xác nhận trước khi viết bộ chấm điểm. Giá
+   khoảng $0,042 cho 1 triệu token đầu vào (output miễn phí) lấy từ nguồn thứ cấp, cần đối chiếu
+   với trang Models của Vercel khi tạo tài khoản. Cần tài khoản Vercel và `AI_GATEWAY_API_KEY`.
 6. Dữ liệu gửi Jev chỉ là mô tả ảnh và hồ sơ page (không có ảnh, không có dữ liệu khách).
 
 ## 13. Kiểm thử (mọi test phải đỏ khi hoàn nguyên code)
@@ -225,8 +234,10 @@ t3 phụ thuộc kết quả request thử Jev (mục 12.5).
 
 ## 15. Rủi ro
 
-- Phụ thuộc Jev: dịch vụ độc lập, không có SLA, chính sách lưu dữ liệu không nêu; giảm thiểu bằng
-  giao diện `IPageFitScorer` và việc chỉ gửi văn bản.
+- Phụ thuộc Jev qua Vercel AI Gateway (dịch vụ còn mới, tài liệu cập nhật tháng 10/2026): có báo
+  cáo tài khoản bị chặn vì "nghi lạm dụng" không gỡ được; giảm thiểu bằng việc giãn nhịp request,
+  `zeroDataRetention`, giao diện `IPageFitScorer` (đổi được sang Decision-1/d1/Laya hoặc LLM có
+  logprobs) và việc chỉ gửi văn bản. Chưa lấy được giá/ID của các model quyết định khác.
 - Tiếng Việt: giảm thiểu bằng việc dùng tiếng Anh cho phần gửi Jev (D7).
 - Tự động hoàn toàn: có thể nhận nhầm; giảm thiểu bằng mục 7, không loại bỏ được hoàn toàn.
 - Nhãn kiểm chuẩn là nhãn yếu từ lịch sử đăng.
