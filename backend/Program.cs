@@ -4,6 +4,7 @@ using Backend.Modules.ApiLog;
 using Backend.Modules.Auth;
 using Backend.Modules.Category;
 using Backend.Modules.ContentCrawl;
+using Backend.Modules.Campaign.FullMedia.Scoring;
 using Backend.Modules.GenerationJob;
 using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaAsset;
@@ -135,6 +136,7 @@ builder.Services.Configure<Backend.Modules.Campaign.FullMedia.FullMediaPipelineO
 builder.Services.AddScoped<Backend.Modules.Campaign.FullMedia.MediaVisionService>();
 builder.Services.AddScoped<Backend.Modules.Campaign.FullMedia.IMediaVisionDescriber>(
     sp => sp.GetRequiredService<Backend.Modules.Campaign.FullMedia.MediaVisionService>());
+builder.Services.AddFullMediaPageFit(builder.Configuration);
 builder.Services.AddScoped<SocialChannelRepository>();
 builder.Services.AddScoped<SocialConnectionRepository>();
 builder.Services.AddScoped<PageContextRepository>();
