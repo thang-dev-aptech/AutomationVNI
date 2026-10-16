@@ -78,6 +78,7 @@ public sealed class PageContextTopicsExclusionsTests : IDisposable
         await using var db = new AppDbContext(_options);
         var repo = Repo(db);
 
+        // Client cũ: create không gửi Topics/Exclusions → cả hai null (không chứng minh "giữ nguyên" khi đã có giá trị).
         var created = await repo.CreateAsync(new CreatePageContextRequest
         {
             SocialChannelId = _channelId,
@@ -96,12 +97,42 @@ public sealed class PageContextTopicsExclusionsTests : IDisposable
         var updated = await repo.UpdateAsync(created.Id, new UpdatePageContextRequest
         {
             BrandName = "Legacy Brand 2",
-            // Topics / Exclusions omitted — giữ nguyên
+            // Topics / Exclusions omitted — vẫn null
         });
         Assert.NotNull(updated);
         Assert.Equal("Legacy Brand 2", updated!.BrandName);
         Assert.Null(updated.Topics);
         Assert.Null(updated.Exclusions);
+    }
+
+    [Fact]
+    public async Task UpdateWithoutNewFields_KeepsExistingTopicsAndExclusions()
+    {
+        await using var db = new AppDbContext(_options);
+        var repo = Repo(db);
+
+        var created = await repo.CreateAsync(new CreatePageContextRequest
+        {
+            SocialChannelId = _channelId,
+            BrandName = "VNi",
+            Topics = "chứng chỉ",
+            Exclusions = "chính trị",
+        });
+
+        var updated = await repo.UpdateAsync(created.Id, new UpdatePageContextRequest
+        {
+            BrandName = "VNi Updated",
+            // Topics / Exclusions null — client cũ không gửi → phải giữ giá trị đã lưu
+        });
+        Assert.NotNull(updated);
+        Assert.Equal("VNi Updated", updated!.BrandName);
+        Assert.Equal("chứng chỉ", updated.Topics);
+        Assert.Equal("chính trị", updated.Exclusions);
+
+        await using var reload = new AppDbContext(_options);
+        var stored = await reload.PageContexts.AsNoTracking().SingleAsync(x => x.Id == created.Id);
+        Assert.Equal("chứng chỉ", stored.Topics);
+        Assert.Equal("chính trị", stored.Exclusions);
     }
 
     private sealed class StubUser : IUserContext

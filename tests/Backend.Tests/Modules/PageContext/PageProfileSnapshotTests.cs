@@ -89,6 +89,36 @@ public class PageProfileSnapshotTests
     }
 
     [Fact]
+    public void WhitespaceOnlyDifferences_SameTextAndHash()
+    {
+        var a = new PageContextModel
+        {
+            BrandName = "VNi Education",
+            ToneOfVoice = "gần gũi",
+            CtaText = "Inbox ngay",
+            Topics = "chứng chỉ ISO",
+            Exclusions = "chính trị",
+        };
+        var b = new PageContextModel
+        {
+            BrandName = "  VNi   Education  ",
+            ToneOfVoice = "\tgần\tgũi\t",
+            CtaText = " Inbox\nngay ",
+            Topics = "  chứng   chỉ  ISO  ",
+            Exclusions = "\nchính\n  trị\n",
+        };
+
+        var builtA = PageProfileSnapshot.Build(a);
+        var builtB = PageProfileSnapshot.Build(b);
+
+        Assert.Equal(builtA.Hash, builtB.Hash);
+        Assert.Equal(builtA.Text, builtB.Text);
+
+        b.Topics = "tuyển sinh";
+        Assert.NotEqual(builtA.Hash, PageProfileSnapshot.Build(b).Hash);
+    }
+
+    [Fact]
     public void EmptyTopicsAndTone_NotScoreable()
     {
         var emptyBoth = PageProfileSnapshot.Build(new PageContextModel
