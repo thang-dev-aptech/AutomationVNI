@@ -243,6 +243,7 @@ public sealed class MediaCaptionRaceTests : IAsyncLifetime
 
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task SlowStorageHitsSingleGenerateDeadline_ReleasesMarker_AndWorkerCallsAiOnce()
     {
         // Deadline thu nhỏ: 2 x 100ms + 100ms = 300ms. Storage treo 5s và bỏ qua token.

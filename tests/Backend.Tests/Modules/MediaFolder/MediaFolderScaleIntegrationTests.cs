@@ -165,6 +165,7 @@ public class MediaFolderScaleIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task MEDIA_08_AC2_OpeningRootThenExpandingOneFolder_Issues2PaginatedRequests_NotFullTreeDump()
     {
         var root = await GetJsonAsync<PagedResult<MediaFolderResponse>>(

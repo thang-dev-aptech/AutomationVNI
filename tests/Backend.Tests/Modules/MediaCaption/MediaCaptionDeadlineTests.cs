@@ -51,6 +51,7 @@ public sealed class MediaCaptionDeadlineTests : IAsyncLifetime
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task GenerateCaptionAsync_DeadlineExpiresExactlyDuringSaveChanges_CommitsSuccessfullyAndReturnsCaption()
     {
         var interceptor = new HangSaveInterceptor();

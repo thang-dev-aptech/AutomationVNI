@@ -405,6 +405,7 @@ public sealed class FullMediaPipelineTests : IAsyncLifetime
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task HungProvider_TimesOut()
     {
         var (campaignId, mediaId, pages) = await SeedFullMediaAsync(pageCount: 1);

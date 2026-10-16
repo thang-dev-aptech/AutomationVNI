@@ -85,6 +85,7 @@ public sealed class MediaCaptionTimeoutPipelineTests : IAsyncLifetime
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task ClientCancellation_IsNotMappedToTimeout400_AndKeepsCaption()
     {
         var ai = new CancellationAwareChatHandler();
