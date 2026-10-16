@@ -20,6 +20,12 @@ public class PageContextModel : BaseEntity
     /// <summary>Bộ màu thương hiệu cho prompt ảnh, vd "#1565C0, #F59E0B, #22C55E".</summary>
     public string? BrandColors { get; set; }
 
+    /// <summary>Chủ đề chính của page — dùng khi chấm điểm Full Media.</summary>
+    public string? Topics { get; set; }
+
+    /// <summary>Nội dung không đăng / nội dung cấm — dùng khi chấm điểm Full Media.</summary>
+    public string? Exclusions { get; set; }
+
     public string? DefaultHashtags { get; set; }
     public string? PromptTemplateText { get; set; }
     public string? PromptTemplateImage { get; set; }

@@ -3107,6 +3107,9 @@ namespace backend.Migrations
                     b.Property<string>("DeletedBy")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Exclusions")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ExtraJson")
                         .HasColumnType("TEXT");
 
@@ -3130,6 +3133,9 @@ namespace backend.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ToneOfVoice")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Topics")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("UpdatedAt")
