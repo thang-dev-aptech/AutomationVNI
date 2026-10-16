@@ -130,6 +130,11 @@ builder.Services.AddScoped<Backend.Modules.Post.RecycleSourcePicker>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<Backend.Modules.Campaign.CampaignWorkerOptions>(
     builder.Configuration.GetSection("CampaignWorker"));
+builder.Services.Configure<Backend.Modules.Campaign.FullMedia.FullMediaPipelineOptions>(
+    builder.Configuration.GetSection(Backend.Modules.Campaign.FullMedia.FullMediaPipelineOptions.SectionName));
+builder.Services.AddScoped<Backend.Modules.Campaign.FullMedia.IMediaVisionDescriber,
+    Backend.Modules.Campaign.FullMedia.MediaVisionService>();
+builder.Services.AddScoped<Backend.Modules.Campaign.FullMedia.MediaVisionService>();
 builder.Services.AddScoped<SocialChannelRepository>();
 builder.Services.AddScoped<SocialConnectionRepository>();
 builder.Services.AddScoped<PageContextRepository>();
