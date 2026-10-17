@@ -206,7 +206,8 @@
       "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineTests",
       "expect_red": [
         "TwoWorkers_ClaimOnce"
-      ]
+      ],
+      "note": "Không ổn định: TwoWorkers_ClaimOnce chỉ bắt race theo xác suất (đo 2026-10-17: ee5f06a 3/4 RED, 98b8f3e 2/3 RED). Cần test claim tất định (hai claim chồng nhau có chốt chặn)."
     },
     {
       "id": "T18",

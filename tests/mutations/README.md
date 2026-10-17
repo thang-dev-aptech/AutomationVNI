@@ -37,7 +37,7 @@ chép obj/bin dùng reflink nên gần như miễn phí. Mỗi job cần khoản
   để nhanh.
 - `expect_red`: tên method test (hoặc `Lớp.Method`) mà mutation này phải làm đỏ; cần ít nhất một. Tham
   số theory không cần ghi.
-- Tuỳ chọn: `extra_edits` (danh sách `{file, original, replacement, occurrence?}` khi mutation cần sửa
+- Tuỳ chọn: `note` (ghi chú tự do, runner bỏ qua), `extra_edits` (danh sách `{file, original, replacement, occurrence?}` khi mutation cần sửa
   nhiều chỗ), `timeout` (giây), `allow_unexpected: true` (chấp nhận đỏ ở test ngoài danh sách).
 
 ## Quy ước tên
