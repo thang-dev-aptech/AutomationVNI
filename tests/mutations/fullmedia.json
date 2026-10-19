@@ -1194,10 +1194,10 @@
     },
     {
       "id": "E10",
-      "description": "Bỏ kiểm đáp án rác ở phiếu đã gửi",
+      "description": "Nuốt unparseable_answer thành NO (không ném Transient)",
       "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
-      "original": "                if (answer == \"YES\")\n                    yesCount++;\n                else if (answer != \"NO\")\n                    throw new PageFitTransientException(\"unparseable_answer\", \"PageFit vote answer was not YES/NO\");",
-      "replacement": "                if (answer == \"YES\")\n                    yesCount++;",
+      "original": "                var (answer, promptTokens, completionTokens, attempts) =\n                    await VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct);\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n                voted++;\n\n                if (answer == \"YES\")\n                    yesCount++;\n                else if (answer != \"NO\")\n                    throw new PageFitTransientException(\"unparseable_answer\", \"PageFit vote answer was not YES/NO\");",
+      "replacement": "                string answer;\n                int promptTokens, completionTokens, attempts;\n                try\n                {\n                    (answer, promptTokens, completionTokens, attempts) =\n                        await VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct);\n                }\n                catch (PageFitTransientException ex) when (ex.ReasonCode == \"unparseable_answer\")\n                {\n                    answer = \"NO\";\n                    promptTokens = completionTokens = 0;\n                    attempts = 1;\n                }\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n                voted++;\n\n                if (answer == \"YES\")\n                    yesCount++;",
       "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
       "expect_red": [
         "EarlyExit_UnparseableVoteBeforeExit_StillTransient",
