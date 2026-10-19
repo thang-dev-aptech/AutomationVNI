@@ -846,11 +846,12 @@
       "id": "M16",
       "description": "HttpClient của PageFit không lấy TimeoutSeconds",
       "file": "backend/Modules/Campaign/FullMedia/Scoring/FullMediaPageFitServiceCollectionExtensions.cs",
-      "original": "            client.Timeout = TimeSpan.FromSeconds(seconds);\n",
+      "original": "        client.Timeout = TimeSpan.FromSeconds(seconds);\n",
       "replacement": "",
-      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
       "expect_red": [
-        "Di_AddFullMediaPageFit_ResolvesScorer_AndBindsOptions"
+        "Di_AddFullMediaPageFit_ResolvesScorer_AndBindsOptions",
+        "Di_ModeVote_ResolvesVotingScorer"
       ]
     },
     {
