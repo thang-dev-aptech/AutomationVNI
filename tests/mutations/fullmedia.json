@@ -768,7 +768,7 @@
     {
       "id": "M10",
       "description": "Retry-After không bị giới hạn bởi MaxRetryAfterSeconds",
-      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/PageFitScorerSupport.cs",
       "original": "        return delay > max ? max : delay;",
       "replacement": "        return delay;",
       "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
@@ -824,7 +824,7 @@
       "id": "M14",
       "description": "Log lỗi HTTP không redact khoá",
       "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
-      "original": "        var snippet = Redact(body, TryGetApiKey());",
+      "original": "        var snippet = PageFitScorerSupport.Redact(body, TryGetApiKey());",
       "replacement": "        var snippet = body;",
       "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
       "expect_red": [
@@ -863,6 +863,230 @@
       "expect_red": [
         "Http200_HtmlBody_TransientInvalidResponse",
         "Http200_UsagePromptTokensAsString_TransientInvalidResponse"
+      ]
+    },
+    {
+      "id": "VOTE1",
+      "description": "Điểm Vote = số YES (không chia N)",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "            var score = (double)yesCount / voters.Count;",
+      "replacement": "            var score = (double)yesCount;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "VoteScore_TwoOfThree_NotAboveThreshold",
+        "VoteScore_OneYes_ThirdOrZero"
+      ]
+    },
+    {
+      "id": "VOTE2",
+      "description": "Đáp án lạ bị coi là YES",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/PageFitScorerSupport.cs",
+      "original": "        if (upper is \"YES\" or \"NO\") return upper;\n        return null;",
+      "replacement": "        if (upper is \"YES\" or \"NO\") return upper;\n        return \"YES\";",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "NeverTreatsUnknownAsYes",
+        "UnparseableAnswer_Transient_NoPartialScores"
+      ]
+    },
+    {
+      "id": "VOTE3",
+      "description": "Đáp án lạ bị coi là NO (bỏ phiếu thiếu thay vì lỗi tạm)",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/PageFitScorerSupport.cs",
+      "original": "        if (upper is \"YES\" or \"NO\") return upper;\n        return null;",
+      "replacement": "        if (upper is \"YES\" or \"NO\") return upper;\n        return \"NO\";",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "UnparseableAnswer_Transient_NoPartialScores"
+      ]
+    },
+    {
+      "id": "VOTE4",
+      "description": "Trả điểm một phần khi một request lỗi",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "                var (answer, promptTokens, completionTokens, attempts) =\n                    await VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct);\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n\n                if (answer == \"YES\")\n                    yesCount++;\n                else if (answer != \"NO\")\n                    throw new PageFitTransientException(\"unparseable_answer\", \"PageFit vote answer was not YES/NO\");",
+      "replacement": "                string answer = \"NO\";\n                try {\n                var (a, promptTokens, completionTokens, attempts) =\n                    await VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct);\n                answer = a;\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n                } catch (PageFitTransientException) { requestIndex++; }\n\n                if (answer == \"YES\")\n                    yesCount++;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "OneVoterFails_NoPartialScores"
+      ]
+    },
+    {
+      "id": "VOTE5",
+      "description": "Bỏ kiểm MinVoters",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/PageFitScorerSupport.cs",
+      "original": "        var min = pageFit.MinVoters > 0 ? pageFit.MinVoters : 3;\n        if (voters.Count < min)\n        {\n            throw new PageFitPermanentException(\n                \"voters_insufficient\",\n                $\"PageFit:Models has {voters.Count} distinct model(s); MinVoters={min}\");\n        }",
+      "replacement": "        var min = pageFit.MinVoters > 0 ? pageFit.MinVoters : 3;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "FewerThanMinVoters_Permanent_NoNetwork"
+      ]
+    },
+    {
+      "id": "VOTE6",
+      "description": "Bỏ loại trùng model",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/PageFitScorerSupport.cs",
+      "original": "            if (!seen.Add(name))\n            {\n                throw new PageFitPermanentException(\n                    \"voters_insufficient\",\n                    \"PageFit:Models contains duplicate model names\");\n            }\n\n            voters.Add(name);",
+      "replacement": "            seen.Add(name);\n            voters.Add(name);",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "DuplicateModels_Permanent_NoNetwork"
+      ]
+    },
+    {
+      "id": "VOTE7",
+      "description": "Gửi logprobs trong body chế độ Vote",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "            max_tokens = maxTokens,\n            temperature = 0,\n        };",
+      "replacement": "            max_tokens = maxTokens,\n            temperature = 0,\n            logprobs = true,\n            top_logprobs = 5,\n        };",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "RequestShape_Vote_NoLogprobs_CorrectModels"
+      ]
+    },
+    {
+      "id": "VOTE8",
+      "description": "Chạy phiếu song song",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "            for (var v = 0; v < voters.Count; v++)\n            {\n                ct.ThrowIfCancellationRequested();\n                if (requestIndex > 0 && opts.MinDelayBetweenRequestsMs > 0)\n                    await Task.Delay(TimeSpan.FromMilliseconds(opts.MinDelayBetweenRequestsMs), timeProvider, ct);\n\n                var model = voters[v];\n                var (answer, promptTokens, completionTokens, attempts) =\n                    await VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct);\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n\n                if (answer == \"YES\")\n                    yesCount++;\n                else if (answer != \"NO\")\n                    throw new PageFitTransientException(\"unparseable_answer\", \"PageFit vote answer was not YES/NO\");\n            }",
+      "replacement": "            var votes = await Task.WhenAll(voters.Select(model => VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct)));\n            foreach (var (answer, promptTokens, completionTokens, attempts) in votes)\n            {\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n                if (answer == \"YES\") yesCount++;\n            }",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "RequestCount_IsModelsTimesPages_Sequential"
+      ]
+    },
+    {
+      "id": "VOTE9",
+      "description": "Bỏ khoảng nghỉ giữa request Vote",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "                if (requestIndex > 0 && opts.MinDelayBetweenRequestsMs > 0)",
+      "replacement": "                if (false)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "RequestCount_IsModelsTimesPages_Sequential"
+      ]
+    },
+    {
+      "id": "VOTE10",
+      "description": "Bỏ trần Retry-After (Vote path dùng CapRetryAfter chung)",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/PageFitScorerSupport.cs",
+      "original": "        return delay > max ? max : delay;",
+      "replacement": "        return delay;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "RateLimit_HonorsRetryAfterCapped_ThenSucceeds"
+      ]
+    },
+    {
+      "id": "VOTE11",
+      "description": "401/403 thử lại (không Permanent ngay)",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "            if (status is 401 or 403)\n            {\n                LogHttpError(status, raw);\n                throw new PageFitPermanentException(\"auth\", $\"PageFit vote auth failed HTTP {status}\");\n            }",
+      "replacement": "            if (status is 401 or 403)\n            {\n                LogHttpError(status, raw);\n                throw new PageFitTransientException(\"auth\", $\"PageFit vote auth failed HTTP {status}\");\n            }",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "Http401_403_400_404_422_Permanent_NoRetry"
+      ]
+    },
+    {
+      "id": "VOTE12",
+      "description": "Đưa ảnh/data URL vào body Vote",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "                new { role = \"user\", content = userText },",
+      "replacement": "                new { role = \"user\", content = userText + \" data:image/png;base64,AAAA\" },",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "BodyContainsNoImageOrDataUrl_OnlyMarkers"
+      ]
+    },
+    {
+      "id": "VOTE13",
+      "description": "Log khoá API không redact (Vote)",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "        var snippet = PageFitScorerSupport.Redact(body, TryGetApiKey());",
+      "replacement": "        var snippet = body;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "ApiKeyNotLogged_OnSuccessOrError"
+      ]
+    },
+    {
+      "id": "VOTE14",
+      "description": "Factory luôn chọn Logprobs",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/FullMediaPageFitServiceCollectionExtensions.cs",
+      "original": "            if (mode.Length == 0 || string.Equals(mode, \"Vote\", StringComparison.OrdinalIgnoreCase))\n                return sp.GetRequiredService<VotingPageFitScorer>();\n            if (string.Equals(mode, \"Logprobs\", StringComparison.OrdinalIgnoreCase))\n                return sp.GetRequiredService<LlmLogprobPageFitScorer>();",
+      "replacement": "            return sp.GetRequiredService<LlmLogprobPageFitScorer>();\n            if (false)\n                return sp.GetRequiredService<VotingPageFitScorer>();",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "Di_ModeVote_ResolvesVotingScorer"
+      ]
+    },
+    {
+      "id": "VOTE15",
+      "description": "Factory luôn chọn Vote",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/FullMediaPageFitServiceCollectionExtensions.cs",
+      "original": "            if (mode.Length == 0 || string.Equals(mode, \"Vote\", StringComparison.OrdinalIgnoreCase))\n                return sp.GetRequiredService<VotingPageFitScorer>();\n            if (string.Equals(mode, \"Logprobs\", StringComparison.OrdinalIgnoreCase))\n                return sp.GetRequiredService<LlmLogprobPageFitScorer>();",
+      "replacement": "            return sp.GetRequiredService<VotingPageFitScorer>();\n            if (false)\n                return sp.GetRequiredService<LlmLogprobPageFitScorer>();",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "Di_ModeLogprobs_ResolvesLogprobScorer",
+        "Di_AddFullMediaPageFit_ResolvesScorer_AndBindsOptions"
+      ]
+    },
+    {
+      "id": "VOTE16",
+      "description": "Bỏ kiểm Mode không hợp lệ",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/FullMediaPageFitServiceCollectionExtensions.cs",
+      "original": "            return new InvalidPageFitModeScorer(mode);",
+      "replacement": "            return sp.GetRequiredService<VotingPageFitScorer>();",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "Di_InvalidMode_Fails"
+      ]
+    },
+    {
+      "id": "VOTE17",
+      "description": "PageFit:Provider bị bỏ qua",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/PageFitScorerSupport.cs",
+      "original": "        var overrideName = pageFit.Provider?.Trim();\n        var name = !string.IsNullOrWhiteSpace(overrideName)\n            ? overrideName\n            : ai.DefaultProvider;",
+      "replacement": "        var name = ai.DefaultProvider;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "PageFitProviderOverride_UsesNamedProvider"
+      ]
+    },
+    {
+      "id": "VOTE18",
+      "description": "Chấp nhận YES because ...",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/PageFitScorerSupport.cs",
+      "original": "        if (upper is \"YES\" or \"NO\") return upper;\n        return null;",
+      "replacement": "        if (upper.StartsWith(\"YES\")) return \"YES\";\n        if (upper.StartsWith(\"NO\")) return \"NO\";\n        return null;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "UnparseableAnswer_Transient_NoPartialScores",
+        "NeverTreatsUnknownAsYes"
+      ]
+    },
+    {
+      "id": "VOTE19",
+      "description": "Bỏ cộng chi phí các phiếu sau phiếu đầu",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;",
+      "replacement": "                if (requestIndex == 0) { totalPrompt += promptTokens; totalCompletion += completionTokens; }",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "CostAccumulatesAcrossAllVotes"
+      ]
+    },
+    {
+      "id": "VOTE20",
+      "description": "Program/extension không đăng ký AddFullMediaPageFit",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineServiceCollectionExtensions.cs",
+      "original": "        services.AddFullMediaPageFit(configuration);\n",
+      "replacement": "\n",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "Program_Calls_AddFullMediaPageFit"
       ]
     }
   ]

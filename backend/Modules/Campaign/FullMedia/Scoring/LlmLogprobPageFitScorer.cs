@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -19,8 +17,6 @@ public sealed class LlmLogprobPageFitScorer(
     internal const string SystemPrompt =
         "Reply with exactly one word: YES if the image description fits the page profile, NO if it does not.";
 
-    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
-
     public async Task<PageFitResult> ScoreAsync(
         string imageStateText,
         IReadOnlyList<PageFitCandidate> pages,
@@ -30,13 +26,14 @@ public sealed class LlmLogprobPageFitScorer(
         if (pages.Count == 0)
             return new PageFitResult(new Dictionary<Guid, double>(), 0m, 0);
 
-        var (config, model) = ResolveProviderAndModel();
-        var url = BuildUrl(config);
+        var opts = pageFitOptions.Value;
+        var config = PageFitScorerSupport.ResolveProvider(aiOptions.Value, opts);
+        var model = PageFitScorerSupport.ResolveLogprobsModel(config, opts);
+        var url = PageFitScorerSupport.BuildUrl(config);
         var scores = new Dictionary<Guid, double>(pages.Count);
         var totalPrompt = 0;
         var totalCompletion = 0;
         var requestCount = 0;
-        var opts = pageFitOptions.Value;
 
         for (var i = 0; i < pages.Count; i++)
         {
@@ -53,7 +50,7 @@ public sealed class LlmLogprobPageFitScorer(
             totalCompletion += completionTokens;
         }
 
-        var cost = EstimateCost(totalPrompt, totalCompletion, opts);
+        var cost = PageFitScorerSupport.EstimateCost(totalPrompt, totalCompletion, opts);
         return new PageFitResult(scores, cost, requestCount);
     }
 
@@ -93,7 +90,7 @@ public sealed class LlmLogprobPageFitScorer(
                 var delay = ex.Data["retryAfter"] is TimeSpan ra && ra > TimeSpan.Zero
                     ? ra
                     : TimeSpan.FromSeconds(Math.Pow(2, attempt));
-                delay = CapRetryAfter(delay);
+                delay = PageFitScorerSupport.CapRetryAfter(delay, opts);
                 logger.LogWarning("PageFit 429, waiting {Delay} before retry {Attempt}/{Max}",
                     delay, attempt + 1, maxAttempts);
                 await Task.Delay(delay, timeProvider, ct);
@@ -116,7 +113,7 @@ public sealed class LlmLogprobPageFitScorer(
         CancellationToken ct)
     {
         var opts = pageFitOptions.Value;
-        var userText = BuildUserMessage(imageStateText, page.ProfileText);
+        var userText = PageFitScorerSupport.BuildUserMessage(imageStateText, page.ProfileText);
         var body = new
         {
             model,
@@ -175,7 +172,7 @@ public sealed class LlmLogprobPageFitScorer(
             if (status == 429)
             {
                 LogHttpError(status, raw);
-                var ra = ParseRetryAfter(response);
+                var ra = PageFitScorerSupport.ParseRetryAfter(response, opts);
                 var ex = new PageFitTransientException("rate_limited", "PageFit rate limited (429)");
                 if (ra is not null) ex.Data["retryAfter"] = ra.Value;
                 throw ex;
@@ -293,123 +290,31 @@ public sealed class LlmLogprobPageFitScorer(
         throw new FormatException($"usage.{field} must be an integer");
     }
 
-    private TimeSpan CapRetryAfter(TimeSpan delay)
-    {
-        var maxSec = pageFitOptions.Value.MaxRetryAfterSeconds;
-        if (maxSec <= 0) maxSec = 60;
-        var max = TimeSpan.FromSeconds(maxSec);
-        return delay > max ? max : delay;
-    }
-
-    private (AiProviderConfig Config, string Model) ResolveProviderAndModel()
-    {
-        var ai = aiOptions.Value;
-        var name = ai.DefaultProvider;
-        if (string.IsNullOrWhiteSpace(name)
-            || !ai.Providers.TryGetValue(name, out var config)
-            || string.IsNullOrWhiteSpace(config.ApiKey)
-            || string.IsNullOrWhiteSpace(config.BaseUrl))
-        {
-            throw new PageFitPermanentException(
-                "provider_not_configured",
-                "PageFit AI provider missing (name/ApiKey/BaseUrl)");
-        }
-
-        var overrideModel = pageFitOptions.Value.Model?.Trim();
-        var model = !string.IsNullOrWhiteSpace(overrideModel)
-            ? overrideModel
-            : FirstNonEmpty(config.DefaultVisionModel, config.DefaultTextModel);
-
-        if (string.IsNullOrWhiteSpace(model))
-        {
-            throw new PageFitPermanentException(
-                "provider_not_configured",
-                "PageFit model not configured");
-        }
-
-        return (config, model);
-    }
-
-    private static string BuildUrl(AiProviderConfig config)
-    {
-        var baseUrl = config.BaseUrl.TrimEnd('/');
-        var path = string.IsNullOrWhiteSpace(config.ChatCompletionsPath)
-            ? "/chat/completions"
-            : config.ChatCompletionsPath.StartsWith('/')
-                ? config.ChatCompletionsPath
-                : "/" + config.ChatCompletionsPath;
-        return baseUrl + path;
-    }
-
     internal static string BuildUserMessage(string imageStateText, string profileText)
-        => "Image description:\n" + (imageStateText ?? "")
-           + "\n\nPage profile:\n" + (profileText ?? "")
-           + "\n\nDoes the image fit this page? Answer YES or NO.";
+        => PageFitScorerSupport.BuildUserMessage(imageStateText, profileText);
 
     internal static string NormalizeToken(string? token)
         => (token ?? string.Empty).Trim().ToUpperInvariant();
 
-    private static string? FirstNonEmpty(params string?[] values)
-        => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
-
-    private static decimal EstimateCost(int promptTokens, int completionTokens, PageFitOptions opts)
-    {
-        if (promptTokens <= 0 && completionTokens <= 0) return 0m;
-        return (promptTokens * opts.InputPricePerMillionUsd
-                + completionTokens * opts.OutputPricePerMillionUsd) / 1_000_000m;
-    }
-
-    private TimeSpan? ParseRetryAfter(HttpResponseMessage response)
-    {
-        TimeSpan? raw = null;
-        if (response.Headers.RetryAfter?.Delta is { } delta && delta > TimeSpan.Zero)
-            raw = delta;
-        else if (response.Headers.RetryAfter?.Date is { } date)
-        {
-            var wait = date - DateTimeOffset.UtcNow;
-            if (wait > TimeSpan.Zero) raw = wait;
-        }
-        else if (response.Headers.TryGetValues("Retry-After", out var values))
-        {
-            var text = values.FirstOrDefault();
-            if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds)
-                && seconds > 0)
-                raw = TimeSpan.FromSeconds(seconds);
-            else if (DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture,
-                         DateTimeStyles.AssumeUniversal, out var when))
-            {
-                var wait = when - DateTimeOffset.UtcNow;
-                if (wait > TimeSpan.Zero) raw = wait;
-            }
-        }
-
-        return raw is null ? null : CapRetryAfter(raw.Value);
-    }
+    internal static string Redact(string? text, string? apiKey = null)
+        => PageFitScorerSupport.Redact(text, apiKey);
 
     private void LogHttpError(int status, string body)
     {
-        var snippet = Redact(body, TryGetApiKey());
+        var snippet = PageFitScorerSupport.Redact(body, TryGetApiKey());
         if (snippet.Length > 200) snippet = snippet[..200];
         logger.LogWarning("PageFit HTTP {Status}: {Body}", status, snippet);
     }
 
     private string? TryGetApiKey()
     {
-        var ai = aiOptions.Value;
-        if (string.IsNullOrWhiteSpace(ai.DefaultProvider)) return null;
-        return ai.Providers.TryGetValue(ai.DefaultProvider, out var c) ? c.ApiKey : null;
-    }
-
-    internal static string Redact(string? text, string? apiKey = null)
-    {
-        if (string.IsNullOrEmpty(text)) return string.Empty;
-        var result = text
-            .Replace("Authorization", "[redacted]", StringComparison.OrdinalIgnoreCase)
-            .Replace("Bearer ", "Bearer [redacted]", StringComparison.OrdinalIgnoreCase)
-            .Replace("api_key", "[redacted]", StringComparison.OrdinalIgnoreCase)
-            .Replace("apiKey", "[redacted]", StringComparison.OrdinalIgnoreCase);
-        if (!string.IsNullOrEmpty(apiKey))
-            result = result.Replace(apiKey, "[redacted]", StringComparison.Ordinal);
-        return result;
+        try
+        {
+            return PageFitScorerSupport.ResolveProvider(aiOptions.Value, pageFitOptions.Value).ApiKey;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

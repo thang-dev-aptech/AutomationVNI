@@ -323,6 +323,7 @@ public sealed class LlmLogprobPageFitScorerTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["PageFit:Mode"] = "Logprobs",
                 ["PageFit:Model"] = "di-model",
                 ["PageFit:TopLogprobs"] = "5",
                 ["PageFit:TimeoutSeconds"] = "42",
@@ -349,8 +350,49 @@ public sealed class LlmLogprobPageFitScorerTests
 
         // M16: typed HttpClient riêng với TimeoutSeconds từ PageFit
         var factory = sp.GetRequiredService<IHttpClientFactory>();
-        var client = factory.CreateClient(typeof(IPageFitScorer).Name);
+        var client = factory.CreateClient(nameof(LlmLogprobPageFitScorer));
         Assert.Equal(TimeSpan.FromSeconds(42), client.Timeout);
+    }
+
+    [Fact]
+    public async Task PageFitProviderOverride_UsesNamedProvider()
+    {
+        var handler = new ScriptedHandler(LogprobJson(0.9, 0.1));
+        var ai = Options.Create(new AiProvidersOptions
+        {
+            DefaultProvider = "default-prov",
+            Providers = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["default-prov"] = new AiProviderConfig
+                {
+                    BaseUrl = "http://default.test/v1",
+                    ApiKey = "default-key",
+                    ChatCompletionsPath = "/chat/completions",
+                    DefaultTextModel = "default-model",
+                },
+                ["override-prov"] = new AiProviderConfig
+                {
+                    BaseUrl = "http://override.test/v1",
+                    ApiKey = SecretKey,
+                    ChatCompletionsPath = "/chat/completions",
+                    DefaultTextModel = "override-model",
+                },
+            },
+        });
+        var pageFit = Options.Create(new PageFitOptions
+        {
+            Provider = "override-prov",
+            Model = "",
+            MinDelayBetweenRequestsMs = 0,
+        });
+        var svc = new LlmLogprobPageFitScorer(
+            new HttpClient(handler), ai, pageFit, TimeProvider.System, new CollectingLogger());
+
+        await svc.ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
+
+        Assert.Equal("http://override.test/v1/chat/completions", handler.Requests[0].Url);
+        using var doc = JsonDocument.Parse(handler.Requests[0].Body);
+        Assert.Equal("override-model", doc.RootElement.GetProperty("model").GetString());
     }
 
     [Fact]

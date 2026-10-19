@@ -1,7 +1,7 @@
 # Full Media Pipeline cho Chiến dịch — Thiết kế
 
-Ngày: 2026-10-16 · Nhánh: Implement-CRM · Trạng thái: bản 2 (đổi bộ chấm điểm sang LLM có logprobs,
-bỏ bước dịch hồ sơ page) — chờ người dùng duyệt lại
+Ngày: 2026-10-16 · Nhánh: Implement-CRM · Trạng thái: bản 3 (2026-10-19: mặc định bỏ phiếu nhiều
+model vì vietai không trả logprobs; giữ Mode=Logprobs cho provider có logprobs)
 
 ## 1. Mục tiêu
 
@@ -23,7 +23,7 @@ lấy ảnh khác. Toàn bộ quá trình **tự động, không có bước duy
 | D7 | Mô tả ảnh và hồ sơ page đều bằng **tiếng Việt** (**bỏ bước dịch sang tiếng Anh**, vì lý do dịch chỉ là Jev chưa hỗ trợ tiếng Việt). |
 | D9 | Worker **không được ảnh hưởng** tiến trình khác của app (mục 8). |
 | D10 | **Không có thao tác con người** trong quá trình (không duyệt tay, không nút đánh giá lại, không gán nhãn). Hệ thống tự kiểm tra chính nó (mục 7). |
-| D12 | Bộ chấm điểm là **LLM OpenAI-compatible có `logprobs`**, dùng **cùng provider đang cấu hình cho Vision** (`AiProviders:DefaultProvider`). Jev/Vercel AI Gateway bị loại: Gateway yêu cầu thẻ, ZDR chỉ có gói Pro, Jev không nằm trong gói miễn phí (đã thử thật: 403 ba lần). |
+| D12 | Bộ chấm điểm mặc định là **bỏ phiếu nhiều model trên văn bản** (`PageFit:Mode=Vote`): điểm = số YES / N model. Chế độ `Logprobs` (P(YES)/(P(YES)+P(NO))) được giữ cho provider có logprobs. Provider lấy từ `PageFit:Provider` hoặc `AiProviders:DefaultProvider`. Jev/Vercel AI Gateway bị loại. Smoke 2026-10-19: vietai trả HTTP 200 nhưng không có logprobs ở 8 model. |
 
 (D8 và D11 cũ — dịch hồ sơ page, Jev qua Vercel AI Gateway — đã bị thay thế bởi D7 và D12.)
 
@@ -43,8 +43,9 @@ Drive tree (MediaAsset) ──► Chọn ảnh kế tiếp (chưa đánh giá/ch
 Vision A ──► mô tả tiếng Việt có cấu trúc (lưu đệm theo ảnh)
         │       └─ đối chiếu tag cũ; unclear → thử model khác → Unusable
         ▼
-IPageFitScorer (LlmLogprobPageFitScorer): mỗi page một request chat completion,
-   trả đúng 1 token YES/NO, logprobs=true → điểm = P(YES)/(P(YES)+P(NO))
+IPageFitScorer (VotingPageFitScorer mặc định | LlmLogprobPageFitScorer):
+   Vote: mỗi page × mỗi model một request YES/NO → điểm = YES/N (tỉ lệ đồng thuận)
+   Logprobs: mỗi page một request logprobs → P(YES)/(P(YES)+P(NO))
         ├─ không page nào ≥ 94%  ──► Rejected
         ▼
 Vision B (model khác) ──► mô tả độc lập ──► chấm lại (lượt hai)
@@ -95,21 +96,26 @@ Tất cả không FK constraint (theo quy ước dự án); migration đủ cặ
 - `Unclear` hoặc `Confidence` thấp → thử model khác; sau số lần tối đa → `Unusable` (không bao giờ
   đăng).
 
-### 6.3 Chấm điểm (LLM có logprobs)
-- Giao diện `IPageFitScorer` (cài đặt: `LlmLogprobPageFitScorer`), thay được bằng model/provider
-  khác mà không đổi pipeline.
-- Mỗi page một request chat completion tới provider của Vision (`AiProviders:DefaultProvider`), có
-  thể ghi đè model bằng `PageFit:Model`: system prompt cố định + mô tả ảnh + hồ sơ page, hỏi ảnh có
-  phù hợp page không, **chỉ trả `YES` hoặc `NO`**, `max_tokens=1`, `temperature=0`, `logprobs=true`,
-  `top_logprobs=5`.
-- Điểm = P(YES)/(P(YES)+P(NO)) tính từ xác suất của các token `YES`/`NO` (không phân biệt hoa
-  thường, bỏ khoảng trắng) trong `top_logprobs`; không thấy token nào trong hai token đó thì lỗi tạm.
-- **Fail closed:** provider không trả `logprobs` (hoặc trả rỗng) là lỗi cấu hình **vĩnh viễn**: ảnh
-  giữ `Pending`, thông báo Admin/ContentManager, **không** quay sang dùng điểm model tự khai.
-- Đạt khi điểm **≥ 0,94**. Lượt hai (Vision B + chấm lại) chỉ chạy cho ảnh có ít nhất một page đạt ở
-  lượt một; page được nhận khi đạt ở **cả hai lượt**.
-- Request tuần tự, có khoảng nghỉ, timeout và retry riêng (429 thì tôn trọng `Retry-After`); chi phí
-  ước tính từ `usage` của response nhân đơn giá cấu hình, cộng vào bộ đếm theo ngày.
+### 6.3 Chấm điểm (bỏ phiếu nhiều model — mặc định; logprobs tùy chọn)
+- Giao diện `IPageFitScorer` không đổi; DI chọn `VotingPageFitScorer` khi `PageFit:Mode=Vote`
+  (mặc định) hoặc `LlmLogprobPageFitScorer` khi `Mode=Logprobs`. Mode khác → lỗi cấu hình vĩnh viễn
+  khi gọi. Pipeline/worker không đổi.
+- **Mode=Vote:** provider = `PageFit:Provider` hoặc `AiProviders:DefaultProvider`; danh sách
+  `PageFit:Models` (≥ `MinVoters`, mặc định 3 model khác nhau). Với mỗi page và mỗi model: một
+  request chat completion **chỉ văn bản** (mô tả ảnh + hồ sơ page có nhãn), system prompt cố định
+  chỉ trả `YES`/`NO`, `temperature=0`, `max_tokens=VoteMaxTokens` (mặc định 16), **không**
+  `logprobs`. Điểm page = số model trả YES / tổng số model — đây là **tỉ lệ đồng thuận**, không phải
+  xác suất. Với N≤16, ngưỡng 0,94 thực chất yêu cầu nhất trí tuyệt đối (2/3 không đạt). Đáp án
+  không phân tích được / rỗng / giải thích dài → lỗi tạm cho cả lần gọi (không điểm một phần, không
+  coi là YES). Ít hơn MinVoters / model trùng / tên rỗng → lỗi vĩnh viễn trước khi gọi mạng.
+- **Mode=Logprobs:** mỗi page một request với `logprobs=true`, `top_logprobs`, `max_tokens=1`;
+  điểm = P(YES)/(P(YES)+P(NO)). Thiếu logprobs → lỗi vĩnh viễn fail closed; **không** dùng điểm tự
+  khai. (Smoke 2026-10-19: vietai không trả logprobs ở 8 model đã thử.)
+- **Không gửi ảnh** / data URL / base64 cho bộ chấm. Đạt khi điểm **≥ 0,94** (`FitThreshold`). Lượt
+  hai (Vision B + chấm lại) chỉ chạy cho ảnh có ít nhất một page đạt ở lượt một; page được nhận khi
+  đạt ở **cả hai lượt**.
+- Request tuần tự, khoảng nghỉ `MinDelayBetweenRequestsMs`, timeout/retry riêng (429 tôn trọng
+  `Retry-After` có trần `MaxRetryAfterSeconds`); chi phí ước tính cộng từ `usage` mọi request.
 
 ### 6.4 Ảnh bị loại và tự chấm lại
 - `Rejected` chỉ đặt khi ảnh **thực sự được chấm** và không page nào đạt. Nếu không chấm được (hồ sơ
@@ -185,9 +191,10 @@ Trong `CampaignController`, `[Authorize(Roles="Admin,ContentManager")]` trên **
 
 `FullMediaPipeline` (Enabled=false, IntervalSeconds, MinFitScore=0.94, MaxImagesPerTick,
 MaxImagesPerDay, MaxDailyCostUsd, trần số lần chấm lại, ngưỡng cầu chì/kiểm chuẩn, VisionModelA,
-VisionModelB, VisionFallbackModel) và `PageFit` (Model tuỳ chọn ghi đè, TimeoutSeconds, TopLogprobs=5,
-MinDelayBetweenRequestsMs, MaxRetries, đơn giá token để ước tính chi phí). **Không có khoá API mới**:
-dùng khoá của `AiProviders` hiện có; không thêm khoá nào vào file được commit.
+VisionModelB, VisionFallbackModel) và `PageFit` (Mode=Vote|Logprobs, Provider, Models, MinVoters=3,
+VoteMaxTokens=16, Model ghi đè cho Logprobs, TimeoutSeconds, TopLogprobs=5,
+MinDelayBetweenRequestsMs, MaxRetries, MaxRetryAfterSeconds, đơn giá token). **Không có khoá API
+mới**: dùng khoá của `AiProviders` hiện có; không thêm khoá nào vào file được commit.
 
 ## 12. Giả định cần xác nhận
 
@@ -195,32 +202,26 @@ dùng khoá của `AiProviders` hiện có; không thêm khoá nào vào file đ
 2. "Loại ảnh" = đánh dấu trong bảng đánh giá, không xoá/di chuyển ảnh trên Drive.
 3. Danh sách page chấm điểm = kênh lẻ ∪ thành viên nhóm kênh của chiến dịch
    (`ResolveRunningChannelIdsAsync`), chỉ các page dùng được cho ảnh.
-4. **Provider hiện tại phải trả `logprobs`.** Chưa biết `vietai` (apithat.dev, model `gpt-6-sol`) có
-   hỗ trợ hay không; cần một request thử chỉ chứa chữ trước khi viết bộ chấm điểm. Nếu không hỗ trợ
-   thì đổi `PageFit` sang provider khác (ví dụ `openai`, tài liệu chính thức có logprobs) — cần thêm
-   khoá cho provider đó.
+4. **vietai không trả `logprobs`** (đã xác nhận smoke 2026-10-19 trên 8 model). Mặc định dùng
+   `Mode=Vote`. `Mode=Logprobs` chỉ khi đổi sang provider có logprobs (ví dụ openai) qua cấu hình.
 5. Model Vision B (khác Vision A) và mức chỉ số của kiểm chuẩn/cầu chì chốt bằng một lần chạy thử với
    ảnh/hồ sơ thật trước khi bật `Enabled` trên production.
 6. Dữ liệu gửi bộ chấm điểm chỉ là mô tả ảnh và hồ sơ page (không có ảnh, không có dữ liệu khách).
 
 ## 13. Kiểm thử (mọi test phải đỏ khi hoàn nguyên code)
 
-Backend (xUnit, HTTP TestServer): ngưỡng biên 0,939/0,94; tính điểm từ logprobs đúng (cả khi chỉ
-thấy một trong hai token); thiếu logprobs là lỗi vĩnh viễn, ảnh giữ Pending; đồng thuận hai lượt; một
-ảnh nhiều page tạo bài cùng khe giờ + độ lệch; không đăng lặp ảnh trên cùng page; Rejected không chấm
-lại khi `InputHash` không đổi, tự chấm lại khi hồ sơ page/kênh đổi; hồ sơ rỗng/provider lỗi → Pending
-(không Rejected); `ProfileHash` đổi đúng khi đổi trường liên quan; cầu chì và kiểm chuẩn tự dừng; tag
-lệch → model dự phòng → Unusable; cô lập worker (lỗi một ảnh, timeout, ghi đồng thời của người
-dùng, `Enabled=false` thì không gọi AI, mục kẹt được đưa về chờ); quyền 403 cho Viewer/Reviewer trên
-mọi endpoint mới; request tới bộ chấm điểm không chứa ảnh/data URL/dữ liệu khách;
+Backend (xUnit, HTTP TestServer): ngưỡng biên 0,939/0,94; Vote YES/N và 2/3 không đạt 0,94; chuẩn
+hoá đáp án YES/NO fail closed; Logprobs công thức + thiếu logprobs lỗi vĩnh viễn; đồng thuận hai
+lượt; một ảnh nhiều page tạo bài cùng khe giờ + độ lệch; không đăng lặp ảnh trên cùng page; Rejected
+không chấm lại khi `InputHash` không đổi; hồ sơ rỗng/provider lỗi → Pending; cầu chì/kiểm chuẩn; tag
+lệch → Unusable; cô lập worker; quyền 403; request chấm điểm không chứa ảnh/data URL;
 `dotnet ef migrations has-pending-model-changes` sạch.
 
 Frontend (vitest): form đổi theo chế độ; tab Ảnh hiển thị đúng; hai trường mới của hồ sơ page; test
 quét CSS mồ côi và quét emoji.
 
-Thủ công (người triển khai chạy, không phải người dùng): chạy app, tạo chiến dịch Full Media với vài
-ảnh Drive mẫu, kiểm bằng trình duyệt thật; một request thử chỉ chứa chữ tới provider để xác nhận
-`logprobs` (giả định 12.4).
+Thủ công: chạy app, tạo chiến dịch Full Media với vài ảnh Drive mẫu; smoke bỏ phiếu
+`scripts/fullmedia-vote-smoke.sh` (mỗi model một câu YES/NO tầm thường) — chỉ khi người dùng xác nhận.
 
 ## 14. Quản trị dự án và tách task
 
@@ -228,18 +229,16 @@ PCS requirement `FULLMEDIA-01` (invariant + AC đo được; `independent_review
 ranh giới dữ liệu, giao dịch DB/worker, tích hợp AI bên ngoài, migration). Plan, mỗi task có phạm vi ghi
 riêng, nối tiếp:
 t1 hồ sơ page (Topics/Exclusions + `PageProfileSnapshot`) · t2 mô tả ảnh (Vision) + lưu đệm ·
-t3 `IPageFitScorer` + `LlmLogprobPageFitScorer` · t4 worker pipeline + tạo bài ·
+t3 `IPageFitScorer` + Vote/Logprobs scorers · t4 worker pipeline + tạo bài ·
 t5 kiểm chuẩn tự động + cầu chì · t6 API · t7 giao diện · t8 review độc lập.
-t3 phụ thuộc kết quả request thử logprobs (giả định 12.4).
 
 ## 15. Rủi ro
 
-- **`logprobs` không có ở provider hiện tại**: giảm thiểu bằng fail closed (không đăng) và giao diện
-  `IPageFitScorer`; có thể chuyển sang `openai` chỉ bằng cấu hình `PageFit`.
-- **Điểm LLM thiếu hiệu chỉnh** (thường quá tự tin): giảm thiểu bằng đồng thuận hai model Vision và
-  kiểm chuẩn tự động (mục 7); nếu kiểm chuẩn cho thấy ngưỡng 94% không phân biệt được thì pipeline tự
-  tạm dừng chứ không đăng.
-- **Nhiều request hơn Jev** (mỗi page một request): giảm thiểu bằng model nhỏ, trần mỗi vòng/ngày và
-  trần chi phí.
+- **vietai không trả logprobs**: đã chuyển mặc định sang Vote; Logprobs vẫn fail closed nếu bật.
+- **Điểm bỏ phiếu là tỉ lệ đồng thuận thô** (không hiệu chỉnh): với N=3 chỉ nhất trí tuyệt đối đạt
+  0,94; giảm thiểu thêm bằng đồng thuận hai lượt Vision và kiểm chuẩn (mục 7).
+- **Model suy luận** có thể trả content rỗng với `VoteMaxTokens` nhỏ, hoặc từ chối `temperature=0`:
+  fail closed (lỗi tạm / bad_request); tăng `VoteMaxTokens` hoặc đổi model qua cấu hình.
+- **Nhiều request hơn** (N model × M page): giảm thiểu bằng trần mỗi vòng/ngày và trần chi phí.
 - **Tự động hoàn toàn**: có thể nhận nhầm; giảm thiểu bằng mục 7, không loại bỏ được hoàn toàn.
 - Nhãn kiểm chuẩn là nhãn yếu từ lịch sử đăng.
