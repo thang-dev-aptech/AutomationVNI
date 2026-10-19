@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -13,31 +12,54 @@ namespace Backend.Modules.Campaign.FullMedia.Scoring;
 /// Điểm page = số model trả YES / tổng số model — đây là <b>tỉ lệ đồng thuận</b>,
 /// không phải xác suất. Với N≤16 model, ngưỡng FitThreshold 0,94 nghĩa là nhất trí tuyệt đối.
 /// Không gửi ảnh/data URL; không dùng điểm tự khai.
+/// <para>
+/// Dừng sớm theo page (PageFit:EarlyExit, mặc định bật): sau mỗi phiếu, nếu
+/// (yes + còn_lại) / N không đạt <see cref="FullMediaPipelineOptions.MinFitScore"/>
+/// (so sánh chỉ qua <see cref="FitThreshold.Passes"/>) thì bỏ các phiếu còn lại của page đó.
+/// Điểm báo cáo vẫn là yes/N (phiếu bỏ tính như NO — cận dưới); nhận/loại không đổi vì page
+/// chắc chắn không đạt. Exhaustive=true hoặc EarlyExit=false: luôn gửi đủ N phiếu.
+/// </para>
 /// </summary>
 public sealed class VotingPageFitScorer(
     HttpClient http,
     IOptions<AiProvidersOptions> aiOptions,
     IOptions<PageFitOptions> pageFitOptions,
+    IOptions<FullMediaPipelineOptions> pipelineOptions,
     TimeProvider timeProvider,
     ILogger<VotingPageFitScorer> logger) : IPageFitScorer
 {
     internal const string SystemPrompt =
         "Reply with exactly one word: YES or NO.";
 
-    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
-
-    public async Task<PageFitResult> ScoreAsync(
+    public Task<PageFitResult> ScoreAsync(
         string imageStateText,
         IReadOnlyList<PageFitCandidate> pages,
         CancellationToken ct = default)
+        => ScoreCoreAsync(imageStateText, pages, exhaustive: false, ct);
+
+    public Task<PageFitResult> ScoreAsync(
+        string imageStateText,
+        IReadOnlyList<PageFitCandidate> pages,
+        PageFitScoreOptions options,
+        CancellationToken ct = default)
+        => ScoreCoreAsync(imageStateText, pages, exhaustive: options.Exhaustive, ct);
+
+    private async Task<PageFitResult> ScoreCoreAsync(
+        string imageStateText,
+        IReadOnlyList<PageFitCandidate> pages,
+        bool exhaustive,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(pages);
         if (pages.Count == 0)
             return new PageFitResult(new Dictionary<Guid, double>(), 0m, 0);
 
         var opts = pageFitOptions.Value;
+        var minScore = pipelineOptions.Value.MinFitScore;
+        var allowEarlyExit = opts.EarlyExit && !exhaustive;
         var config = PageFitScorerSupport.ResolveProvider(aiOptions.Value, opts);
         var voters = PageFitScorerSupport.ResolveDistinctVoters(opts);
+        var n = voters.Count;
         var url = PageFitScorerSupport.BuildUrl(config);
 
         var scores = new Dictionary<Guid, double>(pages.Count);
@@ -51,8 +73,10 @@ public sealed class VotingPageFitScorer(
             ct.ThrowIfCancellationRequested();
             var page = pages[p];
             var yesCount = 0;
+            var voted = 0;
+            var skipped = 0;
 
-            for (var v = 0; v < voters.Count; v++)
+            for (var v = 0; v < n; v++)
             {
                 ct.ThrowIfCancellationRequested();
                 if (requestIndex > 0 && opts.MinDelayBetweenRequestsMs > 0)
@@ -65,19 +89,32 @@ public sealed class VotingPageFitScorer(
                 requestIndex++;
                 totalPrompt += promptTokens;
                 totalCompletion += completionTokens;
+                voted++;
 
                 if (answer == "YES")
                     yesCount++;
                 else if (answer != "NO")
                     throw new PageFitTransientException("unparseable_answer", "PageFit vote answer was not YES/NO");
+
+                if (!allowEarlyExit)
+                    continue;
+
+                var remaining = n - voted;
+                // Điểm tối đa còn đạt được nếu mọi phiếu còn lại là YES.
+                var maxPossible = (double)(yesCount + remaining) / n;
+                if (!FitThreshold.Passes(maxPossible, minScore))
+                {
+                    skipped = remaining;
+                    break;
+                }
             }
 
-            // Tỉ lệ đồng thuận YES/N — không phải YES/(YES+NO) tách rời (cùng giá trị khi mọi phiếu hợp lệ).
-            var score = (double)yesCount / voters.Count;
+            // Cận dưới: phiếu bỏ = NO ⇒ yes/N (không phải yes/voted).
+            var score = (double)yesCount / n;
             scores[page.ChannelId] = score;
             logger.LogInformation(
-                "PageFit vote page={ChannelId} yes={Yes}/{Total} score={Score:F4}",
-                page.ChannelId, yesCount, voters.Count, score);
+                "PageFit vote page={ChannelId} yes={Yes} voted={Voted} skipped={Skipped} total={Total} score={Score:F4}",
+                page.ChannelId, yesCount, voted, skipped, n, score);
         }
 
         var cost = PageFitScorerSupport.EstimateCost(totalPrompt, totalCompletion, opts);

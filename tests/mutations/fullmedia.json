@@ -870,7 +870,7 @@
       "id": "VOTE1",
       "description": "Điểm Vote = số YES (không chia N)",
       "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
-      "original": "            var score = (double)yesCount / voters.Count;",
+      "original": "            var score = (double)yesCount / n;",
       "replacement": "            var score = (double)yesCount;",
       "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
       "expect_red": [
@@ -905,8 +905,8 @@
       "id": "VOTE4",
       "description": "Trả điểm một phần khi một request lỗi",
       "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
-      "original": "                var (answer, promptTokens, completionTokens, attempts) =\n                    await VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct);\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n\n                if (answer == \"YES\")\n                    yesCount++;\n                else if (answer != \"NO\")\n                    throw new PageFitTransientException(\"unparseable_answer\", \"PageFit vote answer was not YES/NO\");",
-      "replacement": "                string answer = \"NO\";\n                try {\n                var (a, promptTokens, completionTokens, attempts) =\n                    await VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct);\n                answer = a;\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n                } catch (PageFitTransientException) { requestIndex++; }\n\n                if (answer == \"YES\")\n                    yesCount++;",
+      "original": "                var (answer, promptTokens, completionTokens, attempts) =\n                    await VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct);\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n                voted++;\n\n                if (answer == \"YES\")\n                    yesCount++;\n                else if (answer != \"NO\")\n                    throw new PageFitTransientException(\"unparseable_answer\", \"PageFit vote answer was not YES/NO\");",
+      "replacement": "                string answer = \"NO\";\n                try {\n                var (a, promptTokens, completionTokens, attempts) =\n                    await VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct);\n                answer = a;\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n                voted++;\n                } catch (PageFitTransientException) { requestIndex++; voted++; }\n\n                if (answer == \"YES\")\n                    yesCount++;",
       "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
       "expect_red": [
         "OneVoterFails_NoPartialScores"
@@ -949,8 +949,8 @@
       "id": "VOTE8",
       "description": "Chạy phiếu song song",
       "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
-      "original": "            for (var v = 0; v < voters.Count; v++)\n            {\n                ct.ThrowIfCancellationRequested();\n                if (requestIndex > 0 && opts.MinDelayBetweenRequestsMs > 0)\n                    await Task.Delay(TimeSpan.FromMilliseconds(opts.MinDelayBetweenRequestsMs), timeProvider, ct);\n\n                var model = voters[v];\n                var (answer, promptTokens, completionTokens, attempts) =\n                    await VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct);\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n\n                if (answer == \"YES\")\n                    yesCount++;\n                else if (answer != \"NO\")\n                    throw new PageFitTransientException(\"unparseable_answer\", \"PageFit vote answer was not YES/NO\");\n            }",
-      "replacement": "            var votes = await Task.WhenAll(voters.Select(model => VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct)));\n            foreach (var (answer, promptTokens, completionTokens, attempts) in votes)\n            {\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n                if (answer == \"YES\") yesCount++;\n            }",
+      "original": "            for (var v = 0; v < n; v++)\n            {\n                ct.ThrowIfCancellationRequested();\n                if (requestIndex > 0 && opts.MinDelayBetweenRequestsMs > 0)\n                    await Task.Delay(TimeSpan.FromMilliseconds(opts.MinDelayBetweenRequestsMs), timeProvider, ct);\n\n                var model = voters[v];\n                var (answer, promptTokens, completionTokens, attempts) =\n                    await VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct);\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n                voted++;\n\n                if (answer == \"YES\")\n                    yesCount++;\n                else if (answer != \"NO\")\n                    throw new PageFitTransientException(\"unparseable_answer\", \"PageFit vote answer was not YES/NO\");\n\n                if (!allowEarlyExit)\n                    continue;\n\n                var remaining = n - voted;\n                // Điểm tối đa còn đạt được nếu mọi phiếu còn lại là YES.\n                var maxPossible = (double)(yesCount + remaining) / n;\n                if (!FitThreshold.Passes(maxPossible, minScore))\n                {\n                    skipped = remaining;\n                    break;\n                }\n            }",
+      "replacement": "            var votes = await Task.WhenAll(voters.Select(model => VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct)));\n            foreach (var (answer, promptTokens, completionTokens, attempts) in votes)\n            {\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n                voted++;\n                if (answer == \"YES\") yesCount++;\n            }",
       "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
       "expect_red": [
         "RequestCount_IsModelsTimesPages_Sequential"
@@ -1088,6 +1088,164 @@
       "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
       "expect_red": [
         "Program_Calls_AddFullMediaPageFit"
+      ]
+    },
+    {
+      "id": "E1",
+      "description": "Dừng sớm khi chưa chắc (dùng yes/voted thay vì (yes+remaining)/N)",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "                var remaining = n - voted;\n                // Điểm tối đa còn đạt được nếu mọi phiếu còn lại là YES.\n                var maxPossible = (double)(yesCount + remaining) / n;\n                if (!FitThreshold.Passes(maxPossible, minScore))",
+      "replacement": "                var remaining = n - voted;\n                var maxPossible = (double)yesCount / voted;\n                if (!FitThreshold.Passes(maxPossible, minScore))",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "EarlyExit_NotTriggered_WhenThresholdStillReachable",
+        "EarlyExit_AcceptReject_EquivalentToExhaustive"
+      ]
+    },
+    {
+      "id": "E2",
+      "description": "Bỏ dừng sớm (luôn gửi đủ)",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "        var allowEarlyExit = opts.EarlyExit && !exhaustive;",
+      "replacement": "        var allowEarlyExit = false;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "EarlyExit_FirstNo_SkipsRemainingVotes_ForThatPage"
+      ]
+    },
+    {
+      "id": "E3",
+      "description": "Dừng sớm bỏ cả page kế tiếp (nhầm phạm vi)",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "                    skipped = remaining;\n                    break;",
+      "replacement": "                    skipped = remaining;\n                    p = pages.Count;\n                    break;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "EarlyExit_PerPage_IndependentAcrossPages"
+      ]
+    },
+    {
+      "id": "E4",
+      "description": "Cận trên tính sai (thiếu +remaining)",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "                var maxPossible = (double)(yesCount + remaining) / n;",
+      "replacement": "                var maxPossible = (double)yesCount / n;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "EarlyExit_NotTriggered_WhenThresholdStillReachable",
+        "EarlyExit_AllYes_RunsAllVotes_ScoreOne"
+      ]
+    },
+    {
+      "id": "E5",
+      "description": "So sánh bằng toán tử riêng thay vì FitThreshold.Passes",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "                if (!FitThreshold.Passes(maxPossible, minScore))",
+      "replacement": "                if (!(maxPossible >= minScore))",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "Threshold_SingleComparisonSite_UsesFitThresholdPasses"
+      ]
+    },
+    {
+      "id": "E6",
+      "description": "Ngưỡng đọc từ hằng 0.94 thay vì FullMediaPipelineOptions.MinFitScore",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "        var minScore = pipelineOptions.Value.MinFitScore;",
+      "replacement": "        var minScore = 0.94;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "Threshold_SingleComparisonSite_UsesFitThresholdPasses",
+        "EarlyExit_NotTriggered_WhenThresholdStillReachable"
+      ]
+    },
+    {
+      "id": "E7",
+      "description": "Điểm báo cáo = yes/voted",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "            var score = (double)yesCount / n;",
+      "replacement": "            var score = voted == 0 ? 0 : (double)yesCount / voted;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "EarlyExit_ScoreIsLowerBound_YesOverN"
+      ]
+    },
+    {
+      "id": "E8",
+      "description": "Exhaustive bị bỏ qua",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "        var allowEarlyExit = opts.EarlyExit && !exhaustive;",
+      "replacement": "        var allowEarlyExit = opts.EarlyExit;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "Exhaustive_AlwaysSendsAllVotes"
+      ]
+    },
+    {
+      "id": "E9",
+      "description": "EarlyExit=false vẫn dừng sớm",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "        var allowEarlyExit = opts.EarlyExit && !exhaustive;",
+      "replacement": "        var allowEarlyExit = !exhaustive;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "EarlyExitDisabled_ByOption_SendsAllVotes"
+      ]
+    },
+    {
+      "id": "E10",
+      "description": "Bỏ kiểm đáp án rác ở phiếu đã gửi",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "                if (answer == \"YES\")\n                    yesCount++;\n                else if (answer != \"NO\")\n                    throw new PageFitTransientException(\"unparseable_answer\", \"PageFit vote answer was not YES/NO\");",
+      "replacement": "                if (answer == \"YES\")\n                    yesCount++;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "EarlyExit_UnparseableVoteBeforeExit_StillTransient",
+        "UnparseableAnswer_Transient_NoPartialScores"
+      ]
+    },
+    {
+      "id": "E11",
+      "description": "Nghỉ thừa cho phiếu bị bỏ",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "                if (requestIndex > 0 && opts.MinDelayBetweenRequestsMs > 0)\n                    await Task.Delay(TimeSpan.FromMilliseconds(opts.MinDelayBetweenRequestsMs), timeProvider, ct);\n\n                var model = voters[v];",
+      "replacement": "                if (opts.MinDelayBetweenRequestsMs > 0)\n                    await Task.Delay(TimeSpan.FromMilliseconds(opts.MinDelayBetweenRequestsMs), timeProvider, ct);\n\n                var model = voters[v];",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "EarlyExit_DelayAppliedBetweenSentRequestsOnly"
+      ]
+    },
+    {
+      "id": "E12",
+      "description": "RequestCount đếm phiếu bị bỏ",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "                    skipped = remaining;\n                    break;",
+      "replacement": "                    skipped = remaining;\n                    requestCount += remaining;\n                    break;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "EarlyExit_FirstNo_SkipsRemainingVotes_ForThatPage"
+      ]
+    },
+    {
+      "id": "E13",
+      "description": "Chi phí cộng phiếu bị bỏ",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "                    skipped = remaining;\n                    break;",
+      "replacement": "                    skipped = remaining;\n                    totalPrompt += remaining * 100;\n                    break;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "EarlyExit_CostCountsOnlySentRequests"
+      ]
+    },
+    {
+      "id": "E14",
+      "description": "DI không đăng ký FullMediaPipelineOptions cho bộ chấm",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/FullMediaPageFitServiceCollectionExtensions.cs",
+      "original": "        services.Configure<FullMediaPipelineOptions>(\n            configuration.GetSection(FullMediaPipelineOptions.SectionName));\n",
+      "replacement": "\n",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "Di_ResolvesFullMediaPipelineOptions_ForVotingScorer"
       ]
     }
   ]

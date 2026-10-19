@@ -41,14 +41,18 @@ public sealed class VotingPageFitScorerTests
     [Fact]
     public async Task VoteScore_OneYes_ThirdOrZero()
     {
+        // EarlyExit=true: YES+NO → dừng (max 2/3 < 0.94); điểm cận dưới vẫn 1/3.
         var one = await CreateScorer(new ScriptedHandler(VoteJson("YES"), VoteJson("NO"), VoteJson("NO")))
             .ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
         Assert.Equal(1.0 / 3.0, one.Scores[PageA], 1e-9);
+        Assert.Equal(2, one.RequestCount);
         Assert.False(FitThreshold.Passes(one.Scores[PageA], FitThreshold.DefaultMinFitScore));
 
+        // NO đầu → dừng ngay; điểm 0.
         var zero = await CreateScorer(new ScriptedHandler(VoteJson("NO"), VoteJson("NO"), VoteJson("NO")))
             .ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
         Assert.Equal(0.0, zero.Scores[PageA], 1e-9);
+        Assert.Equal(1, zero.RequestCount);
         Assert.False(FitThreshold.Passes(zero.Scores[PageA], FitThreshold.DefaultMinFitScore));
     }
 
@@ -127,9 +131,11 @@ public sealed class VotingPageFitScorerTests
     [Fact]
     public async Task RequestShape_Vote_NoLogprobs_CorrectModels()
     {
+        // Exhaustive: cần đủ 3 request để kiểm shape từng model (YES+NO sẽ early-exit).
         var handler = new ScriptedHandler(VoteJson("YES"), VoteJson("NO"), VoteJson("YES"));
         await CreateScorer(handler, voteMaxTokens: 16)
-            .ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
+            .ScoreAsync("S", [new PageFitCandidate(PageA, "P")],
+                new PageFitScoreOptions { Exhaustive = true }, default);
 
         Assert.Equal(3, handler.Requests.Count);
         for (var i = 0; i < 3; i++)
@@ -150,6 +156,7 @@ public sealed class VotingPageFitScorerTests
     [Fact]
     public async Task RequestCount_IsModelsTimesPages_Sequential()
     {
+        // Tất cả YES → không dừng sớm; vẫn N*M request tuần tự.
         var time = new RecordingTimeProvider();
         var bodies = Enumerable.Range(0, 6).Select(_ => VoteJson("YES")).ToArray();
         var handler = new ConcurrencyTrackingHandler(bodies);
@@ -211,6 +218,7 @@ public sealed class VotingPageFitScorerTests
             new HttpClient(handler),
             ai,
             Options.Create(new PageFitOptions { Models = [..DefaultVoters], MinVoters = 3 }),
+            Options.Create(new FullMediaPipelineOptions()),
             TimeProvider.System,
             new CollectingLogger());
 
@@ -251,7 +259,8 @@ public sealed class VotingPageFitScorerTests
             MinDelayBetweenRequestsMs = 0,
         });
         var svc = new VotingPageFitScorer(
-            new HttpClient(handler), ai, pageFit, TimeProvider.System, new CollectingLogger());
+            new HttpClient(handler), ai, pageFit, Options.Create(new FullMediaPipelineOptions()),
+            TimeProvider.System, new CollectingLogger());
 
         await svc.ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
         Assert.All(handler.Requests, r => Assert.Equal("http://override.test/v1/chat/completions", r.Url));
@@ -373,6 +382,7 @@ public sealed class VotingPageFitScorerTests
     [Fact]
     public async Task MultiPage_MapsChannelIdToScore()
     {
+        // Page B: YES+NO → early exit (bỏ phiếu 3); RequestCount=5, điểm cận dưới 1/3.
         var handler = new ScriptedHandler(
             VoteJson("YES"), VoteJson("YES"), VoteJson("YES"),
             VoteJson("YES"), VoteJson("NO"), VoteJson("NO"));
@@ -382,7 +392,7 @@ public sealed class VotingPageFitScorerTests
 
         Assert.Equal(1.0, result.Scores[PageA], 1e-9);
         Assert.Equal(1.0 / 3.0, result.Scores[PageB], 1e-9);
-        Assert.Equal(6, result.RequestCount);
+        Assert.Equal(5, result.RequestCount);
     }
 
     [Fact]
@@ -476,6 +486,221 @@ public sealed class VotingPageFitScorerTests
         Assert.Equal("invalid_mode", ex.ReasonCode);
     }
 
+    [Fact]
+    public void Di_ResolvesFullMediaPipelineOptions_ForVotingScorer()
+    {
+        using var sp = BuildDi(new Dictionary<string, string?>
+        {
+            ["PageFit:Mode"] = "Vote",
+            ["PageFit:Models:0"] = "a",
+            ["PageFit:Models:1"] = "b",
+            ["PageFit:Models:2"] = "c",
+            ["FullMediaPipeline:MinFitScore"] = "0.91",
+            ["AiProviders:DefaultProvider"] = "test",
+            ["AiProviders:Providers:test:BaseUrl"] = "http://ai.test",
+            ["AiProviders:Providers:test:ApiKey"] = "k",
+        });
+        Assert.IsType<VotingPageFitScorer>(sp.GetRequiredService<IPageFitScorer>());
+        Assert.Equal(0.91, sp.GetRequiredService<IOptions<FullMediaPipelineOptions>>().Value.MinFitScore);
+    }
+
+    [Fact]
+    public async Task EarlyExit_FirstNo_SkipsRemainingVotes_ForThatPage()
+    {
+        var handler = new ScriptedHandler(VoteJson("NO"), VoteJson("YES"), VoteJson("YES"));
+        var result = await CreateScorer(handler).ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
+        Assert.Equal(0.0, result.Scores[PageA], 1e-9);
+        Assert.Equal(1, result.RequestCount);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task EarlyExit_TwoNos_AfterTwoVotes_Stops()
+    {
+        // YES rồi NO: max còn lại 2/3 < 0.94 → dừng, bỏ phiếu 3.
+        var handler = new ScriptedHandler(VoteJson("YES"), VoteJson("NO"), VoteJson("YES"));
+        var result = await CreateScorer(handler).ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
+        Assert.Equal(1.0 / 3.0, result.Scores[PageA], 1e-9);
+        Assert.Equal(2, result.RequestCount);
+    }
+
+    [Fact]
+    public async Task EarlyExit_NotTriggered_WhenThresholdStillReachable()
+    {
+        // MinFitScore=0.5: sau YES+NO max=2/3 vẫn đạt → không dừng; gửi đủ 3.
+        var handler = new ScriptedHandler(VoteJson("YES"), VoteJson("NO"), VoteJson("NO"));
+        var result = await CreateScorer(handler, minFitScore: 0.5)
+            .ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
+        Assert.Equal(1.0 / 3.0, result.Scores[PageA], 1e-9);
+        Assert.Equal(3, result.RequestCount);
+    }
+
+    [Fact]
+    public async Task EarlyExit_AllYes_RunsAllVotes_ScoreOne()
+    {
+        var handler = new ScriptedHandler(VoteJson("YES"), VoteJson("YES"), VoteJson("YES"));
+        var result = await CreateScorer(handler).ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
+        Assert.Equal(1.0, result.Scores[PageA], 1e-9);
+        Assert.Equal(3, result.RequestCount);
+    }
+
+    [Fact]
+    public async Task EarlyExit_ScoreIsLowerBound_YesOverN()
+    {
+        // 1 YES + dừng sau NO: điểm = 1/3 (yes/N), không phải 1/2 (yes/voted).
+        var handler = new ScriptedHandler(VoteJson("YES"), VoteJson("NO"), VoteJson("YES"));
+        var result = await CreateScorer(handler).ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
+        Assert.Equal(1.0 / 3.0, result.Scores[PageA], 1e-9);
+        Assert.NotEqual(0.5, result.Scores[PageA]);
+    }
+
+    [Fact]
+    public async Task EarlyExit_AcceptReject_EquivalentToExhaustive()
+    {
+        double[] thresholds = [0.5, 2.0 / 3.0, 0.94, 1.0];
+        foreach (var n in new[] { 3, 4, 5 })
+        {
+            var models = Enumerable.Range(0, n).Select(i => $"m{i}").ToArray();
+            var total = 1 << n;
+            for (var mask = 0; mask < total; mask++)
+            {
+                var answers = Enumerable.Range(0, n)
+                    .Select(bit => (mask & (1 << bit)) != 0 ? "YES" : "NO")
+                    .ToArray();
+                foreach (var thr in thresholds)
+                {
+                    var bodies = answers.Select(a => VoteJson(a)).ToArray();
+                    var early = await CreateScorer(new ScriptedHandler(bodies), models: models, minFitScore: thr)
+                        .ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
+                    var full = await CreateScorer(new ScriptedHandler(bodies), models: models, minFitScore: thr)
+                        .ScoreAsync("S", [new PageFitCandidate(PageA, "P")],
+                            new PageFitScoreOptions { Exhaustive = true }, default);
+
+                    var passEarly = FitThreshold.Passes(early.Scores[PageA], thr);
+                    var passFull = FitThreshold.Passes(full.Scores[PageA], thr);
+                    Assert.Equal(passFull, passEarly);
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public async Task EarlyExit_PerPage_IndependentAcrossPages()
+    {
+        // Page1: NO → 1 request; Page2: 3 YES → 3 request; tổng 4.
+        var handler = new ScriptedHandler(
+            VoteJson("NO"),
+            VoteJson("YES"), VoteJson("YES"), VoteJson("YES"));
+        var result = await CreateScorer(handler).ScoreAsync("S", [
+            new PageFitCandidate(PageA, "A"),
+            new PageFitCandidate(PageB, "B")], default);
+        Assert.Equal(0.0, result.Scores[PageA], 1e-9);
+        Assert.Equal(1.0, result.Scores[PageB], 1e-9);
+        Assert.Equal(4, result.RequestCount);
+    }
+
+    [Fact]
+    public async Task EarlyExit_DelayAppliedBetweenSentRequestsOnly()
+    {
+        // Hai page, mỗi page NO đầu → 2 request thật → đúng 1 khoảng nghỉ.
+        var time = new RecordingTimeProvider();
+        var handler = new ScriptedHandler(VoteJson("NO"), VoteJson("NO"));
+        await CreateScorer(handler, timeProvider: time, minDelayMs: 150).ScoreAsync("S", [
+            new PageFitCandidate(PageA, "A"),
+            new PageFitCandidate(PageB, "B")], default);
+        Assert.Equal(1, time.Delays.Count(d => d.TotalMilliseconds >= 149));
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task EarlyExit_UnparseableVoteBeforeExit_StillTransient()
+    {
+        var handler = new ScriptedHandler(VoteJson("I cannot"), VoteJson("YES"), VoteJson("YES"));
+        var ex = await Assert.ThrowsAsync<PageFitTransientException>(() =>
+            CreateScorer(handler).ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default));
+        Assert.Equal("unparseable_answer", ex.ReasonCode);
+    }
+
+    [Fact]
+    public async Task EarlyExit_SkippedVotesNeverCalled()
+    {
+        var handler = new ScriptedHandler(VoteJson("NO"), VoteJson("YES"), VoteJson("YES"));
+        await CreateScorer(handler).ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
+        Assert.Single(handler.Requests);
+        using var doc = JsonDocument.Parse(handler.Requests[0].Body);
+        Assert.Equal("m1", doc.RootElement.GetProperty("model").GetString());
+    }
+
+    [Fact]
+    public async Task EarlyExit_CostCountsOnlySentRequests()
+    {
+        // 1 request (NO) với usage; không cộng phiếu bỏ.
+        var handler = new ScriptedHandler(
+            VoteJson("NO", 100, 2), VoteJson("YES", 100, 2), VoteJson("YES", 100, 2));
+        var result = await CreateScorer(handler, inputPrice: 1m, outputPrice: 2m)
+            .ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
+        Assert.Equal(0.000104m, result.EstimatedCostUsd);
+        Assert.Equal(1, result.RequestCount);
+    }
+
+    [Fact]
+    public async Task Exhaustive_AlwaysSendsAllVotes()
+    {
+        var handler = new ScriptedHandler(
+            VoteJson("NO"), VoteJson("YES"), VoteJson("YES"),
+            VoteJson("NO"), VoteJson("NO"), VoteJson("YES"));
+        var result = await CreateScorer(handler).ScoreAsync("S", [
+            new PageFitCandidate(PageA, "A"),
+            new PageFitCandidate(PageB, "B")],
+            new PageFitScoreOptions { Exhaustive = true }, default);
+        Assert.Equal(6, result.RequestCount);
+        Assert.Equal(2.0 / 3.0, result.Scores[PageA], 1e-9);
+        Assert.Equal(1.0 / 3.0, result.Scores[PageB], 1e-9);
+    }
+
+    [Fact]
+    public async Task EarlyExitDisabled_ByOption_SendsAllVotes()
+    {
+        var handler = new ScriptedHandler(VoteJson("NO"), VoteJson("YES"), VoteJson("YES"));
+        var result = await CreateScorer(handler, earlyExit: false)
+            .ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
+        Assert.Equal(3, result.RequestCount);
+        Assert.Equal(2.0 / 3.0, result.Scores[PageA], 1e-9);
+    }
+
+    [Fact]
+    public void Threshold_SingleComparisonSite_UsesFitThresholdPasses()
+    {
+        var root = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var scoringDir = Path.Combine(root, "backend", "Modules", "Campaign", "FullMedia", "Scoring");
+        Assert.True(Directory.Exists(scoringDir));
+        var usesPasses = false;
+        foreach (var file in Directory.GetFiles(scoringDir, "*.cs"))
+        {
+            var text = File.ReadAllText(file);
+            if (text.Contains("FitThreshold.Passes", StringComparison.Ordinal))
+                usesPasses = true;
+            // Không so sánh điểm/ngưỡng bằng toán tử riêng trong Scoring.
+            foreach (var line in text.Split('\n'))
+            {
+                var t = line.Trim();
+                if (t.StartsWith("//") || t.StartsWith("*") || t.StartsWith("///")) continue;
+                if (t.Contains("MaxRetryAfter", StringComparison.Ordinal)) continue;
+                if (t.Contains("status >=", StringComparison.Ordinal)) continue;
+                if (t.Contains("MaxRetries", StringComparison.Ordinal)) continue;
+                Assert.False(
+                    System.Text.RegularExpressions.Regex.IsMatch(t, @"maxPossible\s*>=|score\s*>=|minScore\s*<=|>=\s*minScore"),
+                    $"Raw threshold compare in {Path.GetFileName(file)}: {t}");
+            }
+        }
+
+        Assert.True(usesPasses, "Voting early-exit must use FitThreshold.Passes");
+        var voteSrc = File.ReadAllText(Path.Combine(scoringDir, "VotingPageFitScorer.cs"));
+        Assert.Contains("pipelineOptions.Value.MinFitScore", voteSrc);
+        Assert.DoesNotContain("0.94", voteSrc);
+    }
+
     // --- helpers ---
 
     private static ServiceProvider BuildDi(Dictionary<string, string?> values)
@@ -500,9 +725,11 @@ public sealed class VotingPageFitScorerTests
         ILogger<VotingPageFitScorer>? logger = null,
         int maxRetryAfterSeconds = 60,
         int voteMaxTokens = 16,
-        string provider = "")
+        string provider = "",
+        bool earlyExit = true,
+        double minFitScore = FitThreshold.DefaultMinFitScore)
         => CreateScorer(new HttpClient(handler), models, maxRetries, minDelayMs, inputPrice, outputPrice,
-            timeProvider, logger, maxRetryAfterSeconds, voteMaxTokens, provider);
+            timeProvider, logger, maxRetryAfterSeconds, voteMaxTokens, provider, earlyExit, minFitScore);
 
     private static VotingPageFitScorer CreateScorer(
         HttpClient http,
@@ -515,7 +742,9 @@ public sealed class VotingPageFitScorerTests
         ILogger<VotingPageFitScorer>? logger = null,
         int maxRetryAfterSeconds = 60,
         int voteMaxTokens = 16,
-        string provider = "")
+        string provider = "",
+        bool earlyExit = true,
+        double minFitScore = FitThreshold.DefaultMinFitScore)
     {
         var ai = Options.Create(new AiProvidersOptions
         {
@@ -539,6 +768,7 @@ public sealed class VotingPageFitScorerTests
             Models = [..(models ?? DefaultVoters)],
             MinVoters = 3,
             VoteMaxTokens = voteMaxTokens,
+            EarlyExit = earlyExit,
             TimeoutSeconds = 60,
             MinDelayBetweenRequestsMs = minDelayMs,
             MaxRetries = maxRetries,
@@ -546,8 +776,10 @@ public sealed class VotingPageFitScorerTests
             InputPricePerMillionUsd = inputPrice,
             OutputPricePerMillionUsd = outputPrice,
         });
+
+        var pipeline = Options.Create(new FullMediaPipelineOptions { MinFitScore = minFitScore });
         return new VotingPageFitScorer(
-            http, ai, pageFit, timeProvider ?? TimeProvider.System, logger ?? new CollectingLogger());
+            http, ai, pageFit, pipeline, timeProvider ?? TimeProvider.System, logger ?? new CollectingLogger());
     }
 
     private static string VoteJson(string content, int prompt = 10, int completion = 1)

@@ -11,6 +11,9 @@ public static class FullMediaPageFitServiceCollectionExtensions
         IConfiguration configuration)
     {
         services.Configure<PageFitOptions>(configuration.GetSection(PageFitOptions.SectionName));
+        // VotingPageFitScorer cần MinFitScore từ FullMediaPipeline — đăng ký cả khi gọi PageFit riêng.
+        services.Configure<FullMediaPipelineOptions>(
+            configuration.GetSection(FullMediaPipelineOptions.SectionName));
 
         services.AddHttpClient<VotingPageFitScorer>((sp, client) => ApplyTimeout(sp, client));
         services.AddHttpClient<LlmLogprobPageFitScorer>((sp, client) => ApplyTimeout(sp, client));

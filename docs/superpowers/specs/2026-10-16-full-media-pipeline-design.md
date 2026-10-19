@@ -97,9 +97,11 @@ Tất cả không FK constraint (theo quy ước dự án); migration đủ cặ
   đăng).
 
 ### 6.3 Chấm điểm (bỏ phiếu nhiều model — mặc định; logprobs tùy chọn)
-- Giao diện `IPageFitScorer` không đổi; DI chọn `VotingPageFitScorer` khi `PageFit:Mode=Vote`
-  (mặc định) hoặc `LlmLogprobPageFitScorer` khi `Mode=Logprobs`. Mode khác → lỗi cấu hình vĩnh viễn
-  khi gọi. Pipeline/worker không đổi.
+- Giao diện `IPageFitScorer.ScoreAsync(text, pages, ct)` giữ nguyên chữ ký (pipeline/worker gọi
+  phương thức này). Thêm overload `ScoreAsync(..., PageFitScoreOptions, ct)` với
+  `Exhaustive` (default interface method gọi lại phương thức cũ; Vote ghi đè). DI chọn
+  `VotingPageFitScorer` khi `PageFit:Mode=Vote` (mặc định) hoặc `LlmLogprobPageFitScorer` khi
+  `Mode=Logprobs`. Mode khác → lỗi cấu hình vĩnh viễn khi gọi.
 - **Mode=Vote:** provider = `PageFit:Provider` hoặc `AiProviders:DefaultProvider`; danh sách
   `PageFit:Models` (≥ `MinVoters`, mặc định 3 model khác nhau). Với mỗi page và mỗi model: một
   request chat completion **chỉ văn bản** (mô tả ảnh + hồ sơ page có nhãn), system prompt cố định
@@ -108,14 +110,21 @@ Tất cả không FK constraint (theo quy ước dự án); migration đủ cặ
   xác suất. Với N≤16, ngưỡng 0,94 thực chất yêu cầu nhất trí tuyệt đối (2/3 không đạt). Đáp án
   không phân tích được / rỗng / giải thích dài → lỗi tạm cho cả lần gọi (không điểm một phần, không
   coi là YES). Ít hơn MinVoters / model trùng / tên rỗng → lỗi vĩnh viễn trước khi gọi mạng.
+- **Dừng sớm theo page** (`PageFit:EarlyExit=true` mặc định): sau mỗi phiếu, nếu điểm tối đa còn đạt
+  được `(yes + còn_lại) / N` không đạt `FullMediaPipeline:MinFitScore` (so sánh **chỉ** qua
+  `FitThreshold.Passes`) thì bỏ các phiếu còn lại của page đó. Điểm báo cáo = `yes / N` (phiếu bỏ
+  tính như NO — cận dưới); nhận/loại không đổi vì page chắc chắn không đạt. Log ghi
+  `yes/voted/skipped` (không log hồ sơ/mô tả). `Exhaustive=true` hoặc `EarlyExit=false`: luôn gửi
+  đủ N phiếu (kiểm chuẩn t5 cần xếp hạng dùng Exhaustive).
 - **Mode=Logprobs:** mỗi page một request với `logprobs=true`, `top_logprobs`, `max_tokens=1`;
   điểm = P(YES)/(P(YES)+P(NO)). Thiếu logprobs → lỗi vĩnh viễn fail closed; **không** dùng điểm tự
-  khai. (Smoke 2026-10-19: vietai không trả logprobs ở 8 model đã thử.)
-- **Không gửi ảnh** / data URL / base64 cho bộ chấm. Đạt khi điểm **≥ 0,94** (`FitThreshold`). Lượt
-  hai (Vision B + chấm lại) chỉ chạy cho ảnh có ít nhất một page đạt ở lượt một; page được nhận khi
-  đạt ở **cả hai lượt**.
-- Request tuần tự, khoảng nghỉ `MinDelayBetweenRequestsMs`, timeout/retry riêng (429 tôn trọng
-  `Retry-After` có trần `MaxRetryAfterSeconds`); chi phí ước tính cộng từ `usage` mọi request.
+  khai. (Smoke 2026-10-19: vietai không trả logprobs ở 8 model đã thử.) Exhaustive không có tác dụng.
+- **Không gửi ảnh** / data URL / base64 cho bộ chấm. Đạt khi điểm **≥** ngưỡng cấu hình
+  (`FitThreshold`). Lượt hai (Vision B + chấm lại) chỉ chạy cho ảnh có ít nhất một page đạt ở lượt
+  một; page được nhận khi đạt ở **cả hai lượt**.
+- Request tuần tự, khoảng nghỉ `MinDelayBetweenRequestsMs` giữa mọi cặp request **thật** đã gửi,
+  timeout/retry riêng (429 tôn trọng `Retry-After` có trần); chi phí/`RequestCount` chỉ cộng request
+  thật (không đếm phiếu bỏ).
 
 ### 6.4 Ảnh bị loại và tự chấm lại
 - `Rejected` chỉ đặt khi ảnh **thực sự được chấm** và không page nào đạt. Nếu không chấm được (hồ sơ

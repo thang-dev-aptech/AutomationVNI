@@ -27,6 +27,12 @@ public sealed class PageFitOptions
     /// </summary>
     public int VoteMaxTokens { get; set; } = 16;
 
+    /// <summary>
+    /// Khi true (mặc định), Vote dừng sớm theo page nếu điểm tối đa còn đạt được
+    /// không vượt ngưỡng FullMediaPipeline:MinFitScore. Exhaustive=true bỏ qua cờ này.
+    /// </summary>
+    public bool EarlyExit { get; set; } = true;
+
     public int TimeoutSeconds { get; set; } = 60;
 
     public int TopLogprobs { get; set; } = 5;
