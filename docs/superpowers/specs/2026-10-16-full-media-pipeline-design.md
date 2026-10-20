@@ -140,8 +140,34 @@ Tất cả không FK constraint (theo quy ước dự án); migration đủ cặ
   điểm dừng sớm vì `FullMediaPipeline:Enabled=false`.
 - **`Passed` đã lưu không quyết định nhận/loại.** Nhận/loại luôn tính lại bằng `FitThreshold.Passes`
   theo ngưỡng hiện tại: trong chấm lại (điểm gộp dùng lại + điểm mới) và trong đường chỉ-tạo-bài
-  (`LoadAcceptedChannelIdsFromScoresAsync` lấy mọi page có điểm lượt 2, `FilterPostOnlyStillValidPagesAsync`
-  quyết định theo `Passes` cho cả hai lượt; `HasPass2ScoresAsync` chỉ kiểm có dòng điểm lượt 2).
+  (`ClassifyCandidatesAsync` phân loại mọi page ứng viên hiện tại `IsScoreable` bằng
+  `FullMediaScoreReuse.Classify` cho cả hai lượt; `HasPass2ScoresAsync` chỉ là dấu hiệu chọn đường
+  chỉ-tạo-bài, không quyết định nhận/loại).
+- **Phân loại (V)/(R)/(U) khi chờ khe (`FullMediaScoreReuse.Classify`, hàm duy nhất).** Mỗi page ứng
+  viên hiện tại (`IsScoreable`, còn trong chiến dịch; page không còn `IsScoreable`/khỏi chiến dịch thì
+  bỏ khỏi ứng viên, không đăng) rơi vào đúng một nhóm: **(V) Valid** — `ProfileHash` khớp, cả hai lượt
+  tin được (`IsReusable`) và đều đạt ngưỡng hiện tại → đăng; **(R) Rejected-definitively** — hash khớp,
+  điểm tin được nhưng ít nhất một lượt không đạt ngưỡng hiện tại → không đăng (lượt 1 tin được và không
+  đạt là đủ loại); **(U) Unknown** — thiếu điểm, `ProfileHash` đổi/NULL, hoặc điểm dừng sớm mà cận trên
+  còn có thể đạt ở ngưỡng hiện tại (`IsReusable=false`, kể cả dữ liệu phiếu bất thường fail-closed) →
+  phải chấm lại trước khi quyết định. Mọi so sánh ngưỡng chỉ qua `FitThreshold.Passes` (không làm tròn).
+  Điểm có cả ba cột phiếu NULL được coi là điểm đầy đủ theo quy tắc cũ.
+- **Đường chỉ-tạo-bài gặp (U) (`scores_need_rescore`).** Nếu còn bất kỳ page (U), lượt đó **không đăng
+  page nào** (giữ cùng khe + cùng jitter cho mọi page của một ảnh), ảnh về `Pending` với
+  `ReasonCode="scores_need_rescore"` (thuộc tập lý do chờ: lần đầu không tính `MaxPendingAttempts`),
+  `NextAttemptAt` ngay, và cờ chỉ-tạo-bài được xoá (lý do chờ khe không còn dẫn đường). Lượt kế tiếp đi
+  đường **chấm chọn lọc** như chấm lại do đổi hồ sơ (chọn việc ở `PickNextWorkAsync`/`ProcessImageAsync`
+  dựa trên chính `ReasonCode` này): đọc mô tả đã lưu trong `MediaVisionProfiles` (**không gọi lại
+  Vision**), chỉ chấm lại page (U), dùng lại điểm tin được của page (V)/(R) (không tốn thêm request cho
+  chúng), Vision B chỉ chạy khi có page đạt lượt 1, giữ đồng thuận hai lượt, rồi đăng cùng một khe +
+  cùng jitter cho mọi page được nhận. Nếu không còn (U): đăng nhóm (V), bỏ nhóm (R); không có (V) thì
+  giữ hành vi cũ (`profile_changed_while_waiting` chờ chấm lại, hoặc `Rejected` khi đã loại dứt khoát
+  trong đường chấm thường).
+- **Chống vòng lặp `scores_need_rescore` (không thêm cột).** Sau lần chấm lại chọn lọc, nếu điểm đã lưu
+  vẫn còn page (U) (dữ liệu bất thường/lỗi lưu/bộ chấm trả điểm dừng sớm chưa tin được) thì lần quay lại
+  `scores_need_rescore` **thứ hai liên tiếp** (nhận biết qua `ReasonCode` đã lưu vẫn là
+  `scores_need_rescore` khi chốt trạng thái, dùng bộ đếm `Attempts` hiện có) **tính vào
+  `MaxPendingAttempts`**; hết số lần → `Failed` và thông báo một lần như các lý do `Pending` khác.
 - **Mode=Logprobs:** mỗi page một request với `logprobs=true`, `top_logprobs`, `max_tokens=1`;
   điểm = P(YES)/(P(YES)+P(NO)). Thiếu logprobs → lỗi vĩnh viễn fail closed; **không** dùng điểm tự
   khai. (Smoke 2026-10-19: vietai không trả logprobs ở 8 model đã thử.) Exhaustive không có tác dụng.
@@ -249,7 +275,7 @@ Backend (xUnit, HTTP TestServer): ngưỡng biên 0,939/0,94; Vote YES/N và 2/3
 hoá đáp án YES/NO fail closed; Logprobs công thức + thiếu logprobs lỗi vĩnh viễn; đồng thuận hai
 lượt; một ảnh nhiều page tạo bài cùng khe giờ + độ lệch; không đăng lặp ảnh trên cùng page; Rejected
 không chấm lại khi `InputHash` không đổi; kiểm phiếu được lưu và điểm dừng sớm chỉ dùng lại khi cận trên
-không đạt ngưỡng hiện tại (hạ ngưỡng ⇒ chấm lại; biên bằng ngưỡng; fail closed); hồ sơ rỗng/provider lỗi → Pending; cầu chì/kiểm chuẩn; tag
+không đạt ngưỡng hiện tại (hạ ngưỡng ⇒ chấm lại; biên bằng ngưỡng; fail closed); phân loại (V)/(R)/(U) và đường chỉ-tạo-bài gặp (U) → `scores_need_rescore` (không đăng lượt đó, chấm lại chọn lọc không gọi Vision, lần thứ hai liên tiếp tính `MaxPendingAttempts`); hồ sơ rỗng/provider lỗi → Pending; cầu chì/kiểm chuẩn; tag
 lệch → Unusable; cô lập worker; quyền 403; request chấm điểm không chứa ảnh/data URL;
 `dotnet ef migrations has-pending-model-changes` sạch.
 

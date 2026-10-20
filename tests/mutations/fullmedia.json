@@ -566,23 +566,24 @@
     {
       "id": "P1",
       "description": "Post-only không kiểm lại ProfileHash",
-      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
-      "original": "            if (!string.Equals(pass1.ProfileHash, profile.Hash, StringComparison.Ordinal)\n                || !string.Equals(pass2.ProfileHash, profile.Hash, StringComparison.Ordinal))\n                continue;\n",
-      "replacement": "",
-      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelinePostOnlyTests",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaScoreReuse.cs",
+      "original": "        if (string.IsNullOrEmpty(pass1.ProfileHash)\n            || !string.Equals(pass1.ProfileHash, currentProfileHash, StringComparison.Ordinal))\n            return FullMediaScoreClass.Unknown;",
+      "replacement": "        if (false)\n            return FullMediaScoreClass.Unknown;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelinePostOnlyTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPostOnlyRescoreTests",
       "expect_red": [
-        "PostOnly_ProfileChangedWhileWaiting_NoPost_RescoredNextRun_NoVisionCall",
-        "PostOnly_OnePageChanged_OnlyUnchangedPagePosted"
+        "Classify_ProfileHashChanged_U",
+        "PostOnly_ProfileChangedWhileWaiting_NoPost_RescoredNextRun_NoVisionCall"
       ]
     },
     {
       "id": "P2",
       "description": "Post-only không kiểm lại ngưỡng điểm",
-      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
-      "original": "            if (!FitThreshold.Passes(pass1.Score, minScore) || !FitThreshold.Passes(pass2.Score, minScore))\n                continue;\n",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaScoreReuse.cs",
+      "original": "        if (!FitThreshold.Passes(pass2.Score, currentMinFitScore))\n            return FullMediaScoreClass.RejectedDefinitively;",
       "replacement": "",
-      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelinePostOnlyTests",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelinePostOnlyTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPostOnlyRescoreTests",
       "expect_red": [
+        "Classify_DefinitiveFail_R",
         "PostOnly_ScoreDroppedBelowThreshold_NotPosted"
       ]
     },
@@ -590,7 +591,7 @@
       "id": "P3",
       "description": "Post-only không loại page đã hết IsScoreable",
       "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
-      "original": "            if (!profile.IsScoreable)\n                continue;\n",
+      "original": "            if (!profile.IsScoreable) continue;\n",
       "replacement": "",
       "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelinePostOnlyTests",
       "expect_red": [
@@ -601,7 +602,7 @@
       "id": "P4",
       "description": "Hồ sơ đổi lúc chờ khe không chuyển sang chấm lại (IsRescore=false)",
       "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
-      "original": "        var isRescore = IsProfileChangedWhileWaiting(priorReason);",
+      "original": "        var isRescore = IsProfileChangedWhileWaiting(priorReason) || IsScoresNeedRescore(priorReason);",
       "replacement": "        var isRescore = false;",
       "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelinePostOnlyTests",
       "expect_red": [
@@ -611,12 +612,20 @@
     {
       "id": "P5",
       "description": "Post-only chấp nhận điểm cũ không có ProfileHash",
-      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
-      "original": "            if (string.IsNullOrEmpty(pass1.ProfileHash) || string.IsNullOrEmpty(pass2.ProfileHash))\n                continue;\n            if (!string.Equals",
-      "replacement": "            if (string.IsNullOrEmpty(pass1.ProfileHash) || string.IsNullOrEmpty(pass2.ProfileHash))\n                { still.Add(channelId); continue; }\n            if (!string.Equals",
-      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelinePostOnlyTests",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaScoreReuse.cs",
+      "original": "        if (string.IsNullOrEmpty(pass1.ProfileHash)\n            || !string.Equals(pass1.ProfileHash, currentProfileHash, StringComparison.Ordinal))\n            return FullMediaScoreClass.Unknown;",
+      "replacement": "        if (false)\n            return FullMediaScoreClass.Unknown;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelinePostOnlyTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPostOnlyRescoreTests",
       "expect_red": [
-        "PostOnly_LegacyScoreWithoutProfileHash_NotPosted_Rescored"
+        "PostOnly_LegacyScoreWithoutProfileHash_NotPosted_Rescored",
+        "Classify_ProfileHashChanged_U"
+      ],
+      "extra_edits": [
+        {
+          "file": "backend/Modules/Campaign/FullMedia/FullMediaScoreReuse.cs",
+          "original": "        if (string.IsNullOrEmpty(pass2.ProfileHash)\n            || !string.Equals(pass2.ProfileHash, currentProfileHash, StringComparison.Ordinal))\n            return FullMediaScoreClass.Unknown;",
+          "replacement": "        if (false)\n            return FullMediaScoreClass.Unknown;"
+        }
       ]
     },
     {
@@ -1355,10 +1364,10 @@
     {
       "id": "u10",
       "description": "Dùng Passed đã lưu để chọn page nhận ở đường chỉ-tạo-bài",
-      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
-      "original": "                && s.Pass == 2)\n            .Select(s => s.SocialChannelId)",
-      "replacement": "                && s.Pass == 2\n                && s.Passed)\n            .Select(s => s.SocialChannelId)",
-      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreVotesTests",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaScoreReuse.cs",
+      "original": "        if (!FitThreshold.Passes(pass2.Score, currentMinFitScore))\n            return FullMediaScoreClass.RejectedDefinitively;",
+      "replacement": "        if (!pass2.Passed)\n            return FullMediaScoreClass.RejectedDefinitively;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreVotesTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelinePostOnlyTests",
       "expect_red": [
         "Passed_NotTrustedFromStoredRow"
       ]
@@ -1395,6 +1404,153 @@
       "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
       "expect_red": [
         "VoteTally_NullForLogprobsScorer"
+      ]
+    },
+    {
+      "id": "w1",
+      "description": "Coi (U) nhu (R): loai am tham page dung som chua tin duoc",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaScoreReuse.cs",
+      "original": "        if (!IsReusable(pass1, currentMinFitScore))\n            return FullMediaScoreClass.Unknown;",
+      "replacement": "        if (!IsReusable(pass1, currentMinFitScore))\n            return FullMediaScoreClass.RejectedDefinitively;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPostOnlyRescoreTests",
+      "expect_red": [
+        "Classify_EarlyExitNowReachable_U",
+        "PostOnly_OneValidOneUnknown_NoPostYet_PendingScoresNeedRescore"
+      ]
+    },
+    {
+      "id": "w2",
+      "description": "Coi (U) nhu (V): dang theo diem can duoi",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaScoreReuse.cs",
+      "original": "        if (!IsReusable(pass1, currentMinFitScore))\n            return FullMediaScoreClass.Unknown;",
+      "replacement": "        if (!IsReusable(pass1, currentMinFitScore))\n            return FullMediaScoreClass.Valid;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPostOnlyRescoreTests",
+      "expect_red": [
+        "Classify_EarlyExitNowReachable_U",
+        "PostOnly_OneValidOneUnknown_NoPostYet_PendingScoresNeedRescore"
+      ]
+    },
+    {
+      "id": "w3",
+      "description": "Van dang nhom V khi con (U)",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            if (classified.Values.Any(c => c == FullMediaScoreClass.Unknown))",
+      "replacement": "            if (false)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPostOnlyRescoreTests",
+      "expect_red": [
+        "PostOnly_OneValidOneUnknown_NoPostYet_PendingScoresNeedRescore"
+      ]
+    },
+    {
+      "id": "w4",
+      "description": "Khong dat reason scores_need_rescore (ve Pending thuong)",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "            await FinalizePendingAsync(work.EvaluationId, \"scores_need_rescore\", 0, ct,",
+      "replacement": "            await FinalizePendingAsync(work.EvaluationId, \"pending_retry\", 0, ct,",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPostOnlyRescoreTests",
+      "expect_red": [
+        "PostOnly_OneValidOneUnknown_NoPostYet_PendingScoresNeedRescore"
+      ]
+    },
+    {
+      "id": "w5",
+      "description": "scores_need_rescore bi tinh vao MaxPendingAttempts lan dau",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        var waiting = reason is not null && WaitingReasons.Contains(reason)\n            && !secondConsecutiveScoresNeedRescore;",
+      "replacement": "        var waiting = reason is not null && WaitingReasons.Contains(reason)\n            && !string.Equals(reason, \"scores_need_rescore\", StringComparison.Ordinal);",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPostOnlyRescoreTests",
+      "expect_red": [
+        "WaitingReason_ScoresNeedRescore_DoesNotConsumeAttemptsFirstTime"
+      ]
+    },
+    {
+      "id": "w6",
+      "description": "Khong tinh scores_need_rescore lan thu hai (vong lap vo han)",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        var waiting = reason is not null && WaitingReasons.Contains(reason)\n            && !secondConsecutiveScoresNeedRescore;",
+      "replacement": "        var waiting = reason is not null && WaitingReasons.Contains(reason);",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPostOnlyRescoreTests",
+      "expect_red": [
+        "PostOnly_ScoresNeedRescore_SecondConsecutive_CountsTowardMaxPendingAttempts",
+        "PostOnly_ScoresNeedRescore_SecondConsecutive_MaxAttempts_BecomesFailed_NotifiesOnce"
+      ]
+    },
+    {
+      "id": "w7",
+      "description": "Cham lai chon loc goi lai Vision",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        if (work.IsRescore)\n        {\n            using var scope = scopeFactory.CreateScope();\n            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();\n            var loadedA",
+      "replacement": "        if (work.IsRescore && false)\n        {\n            using var scope = scopeFactory.CreateScope();\n            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();\n            var loadedA",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPostOnlyRescoreTests",
+      "expect_red": [
+        "PostOnly_UnknownPage_RescoredOnly_NoVisionCall_NoExtraRequestsForValidPages"
+      ]
+    },
+    {
+      "id": "w8",
+      "description": "Cham lai tat ca page thay vi chi (U)",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        if (work.IsRescore && candidates.Count > 0)",
+      "replacement": "        if (false)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPostOnlyRescoreTests",
+      "expect_red": [
+        "PostOnly_UnknownPage_RescoredOnly_NoVisionCall_NoExtraRequestsForValidPages"
+      ]
+    },
+    {
+      "id": "w9",
+      "description": "So sanh nguong bang toan tu rieng thay vi FitThreshold.Passes trong Classify",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaScoreReuse.cs",
+      "original": "        if (!FitThreshold.Passes(pass1.Score, currentMinFitScore))",
+      "replacement": "        if (!(pass1.Score >= currentMinFitScore))",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests",
+      "expect_red": [
+        "Classify_SingleThresholdSite_UsesFitThresholdPasses"
+      ]
+    },
+    {
+      "id": "w10",
+      "description": "Bo kiem ProfileHash trong Classify",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaScoreReuse.cs",
+      "original": "        if (string.IsNullOrEmpty(pass1.ProfileHash)\n            || !string.Equals(pass1.ProfileHash, currentProfileHash, StringComparison.Ordinal))\n            return FullMediaScoreClass.Unknown;",
+      "replacement": "        if (false)\n            return FullMediaScoreClass.Unknown;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPostOnlyRescoreTests",
+      "expect_red": [
+        "Classify_ProfileHashChanged_U"
+      ]
+    },
+    {
+      "id": "w11",
+      "description": "Bo kiem IsReusable trong Classify",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaScoreReuse.cs",
+      "original": "        if (!IsReusable(pass1, currentMinFitScore))\n            return FullMediaScoreClass.Unknown;",
+      "replacement": "        if (false)\n            return FullMediaScoreClass.Unknown;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPostOnlyRescoreTests",
+      "expect_red": [
+        "Classify_EarlyExitNowReachable_U",
+        "Classify_BadVotesData_FailClosed_U"
+      ]
+    },
+    {
+      "id": "w12",
+      "description": "Khe/jitter khac nhau giua cac page (jitter rieng theo thu tu tao bai)",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                            ScheduledPublishAt = scheduledAt,",
+      "replacement": "                            ScheduledPublishAt = scheduledAt.AddMinutes(created),",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPostOnlyRescoreTests",
+      "expect_red": [
+        "PostOnly_ThresholdLowered_UnknownPageNowAccepted_BothPagesPostedSameSlotAndJitter"
+      ]
+    },
+    {
+      "id": "w13",
+      "description": "Khong xoa co post-only sau scores_need_rescore (van di post-only)",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "        var postOnly = IsAwaitingSlotReason(priorReason)\n            && await HasPass2ScoresAsync(campaignId, mediaAssetId, ct);",
+      "replacement": "        var postOnly = (IsAwaitingSlotReason(priorReason) || IsScoresNeedRescore(priorReason))\n            && await HasPass2ScoresAsync(campaignId, mediaAssetId, ct);",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPostOnlyRescoreTests",
+      "expect_red": [
+        "PostOnly_UnknownPage_RescoredOnly_NoVisionCall_NoExtraRequestsForValidPages"
       ]
     }
   ]

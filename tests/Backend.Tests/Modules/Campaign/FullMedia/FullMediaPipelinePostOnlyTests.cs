@@ -91,7 +91,8 @@ public sealed class FullMediaPipelinePostOnlyTests : IAsyncLifetime
         await using (var db = new AppDbContext(_options))
         {
             var eval = await db.CampaignMediaEvaluations.SingleAsync();
-            Assert.Equal("profile_changed_while_waiting", eval.ReasonCode);
+            // ProfileHash đổi = nhóm (U) theo Classify -> chấm lại chọn lọc, không còn profile_changed.
+            Assert.Equal("scores_need_rescore", eval.ReasonCode);
             Assert.Equal(CampaignMediaEvaluationStatus.Pending, eval.Status);
             Assert.Equal(0, await db.Posts.CountAsync(p =>
                 db.PostMedias.Any(m => m.PostId == p.Id && m.MediaId == mediaId)));
@@ -117,13 +118,18 @@ public sealed class FullMediaPipelinePostOnlyTests : IAsyncLifetime
     [Fact]
     public async Task PostOnly_OnePageChanged_OnlyUnchangedPagePosted()
     {
+        // Hành vi mới (V/R/U): page đổi hồ sơ là (U) -> không đăng page nào ở lượt post-only,
+        // chấm lại chọn lọc page (U) ở lượt kế rồi mới đăng cả hai page đạt.
         var (campaignId, folderId, pages) = await SeedCampaignAsync(2, times: ["15:00", "16:00"]);
         var mediaId = await SeedMediaAsync(folderId);
         await OccupyAllSlotsAsync(campaignId, pages[0], times: ["15:00", "16:00"]);
         await OccupyAllSlotsAsync(campaignId, pages[1], times: ["15:00", "16:00"]);
-        var pipeline = CreatePipeline(new FakeVision(), AcceptAll(pages), o => o.Enabled = true);
+        var vision = new FakeVision();
+        var scorer = AcceptAll(pages);
+        var pipeline = CreatePipeline(vision, scorer, o => o.Enabled = true);
         await pipeline.ProcessImageAsync(campaignId, mediaId);
         await AssertPendingReasonAsync("no_free_slot");
+        await SeedVisionProfilesAsync(mediaId);
 
         await using (var db = new AppDbContext(_options))
         {
@@ -136,12 +142,22 @@ public sealed class FullMediaPipelinePostOnlyTests : IAsyncLifetime
         await ReadyPendingRetryAsync();
         await pipeline.ProcessImageAsync(campaignId, mediaId);
 
+        await AssertPendingReasonAsync("scores_need_rescore");
+        await using (var db0 = new AppDbContext(_options))
+            Assert.Equal(0, await db0.Posts.CountAsync(p =>
+                db0.PostMedias.Any(m => m.PostId == p.Id && m.MediaId == mediaId)));
+
+        scorer.ResetTracking();
+        scorer.PassScores[1] = pages.ToDictionary(p => p, _ => 0.95);
+        scorer.PassScores[2] = pages.ToDictionary(p => p, _ => 0.96);
+        await ReadyPendingRetryAsync();
+        await pipeline.ProcessImageAsync(campaignId, mediaId);
+
         await using var db2 = new AppDbContext(_options);
         var posts = await db2.Posts
             .Where(p => db2.PostMedias.Any(m => m.PostId == p.Id && m.MediaId == mediaId))
             .ToListAsync();
-        Assert.Single(posts);
-        Assert.Equal(pages[1], posts[0].SocialChannelId);
+        Assert.Equal(2, posts.Count);
         Assert.Equal(CampaignMediaEvaluationStatus.Accepted,
             (await db2.CampaignMediaEvaluations.SingleAsync()).Status);
     }
@@ -200,7 +216,7 @@ public sealed class FullMediaPipelinePostOnlyTests : IAsyncLifetime
         await ClearOccupyingPostsAsync(campaignId);
         await ReadyPendingRetryAsync();
         await pipeline.ProcessImageAsync(campaignId, mediaId);
-        await AssertPendingReasonAsync("profile_changed_while_waiting");
+        await AssertPendingReasonAsync("scores_need_rescore");
 
         var callsA = vision.CallsA;
         scorer.ResetTracking();
@@ -279,7 +295,7 @@ public sealed class FullMediaPipelinePostOnlyTests : IAsyncLifetime
         await using var db2 = new AppDbContext(_options);
         var eval = await db2.CampaignMediaEvaluations.SingleAsync();
         Assert.NotEqual(CampaignMediaEvaluationStatus.Failed, eval.Status);
-        Assert.Equal("profile_changed_while_waiting", eval.ReasonCode);
+        Assert.Equal("scores_need_rescore", eval.ReasonCode);
     }
 
     // --- helpers ---
