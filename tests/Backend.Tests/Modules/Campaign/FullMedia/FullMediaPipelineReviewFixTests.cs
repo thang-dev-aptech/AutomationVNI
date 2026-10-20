@@ -131,29 +131,36 @@ public sealed class FullMediaPipelineReviewFixTests : IAsyncLifetime
     {
         var (campaignId, folderId, pages) = await SeedCampaignAsync(pageCount: 1, times: ["15:00", "16:00"]);
         var mediaId = await SeedMediaAsync(folderId);
-        // Chiếm khe đầu bằng bài khác (media khác) — ảnh mới phải lấy khe 2
-        await using (var db = new AppDbContext(_options))
-        {
-            var campaign = await db.Campaigns.FirstAsync(c => c.Id == campaignId);
-            var slots = CampaignGenerationService.BuildSlots(
-                campaign, ["15:00", "16:00"], [], _clock.GetUtcNow().UtcDateTime);
-            Assert.True(slots.Count >= 2);
-            db.Posts.Add(new PostModel
-            {
-                Id = Guid.NewGuid(),
-                Title = "occ",
-                SocialChannelId = pages[0],
-                CampaignId = campaignId,
-                CampaignSlotAt = slots[0],
-                Status = PostStatus.Scheduled,
-                GenerationFlow = GenerationFlow.FullMedia,
-                UserId = Guid.NewGuid(),
-                CreatedAt = DateTime.UtcNow,
-            });
-            await db.SaveChangesAsync();
-        }
-
         var pipeline = CreatePipeline(new FakeVision(), AcceptAll(pages));
+        // Race thật: khe đầu bị chiếm SAU khi pipeline đã tính khe trống (trong lúc sinh caption,
+        // trước khi lưu bài) — pipeline phải bắt unique-violation và thử khe 2.
+        var raceInserted = 0;
+        pipeline.CaptionFactory = async (_, _, _) =>
+        {
+            if (Interlocked.Exchange(ref raceInserted, 1) == 0)
+            {
+                await using var db = new AppDbContext(_options);
+                var campaign = await db.Campaigns.FirstAsync(c => c.Id == campaignId);
+                var slots = CampaignGenerationService.BuildSlots(
+                    campaign, ["15:00", "16:00"], [], _clock.GetUtcNow().UtcDateTime);
+                Assert.True(slots.Count >= 2);
+                db.Posts.Add(new PostModel
+                {
+                    Id = Guid.NewGuid(),
+                    Title = "occ",
+                    SocialChannelId = pages[0],
+                    CampaignId = campaignId,
+                    CampaignSlotAt = slots[0],
+                    Status = PostStatus.Scheduled,
+                    GenerationFlow = GenerationFlow.FullMedia,
+                    UserId = Guid.NewGuid(),
+                    CreatedAt = DateTime.UtcNow,
+                });
+                await db.SaveChangesAsync();
+            }
+
+            return "ok-race";
+        };
         await pipeline.ProcessImageAsync(campaignId, mediaId);
 
         await using var db2 = new AppDbContext(_options);
