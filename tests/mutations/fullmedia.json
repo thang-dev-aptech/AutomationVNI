@@ -497,8 +497,8 @@
       "id": "m2",
       "description": "Điểm cũ không có ProfileHash được coi là khớp",
       "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
-      "original": "                    && !string.IsNullOrEmpty(row.ProfileHash)\n                    && profileHashes.TryGetValue(c.ChannelId, out var cur)\n                    && string.Equals(row.ProfileHash, cur, StringComparison.Ordinal))",
-      "replacement": "                    && profileHashes.TryGetValue(c.ChannelId, out var cur)\n                    && (string.IsNullOrEmpty(row.ProfileHash) || string.Equals(row.ProfileHash, cur, StringComparison.Ordinal)))",
+      "original": "                    && !string.IsNullOrEmpty(row.ProfileHash)\n                    && profileHashes.TryGetValue(c.ChannelId, out var cur)\n                    && string.Equals(row.ProfileHash, cur, StringComparison.Ordinal)\n                    // Điểm dừng sớm là cận dưới: chỉ dùng lại khi cận trên vẫn không đạt ngưỡng HIỆN TẠI.\n                    && FullMediaScoreReuse.IsReusable(row, minScore))",
+      "replacement": "                    && profileHashes.TryGetValue(c.ChannelId, out var cur)\n                    && (string.IsNullOrEmpty(row.ProfileHash) || string.Equals(row.ProfileHash, cur, StringComparison.Ordinal))\n                    && FullMediaScoreReuse.IsReusable(row, minScore))",
       "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineNaNbTests",
       "expect_red": [
         "Rescore_LegacyScoreWithoutProfileHash_Rescored"
@@ -532,8 +532,8 @@
       "id": "m4",
       "description": "Điểm mới lưu không kèm ProfileHash",
       "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
-      "original": "                    ProfileHash = profileHash,\n                    CreatedAt = now,",
-      "replacement": "                    ProfileHash = null,\n                    CreatedAt = now,",
+      "original": "                    ProfileHash = profileHash,\n                    VotesYes = tally?.Yes,",
+      "replacement": "                    ProfileHash = null,\n                    VotesYes = tally?.Yes,",
       "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaPipelineNaNbTests",
       "expect_red": [
         "Rescore_OnlyChangedPageIsScored",
@@ -950,7 +950,7 @@
       "description": "Chạy phiếu song song",
       "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
       "original": "            for (var v = 0; v < n; v++)\n            {\n                ct.ThrowIfCancellationRequested();\n                if (requestIndex > 0 && opts.MinDelayBetweenRequestsMs > 0)\n                    await Task.Delay(TimeSpan.FromMilliseconds(opts.MinDelayBetweenRequestsMs), timeProvider, ct);\n\n                var model = voters[v];\n                var (answer, promptTokens, completionTokens, attempts) =\n                    await VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct);\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n                voted++;\n\n                if (answer == \"YES\")\n                    yesCount++;\n                else if (answer != \"NO\")\n                    throw new PageFitTransientException(\"unparseable_answer\", \"PageFit vote answer was not YES/NO\");\n\n                if (!allowEarlyExit)\n                    continue;\n\n                var remaining = n - voted;\n                // Điểm tối đa còn đạt được nếu mọi phiếu còn lại là YES.\n                var maxPossible = (double)(yesCount + remaining) / n;\n                if (!FitThreshold.Passes(maxPossible, minScore))\n                {\n                    skipped = remaining;\n                    break;\n                }\n            }",
-      "replacement": "            var votes = await Task.WhenAll(voters.Select(model => VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct)));\n            foreach (var (answer, promptTokens, completionTokens, attempts) in votes)\n            {\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n                voted++;\n                if (answer == \"YES\") yesCount++;\n            }",
+      "replacement": "            var parallelVotes = await Task.WhenAll(voters.Select(model => VoteOnceWithRetryAsync(url, config.ApiKey, model, imageStateText, page, ct)));\n            foreach (var (answer, promptTokens, completionTokens, attempts) in parallelVotes)\n            {\n                requestCount += attempts;\n                requestIndex++;\n                totalPrompt += promptTokens;\n                totalCompletion += completionTokens;\n                voted++;\n                if (answer == \"YES\") yesCount++;\n            }",
       "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
       "expect_red": [
         "RequestCount_IsModelsTimesPages_Sequential"
@@ -1246,6 +1246,155 @@
       "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
       "expect_red": [
         "Di_ResolvesFullMediaPipelineOptions_ForVotingScorer"
+      ]
+    },
+    {
+      "id": "u1",
+      "description": "Luôn dùng lại điểm đã lưu (bỏ điều kiện tin được ở ngưỡng hiện tại)",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                    && FullMediaScoreReuse.IsReusable(row, minScore))",
+      "replacement": "                    && true)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreVotesTests",
+      "expect_red": [
+        "Reuse_EarlyExitScore_ThresholdLowered_Rescored",
+        "Rescore_ThresholdLowered_PageNowAccepted_CreatesPost"
+      ]
+    },
+    {
+      "id": "u2",
+      "description": "Luôn chấm lại (bỏ dùng lại điểm kể cả điểm đầy đủ)",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                    && FullMediaScoreReuse.IsReusable(row, minScore))",
+      "replacement": "                    && false)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreVotesTests",
+      "expect_red": [
+        "Reuse_EarlyExitScore_StillBelowThreshold_Reused",
+        "Rescore_ThresholdUnchanged_NoExtraScorerCalls",
+        "Reuse_ThresholdRaised_StillReusesEarlyExit"
+      ]
+    },
+    {
+      "id": "u3",
+      "description": "Cận trên tính sai: thiếu phần phiếu còn lại",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaScoreReuse.cs",
+      "original": "var upper = (double)(yes + (total - cast)) / total;",
+      "replacement": "var upper = (double)yes / total;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreVotesTests",
+      "expect_red": [
+        "Reuse_UpperBound_CountsRemainingVotesAsYes",
+        "Reuse_EarlyExitScore_ThresholdLowered_Rescored"
+      ]
+    },
+    {
+      "id": "u4",
+      "description": "So sánh cận trên bằng toán tử riêng (<=) thay vì FitThreshold.Passes",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaScoreReuse.cs",
+      "original": "return !FitThreshold.Passes(upper, currentMinFitScore);",
+      "replacement": "return upper <= currentMinFitScore;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests|FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreVotesTests",
+      "expect_red": [
+        "Reuse_BoundaryUpperEqualsThreshold_Rescored"
+      ]
+    },
+    {
+      "id": "u5",
+      "description": "Ngưỡng dùng lại cố định 0.94 thay vì MinFitScore hiện tại",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "FullMediaScoreReuse.IsReusable(row, minScore)",
+      "replacement": "FullMediaScoreReuse.IsReusable(row, FitThreshold.DefaultMinFitScore)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreVotesTests",
+      "expect_red": [
+        "Reuse_EarlyExitScore_ThresholdLowered_Rescored",
+        "Rescore_ThresholdLowered_PageNowAccepted_CreatesPost"
+      ]
+    },
+    {
+      "id": "u6",
+      "description": "Không ghi VotesCast/VotesTotal khi cập nhật dòng điểm đã có",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                existing.VotesCast = tally?.Cast;\n                existing.VotesTotal = tally?.Total;\n",
+      "replacement": "",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreVotesTests",
+      "expect_red": [
+        "PersistScores_WritesVotesColumns_AndUpdatesExistingRow"
+      ]
+    },
+    {
+      "id": "u7",
+      "description": "Coi NULL (dữ liệu cũ/Logprobs) là không tin ⇒ chấm lại hết",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaScoreReuse.cs",
+      "original": "        if (row.VotesYes is null && row.VotesCast is null && row.VotesTotal is null)\n            return true;",
+      "replacement": "        if (row.VotesYes is null && row.VotesCast is null && row.VotesTotal is null)\n            return false;",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests",
+      "expect_red": [
+        "Reuse_NullVotes_TreatedAsComplete"
+      ]
+    },
+    {
+      "id": "u8",
+      "description": "Tin dòng có VotesTotal == 0",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaScoreReuse.cs",
+      "original": "if (total <= 0 || yes < 0",
+      "replacement": "if (total < 0 || yes < 0",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreReuseTests",
+      "expect_red": [
+        "Reuse_VotesTotalZeroOrAbnormal_FailClosed_Rescored"
+      ]
+    },
+    {
+      "id": "u9",
+      "description": "Bỏ kiểm ProfileHash khi dùng lại điểm",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                    && string.Equals(row.ProfileHash, cur, StringComparison.Ordinal)\n                    // Điểm dừng sớm",
+      "replacement": "                    && true\n                    // Điểm dừng sớm",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreVotesTests",
+      "expect_red": [
+        "Reuse_ProfileHashChanged_Rescored"
+      ]
+    },
+    {
+      "id": "u10",
+      "description": "Dùng Passed đã lưu để chọn page nhận ở đường chỉ-tạo-bài",
+      "file": "backend/Modules/Campaign/FullMedia/FullMediaPipelineService.cs",
+      "original": "                && s.Pass == 2)\n            .Select(s => s.SocialChannelId)",
+      "replacement": "                && s.Pass == 2\n                && s.Passed)\n            .Select(s => s.SocialChannelId)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.FullMediaScoreVotesTests",
+      "expect_red": [
+        "Passed_NotTrustedFromStoredRow"
+      ]
+    },
+    {
+      "id": "u11",
+      "description": "Bộ chấm Vote không điền Votes (null)",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "return new PageFitResult(scores, cost, requestCount, votes);",
+      "replacement": "return new PageFitResult(scores, cost, requestCount);",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "VoteTally_Recorded_ForEveryPage_CastLessThanTotalOnEarlyExit"
+      ]
+    },
+    {
+      "id": "u12",
+      "description": "Cast đếm cả phiếu bỏ qua (Cast = Total)",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/VotingPageFitScorer.cs",
+      "original": "new PageFitVoteTally(yesCount, voted, n)",
+      "replacement": "new PageFitVoteTally(yesCount, n, n)",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.VotingPageFitScorerTests",
+      "expect_red": [
+        "VoteTally_Recorded_ForEveryPage_CastLessThanTotalOnEarlyExit",
+        "VoteTally_CastExcludesSkippedVotes_YesOverCastMatchesScore"
+      ]
+    },
+    {
+      "id": "u13",
+      "description": "Bộ chấm Logprobs điền Votes",
+      "file": "backend/Modules/Campaign/FullMedia/Scoring/LlmLogprobPageFitScorer.cs",
+      "original": "        return new PageFitResult(scores, cost, requestCount);",
+      "replacement": "        return new PageFitResult(scores, cost, requestCount, new Dictionary<Guid, PageFitVoteTally>());",
+      "filter": "FullyQualifiedName~Backend.Tests.Modules.Campaign.FullMedia.Scoring.LlmLogprobPageFitScorerTests",
+      "expect_red": [
+        "VoteTally_NullForLogprobsScorer"
       ]
     }
   ]

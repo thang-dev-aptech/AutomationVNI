@@ -65,6 +65,15 @@ public sealed class LlmLogprobPageFitScorerTests
     }
 
     [Fact]
+    public async Task VoteTally_NullForLogprobsScorer()
+    {
+        var handler = new ScriptedHandler(LogprobJson(0.9, 0.1));
+        var result = await CreateScorer(handler).ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
+
+        Assert.Null(result.Votes); // điểm Logprobs luôn đầy đủ
+    }
+
+    [Fact]
     public async Task OnlyYes_ScoreOne_OnlyNo_ScoreZero()
     {
         var yesOnly = new ScriptedHandler(TopJson(("YES", Math.Log(0.8)), ("maybe", Math.Log(0.2))));

@@ -568,8 +568,9 @@ public class FullMediaPipelineService(
     }
 
     /// <summary>
-    /// Chấm một lượt: khi IsRescore chỉ gọi bộ chấm cho page mới / đổi ProfileHash / ProfileHash NULL.
-    /// Page khớp hash dùng lại điểm đã lưu (không ghi đè CostUsd).
+    /// Chấm một lượt: khi IsRescore chỉ gọi bộ chấm cho page mới / đổi ProfileHash / ProfileHash NULL /
+    /// điểm dừng sớm mà ngưỡng hiện tại đủ thấp để cận trên có thể đạt (<see cref="FullMediaScoreReuse"/>).
+    /// Page khớp hash và điểm còn tin được thì dùng lại điểm đã lưu (không ghi đè CostUsd).
     /// </summary>
     private async Task<PageFitResult> ScorePassSelectiveAsync(
         WorkItem work,
@@ -600,7 +601,9 @@ public class FullMediaPipelineService(
                 if (byChannel.TryGetValue(c.ChannelId, out var row)
                     && !string.IsNullOrEmpty(row.ProfileHash)
                     && profileHashes.TryGetValue(c.ChannelId, out var cur)
-                    && string.Equals(row.ProfileHash, cur, StringComparison.Ordinal))
+                    && string.Equals(row.ProfileHash, cur, StringComparison.Ordinal)
+                    // Điểm dừng sớm là cận dưới: chỉ dùng lại khi cận trên vẫn không đạt ngưỡng HIỆN TẠI.
+                    && FullMediaScoreReuse.IsReusable(row, minScore))
                 {
                     merged[c.ChannelId] = row.Score;
                 }
@@ -871,6 +874,9 @@ public class FullMediaPipelineService(
             profileHashes.TryGetValue(channelId, out var profileHash);
             if (profileHash is { Length: > 64 })
                 profileHash = profileHash[..64];
+            // Kiểm phiếu đi kèm điểm; null = điểm đầy đủ (luôn ghi đè, kể cả dòng cũ).
+            PageFitVoteTally? tally = null;
+            result.Votes?.TryGetValue(channelId, out tally);
 
             var existing = await db.CampaignMediaScores
                 .FirstOrDefaultAsync(s => !s.IsDeleted
@@ -892,6 +898,9 @@ public class FullMediaPipelineService(
                     ScoredAt = now,
                     CostUsd = passCost,
                     ProfileHash = profileHash,
+                    VotesYes = tally?.Yes,
+                    VotesCast = tally?.Cast,
+                    VotesTotal = tally?.Total,
                     CreatedAt = now,
                     CreatedBy = Actor,
                 });
@@ -904,6 +913,9 @@ public class FullMediaPipelineService(
                 // Cộng dồn chi phí phát sinh — không ghi đè làm mất lượt trước (F4 / N-B).
                 existing.CostUsd += passCost;
                 existing.ProfileHash = profileHash;
+                existing.VotesYes = tally?.Yes;
+                existing.VotesCast = tally?.Cast;
+                existing.VotesTotal = tally?.Total;
                 existing.UpdatedAt = now;
                 existing.UpdatedBy = Actor;
             }
@@ -1179,13 +1191,14 @@ public class FullMediaPipelineService(
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        // Chỉ lọc Passed; FitThreshold.Passes chạy lại trong FilterPostOnlyStillValidPagesAsync.
+        // KHÔNG dựa vào Passed đã lưu (ghi theo ngưỡng lúc chấm): ngưỡng có thể đã đổi. Lấy mọi page có
+        // điểm lượt 2; FilterPostOnlyStillValidPagesAsync quyết định nhận/loại bằng FitThreshold.Passes
+        // theo ngưỡng HIỆN TẠI cho cả hai lượt.
         return await db.CampaignMediaScores.AsNoTracking()
             .Where(s => !s.IsDeleted
                 && s.CampaignId == campaignId
                 && s.MediaAssetId == mediaId
-                && s.Pass == 2
-                && s.Passed)
+                && s.Pass == 2)
             .Select(s => s.SocialChannelId)
             .Distinct()
             .ToListAsync(ct);
@@ -1253,14 +1266,15 @@ public class FullMediaPipelineService(
         return await HasPass2ScoresAsync(db, campaignId, mediaId, ct);
     }
 
+    // Chỉ là dấu hiệu "đã có điểm lượt 2" để chọn đường post-only; nhận/loại thật do
+    // FilterPostOnlyStillValidPagesAsync quyết định theo ngưỡng hiện tại (không dùng Passed cũ).
     private static Task<bool> HasPass2ScoresAsync(
         AppDbContext db, Guid campaignId, Guid mediaId, CancellationToken ct)
         => db.CampaignMediaScores.AsNoTracking()
             .AnyAsync(s => !s.IsDeleted
                 && s.CampaignId == campaignId
                 && s.MediaAssetId == mediaId
-                && s.Pass == 2
-                && s.Passed, ct);
+                && s.Pass == 2, ct);
 
     private static bool IsAwaitingSlotReason(string? reason)
         => reason is "no_free_slot" or "slot_conflict";

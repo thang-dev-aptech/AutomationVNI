@@ -72,7 +72,10 @@ Tất cả không FK constraint (theo quy ước dự án); migration đủ cặ
 - `CampaignMediaEvaluationModel` (chiến dịch × ảnh): `Status`
   (Pending/Scoring/Verifying/Accepted/Rejected/Unusable/Failed), `ReasonCode`, `BestScore`,
   `BestChannelId`, `Attempts`, `NextAttemptAt`, `EvaluatedAt`, `InputHash`, `CostUsd`.
-- `CampaignMediaScoreModel` (chiến dịch × ảnh × page × lượt): `Score`, `Passed`, `ScoredAt`.
+- `CampaignMediaScoreModel` (chiến dịch × ảnh × page × lượt): `Score`, `Passed`, `ScoredAt`, `CostUsd`,
+  `ProfileHash` và kiểm phiếu `VotesYes`/`VotesCast`/`VotesTotal` (`int?`, xem 6.3). Cả ba cột phiếu
+  NULL = điểm đầy đủ / không biết (Logprobs, dòng cũ). `Passed` chỉ là cờ **thông tin** ghi theo ngưỡng
+  lúc chấm — không dùng để quyết định nhận/loại (xem 6.3).
 - `CampaignModel` thêm: `Mode` (Recycle=1 mặc định, FullMedia=2), `SourceFolderId` (Guid?),
   `QualityPausedAt`, `QualityPauseReason` (cầu chì chất lượng).
 - Bài sinh ra dùng `GenerationFlow` mới `FullMedia` (không tái dùng giá trị 3/4 để không lẫn với
@@ -116,6 +119,29 @@ Tất cả không FK constraint (theo quy ước dự án); migration đủ cặ
   tính như NO — cận dưới); nhận/loại không đổi vì page chắc chắn không đạt. Log ghi
   `yes/voted/skipped` (không log hồ sơ/mô tả). `Exhaustive=true` hoặc `EarlyExit=false`: luôn gửi
   đủ N phiếu (kiểm chuẩn t5 cần xếp hạng dùng Exhaustive).
+- **Kiểm phiếu và cận dưới (R-047).** Với dừng sớm, `Score` lưu là **cận dưới** (yes/N), không phải
+  điểm thật. Để biết lúc nào điểm cũ còn đáng tin, bộ chấm Vote báo thêm cho **mọi** page
+  `PageFitVoteTally(Yes, Cast, Total)` trong `PageFitResult.Votes` (`Cast` = số phiếu **đã gửi**, không
+  tính phiếu bỏ qua; `Total` = N). `Votes` là tham số tuỳ chọn cuối (mặc định `null`) nên chữ ký
+  `IPageFitScorer` và mọi nơi tạo `PageFitResult` không đổi; bộ chấm Logprobs để `null`. Pipeline ghi
+  ba số này vào `CampaignMediaScores` (`VotesYes/VotesCast/VotesTotal`) cùng điểm, kể cả khi cập nhật
+  dòng cũ (không để dữ liệu cũ lẫn; bộ chấm không báo phiếu → ghi NULL).
+- **Quy tắc dùng lại điểm khi chấm lại** (`FullMediaScoreReuse.IsReusable`, áp cho cả lượt 1 và lượt
+  2). Điểm đã lưu của một page chỉ được dùng lại khi **cả hai**: (a) `ProfileHash` khớp hồ sơ hiện tại;
+  (b) điểm "tin được" ở ngưỡng **hiện tại** (`FullMediaPipelineOptions.MinFitScore`): hoặc điểm đầy đủ
+  (3 cột phiếu NULL, hoặc `VotesCast == VotesTotal`), hoặc điểm dừng sớm mà cận trên
+  `upper = (VotesYes + (VotesTotal − VotesCast)) / VotesTotal` **vẫn không đạt** ngưỡng hiện tại
+  (`!FitThreshold.Passes(upper, MinFitScore)` — không phép so sánh khác, không làm tròn; `upper` đúng
+  bằng ngưỡng thì đạt ⇒ chấm lại). Ngược lại chấm lại page đó bằng đường chấm thường (được phép dừng
+  sớm theo ngưỡng hiện tại). Fail closed: `VotesTotal ≤ 0`, `Cast > Total`, `Yes > Cast`, số âm hoặc
+  chỉ một phần cột NULL ⇒ coi như không tin ⇒ chấm lại. Hệ quả: hạ `MinFitScore` (vd 0,94 → 0,66) không
+  còn loại oan page từng bị dừng sớm; nâng ngưỡng hoặc giữ nguyên thì điểm dừng sớm vẫn được dùng lại
+  (không chấm thừa). Dữ liệu cũ (cột phiếu NULL) giữ nguyên hành vi trước đây — môi trường thật chưa có
+  điểm dừng sớm vì `FullMediaPipeline:Enabled=false`.
+- **`Passed` đã lưu không quyết định nhận/loại.** Nhận/loại luôn tính lại bằng `FitThreshold.Passes`
+  theo ngưỡng hiện tại: trong chấm lại (điểm gộp dùng lại + điểm mới) và trong đường chỉ-tạo-bài
+  (`LoadAcceptedChannelIdsFromScoresAsync` lấy mọi page có điểm lượt 2, `FilterPostOnlyStillValidPagesAsync`
+  quyết định theo `Passes` cho cả hai lượt; `HasPass2ScoresAsync` chỉ kiểm có dòng điểm lượt 2).
 - **Mode=Logprobs:** mỗi page một request với `logprobs=true`, `top_logprobs`, `max_tokens=1`;
   điểm = P(YES)/(P(YES)+P(NO)). Thiếu logprobs → lỗi vĩnh viễn fail closed; **không** dùng điểm tự
   khai. (Smoke 2026-10-19: vietai không trả logprobs ở 8 model đã thử.) Exhaustive không có tác dụng.
@@ -222,7 +248,8 @@ mới**: dùng khoá của `AiProviders` hiện có; không thêm khoá nào và
 Backend (xUnit, HTTP TestServer): ngưỡng biên 0,939/0,94; Vote YES/N và 2/3 không đạt 0,94; chuẩn
 hoá đáp án YES/NO fail closed; Logprobs công thức + thiếu logprobs lỗi vĩnh viễn; đồng thuận hai
 lượt; một ảnh nhiều page tạo bài cùng khe giờ + độ lệch; không đăng lặp ảnh trên cùng page; Rejected
-không chấm lại khi `InputHash` không đổi; hồ sơ rỗng/provider lỗi → Pending; cầu chì/kiểm chuẩn; tag
+không chấm lại khi `InputHash` không đổi; kiểm phiếu được lưu và điểm dừng sớm chỉ dùng lại khi cận trên
+không đạt ngưỡng hiện tại (hạ ngưỡng ⇒ chấm lại; biên bằng ngưỡng; fail closed); hồ sơ rỗng/provider lỗi → Pending; cầu chì/kiểm chuẩn; tag
 lệch → Unusable; cô lập worker; quyền 403; request chấm điểm không chứa ảnh/data URL;
 `dotnet ef migrations has-pending-model-changes` sạch.
 

@@ -659,6 +659,47 @@ public sealed class VotingPageFitScorerTests
     }
 
     [Fact]
+    public async Task VoteTally_Recorded_ForEveryPage_CastLessThanTotalOnEarlyExit()
+    {
+        // Page A: NO ngay → dừng sớm (yes=0, cast=1, total=3). Page B: 3 YES → đủ phiếu (3,3,3).
+        var handler = new ScriptedHandler(
+            VoteJson("NO"),
+            VoteJson("YES"), VoteJson("YES"), VoteJson("YES"));
+        var result = await CreateScorer(handler).ScoreAsync("S", [
+            new PageFitCandidate(PageA, "A"),
+            new PageFitCandidate(PageB, "B")], default);
+
+        Assert.NotNull(result.Votes);
+        Assert.Equal(new PageFitVoteTally(0, 1, 3), result.Votes![PageA]);
+        Assert.Equal(new PageFitVoteTally(3, 3, 3), result.Votes[PageB]);
+        Assert.True(result.Votes[PageA].Cast < result.Votes[PageA].Total);
+    }
+
+    [Fact]
+    public async Task VoteTally_CastExcludesSkippedVotes_YesOverCastMatchesScore()
+    {
+        // YES rồi NO → dừng sau 2 phiếu (phiếu 3 bỏ qua): Cast=2 (không phải 3), Yes=1.
+        var handler = new ScriptedHandler(VoteJson("YES"), VoteJson("NO"), VoteJson("YES"));
+        var result = await CreateScorer(handler).ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
+
+        var tally = result.Votes![PageA];
+        Assert.Equal(new PageFitVoteTally(1, 2, 3), tally);
+        Assert.Equal((double)tally.Yes / tally.Total, result.Scores[PageA], 1e-9);
+    }
+
+    [Fact]
+    public async Task VoteTally_ExhaustiveOrEarlyExitOff_CastEqualsTotal()
+    {
+        var off = await CreateScorer(new ScriptedHandler(VoteJson("NO"), VoteJson("YES"), VoteJson("YES")), earlyExit: false)
+            .ScoreAsync("S", [new PageFitCandidate(PageA, "P")], default);
+        Assert.Equal(new PageFitVoteTally(2, 3, 3), off.Votes![PageA]);
+
+        var exhaustive = await CreateScorer(new ScriptedHandler(VoteJson("NO"), VoteJson("YES"), VoteJson("YES")))
+            .ScoreAsync("S", [new PageFitCandidate(PageA, "P")], new PageFitScoreOptions { Exhaustive = true }, default);
+        Assert.Equal(new PageFitVoteTally(2, 3, 3), exhaustive.Votes![PageA]);
+    }
+
+    [Fact]
     public async Task EarlyExitDisabled_ByOption_SendsAllVotes()
     {
         var handler = new ScriptedHandler(VoteJson("NO"), VoteJson("YES"), VoteJson("YES"));

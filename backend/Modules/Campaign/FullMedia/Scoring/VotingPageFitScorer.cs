@@ -17,7 +17,8 @@ namespace Backend.Modules.Campaign.FullMedia.Scoring;
 /// (yes + còn_lại) / N không đạt <see cref="FullMediaPipelineOptions.MinFitScore"/>
 /// (so sánh chỉ qua <see cref="FitThreshold.Passes"/>) thì bỏ các phiếu còn lại của page đó.
 /// Điểm báo cáo vẫn là yes/N (phiếu bỏ tính như NO — cận dưới); nhận/loại không đổi vì page
-/// chắc chắn không đạt. Exhaustive=true hoặc EarlyExit=false: luôn gửi đủ N phiếu.
+/// chắc chắn không đạt. Kiểm phiếu (yes/đã gửi/N) được báo kèm trong PageFitResult.Votes
+/// để chấm lại biết điểm dừng sớm còn đáng tin hay không. Exhaustive=true hoặc EarlyExit=false: luôn gửi đủ N phiếu.
 /// </para>
 /// </summary>
 public sealed class VotingPageFitScorer(
@@ -52,7 +53,8 @@ public sealed class VotingPageFitScorer(
     {
         ArgumentNullException.ThrowIfNull(pages);
         if (pages.Count == 0)
-            return new PageFitResult(new Dictionary<Guid, double>(), 0m, 0);
+            return new PageFitResult(
+                new Dictionary<Guid, double>(), 0m, 0, new Dictionary<Guid, PageFitVoteTally>());
 
         var opts = pageFitOptions.Value;
         var minScore = pipelineOptions.Value.MinFitScore;
@@ -63,6 +65,7 @@ public sealed class VotingPageFitScorer(
         var url = PageFitScorerSupport.BuildUrl(config);
 
         var scores = new Dictionary<Guid, double>(pages.Count);
+        var votes = new Dictionary<Guid, PageFitVoteTally>(pages.Count);
         var totalPrompt = 0;
         var totalCompletion = 0;
         var requestCount = 0;
@@ -112,13 +115,15 @@ public sealed class VotingPageFitScorer(
             // Cận dưới: phiếu bỏ = NO ⇒ yes/N (không phải yes/voted).
             var score = (double)yesCount / n;
             scores[page.ChannelId] = score;
+            // Cast = số phiếu ĐÃ gửi (không tính phiếu bỏ qua do dừng sớm).
+            votes[page.ChannelId] = new PageFitVoteTally(yesCount, voted, n);
             logger.LogInformation(
                 "PageFit vote page={ChannelId} yes={Yes} voted={Voted} skipped={Skipped} total={Total} score={Score:F4}",
                 page.ChannelId, yesCount, voted, skipped, n, score);
         }
 
         var cost = PageFitScorerSupport.EstimateCost(totalPrompt, totalCompletion, opts);
-        return new PageFitResult(scores, cost, requestCount);
+        return new PageFitResult(scores, cost, requestCount, votes);
     }
 
     private async Task<(string Answer, int PromptTokens, int CompletionTokens, int Attempts)> VoteOnceWithRetryAsync(

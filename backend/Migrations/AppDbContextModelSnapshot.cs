@@ -528,6 +528,15 @@ namespace backend.Migrations
                     b.Property<string>("UpdatedBy")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("VotesCast")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("VotesTotal")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("VotesYes")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
 
                     b.HasIndex("IsDeleted");

@@ -23,4 +23,13 @@ public class CampaignMediaScoreModel : BaseEntity
     /// PageProfile.Hash tại thời điểm chấm. NULL = dòng cũ / chưa biết → chấm lại khi rescore.
     /// </summary>
     public string? ProfileHash { get; set; }
+
+    /// <summary>
+    /// Kiểm phiếu của bộ chấm bỏ phiếu: số YES, số phiếu đã gửi, tổng số model.
+    /// Cả ba NULL = điểm đầy đủ / không biết (bộ chấm Logprobs, dòng cũ). VotesCast &lt; VotesTotal =
+    /// dừng sớm: <see cref="Score"/> chỉ là cận dưới (phiếu bỏ tính NO). Xem <see cref="FullMediaScoreReuse"/>.
+    /// </summary>
+    public int? VotesYes { get; set; }
+    public int? VotesCast { get; set; }
+    public int? VotesTotal { get; set; }
 }
