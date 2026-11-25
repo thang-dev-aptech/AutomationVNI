@@ -13,6 +13,8 @@ public class CreatePageContextRequest
     public string? Hotline { get; set; }
     public string? Website { get; set; }
     public string? BrandColors { get; set; }
+    public string? Topics { get; set; }
+    public string? Exclusions { get; set; }
     public string? DefaultHashtags { get; set; }
     public string? PromptTemplateText { get; set; }
     public string? PromptTemplateImage { get; set; }
@@ -49,6 +51,8 @@ public class UpdatePageContextRequest
     public string? Hotline { get; set; }
     public string? Website { get; set; }
     public string? BrandColors { get; set; }
+    public string? Topics { get; set; }
+    public string? Exclusions { get; set; }
     public string? DefaultHashtags { get; set; }
     public string? PromptTemplateText { get; set; }
     public string? PromptTemplateImage { get; set; }
@@ -73,6 +77,8 @@ public class PageContextResponse
     public string? Hotline { get; set; }
     public string? Website { get; set; }
     public string? BrandColors { get; set; }
+    public string? Topics { get; set; }
+    public string? Exclusions { get; set; }
     public string? DefaultHashtags { get; set; }
     public string? PromptTemplateText { get; set; }
     public string? PromptTemplateImage { get; set; }

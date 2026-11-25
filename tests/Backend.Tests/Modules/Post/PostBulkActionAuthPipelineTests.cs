@@ -10,6 +10,7 @@ using Backend.Modules.Post;
 using Backend.Modules.Post.Enums;
 using Backend.Modules.PublishLog;
 using Backend.Shared.Repositories;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -41,8 +42,7 @@ public sealed class PostBulkActionAuthPipelineTests : IAsyncLifetime
 
     public PostBulkActionAuthPipelineTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using (var seed = new AppDbContext(_options))
             seed.Database.EnsureCreated();

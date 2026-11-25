@@ -292,6 +292,7 @@ public sealed class CrmScheduledMessageTests : IAsyncLifetime
 
     // ── (e) hai worker song song → gửi đúng 1 lần ───────────────────────────
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task E_TwoWorkersInParallel_SendExactlyOnce()
     {
         var conv = await SeedConversationAsync();

@@ -5,6 +5,7 @@ using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
 using Backend.Shared.Storage;
 using Backend.Tests.Modules.MediaFolder;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -26,8 +27,7 @@ public class MediaAssetFilterSocialChannelTests : IDisposable
 
     public MediaAssetFilterSocialChannelTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
 
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite(_connection)

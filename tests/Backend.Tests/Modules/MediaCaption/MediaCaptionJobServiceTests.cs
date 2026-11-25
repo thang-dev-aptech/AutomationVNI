@@ -4,6 +4,7 @@ using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaCaption;
 using Backend.Modules.MediaFolder;
 using Backend.Shared.Repositories;
+using Backend.Tests.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -12,13 +13,12 @@ namespace Backend.Tests.Modules.MediaCaption;
 
 public sealed class MediaCaptionJobServiceTests : IDisposable
 {
-    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private readonly SqliteConnection _connection = SqliteTestDatabase.OpenInMemory();
     private readonly AppDbContext _db;
     private readonly MediaCaptionJobService _service;
 
     public MediaCaptionJobServiceTests()
     {
-        _connection.Open();
         _db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
         _db.Database.EnsureCreated();
         var user = new StubUserContext();

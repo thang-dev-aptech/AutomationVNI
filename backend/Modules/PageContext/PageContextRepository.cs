@@ -152,6 +152,8 @@ public class PageContextRepository : GenericRepository<PageContextModel>
             Hotline = request.Hotline?.Trim(),
             Website = request.Website?.Trim(),
             BrandColors = request.BrandColors?.Trim(),
+            Topics = request.Topics?.Trim(),
+            Exclusions = request.Exclusions?.Trim(),
             DefaultHashtags = request.DefaultHashtags,
             PromptTemplateText = request.PromptTemplateText,
             PromptTemplateImage = request.PromptTemplateImage,
@@ -178,6 +180,8 @@ public class PageContextRepository : GenericRepository<PageContextModel>
         if (request.Hotline is not null) entity.Hotline = request.Hotline.Trim();
         if (request.Website is not null) entity.Website = request.Website.Trim();
         if (request.BrandColors is not null) entity.BrandColors = request.BrandColors.Trim();
+        if (request.Topics is not null) entity.Topics = request.Topics.Trim();
+        if (request.Exclusions is not null) entity.Exclusions = request.Exclusions.Trim();
         if (request.DefaultHashtags is not null) entity.DefaultHashtags = request.DefaultHashtags;
         if (request.PromptTemplateText is not null) entity.PromptTemplateText = request.PromptTemplateText;
         if (request.PromptTemplateImage is not null) entity.PromptTemplateImage = request.PromptTemplateImage;
@@ -204,6 +208,8 @@ public class PageContextRepository : GenericRepository<PageContextModel>
         Hotline = e.Hotline,
         Website = e.Website,
         BrandColors = e.BrandColors,
+        Topics = e.Topics,
+        Exclusions = e.Exclusions,
         DefaultHashtags = e.DefaultHashtags,
         PromptTemplateText = e.PromptTemplateText,
         PromptTemplateImage = e.PromptTemplateImage,

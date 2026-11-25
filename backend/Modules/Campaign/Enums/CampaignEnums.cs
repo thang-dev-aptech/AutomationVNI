@@ -27,3 +27,10 @@ public enum CampaignStatus
     Paused = 2,
     Ended = 3,
 }
+
+/// <summary>Chế độ chiến dịch: Recycle (mặc định) hoặc Full Media.</summary>
+public enum CampaignMode
+{
+    Recycle = 1,
+    FullMedia = 2,
+}

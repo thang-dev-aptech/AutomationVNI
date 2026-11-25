@@ -8,6 +8,7 @@ using Backend.Modules.Post.Enums;
 using Backend.Modules.SocialChannel;
 using Backend.Modules.SocialChannel.Enums;
 using Backend.Shared.Repositories;
+using Backend.Tests.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -30,8 +31,7 @@ public sealed class CampaignReviewFixesTests : IAsyncLifetime
 
     public CampaignReviewFixesTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using (var db = new AppDbContext(_options))
             db.Database.EnsureCreated();
@@ -177,7 +177,7 @@ public sealed class CampaignReviewFixesTests : IAsyncLifetime
         await using (var db = new AppDbContext(_options))
         {
             var campaign = await db.Campaigns.SingleAsync(c => c.Id == camp1);
-            var slots = CreateService().BuildSlots(
+            var slots = CampaignGenerationService.BuildSlots(
                 campaign,
                 ["15:00", "16:00"],
                 [],

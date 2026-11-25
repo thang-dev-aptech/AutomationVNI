@@ -12,6 +12,7 @@ using Backend.Modules.NewsSite;
 using Backend.Shared.Ai;
 using Backend.Shared.Notification;
 using Backend.Shared.Repositories;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -34,12 +35,11 @@ namespace Backend.Tests.Modules.ContentCrawl;
 /// </summary>
 public sealed class WebsitePublishToggleTests : IAsyncLifetime
 {
-    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private readonly SqliteConnection _connection = SqliteTestDatabase.OpenInMemory();
     private DbContextOptions<AppDbContext> _dbOptions = null!;
 
     public async Task InitializeAsync()
     {
-        await _connection.OpenAsync();
         _dbOptions = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         await using var db = new AppDbContext(_dbOptions);
         await db.Database.EnsureCreatedAsync();

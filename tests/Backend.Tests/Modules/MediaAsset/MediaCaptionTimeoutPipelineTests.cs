@@ -7,6 +7,7 @@ using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaFolder;
 using Backend.Shared.Repositories;
 using Backend.Shared.Storage;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -34,12 +35,11 @@ public sealed class MediaCaptionTimeoutPipelineTests : IAsyncLifetime
         CaptionPreparationAllowance = TimeSpan.FromMilliseconds(100)
     };
 
-    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private readonly SqliteConnection _connection = SqliteTestDatabase.OpenInMemory();
     private readonly DbContextOptions<AppDbContext> _options;
 
     public MediaCaptionTimeoutPipelineTests()
     {
-        _connection.Open();
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using var db = new AppDbContext(_options);
         db.Database.EnsureCreated();
@@ -85,6 +85,7 @@ public sealed class MediaCaptionTimeoutPipelineTests : IAsyncLifetime
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task ClientCancellation_IsNotMappedToTimeout400_AndKeepsCaption()
     {
         var ai = new CancellationAwareChatHandler();

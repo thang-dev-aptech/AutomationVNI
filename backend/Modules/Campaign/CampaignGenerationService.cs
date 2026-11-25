@@ -114,7 +114,7 @@ public class CampaignGenerationService(
                 var source = sources[sourceIndex % sources.Count];
                 sourceIndex++;
 
-                var scheduledAt = ApplyJitter(slotUtc, campaign.JitterMinutes, nowUtc);
+                var scheduledAt = ApplyJitter(slotUtc, campaign.JitterMinutes, nowUtc, Random);
                 var keepOld = campaign.ImageStrategy != CampaignImageStrategy.VectorSearch;
                 var status = keepOld ? PostStatus.Scheduled : PostStatus.Queued;
 
@@ -209,7 +209,8 @@ public class CampaignGenerationService(
             .ToListAsync(ct);
     }
 
-    public List<DateTime> BuildSlots(
+    /// <summary>Khe lịch UTC — tái dùng cho Full Media (internal static, không đổi hành vi).</summary>
+    internal static List<DateTime> BuildSlots(
         CampaignModel campaign,
         IReadOnlyList<string> publishTimes,
         IReadOnlyList<int> weekdays,
@@ -265,9 +266,11 @@ public class CampaignGenerationService(
         return slots;
     }
 
-    private DateTime ApplyJitter(DateTime slotUtc, int jitterMinutes, DateTime nowUtc)
+    /// <summary>Độ lệch ngẫu nhiên quanh khe — tái dùng Full Media (internal static).</summary>
+    internal static DateTime ApplyJitter(DateTime slotUtc, int jitterMinutes, DateTime nowUtc, Random random)
     {
-        var offset = jitterMinutes > 0 ? Random.Next(-jitterMinutes, jitterMinutes + 1) : 0;
+        ArgumentNullException.ThrowIfNull(random);
+        var offset = jitterMinutes > 0 ? random.Next(-jitterMinutes, jitterMinutes + 1) : 0;
         var scheduled = slotUtc.AddMinutes(offset);
         if (scheduled <= nowUtc)
             scheduled = nowUtc.AddMinutes(1);

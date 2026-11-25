@@ -4,6 +4,7 @@ using Backend.Modules.ApiLog;
 using Backend.Modules.Auth;
 using Backend.Modules.Category;
 using Backend.Modules.ContentCrawl;
+using Backend.Modules.Campaign.FullMedia;
 using Backend.Modules.GenerationJob;
 using Backend.Modules.GoogleDrive;
 using Backend.Modules.MediaAsset;
@@ -130,6 +131,7 @@ builder.Services.AddScoped<Backend.Modules.Post.RecycleSourcePicker>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<Backend.Modules.Campaign.CampaignWorkerOptions>(
     builder.Configuration.GetSection("CampaignWorker"));
+builder.Services.AddFullMediaPipeline(builder.Configuration);
 builder.Services.AddScoped<SocialChannelRepository>();
 builder.Services.AddScoped<SocialConnectionRepository>();
 builder.Services.AddScoped<PageContextRepository>();

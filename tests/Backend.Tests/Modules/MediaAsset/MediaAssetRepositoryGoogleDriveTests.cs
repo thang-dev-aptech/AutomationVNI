@@ -4,6 +4,7 @@ using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaAsset.Enums;
 using Backend.Shared.Storage;
 using Backend.Tests.Modules.MediaFolder;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -24,8 +25,7 @@ public class MediaAssetRepositoryGoogleDriveTests : IDisposable
 
     public MediaAssetRepositoryGoogleDriveTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
 
         var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         _db = new AppDbContext(options);

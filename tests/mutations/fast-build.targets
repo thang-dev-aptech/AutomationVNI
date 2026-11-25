@@ -1,0 +1,12 @@
+<!--
+  Chỉ dùng cho scripts/run-mutations.sh (nạp qua -p:CustomAfterMicrosoftCommonTargets=...), KHÔNG
+  ảnh hưởng `dotnet build`/`dotnet test` thường. Bỏ backend/Migrations/** (~77% số dòng của backend)
+  khỏi Compile để mỗi mutation biên dịch lại nhanh hơn. Test không chạy migration (dùng EnsureCreated);
+  test cần ModelSnapshot (HasPendingModelChanges) sẽ đỏ ở bước baseline của runner, và runner tự tắt
+  chế độ này khi mutation nằm trong backend/Migrations/ hoặc khi chạy với tuỳ chọn full-build.
+-->
+<Project>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'backend'">
+    <Compile Remove="Migrations/**" />
+  </ItemGroup>
+</Project>

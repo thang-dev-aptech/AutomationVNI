@@ -4,6 +4,7 @@ using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaAsset.Enums;
 using Backend.Modules.MediaFolder;
 using Backend.Shared.Repositories;
+using Backend.Tests.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -187,8 +188,7 @@ public class GoogleDriveRepositoryTests
 
         public static async Task<Fixture> CreateAsync()
         {
-            var connection = new SqliteConnection("DataSource=:memory:");
-            await connection.OpenAsync();
+            var connection = SqliteTestDatabase.OpenInMemory();
             var dbOptions = new DbContextOptionsBuilder<AppDbContext>()
                 .UseSqlite(connection)
                 .Options;

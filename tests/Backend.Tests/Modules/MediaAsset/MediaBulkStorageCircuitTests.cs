@@ -6,6 +6,7 @@ using Backend.Modules.MediaAsset;
 using Backend.Modules.MediaFolder;
 using Backend.Shared.Ai;
 using Backend.Shared.Storage;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -21,14 +22,13 @@ public sealed class MediaBulkStorageCircuitTests : IDisposable
     private const string AnalysisJson = "{\"keywords\":[\"khai giảng\",\"học sinh\",\"sân trường\",\"lớp học\",\"bài giảng\"],\"altText\":\"alt\",\"description\":\"description\"}";
     private const string LayoutJson = "{\"layoutStyle\":\"TopBottomSplit\",\"safeTextRegion\":{\"x\":10,\"y\":20,\"width\":80,\"height\":30},\"logoShape\":\"Square\",\"colorSlot\":\"Primary\"}";
 
-    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private readonly SqliteConnection _connection = SqliteTestDatabase.OpenInMemory();
     private readonly DbContextOptions<AppDbContext> _options;
     private readonly List<IDisposable> _disposables = [];
     private readonly List<SelectiveStorage> _storages = [];
 
     public MediaBulkStorageCircuitTests()
     {
-        _connection.Open();
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using var db = new AppDbContext(_options);
         db.Database.EnsureCreated();

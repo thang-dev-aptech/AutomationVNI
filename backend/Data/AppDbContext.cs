@@ -53,6 +53,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<CampaignModel> Campaigns => Set<CampaignModel>();
     public DbSet<CampaignChannelModel> CampaignChannels => Set<CampaignChannelModel>();
     public DbSet<CampaignChannelGroupModel> CampaignChannelGroups => Set<CampaignChannelGroupModel>();
+    public DbSet<Backend.Modules.Campaign.FullMedia.MediaVisionProfileModel> MediaVisionProfiles
+        => Set<Backend.Modules.Campaign.FullMedia.MediaVisionProfileModel>();
+    public DbSet<Backend.Modules.Campaign.FullMedia.CampaignMediaEvaluationModel> CampaignMediaEvaluations
+        => Set<Backend.Modules.Campaign.FullMedia.CampaignMediaEvaluationModel>();
+    public DbSet<Backend.Modules.Campaign.FullMedia.CampaignMediaScoreModel> CampaignMediaScores
+        => Set<Backend.Modules.Campaign.FullMedia.CampaignMediaScoreModel>();
     public DbSet<SocialConnectionModel> SocialConnections => Set<SocialConnectionModel>();
     public DbSet<PageContextModel> PageContexts => Set<PageContextModel>();
     public DbSet<PostModel> Posts => Set<PostModel>();
@@ -256,6 +262,21 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.PromptTemplateImage).HasColumnType("TEXT");
         });
 
+        // FULLMEDIA t2 — lưu đệm mô tả Vision; không FK.
+        modelBuilder.Entity<Backend.Modules.Campaign.FullMedia.MediaVisionProfileModel>(e =>
+        {
+            e.ToTable("MediaVisionProfiles");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.MediaAssetId, x.FileHash, x.Pass })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0");
+            e.HasIndex(x => x.MediaAssetId);
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.FileHash).HasMaxLength(64);
+            e.Property(x => x.Model).HasMaxLength(200);
+            e.Property(x => x.DescriptionJson).HasColumnType("TEXT");
+        });
+
         // Chiến dịch — không FK constraint; JSON lịch + junction kênh/nhóm.
         modelBuilder.Entity<CampaignModel>(e =>
         {
@@ -293,6 +314,34 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
                 .IsUnique()
                 .HasFilter("IsDeleted = 0")
                 .HasDatabaseName("IX_CampaignChannelGroups_Campaign_Group_Active");
+        });
+
+        modelBuilder.Entity<Backend.Modules.Campaign.FullMedia.CampaignMediaEvaluationModel>(e =>
+        {
+            e.ToTable("CampaignMediaEvaluations");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.CampaignId, x.MediaAssetId })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0")
+                .HasDatabaseName("IX_CampaignMediaEvaluations_Campaign_Media_Active");
+            e.HasIndex(x => new { x.Status, x.NextAttemptAt });
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.ReasonCode).HasMaxLength(100);
+            e.Property(x => x.InputHash).HasMaxLength(64);
+            e.Property(x => x.CostUsd).HasPrecision(18, 6);
+        });
+
+        modelBuilder.Entity<Backend.Modules.Campaign.FullMedia.CampaignMediaScoreModel>(e =>
+        {
+            e.ToTable("CampaignMediaScores");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.CampaignId, x.MediaAssetId, x.SocialChannelId, x.Pass })
+                .IsUnique()
+                .HasFilter("IsDeleted = 0")
+                .HasDatabaseName("IX_CampaignMediaScores_Campaign_Media_Channel_Pass_Active");
+            e.HasIndex(x => x.IsDeleted);
+            e.Property(x => x.CostUsd).HasPrecision(18, 6);
+            e.Property(x => x.ProfileHash).HasMaxLength(64);
         });
 
         modelBuilder.Entity<PostModel>(e =>

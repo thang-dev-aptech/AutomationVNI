@@ -6,6 +6,7 @@ using Backend.Modules.MediaFolder;
 using Backend.Shared;
 using Backend.Shared.Repositories;
 using Backend.Shared.Storage;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -1762,8 +1763,7 @@ public class GoogleDriveSyncServiceTests
 
         public static async Task<Fixture> CreateAsync(int maxRetryAttempts = 5, int maxFilesPerTick = 20)
         {
-            var connection = new SqliteConnection("DataSource=:memory:");
-            await connection.OpenAsync();
+            var connection = SqliteTestDatabase.OpenInMemory();
             var dbOptions = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
 
             await using (var db = new AppDbContext(dbOptions))

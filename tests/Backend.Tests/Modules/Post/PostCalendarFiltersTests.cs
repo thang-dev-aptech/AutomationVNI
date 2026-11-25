@@ -27,6 +27,7 @@ using Backend.Shared.Repositories;
 using Backend.Shared.SocialPublish;
 using Backend.Shared.Storage;
 using Backend.Tests.Modules.MediaAsset;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -74,8 +75,7 @@ public sealed class PostCalendarFiltersTests : IAsyncLifetime
 
     public PostCalendarFiltersTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
         _options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite(_connection)
             .AddInterceptors(_sql)

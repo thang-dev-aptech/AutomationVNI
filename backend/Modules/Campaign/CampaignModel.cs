@@ -29,4 +29,13 @@ public class CampaignModel : BaseEntity
     /// Worker dùng làm Post.UserId khi sinh bài.
     /// </summary>
     public Guid? CreatedByUserId { get; set; }
+
+    /// <summary>Recycle (mặc định) hoặc FullMedia.</summary>
+    public CampaignMode Mode { get; set; } = CampaignMode.Recycle;
+
+    /// <summary>Thư mục Drive nguồn (bắt buộc khi Mode = FullMedia).</summary>
+    public Guid? SourceFolderId { get; set; }
+
+    public DateTime? QualityPausedAt { get; set; }
+    public string? QualityPauseReason { get; set; }
 }

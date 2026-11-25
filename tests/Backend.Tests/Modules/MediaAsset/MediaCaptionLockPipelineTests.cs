@@ -10,6 +10,7 @@ using Backend.Modules.MediaCaption;
 using Backend.Modules.MediaFolder;
 using Backend.Shared.Repositories;
 using Backend.Shared.Storage;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -38,8 +39,7 @@ public class MediaCaptionLockPipelineTests : IAsyncLifetime
 
     public MediaCaptionLockPipelineTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using (var seedDb = new AppDbContext(_options))
             seedDb.Database.EnsureCreated();

@@ -8,6 +8,7 @@ using Backend.Data;
 using Backend.Modules.ContentCrawl;
 using Backend.Shared.OpenClaw;
 using Backend.Shared.Repositories;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -180,8 +181,7 @@ public class ContentCrawlPipelineStateTests
 
         public static async Task<PipelineFixture> CreateAsync()
         {
-            var connection = new SqliteConnection("DataSource=:memory:");
-            await connection.OpenAsync();
+            var connection = SqliteTestDatabase.OpenInMemory();
             var dbOptions = new DbContextOptionsBuilder<AppDbContext>()
                 .UseSqlite(connection)
                 .Options;

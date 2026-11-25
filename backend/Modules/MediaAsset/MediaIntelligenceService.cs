@@ -395,6 +395,69 @@ public class MediaIntelligenceService(
         Guid mediaId, Guid? pageId, CancellationToken ct = default)
         => GenerateCaptionCoreAsync(mediaId, useFolderPage: false, pageId, ct);
 
+    /// <summary>
+    /// FULLMEDIA t4: sinh caption theo PageContext của page, trả chuỗi — KHÔNG ghi MediaAsset
+    /// (mỗi page một caption riêng khi tạo bài Full Media).
+    /// </summary>
+    public async Task<string> GenerateCaptionTextForPageAsync(
+        Guid mediaId, Guid pageId, CancellationToken ct = default)
+    {
+        var media = await LoadCaptionTargetAsync(mediaId, track: false, ct);
+        return await GenerateCaptionTextAsync(media, useFolderPage: false, pageId, ct);
+    }
+
+    /// <summary>
+    /// FULLMEDIA t2: tên model Vision hiệu dụng (override nếu có, không thì model mặc định của provider).
+    /// Chỉ đọc cấu hình — không gọi mạng.
+    /// </summary>
+    public string ResolveVisionModelName(string? modelOverride)
+    {
+        var (_, _, defaultModel) = ResolveConfig();
+        return string.IsNullOrWhiteSpace(modelOverride) ? defaultModel : modelOverride.Trim();
+    }
+
+    /// <summary>
+    /// FULLMEDIA t2: gọi chat completions Vision với ảnh + prompt cố định, trả content (JSON string).
+    /// Tái dùng ResolveConfig / CallChatCompletionsAsync / timeout hiện có. Không đổi hành vi caption/tag.
+    /// </summary>
+    public async Task<string> CallStructuredVisionAsync(
+        byte[] image,
+        string mime,
+        string systemPrompt,
+        string userText,
+        string? modelOverride,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        if (image.Length == 0) throw new ArgumentException("Ảnh trống", nameof(image));
+        if (string.IsNullOrWhiteSpace(mime)) throw new ArgumentException("Thiếu mime type", nameof(mime));
+
+        var (_, config, defaultModel) = ResolveConfig();
+        var model = string.IsNullOrWhiteSpace(modelOverride) ? defaultModel : modelOverride.Trim();
+        var dataUrl = $"data:{mime};base64,{Convert.ToBase64String(image)}";
+        var payload = new
+        {
+            model,
+            messages = new object[]
+            {
+                new { role = "system", content = systemPrompt },
+                new
+                {
+                    role = "user",
+                    content = new object[]
+                    {
+                        new { type = "text", text = userText },
+                        new { type = "image_url", image_url = new { url = dataUrl } },
+                    },
+                },
+            },
+            max_tokens = 800,
+            temperature = 0.1,
+        };
+
+        return await CallChatCompletionsAsync(config, payload, Timeouts.ImageAnalysisRequest, ct);
+    }
+
     /// <summary>SocialChannelId của thư mục (chưa xoá) chứa ảnh; null nếu ảnh không có thư mục hoặc thư mục không thuộc Page.</summary>
     public async Task<Guid?> GetFolderPageIdAsync(Guid mediaId, CancellationToken ct = default)
     {

@@ -9,6 +9,7 @@ using Backend.Modules.SocialChannel.Enums;
 using Backend.Modules.SocialConnection;
 using Backend.Shared.Notification;
 using Backend.Tests.Modules.MediaFolder;
+using Backend.Tests.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -48,8 +49,7 @@ public sealed class PageOrderingTests : IDisposable
 
     public PageOrderingTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
         _db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
         _db.Database.EnsureCreated();
 

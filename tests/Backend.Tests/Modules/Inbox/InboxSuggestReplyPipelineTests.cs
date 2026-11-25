@@ -15,6 +15,7 @@ using Backend.Modules.SocialComment.Enums;
 using Backend.Shared;
 using Backend.Shared.Ai;
 using Backend.Shared.Repositories;
+using Backend.Tests.Shared;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -44,8 +45,7 @@ public sealed class InboxSuggestReplyPipelineTests : IAsyncLifetime
 
     public InboxSuggestReplyPipelineTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _connection = SqliteTestDatabase.OpenInMemory();
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         using (var seed = new AppDbContext(_options))
             seed.Database.EnsureCreated();
